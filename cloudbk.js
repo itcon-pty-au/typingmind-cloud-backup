@@ -328,6 +328,7 @@ async function exportToCloud() {
         });
         if (response.ok) {
             const result = await response.json();
+            console.log("Result: " & result);
             if (!localStorage.getItem('db-doc-id')) {
                 const newDocId = result.insertedId;
                 dbDocIdInput.value = newDocId;
