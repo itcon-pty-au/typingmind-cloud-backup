@@ -322,10 +322,10 @@ async function exportToCloud() {
         });
         if (response.ok) {
             const result = await response.json();
-            if (!docId) {
-                docId = result.insertedId;
-                dbDocIdInput.value = docId;
-                localStorage.setItem('db-doc-id', docId);
+            if (!localStorage.getItem('db-doc-id')) {
+                const newDocId = result.insertedId;
+                dbDocIdInput.value = newDocId;
+                localStorage.setItem('db-doc-id', newDocId);
             }
             localStorage.setItem('last-cloud-sync', currentTime);
             displayMessage('AppData synced to Cloud successfully!', 'white');
