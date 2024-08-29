@@ -329,9 +329,11 @@ async function exportToCloud() {
         if (response.ok) {
             const result = await response.json();
             console.log("Result: " + result.insertedId);
-            localStorage.setItem('db-doc-id', result.insertedId);
-            localStorage.setItem('last-cloud-sync', currentTime);
-            document.getElementById('db-doc-id').value = result.insertedId;
+            if (!document.getElementById('db-doc-id').value) {
+                localStorage.setItem('db-doc-id', result.insertedId);
+                localStorage.setItem('last-cloud-sync', currentTime);
+                document.getElementById('db-doc-id').value = result.insertedId;
+            }
             displayMessage('AppData synced to Cloud successfully!', 'white');
             var lastCloudSync = localStorage.getItem("last-cloud-sync");
             if (lastCloudSync && document.getElementById("last-cloud-sync-msg")) {
