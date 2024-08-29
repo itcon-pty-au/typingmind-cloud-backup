@@ -206,12 +206,12 @@ if (cloudButtonDiv) {
                 minute: '2-digit',
                 hour12: true,
             });
+            await exportToCloud();
             localStorage.setItem('last-cloud-sync', currentTime);
             var lastCloudSync = localStorage.getItem("last-cloud-sync");
             if (lastCloudSync && document.getElementById("last-cloud-sync-msg")) {
                 document.getElementById("last-cloud-sync-msg").innerHTML = `Last synced at ${lastCloudSync}`;
             }
-            await exportToCloud();
         });
         cloudImportBtn.addEventListener('click', async function () {
             localStorage.setItem('db-app-id', dbAppIdInput.value.trim()); 
@@ -227,8 +227,14 @@ if (cloudButtonDiv) {
                 minute: '2-digit',
                 hour12: true,
             });
-            localStorage.setItem('last-cloud-sync', currentTime);
+
             await importFromCloud();
+            localStorage.setItem('last-cloud-sync', currentTime);
+            var lastCloudSync = localStorage.getItem("last-cloud-sync");
+            if (lastCloudSync && document.getElementById("last-cloud-sync-msg")) {
+                document.getElementById("last-cloud-sync-msg").innerHTML = `Last synced at ${lastCloudSync}`;
+            }
+            localStorage.setItem('last-cloud-sync', currentTime);
         });
         const syncInterval = parseInt(localStorage.getItem('sync-interval'), 10) || 5;
         if (syncInterval > 0 && localStorage.getItem("clouddb-backup-enabled") === "true") {
@@ -322,7 +328,7 @@ async function exportToCloud() {
         });
         if (response.ok) {
             const result = await response.json();
-            if (!localStorage.getItem('db-doc-id')) {
+            if (localStorage.getItem('db-doc-id')) {
                 const newDocId = result.insertedId;
                 dbDocIdInput.value = newDocId;
                 localStorage.setItem('db-doc-id', newDocId);
