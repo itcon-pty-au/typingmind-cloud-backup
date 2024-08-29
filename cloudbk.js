@@ -1,7 +1,10 @@
 var cloudButtonDiv = document.querySelector('button[data-element-id="cloud-button"]');
 
 if (cloudButtonDiv) {
+    // Hide the existing cloudButtonDiv element
     cloudButtonDiv.style.display = 'none';
+
+    // Create a new button with the same properties as specified
     var newButton = document.createElement('button');
     newButton.type = 'button';
     newButton.setAttribute('data-element-id', 'cloud-db-button');
@@ -10,13 +13,23 @@ if (cloudButtonDiv) {
     <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 640 512" class="w-4 h-4" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg">
         <path d="M537.6 226.6c4.1-10.7 6.4-22.4 6.4-34.6 0-53-43-96-96-96-19.7 0-38.1 6-53.3 16.2C367 64.2 315.3 32 256 32c-88.4 0-160 71.6-160 160 0 2.7.1 5.4.2 8.1C40.2 219.8 0 273.2 0 336c0 79.5 64.5 144 144 144h368c70.7 0 128-57.3 128-128 0-61.9-44-113.6-102.4-125.4zM393.4 288H328v112c0 8.8-7.2 16-16 16h-48c-8.8 0-16-7.2-16-16V288h-65.4c-14.3 0-21.4-17.2-11.3-27.3l105.4-105.4c6.2-6.2 16.4-6.2 22.6 0l105.4 105.4c10.1 10.1 2.9 27.3-11.3 27.3z"></path>
     </svg>`;
+
+    // Insert the new button just after the hidden element
     cloudButtonDiv.parentNode.insertBefore(newButton, cloudButtonDiv.nextSibling);
+
+    // Add event listener to open the modal popup when the new button is clicked
     newButton.addEventListener('click', function () {
+
+        // Check if modal already exists
         var existingModal = document.querySelector('div[data-element-id="pop-up-modal-dbbackup"]');
-        if (existingModal) { return; }
+        if (existingModal) { return; } // if modal exists do not create another <!-- UPDATED -->
+
+        // Create the modal popup container
         var modalPopup = document.createElement('div');
         modalPopup.setAttribute('data-element-id', 'pop-up-modal-dbbackup');
         modalPopup.className = 'fixed inset-0 bg-gray-800 transition-all bg-opacity-75 flex items-center justify-center z-[60]';
+
+        // Create the inner modal content
         modalPopup.innerHTML = `
         <div class="inline-block w-full align-bottom bg-white dark:bg-zinc-950 rounded-lg px-4 pb-4 text-left shadow-xl transform transition-all sm:my-8 sm:p-6 sm:align-middle pt-4 overflow-hidden sm:max-w-lg">
             <div class="text-gray-800 dark:text-white text-left text-sm">
@@ -109,16 +122,27 @@ if (cloudButtonDiv) {
             </div>
         </div>
         `;
+
+        // Append the modal popup to the body
         document.body.appendChild(modalPopup);
+
+        // Event listener to remove the modal when clicked outside of the modal content
         modalPopup.addEventListener('click', function (event) {
             if (event.target === modalPopup) {
                 modalPopup.remove();
             }
         });
+
+        // Retrieve the value from localStorage
         var lastCloudSync = localStorage.getItem("last-cloud-sync");
+
+        // Check if the value exists before updating the DOM
         if (lastCloudSync && document.getElementById("last-cloud-sync-msg")) {
+            // Update the inner HTML of the div with the retrieved value
             document.getElementById("last-cloud-sync-msg").innerHTML = `Last synced at ${lastCloudSync}`;
         }
+
+        // Initialize the switch state
         var pluginSwitch = document.getElementById('plugins-switch');
         var cloudImportBtn = document.getElementById('cloud-import-btn');
         var cloudExportBtn = document.getElementById('cloud-export-btn');
@@ -126,9 +150,13 @@ if (cloudButtonDiv) {
         var dbAppIdInput = document.getElementById('db-app-id'); 
         var dbNameInput = document.getElementById('db-name'); 
         var dbCollectionInput = document.getElementById('db-collection'); 
-        var dbDocIdInput = document.getElementById('db-doc-id');
+        var dbDocIdInput = document.getElementById('db-doc-id'); // Document ID Input
+
+        // Auto-populate the form fields with data from LocalStorage
         populateFormFromLocalStorage(); 
-        const savedState = localStorage.getItem('clouddb-backup-enabled');
+
+        // Load switch state from localStorage
+        const savedState = localStorage.getItem('clouddb-backup-enabled'); // NEW: Load switch state from localStorage  <!-- UPDATED -->
         if (savedState === 'true') {
             pluginSwitch.setAttribute('aria-checked', 'true');
             pluginSwitch.classList.remove('bg-gray-300');
@@ -139,9 +167,14 @@ if (cloudButtonDiv) {
             dbAppIdInput.removeAttribute('disabled'); 
             dbNameInput.removeAttribute('disabled'); 
             dbCollectionInput.removeAttribute('disabled'); 
+
+            // Check the input values and enable/disable buttons accordingly
             toggleCloudButtons();
+
         }
-        function toggleCloudButtons() {
+
+        // Function to toggle the state of cloud buttons based on input values
+        function toggleCloudButtons() { // NEW: Function to toggle cloud buttons based on input values <!-- UPDATED -->
             if (!dbAppIdInput.value || !dbApiKeyInput.value || !dbNameInput.value || !dbCollectionInput.value) {
                 cloudImportBtn.setAttribute('disabled', 'disabled');
                 cloudExportBtn.setAttribute('disabled', 'disabled');
@@ -154,71 +187,72 @@ if (cloudButtonDiv) {
         pluginSwitch.addEventListener('click', function () {
             var isChecked = pluginSwitch.getAttribute('aria-checked') === 'true';
             if (isChecked) {
+                // Switch off the plugin
                 pluginSwitch.setAttribute('aria-checked', 'false');
                 pluginSwitch.classList.remove('bg-blue-600');
                 pluginSwitch.classList.add('bg-gray-300');
                 pluginSwitch.querySelector('span').classList.remove('translate-x-5');
                 pluginSwitch.querySelector('span').classList.add('translate-x-0');
+
+                // Disable the cloud backup button and text inputs
                 cloudImportBtn.setAttribute('disabled', 'disabled');
                 cloudExportBtn.setAttribute('disabled', 'disabled');
                 dbApiKeyInput.setAttribute('disabled', 'disabled'); 
                 dbAppIdInput.setAttribute('disabled', 'disabled'); 
                 dbNameInput.setAttribute('disabled', 'disabled'); 
                 dbCollectionInput.setAttribute('disabled', 'disabled');
-                localStorage.setItem('clouddb-backup-enabled', 'false');
+
+                // Save state to localStorage
+                localStorage.setItem('clouddb-backup-enabled', 'false'); // NEW: Store switch off state to localStorage  <!-- UPDATED -->
             } else {
+                // Switch on the plugin
                 pluginSwitch.setAttribute('aria-checked', 'true');
                 pluginSwitch.classList.remove('bg-gray-300');
                 pluginSwitch.classList.add('bg-blue-600');
                 pluginSwitch.querySelector('span').classList.remove('translate-x-0');
                 pluginSwitch.querySelector('span').classList.add('translate-x-5');
+
+                // Enable the cloud backup text inputs
                 dbApiKeyInput.removeAttribute('disabled'); 
                 dbAppIdInput.removeAttribute('disabled'); 
                 dbNameInput.removeAttribute('disabled'); 
                 dbCollectionInput.removeAttribute('disabled');
+
+                // Check the input values and enable/disable buttons accordingly
                 toggleCloudButtons();
-                localStorage.setItem('clouddb-backup-enabled', 'true');
+
+                // Save state to localStorage
+                localStorage.setItem('clouddb-backup-enabled', 'true'); // NEW: Store switch on state to localStorage  <!-- UPDATED -->
             }
         });
-        dbApiKeyInput.addEventListener('input', toggleCloudButtons);
-        dbAppIdInput.addEventListener('input', toggleCloudButtons);
-        dbNameInput.addEventListener('input', toggleCloudButtons);
-        dbCollectionInput.addEventListener('input', toggleCloudButtons);
+
+        // Add event listeners for input changes to update button states dynamically
+        dbApiKeyInput.addEventListener('input', toggleCloudButtons); // NEW: Update button state on input change <!-- UPDATED -->
+        dbAppIdInput.addEventListener('input', toggleCloudButtons); // NEW: Update button state on input change <!-- UPDATED -->
+        dbNameInput.addEventListener('input', toggleCloudButtons); // NEW: Update button state on input change <!-- UPDATED -->
+        dbCollectionInput.addEventListener('input', toggleCloudButtons); // NEW: Update button state on input change <!-- UPDATED -->
+
+
+        // Function to export both LocalStorage and IndexedDB (`keyval-store`)
         var exportBtn = document.getElementById('export-btn');
         exportBtn.addEventListener('click', function () {
             exportBackupData();
         });
+
+        // Import functionality for both LocalStorage and IndexedDB (`keyval-store`)
         var importBtn = document.getElementById('import-btn');
         importBtn.addEventListener('click', function () {
             importBackupData();
         });
+
+        // Event listener for the cloud backup button
         cloudExportBtn.addEventListener('click', async function () {
             localStorage.setItem('db-app-id', dbAppIdInput.value.trim()); 
             localStorage.setItem('db-api-key', dbApiKeyInput.value.trim()); 
             localStorage.setItem('db-name', dbNameInput.value.trim()); 
             localStorage.setItem('db-collection', dbCollectionInput.value.trim());
             localStorage.setItem('db-doc-id', dbDocIdInput.value.trim());
-            const currentTime = new Date().toLocaleString('en-AU', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: true,
-            });
-            await exportToCloud();
-            localStorage.setItem('last-cloud-sync', currentTime);
-            var lastCloudSync = localStorage.getItem("last-cloud-sync");
-            if (lastCloudSync && document.getElementById("last-cloud-sync-msg")) {
-                document.getElementById("last-cloud-sync-msg").innerHTML = `Last synced at ${lastCloudSync}`;
-            }
-        });
-        cloudImportBtn.addEventListener('click', async function () {
-            localStorage.setItem('db-app-id', dbAppIdInput.value.trim()); 
-            localStorage.setItem('db-api-key', dbApiKeyInput.value.trim()); 
-            localStorage.setItem('db-name', dbNameInput.value.trim()); 
-            localStorage.setItem('db-collection', dbCollectionInput.value.trim());
-            localStorage.setItem('db-doc-id', dbDocIdInput.value.trim());
+
             const currentTime = new Date().toLocaleString('en-AU', {
                 day: '2-digit',
                 month: '2-digit',
@@ -228,51 +262,106 @@ if (cloudButtonDiv) {
                 hour12: true,
             });
 
-            await importFromCloud();
             localStorage.setItem('last-cloud-sync', currentTime);
+
+            // Retrieve the value from localStorage
             var lastCloudSync = localStorage.getItem("last-cloud-sync");
+
+            // Check if the value exists before updating the DOM
             if (lastCloudSync && document.getElementById("last-cloud-sync-msg")) {
+                // Update the inner HTML of the div with the retrieved value
                 document.getElementById("last-cloud-sync-msg").innerHTML = `Last synced at ${lastCloudSync}`;
             }
-            localStorage.setItem('last-cloud-sync', currentTime);
+
+            await exportToCloud();
         });
-        const syncInterval = parseInt(localStorage.getItem('sync-interval'), 10) || 5;
+
+        // Event listener for the cloud import button
+        cloudImportBtn.addEventListener('click', async function () {
+            localStorage.setItem('db-app-id', dbAppIdInput.value.trim()); 
+            localStorage.setItem('db-api-key', dbApiKeyInput.value.trim()); 
+            localStorage.setItem('db-name', dbNameInput.value.trim()); 
+            localStorage.setItem('db-collection', dbCollectionInput.value.trim());
+            localStorage.setItem('db-doc-id', dbDocIdInput.value.trim());
+
+            const currentTime = new Date().toLocaleString('en-AU', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: true,
+            });
+
+            localStorage.setItem('last-cloud-sync', currentTime);
+
+            await importFromCloud();
+        });
+
+        // Call exportToCloud function at the specified interval
+        const syncInterval = parseInt(localStorage.getItem('sync-interval'), 10) || 5; // Load sync interval from localStorage
         if (syncInterval > 0 && localStorage.getItem("clouddb-backup-enabled") === "true") {
             setInterval(async () => {
                 await exportToCloud();
-            }, 60000 * syncInterval);
+            }, 60000 * syncInterval); // Multiplies the syncInterval by 60000 to get minutes
         }
     });
 }
+
+// Function to move the cloud export logic
 async function exportToCloud() {
+    console.log('Cloud Export Clicked'); 
+
+    // Collect connection info
     const apiKey = localStorage.getItem('db-api-key'); 
     const appId = localStorage.getItem('db-app-id'); 
     const dbName = localStorage.getItem('db-name'); 
     const collectionName = localStorage.getItem('db-collection'); 
     let docId = localStorage.getItem('db-doc-id');
     let region = '';
+
+    // Step 1: Fetch the region of the app
     try {
         const response = await fetch(`https://services.cloud.mongodb.com/api/client/v2.0/app/${appId}/location`);
         if (!response.ok) {
             throw new Error(`Failed to fetch region. Status: ${response.status}, ${response.statusText}`);
         }
         const regionData = await response.json();
+        console.log('Region API Response:', regionData); // Log the entire response for debugging
+
         const hostname = regionData.hostname;
+        console.log('Hostname:', hostname); // Log the hostname extracted from the response
+
+        // Validate that we have a valid hostname
         if (!hostname) {
             throw new Error('Hostname not found in response.');
         }
+
+        // Split on // and take the latter part, then split by '.' and join first two parts
         const splitHost = hostname.split('//');
+        console.log('Split by //:', splitHost); // Log the result of splitting by //
+
         if (splitHost.length < 2) {
             throw new Error('Unexpected hostname format: ' + hostname);
         }
+
         const regionParts = splitHost[1].split('.');
+        console.log('Split by .:', regionParts); // Log the result of splitting by .;
+
         if (regionParts.length < 2) {
             throw new Error('Unexpected region format in hostname: ' + hostname);
         }
+
         region = regionParts.slice(0, 2).join('.');
+        console.log('Extracted Region:', region); // Log the final extracted region
+
     } catch (error) {
+        console.error('Error fetching region:', error);
+        alert('Error fetching MongoDB region: ' + error.message);
         return;
     }
+
+    // Step 2: Get access token
     let token = '';
     try {
         const response = await fetch(`https://services.cloud.mongodb.com/api/client/v2.0/app/${appId}/auth/providers/api-key/login`, {
@@ -284,19 +373,33 @@ async function exportToCloud() {
                 "key": apiKey
             })
         });
+
         if (!response.ok) {
             throw new Error(`Failed to retrieve access token. Status: ${response.status}, ${response.statusText}`); 
         }
+
         const tokenData = await response.json();
-        token = tokenData.access_token; 
+        token = tokenData.access_token;
+        console.log('Access Token:', token); 
     } catch (error) {
+        console.error('Error fetching access token:', error); 
+        alert('Error fetching access token: ' + error.message); 
         return;
     }
+
     try {
+        console.log('Attempting to Export Backup Data...'); 
+        // Trigger backup and send to cloud
         const exportData = await exportBackupData();
+        console.log('Backup Data Exported:', exportData); 
+
         const url = docId ? 
             `https://${region}.data.mongodb-api.com/app/${appId}/endpoint/data/v1/action/updateOne` : 
             `https://${region}.data.mongodb-api.com/app/${appId}/endpoint/data/v1/action/insertOne`;
+
+        console.log('MongoDB Endpoint URL:', url); 
+
+        // Payload setup
         const payload = docId ? {
             filter: { "_id": {"$oid": docId} },
             update: { "$set": { ...exportData } },
@@ -304,6 +407,8 @@ async function exportToCloud() {
         } : {
             document: exportData
         };
+
+        // Post data to MongoDB via server function
         const response = await fetch(url, {
             method: 'POST',
             headers: {
@@ -318,6 +423,9 @@ async function exportToCloud() {
                 ...payload
             }),
         });
+
+        console.log('MongoDB Response:', response);
+
         const currentTime = new Date().toLocaleString('en-AU', {
             day: '2-digit',
             month: '2-digit',
@@ -326,53 +434,90 @@ async function exportToCloud() {
             minute: '2-digit',
             hour12: true,
         });
+
         if (response.ok) {
             const result = await response.json();
-            console.log("Result: " & result);
-            if (!localStorage.getItem('db-doc-id')) {
-                const newDocId = result.insertedId;
-                dbDocIdInput.value = newDocId;
-                localStorage.setItem('db-doc-id', newDocId);
+            if (!docId) {
+                docId = result.insertedId; // For new documents, store the returned ID
+                console.log("Generated Document ID:", docId);
+                dbDocIdInput.value = docId; // Update the form with the new Document ID
+                localStorage.setItem('db-doc-id', docId); // Store the new Document ID in LocalStorage
             }
-            localStorage.setItem('last-cloud-sync', currentTime);
-            displayMessage('AppData synced to Cloud successfully!', 'white');
+            localStorage.setItem('last-cloud-sync', currentTime); // Store the last sync time <!-- UPDATED -->
+            displayMessage('AppData synced to Cloud successfully!', 'white'); // NEW: Added this function call <!-- UPDATED -->
+            // Retrieve the value from localStorage
             var lastCloudSync = localStorage.getItem("last-cloud-sync");
+
+            // Check if the value exists before updating the DOM
             if (lastCloudSync && document.getElementById("last-cloud-sync-msg")) {
+                // Update the inner HTML of the div with the retrieved value
                 document.getElementById("last-cloud-sync-msg").innerHTML = `Last synced at ${lastCloudSync}`;
-            } 
+            }
+            console.log('Backup successfully uploaded to MongoDB.'); 
+        } else {
+            console.error('Failed to upload backup. Status:', response.status, response.statusText); 
+            alert('Failed to upload backup. Please check your connection settings.');
         }
     } catch (error) {
+        console.error('Error generating or uploading backup data:', error); 
+        alert('Error generating or uploading backup data: ' + error.message);
     }
 }
+
+// Function to move the cloud import logic
 async function importFromCloud() {
+    console.log('Cloud Import Clicked'); 
+
+    // Collect connection info
     const apiKey = localStorage.getItem('db-api-key'); 
     const appId = localStorage.getItem('db-app-id'); 
     const dbName = localStorage.getItem('db-name'); 
     const collectionName = localStorage.getItem('db-collection'); 
     let docId = localStorage.getItem('db-doc-id');
     let region = '';
+
+    // Step 1: Fetch the region of the app
     try {
         const response = await fetch(`https://services.cloud.mongodb.com/api/client/v2.0/app/${appId}/location`);
         if (!response.ok) {
             throw new Error(`Failed to fetch region. Status: ${response.status}, ${response.statusText}`);
         }
         const regionData = await response.json();
+        console.log('Region API Response:', regionData); // Log the entire response for debugging
+
         const hostname = regionData.hostname;
+        console.log('Hostname:', hostname); // Log the hostname extracted from the response
+
+        // Validate that we have a valid hostname
         if (!hostname) {
             throw new Error('Hostname not found in response.');
         }
+
+        // Split on // and take the latter part, then split by '.' and join first two parts
         const splitHost = hostname.split('//');
+        console.log('Split by //:', splitHost); // Log the result of splitting by //
+
         if (splitHost.length < 2) {
             throw new Error('Unexpected hostname format: ' + hostname);
         }
+
         const regionParts = splitHost[1].split('.');
+        console.log('Split by .:', regionParts); // Log the result of splitting by .;
+
         if (regionParts.length < 2) {
             throw new Error('Unexpected region format in hostname: ' + hostname);
         }
+
         region = regionParts.slice(0, 2).join('.');
+        console.log('Extracted Region:', region); // Log the final extracted region
+
     } catch (error) {
+        console.error('Error fetching region:', error);
+        alert('Error fetching MongoDB region: ' + error.message);
         return;
     }
+
+    // Step 2: Get access token
     let token = '';
     try {
         const response = await fetch(`https://services.cloud.mongodb.com/api/client/v2.0/app/${appId}/auth/providers/api-key/login`, {
@@ -384,16 +529,26 @@ async function importFromCloud() {
                 "key": apiKey
             })
         });
+
         if (!response.ok) {
             throw new Error(`Failed to retrieve access token. Status: ${response.status}, ${response.statusText}`); 
         }
+
         const tokenData = await response.json();
         token = tokenData.access_token;
+        console.log('Access Token:', token); 
     } catch (error) {
+        console.error('Error fetching access token:', error); 
+        alert('Error fetching access token: ' + error.message); 
         return;
     }
+
     try {
+        // Construct the MongoDB endpoint URL
         const url = `https://${region}.data.mongodb-api.com/app/${appId}/endpoint/data/v1/action/findOne`; 
+        console.log('MongoDB FindOne Endpoint URL:', url); 
+            
+        // Fetch data from MongoDB via server function
         const response = await fetch(url, {
             method: 'POST',
             headers: {
@@ -408,24 +563,35 @@ async function importFromCloud() {
                 filter: { "_id": {"$oid": docId} } 
             }),
         });
+
+        console.log('MongoDB Response:', response); 
+
         if (response.ok) {
             const backupData = await response.json();
+            console.log('Backup Data Retrieved:', backupData); 
+
+            // Validate and extract document data from the response
             const storedData = backupData.document;
             if (!storedData) { 
                 alert('No data found in the MongoDB document.');
                 return;
             }
+
+            // Update LocalStorage and IndexedDB with fetched data
             for (var key in storedData.localStorage) {
                 localStorage.setItem(key, storedData.localStorage[key]);
             }
+
             const request = indexedDB.open('keyval-store', 1);
             request.onsuccess = function (event) {
                 const db = event.target.result;
                 const transaction = db.transaction(['keyval'], 'readwrite');
                 const store = transaction.objectStore('keyval');
+
                 for (var key in storedData.indexedDB) {
                     store.put(storedData.indexedDB[key], key);
                 }
+
                 const currentTime = new Date().toLocaleString('en-AU', {
                     day: '2-digit',
                     month: '2-digit',
@@ -434,48 +600,77 @@ async function importFromCloud() {
                     minute: '2-digit',
                     hour12: true,
                 });
+
                 transaction.oncomplete = function () {
-                    displayMessage('AppData synced from Cloud successfully!', 'white'); 
-                    localStorage.setItem('last-cloud-sync', currentTime);
+                    displayMessage('AppData synced from Cloud successfully!', 'white'); // NEW: Added this function call <!-- UPDATED --> 
+                    localStorage.setItem('last-cloud-sync', currentTime); // Store the last sync time <!-- UPDATED -->
+                    // Retrieve the value from localStorage
                     var lastCloudSync = localStorage.getItem("last-cloud-sync");
+
+                    // Check if the value exists before updating the DOM
                     if (lastCloudSync && document.getElementById("last-cloud-sync-msg")) {
+                        // Update the inner HTML of the div with the retrieved value
                         document.getElementById("last-cloud-sync-msg").innerHTML = `Last synced at ${lastCloudSync}`;
                     }
                 };
+
                 transaction.onerror = function (error) {
+                    console.error('Error importing data into IndexedDB:', error); 
+                    alert('Error importing data into IndexedDB: ' + error.target.errorCode);
                 };
             };
+
         } else {
+            console.error('Failed to import data. Status:', response.status, response.statusText); 
+            alert('Failed to import data. Please try again later.');
         }
     } catch (error) {
+        console.error('Error importing data:', error); 
+        alert('Error importing data: ' + error.message);
     }
 }
+
+// Function to export the backup data
 function exportBackupData() {
     return new Promise((resolve, reject) => {
         var exportData = {
             localStorage: { ...localStorage },
             indexedDB: {}
         };
+
+        // Open the IndexedDB and read data from `keyval-store`
         var request = indexedDB.open('keyval-store', 1);
+
         request.onsuccess = function (event) {
             var db = event.target.result;
             var transaction = db.transaction(['keyval'], 'readonly');
             var store = transaction.objectStore('keyval');
+
             store.getAllKeys().onsuccess = function (keyEvent) {
                 var keys = keyEvent.target.result;
+
                 store.getAll().onsuccess = function (valueEvent) {
                     var values = valueEvent.target.result;
+
+                    // Combine keys and values into an object and save it to exportData.
                     keys.forEach((key, i) => {
                         exportData.indexedDB[key] = values[i];
                     });
+
+                    console.log('Exported IndexedDB Data:', exportData.indexedDB); 
                     resolve(exportData);
                 };
             };
         };
+
         request.onerror = function (error) {
+            console.error('Error opening IndexedDB:', error); 
+            reject('Error opening IndexedDB: ' + error.target.errorCode);
         };
     });
 }
+
+// Function to import backup data
 function importBackupData() {
     var input = document.createElement('input');
     input.type = 'file';
@@ -487,29 +682,47 @@ function importBackupData() {
             reader.onload = function (e) {
                 try {
                     var importedData = JSON.parse(e.target.result);
+
+                    console.log('Imported Data:', importedData); 
+
+                    // Update LocalStorage
                     for (var key in importedData.localStorage) {
                         if (importedData.localStorage.hasOwnProperty(key)) {
                             localStorage.setItem(key, importedData.localStorage[key]);
                         }
                     }
+
+                    // Update IndexedDB (keyval-store)
                     var request = indexedDB.open('keyval-store', 1);
                     request.onsuccess = function (event) {
                         var db = event.target.result;
                         var transaction = db.transaction(['keyval'], 'readwrite');
                         var store = transaction.objectStore('keyval');
+
                         for (var key in importedData.indexedDB) {
                             if (importedData.indexedDB.hasOwnProperty(key)) {
                                 store.put(importedData.indexedDB[key], key);
                             }
                         }
+
                         transaction.oncomplete = function () {
+                            alert('Import completed successfully.');
                         };
+
                         transaction.onerror = function (error) {
+                            console.error('Error importing data into IndexedDB:', error); 
+                            alert('Error importing data into IndexedDB: ' + error.target.errorCode);
                         };
                     };
+
                     request.onerror = function (error) {
+                        console.error('Error opening IndexedDB:', error); 
+                        alert('Error opening IndexedDB: ' + error.target.errorCode);
                     };
+
                 } catch (error) {
+                    console.error('Error importing data:', error); 
+                    alert('Error importing data: ' + error.message);
                 }
             };
             reader.readAsText(file);
@@ -517,54 +730,87 @@ function importBackupData() {
     };
     input.click();
 }
+
+// Function to auto-populate the form from LocalStorage
 function populateFormFromLocalStorage() {
     const dbAppId = localStorage.getItem('db-app-id');
     const dbApiKey = localStorage.getItem('db-api-key');
     const dbName = localStorage.getItem('db-name');
     const dbCollection = localStorage.getItem('db-collection');
-    const dbDocId = localStorage.getItem('db-doc-id');
+    const dbDocId = localStorage.getItem('db-doc-id'); // Document ID
+
     if (dbAppId) {
         document.getElementById('db-app-id').value = dbAppId; 
     }
+
     if (dbApiKey) {
         document.getElementById('db-api-key').value = dbApiKey; 
     }
+
     if (dbName) {
         document.getElementById('db-name').value = dbName; 
     }
+
     if (dbCollection) {
         document.getElementById('db-collection').value = dbCollection; 
     }
+
     if (dbDocId) { 
         document.getElementById('db-doc-id').value = dbDocId; 
     }
 }
-function checkDocumentReady() {
-    if (document.readyState === 'complete') {
-        initCloudBackup();
+
+function checkDocumentReady() {  // Function to check if the document is ready <!-- UPDATED -->
+    if (document.readyState === 'complete') { // Document and all sub-resources have finished loading
+        initCloudBackup();  // Proceed to check localStorage and sync if conditions are met <!-- UPDATED -->
     } else {
-        setTimeout(checkDocumentReady, 100);
+        // If not ready, schedule another check in a short interval <!-- UPDATED -->
+        setTimeout(checkDocumentReady, 100);  // Recursively check again after 100ms <!-- UPDATED -->
     }
 }
-function initCloudBackup() {
+
+function initCloudBackup() {  // Function to initialize the cloud backup sync <!-- UPDATED -->
     const isBackupEnabled = localStorage.getItem('clouddb-backup-enabled') === 'true';
+    console.log('Backup Enabled:', isBackupEnabled); // Debug Logging <!-- UPDATED -->
+
+    // Check if all required information is available in LocalStorage <!-- UPDATED -->
     const dbApiKey = localStorage.getItem('db-api-key');
     const dbAppId = localStorage.getItem('db-app-id');
     const dbCollection = localStorage.getItem('db-collection');
     const dbDocId = localStorage.getItem('db-doc-id');
     const dbName = localStorage.getItem('db-name');
+
+    console.log('dbApiKey:', dbApiKey); // Debug Logging <!-- UPDATED -->
+    console.log('dbAppId:', dbAppId); // Debug Logging <!-- UPDATED -->
+    console.log('dbCollection:', dbCollection); // Debug Logging <!-- UPDATED -->
+    console.log('dbDocId:', dbDocId); // Debug Logging <!-- UPDATED -->
+    console.log('dbName:', dbName); // Debug Logging <!-- UPDATED -->
+
     if (isBackupEnabled && dbApiKey && dbAppId && dbCollection && dbDocId && dbName) {
+        console.log('All criteria met, calling importFromCloud...');
         importFromCloud();
+    } else {
+        console.log('All criteria not met, importFromCloud not called.'); // Debug Logging <!-- UPDATED -->
     }
 }
+
+// Start the document ready check immediately after script has loaded <!-- UPDATED -->
 checkDocumentReady();
+
+// Function to display a message after cloud actions (import/export)  <!-- NEW -->
 function displayMessage(message, color) {
     const cloudActionMsg = document.getElementById('cloud-action-msg');
+
+    // Suppress this call if the modal element does not exist <!-- UPDATED -->
     if (!cloudActionMsg) {
+        console.warn('cloud-action-msg element not found. Skipping displayMessage.'); // Debug Logging <!-- UPDATED -->
         return;
     }
+
     cloudActionMsg.textContent = message;
     cloudActionMsg.style.color = color;
+
+    // Clear the message after 3 seconds <!-- UPDATED -->
     setTimeout(() => {
         cloudActionMsg.textContent = '';
     }, 3000);
