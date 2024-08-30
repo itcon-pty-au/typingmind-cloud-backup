@@ -165,8 +165,8 @@ if (cloudButtonDiv) {
                 pluginSwitch.classList.add('bg-gray-300');
                 pluginSwitch.querySelector('span').classList.remove('translate-x-5');
                 pluginSwitch.querySelector('span').classList.add('translate-x-0');
-                cloudImportBtn.setAttribute('disabled', 'disabled');
-                cloudExportBtn.setAttribute('disabled', 'disabled');
+                // cloudImportBtn.setAttribute('disabled', 'disabled');
+                // cloudExportBtn.setAttribute('disabled', 'disabled');
                 dbApiKeyInput.setAttribute('disabled', 'disabled'); 
                 dbAppIdInput.setAttribute('disabled', 'disabled'); 
                 dbNameInput.setAttribute('disabled', 'disabled'); 
