@@ -139,12 +139,7 @@ if (cloudButtonDiv) {
             cloudBackupSwitch.classList.remove('bg-gray-300');
             cloudBackupSwitch.classList.add('bg-blue-600');
             cloudBackupSwitch.querySelector('span').classList.remove('translate-x-0');
-            cloudBackupSwitch.querySelector('span').classList.add('translate-x-5');
-            dbApiKeyInput.removeAttribute('disabled'); 
-            dbAppIdInput.removeAttribute('disabled'); 
-            dbNameInput.removeAttribute('disabled'); 
-            dbCollectionInput.removeAttribute('disabled');
-            syncIntervalInput.removeAttribute('disabled'); 
+            cloudBackupSwitch.querySelector('span').classList.add('translate-x-5'); 
             toggleCloudButtons();
         }
         function toggleCloudButtons() {
