@@ -41,19 +41,19 @@ if (cloudButtonDiv) {
                                 <!-- Form to collect connection information -->
                                 <div>
                                     <label for="db-app-id" class="block text-sm font-medium text-gray-700 dark:text-gray-400">MongoDB App ID</label>
-                                    <input id="db-app-id" name="db-app-id" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width:-webkit-fill-available" required disabled>
+                                    <input id="db-app-id" name="db-app-id" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width:-webkit-fill-available" required>
                                 </div>
                                 <div>
                                     <label for="db-api-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">MongoDB API Key</label>
-                                    <input id="db-api-key" name="db-api-key" type="password" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width:-webkit-fill-available" required disabled>
+                                    <input id="db-api-key" name="db-api-key" type="password" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width:-webkit-fill-available" required>
                                 </div>
                                 <div>
                                     <label for="db-name" class="block text-sm font-medium text-gray-700 dark:text-gray-400">MongoDB Database Name</label>
-                                    <input id="db-name" name="db-name" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width:-webkit-fill-available" required disabled>
+                                    <input id="db-name" name="db-name" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width:-webkit-fill-available" required>
                                 </div>
                                 <div>
                                     <label for="db-collection" class="block text-sm font-medium text-gray-700 dark:text-gray-400">MongoDB Collection Name</label>
-                                    <input id="db-collection" name="db-collection" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width:-webkit-fill-available" required disabled>
+                                    <input id="db-collection" name="db-collection" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width:-webkit-fill-available" required>
                                 </div>
                                 <div>
                                     <label for="db-doc-id" class="block text-sm font-medium text-gray-700 dark:text-gray-400">MongoDB Document ID</label>
