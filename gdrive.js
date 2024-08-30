@@ -1,27 +1,21 @@
 var cloudButtonDiv = document.querySelector('button[data-element-id="cloud-button"]');
-
 if (cloudButtonDiv) {
     cloudButtonDiv.style.display = 'none';
-  
-    var cloudBkpBtn = document.createElement('button');
+      var cloudBkpBtn = document.createElement('button');
     cloudBkpBtn.type = 'button';
     cloudBkpBtn.setAttribute('data-element-id', 'cloud-db-button');
     cloudBkpBtn.className = 'cursor-default bg-white/20 text-white group flex items-center justify-center rounded-md px-2 py-1 text-xs hover:bg-white/40 transition-all space-x-2 relative';
-  
-    cloudBkpBtn.innerHTML = `
+      cloudBkpBtn.innerHTML = `
     <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 640 512" class="w-4 h-4" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg">
         <path d="M537.6 226.6c4.1-10.7 6.4-22.4 6.4-34.6 0-53-43-96-96-96-19.7 0-38.1 6-53.3 16.2C367 64.2 315.3 32 256 32c-88.4 0-160 71.6-160 160 0 2.7.1 5.4.2 8.1C40.2 219.8 0 273.2 0 336c0 79.5 64.5 144 144 144h368c70.7 0 128-57.3 128-128 0-61.9-44-113.6-102.4-125.4zM393.4 288H328v112c0 8.8-7.2 16-16 16h-48c-8.8 0-16-7.2-16-16V288h-65.4c-14.3 0-21.4-17.2-11.3-27.3l105.4-105.4c6.2-6.2 16.4-6.2 22.6 0l105.4 105.4c10.1 10.1 2.9 27.3-11.3 27.3z"></path>
     </svg>`;
     cloudButtonDiv.parentNode.insertBefore(cloudBkpBtn, cloudButtonDiv.nextSibling);
-  
-    cloudBkpBtn.addEventListener('click', function () {
+      cloudBkpBtn.addEventListener('click', function () {
         var existingModal = document.querySelector('div[data-element-id="pop-up-modal-dbbackup"]');
         if (existingModal) { return; }
-      
         var modalPopup = document.createElement('div');
         modalPopup.setAttribute('data-element-id', 'pop-up-modal-dbbackup');
         modalPopup.className = 'fixed inset-0 bg-gray-800 transition-all bg-opacity-75 flex items-center justify-center z-[60]';
-      
         modalPopup.innerHTML = `
         <div class="inline-block w-full align-bottom bg-white dark:bg-zinc-950 rounded-lg px-4 pb-4 text-left shadow-xl transform transition-all sm:my-8 sm:p-6 sm:align-middle pt-4 overflow-hidden sm:max-w-lg">
             <div class="text-gray-800 dark:text-white text-left text-sm">
@@ -91,6 +85,7 @@ if (cloudButtonDiv) {
                                 </div>
                                 <span>Local Backup</span>
                             </h3>
+                            
                             <div>                               
                                 <div class="my-4 flex items-center flex-wrap gap-2">
                                     <button id="export-btn" type="button" class="inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors">
@@ -99,6 +94,7 @@ if (cloudButtonDiv) {
                                         </svg> 
                                     <span>Export</span>
                                     </button>
+                                    
                                     <button id="import-btn" type="button" class="inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors">
                                         <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024" fill-rule="evenodd" class="w-4 h-4 mr-2" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg">
                                             <path d="M880 112H144c-17.7 0-32 14.3-32 32v736c0 17.7 14.3 32 32 32h360c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H184V184h656v320c0 4.4-3.6 8 8 8h56c4.4 0 8-3.6 8-8V144c0-17.7-14.3-32-32-32ZM653.3 599.4l52.2-52.2c4.7-4.7 1.9-12.8-4.7-13.6l-179.4-21c-5.1-.6-9.5 3.7-8.9 8.9l21 179.4c.8 6.6 8.9 9.4 13.6 4.7l52.4-52.4 256.2 256.2c3.1 3.1 8.2 3.1 11.3 0l42.4-42.4c3.1-3.1 3.1-8.2 0-11.3L653.3 599.4Z" transform="matrix(1 0 0 -1 0 1024)"></path>
@@ -142,7 +138,7 @@ if (cloudButtonDiv) {
             toggleCloudButtons();
         }
         function toggleCloudButtons() {
-            if (!driveClientIdInput.value || !driveClientSecretInput.value || !driveRefreshTokenInput.value || !remoteFilenameInput.value) {
+            if (!driveClientIdInput.value || !driveClientSecretInput.value || !driveRefreshTokenInput.value) {
                 cloudImportBtn.setAttribute('disabled', 'disabled');
                 cloudExportBtn.setAttribute('disabled', 'disabled');
             } else {
@@ -184,10 +180,11 @@ if (cloudButtonDiv) {
             importBackupData();
         });
         cloudExportBtn.addEventListener('click', async function () {
+            const remoteFilename = remoteFilenameInput.value.trim() || 'typingmind-bk.json';
             localStorage.setItem('drive-client-id', driveClientIdInput.value.trim());
             localStorage.setItem('drive-client-secret', driveClientSecretInput.value.trim());
             localStorage.setItem('drive-refresh-token', driveRefreshTokenInput.value.trim());
-            localStorage.setItem('remote-filename', remoteFilenameInput.value.trim());
+            localStorage.setItem('remote-filename', remoteFilename); 
             localStorage.setItem('sync-interval', syncIntervalInput.value.trim());
             const currentTime = new Date().toLocaleString('en-AU', {
                 day: '2-digit',
@@ -313,10 +310,12 @@ async function getGoogleAccessToken(clientId, clientSecret, refreshToken) {
             },
             body: params.toString(),
         });
+
         const tokenData = await response.json();
         if ('error' in tokenData) {
             throw new Error(tokenData.error);
         }
+
         return tokenData.access_token;
     } catch (error) {
         displayMessage('Failed to obtain Google Access Token!', 'white');
@@ -392,7 +391,7 @@ function populateFormFromLocalStorage() {
     const driveClientId = localStorage.getItem('drive-client-id');
     const driveClientSecret = localStorage.getItem('drive-client-secret');
     const driveRefreshToken = localStorage.getItem('drive-refresh-token');
-    const remoteFilename = localStorage.getItem('remote-filename');
+    const remoteFilename = localStorage.getItem('remote-filename') || 'typingmind-bk.json';
     const syncInterval = localStorage.getItem('sync-interval');
     if (driveClientId) {
         document.getElementById('drive-client-id').value = driveClientId;
@@ -422,8 +421,9 @@ function initCloudBackup() {
     const driveClientId = localStorage.getItem('drive-client-id');
     const driveClientSecret = localStorage.getItem('drive-client-secret');
     const driveRefreshToken = localStorage.getItem('drive-refresh-token');
-    const remoteFilename = localStorage.getItem('remote-filename');
-    if (isBackupEnabled && driveClientId && driveClientSecret && driveRefreshToken && remoteFilename) {
+    const remoteFilename = localStorage.getItem('remote-filename') || 'typingmind-bk.json';
+
+    if (isBackupEnabled && driveClientId && driveClientSecret && driveRefreshToken) {
         importFromGoogleDrive();
     }
 }
