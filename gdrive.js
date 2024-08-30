@@ -1,16 +1,16 @@
 var cloudButtonDiv = document.querySelector('button[data-element-id="cloud-button"]');
 if (cloudButtonDiv) {
     cloudButtonDiv.style.display = 'none';
-      var cloudBkpBtn = document.createElement('button');
+    var cloudBkpBtn = document.createElement('button');
     cloudBkpBtn.type = 'button';
     cloudBkpBtn.setAttribute('data-element-id', 'cloud-db-button');
     cloudBkpBtn.className = 'cursor-default bg-white/20 text-white group flex items-center justify-center rounded-md px-2 py-1 text-xs hover:bg-white/40 transition-all space-x-2 relative';
-      cloudBkpBtn.innerHTML = `
+    cloudBkpBtn.innerHTML = `
     <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 640 512" class="w-4 h-4" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg">
         <path d="M537.6 226.6c4.1-10.7 6.4-22.4 6.4-34.6 0-53-43-96-96-96-19.7 0-38.1 6-53.3 16.2C367 64.2 315.3 32 256 32c-88.4 0-160 71.6-160 160 0 2.7.1 5.4.2 8.1C40.2 219.8 0 273.2 0 336c0 79.5 64.5 144 144 144h368c70.7 0 128-57.3 128-128 0-61.9-44-113.6-102.4-125.4zM393.4 288H328v112c0 8.8-7.2 16-16 16h-48c-8.8 0-16-7.2-16-16V288h-65.4c-14.3 0-21.4-17.2-11.3-27.3l105.4-105.4c6.2-6.2 16.4-6.2 22.6 0l105.4 105.4c10.1 10.1 2.9 27.3-11.3 27.3z"></path>
     </svg>`;
     cloudButtonDiv.parentNode.insertBefore(cloudBkpBtn, cloudButtonDiv.nextSibling);
-      cloudBkpBtn.addEventListener('click', function () {
+    cloudBkpBtn.addEventListener('click', function () {
         var existingModal = document.querySelector('div[data-element-id="pop-up-modal-dbbackup"]');
         if (existingModal) { return; }
         var modalPopup = document.createElement('div');
@@ -35,29 +35,21 @@ if (cloudButtonDiv) {
                                     <span aria-hidden="true" class="translate-x-0 h-5 w-5 pointer-events-none inline-block transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
                                 </button></label></div>
                         </div>
-  
+
                         <div class="my-4 bg-gray-100 px-3 py-3 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
                             <div class="space-y-4">
-                                <!-- Form to collect Google Drive API information --> <!--UPDATED-->
+                                <!-- Form to collect Google Drive Service Account information --> <!--UPDATED-->
                                 <div>
-                                    <label for="drive-client-id" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Google Drive Client ID *</label> <!--UPDATED-->
-                                    <input id="drive-client-id" name="drive-client-id" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width:-webkit-fill-available" required> <!--UPDATED-->
-                                </div>
-                                <div>
-                                    <label for="drive-client-secret" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Google Drive Client Secret *</label> <!--UPDATED-->
-                                    <input id="drive-client-secret" name="drive-client-secret" type="password" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width:-webkit-fill-available" required> <!--UPDATED-->
-                                </div>
-                                <div>
-                                    <label for="drive-refresh-token" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Google Drive Refresh Token *</label> <!--UPDATED-->
-                                    <input id="drive-refresh-token" name="drive-refresh-token" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width:-webkit-fill-available">
+                                    <label for="service-account-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Service Account Key JSON *</label> <!--UPDATED-->
+                                    <input id="service-account-key" name="service-account-key" type="file" accept=".json" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" required> <!--UPDATED-->
                                 </div>
                                 <div>
                                     <label for="remote-filename" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Remote File Name *</label> <!--UPDATED-->
-                                    <input id="remote-filename" name="remote-filename" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width:-webkit-fill-available" required> <!--UPDATED-->
+                                    <input id="remote-filename" name="remote-filename" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width: -webkit-fill-available" required> <!--UPDATED-->
                                 </div>
                                 <div>
                                     <label for="sync-interval" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Auto backup interval (min)</label>
-                                    <input id="sync-interval" name="sync-interval" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width:-webkit-fill-available">
+                                    <input id="sync-interval" name="sync-interval" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width: -webkit-fill-available">
                                 </div>
                                 <button id="cloud-export-btn" type="button" class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed">
                                     <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024" fill-rule="evenodd" class="w-4 h-4 mr-2" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg">
@@ -122,12 +114,10 @@ if (cloudButtonDiv) {
         var cloudBackupSwitch = document.getElementById('cloudbk-switch');
         var cloudImportBtn = document.getElementById('cloud-import-btn');
         var cloudExportBtn = document.getElementById('cloud-export-btn');
-        var driveClientIdInput = document.getElementById('drive-client-id');
-        var driveClientSecretInput = document.getElementById('drive-client-secret');
-        var driveRefreshTokenInput = document.getElementById('drive-refresh-token');
+        var serviceAccountKeyInput = document.getElementById('service-account-key');
         var remoteFilenameInput = document.getElementById('remote-filename');
         var syncIntervalInput = document.getElementById('sync-interval');
-        populateFormFromLocalStorage(); 
+        
         const savedState = localStorage.getItem('clouddb-backup-enabled');
         if (savedState === 'true') {
             cloudBackupSwitch.setAttribute('aria-checked', 'true');
@@ -137,8 +127,9 @@ if (cloudButtonDiv) {
             cloudBackupSwitch.querySelector('span').classList.add('translate-x-5'); 
             toggleCloudButtons();
         }
+        
         function toggleCloudButtons() {
-            if (!driveClientIdInput.value || !driveClientSecretInput.value || !driveRefreshTokenInput.value) {
+            if (!serviceAccountKeyInput.files.length || !remoteFilenameInput.value) {
                 cloudImportBtn.setAttribute('disabled', 'disabled');
                 cloudExportBtn.setAttribute('disabled', 'disabled');
             } else {
@@ -146,6 +137,7 @@ if (cloudButtonDiv) {
                 cloudExportBtn.removeAttribute('disabled');
             }
         }
+        
         cloudBackupSwitch.addEventListener('click', function () {
             var isChecked = cloudBackupSwitch.getAttribute('aria-checked') === 'true';
             if (isChecked) {
@@ -167,25 +159,25 @@ if (cloudButtonDiv) {
                 startBackupInterval();
             }
         });
-        driveClientIdInput.addEventListener('input', toggleCloudButtons);
-        driveClientSecretInput.addEventListener('input', toggleCloudButtons);
-        driveRefreshTokenInput.addEventListener('input', toggleCloudButtons);
+        serviceAccountKeyInput.addEventListener('change', toggleCloudButtons);
         remoteFilenameInput.addEventListener('input', toggleCloudButtons);
+        
         var exportBtn = document.getElementById('export-btn');
         exportBtn.addEventListener('click', function () {
             exportBackupData();
         });
+        
         var importBtn = document.getElementById('import-btn');
         importBtn.addEventListener('click', function () {
             importBackupData();
         });
+
         cloudExportBtn.addEventListener('click', async function () {
             const remoteFilename = remoteFilenameInput.value.trim() || 'typingmind-bk.json';
-            localStorage.setItem('drive-client-id', driveClientIdInput.value.trim());
-            localStorage.setItem('drive-client-secret', driveClientSecretInput.value.trim());
-            localStorage.setItem('drive-refresh-token', driveRefreshTokenInput.value.trim());
-            localStorage.setItem('remote-filename', remoteFilename); 
+            localStorage.setItem('remote-filename', remoteFilename);
             localStorage.setItem('sync-interval', syncIntervalInput.value.trim());
+
+            await exportToGoogleDrive();
             const currentTime = new Date().toLocaleString('en-AU', {
                 day: '2-digit',
                 month: '2-digit',
@@ -194,18 +186,14 @@ if (cloudButtonDiv) {
                 minute: '2-digit',
                 hour12: true,
             });
-            await exportToGoogleDrive();
             localStorage.setItem('last-cloud-sync', currentTime);
             var lastCloudSync = localStorage.getItem("last-cloud-sync");
             if (lastCloudSync && document.getElementById("last-cloud-sync-msg")) {
                 document.getElementById("last-cloud-sync-msg").innerHTML = `Last synced at ${lastCloudSync}`;
             }
         });
+        
         cloudImportBtn.addEventListener('click', async function () {
-            localStorage.setItem('drive-client-id', driveClientIdInput.value.trim());
-            localStorage.setItem('drive-client-secret', driveClientSecretInput.value.trim());
-            localStorage.setItem('drive-refresh-token', driveRefreshTokenInput.value.trim());
-            localStorage.setItem('sync-interval', syncIntervalInput.value.trim()); 
             const currentTime = new Date().toLocaleString('en-AU', {
                 day: '2-digit',
                 month: '2-digit',
@@ -214,18 +202,20 @@ if (cloudButtonDiv) {
                 minute: '2-digit',
                 hour12: true,
             });
+
             await importFromGoogleDrive();
             localStorage.setItem('last-cloud-sync', currentTime);
             var lastCloudSync = localStorage.getItem("last-cloud-sync");
             if (lastCloudSync && document.getElementById("last-cloud-sync-msg")) {
                 document.getElementById("last-cloud-sync-msg").innerHTML = `Last synced at ${lastCloudSync}`;
             }
-            localStorage.setItem('last-cloud-sync', currentTime);
         });
+        
         const syncInterval = parseInt(localStorage.getItem('sync-interval'), 10) || 5;
         if (!localStorage.getItem('sync-interval')) {
             localStorage.setItem('sync-interval', 5)
         }
+
         function startBackupInterval() {
             if (syncInterval > 0 && localStorage.getItem("clouddb-backup-enabled") === "true") {
                 setInterval(async () => {
@@ -233,31 +223,43 @@ if (cloudButtonDiv) {
                 }, 60000 * syncInterval);
             }
         }
+
         function stopBackupInterval() {
             if (backupIntervalId) {
                 clearInterval(backupIntervalId);
                 backupIntervalId = null;
             }
         }
+
         startBackupInterval();
     });
 }
 async function exportToGoogleDrive() {
     console.log("Starting export to Google Drive..."); // Log start of function execution
 
-    const clientId = localStorage.getItem('drive-client-id'); // Retrieve client credentials
-    const clientSecret = localStorage.getItem('drive-client-secret');
-    const refreshToken = localStorage.getItem('drive-refresh-token');
     const remoteFilename = localStorage.getItem('remote-filename');
+    const serviceAccountKeyFile = document.getElementById('service-account-key').files[0];
+    
+    let serviceAccountKey;
+    const reader = new FileReader();
 
-    console.log("Client ID:", clientId); // Log retrieved client ID
-    console.log("Client Secret:", clientSecret !== null ? "(hidden)" : null); // Indicate that client secret is retrieved without exposing it
-    console.log("Refresh Token:", refreshToken !== null ? "(hidden)" : null);
-    console.log("Remote Filename:", remoteFilename); // Log the remote filename
+    // Load the service account key JSON from the file input
+    await new Promise((resolve, reject) => {
+        reader.onload = (event) => {
+            try {
+                serviceAccountKey = JSON.parse(event.target.result);
+                resolve();
+            } catch (err) { 
+                reject(err); 
+            }
+        };
+        reader.onerror = reject;
+        reader.readAsText(serviceAccountKeyFile);
+    });
 
     let googleAccessToken;
     try {
-        googleAccessToken = await getGoogleAccessToken(clientId, clientSecret, refreshToken);
+        googleAccessToken = await getGoogleAccessToken(serviceAccountKey);
         console.log("Successfully retrieved Google Access Token."); // Log token retrieval success
     } catch (error) {
         console.error("Failed to get Google Access Token:", error); // Log error if token retrieval fails
@@ -319,48 +321,68 @@ async function exportToGoogleDrive() {
         displayMessage('AppData sync to Google Drive failed!', 'white');
     }
 }
-async function getGoogleAccessToken(clientId, clientSecret, refreshToken) { 
+async function getGoogleAccessToken(serviceAccountKey) { 
+    const jwt = require('jsonwebtoken'); // Assuming you have a library to handle JWT creation
+
+    const scope = 'https://www.googleapis.com/auth/drive';
+    const now = Math.floor(Date.now() / 1000);
+    const expiryTime = now + 3600; // 1 hour expiry time
+
+    const claims = {
+        iss: serviceAccountKey.client_email,
+        scope: scope,
+        aud: 'https://oauth2.googleapis.com/token',
+        exp: expiryTime,
+        iat: now,
+    };
+
+    const token = jwt.sign(claims, serviceAccountKey.private_key, { algorithm: 'RS256' });
+    
     const params = new URLSearchParams();
-    params.append('client_id', clientId);
-    params.append('client_secret', clientSecret);
-    params.append('refresh_token', refreshToken);
-    params.append('grant_type', 'refresh_token');
-    try {
-        const response = await fetch('https://oauth2.googleapis.com/token', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: params.toString(),
-        });
+    params.append('grant_type', 'urn:ietf:params:oauth:grant-type:jwt-bearer');
+    params.append('assertion', token);
 
-        const tokenData = await response.json();
-        if ('error' in tokenData) {
-            throw new Error(tokenData.error);
-        }
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params.toString(),
+    });
 
-        return tokenData.access_token;
-    } catch (error) {
-        displayMessage('Failed to obtain Google Access Token!', 'white');
-        throw error;
+    const tokenData = await response.json();
+    if ('error' in tokenData) {
+        throw new Error(tokenData.error);
     }
+
+    return tokenData.access_token;
 }
 async function importFromGoogleDrive() {
     console.log("Starting import from Google Drive..."); // Log start of function execution
 
-    const clientId = localStorage.getItem('drive-client-id'); // Retrieve client credentials
-    const clientSecret = localStorage.getItem('drive-client-secret');
-    const refreshToken = localStorage.getItem('drive-refresh-token');
     const remoteFilename = localStorage.getItem('remote-filename');
+    const serviceAccountKeyFile = document.getElementById('service-account-key').files[0];
+    
+    let serviceAccountKey;
+    const reader = new FileReader();
 
-    console.log("Client ID:", clientId); // Log retrieved client ID
-    console.log("Client Secret:", clientSecret !== null ? "(hidden)" : null); // Indicate that client secret is retrieved without exposing it
-    console.log("Refresh Token:", refreshToken !== null ? "(hidden)" : null);
-    console.log("Remote Filename:", remoteFilename); // Log the remote filename
+    // Load the service account key JSON from the file input
+    await new Promise((resolve, reject) => {
+        reader.onload = (event) => {
+            try {
+                serviceAccountKey = JSON.parse(event.target.result);
+                resolve();
+            } catch (err) { 
+                reject(err); 
+            }
+        };
+        reader.onerror = reject;
+        reader.readAsText(serviceAccountKeyFile);
+    });
 
     let googleAccessToken;
     try {
-        googleAccessToken = await getGoogleAccessToken(clientId, clientSecret, refreshToken);
+        googleAccessToken = await getGoogleAccessToken(serviceAccountKey);
         console.log("Successfully retrieved Google Access Token."); // Log token retrieval success
     } catch (error) {
         console.error("Failed to get Google Access Token:", error); // Log error if token retrieval fails
@@ -448,20 +470,9 @@ async function importFromGoogleDrive() {
     }
 }
 function populateFormFromLocalStorage() {
-    const driveClientId = localStorage.getItem('drive-client-id');
-    const driveClientSecret = localStorage.getItem('drive-client-secret');
-    const driveRefreshToken = localStorage.getItem('drive-refresh-token');
     const remoteFilename = localStorage.getItem('remote-filename') || 'typingmind-bk.json';
     const syncInterval = localStorage.getItem('sync-interval');
-    if (driveClientId) {
-        document.getElementById('drive-client-id').value = driveClientId;
-    }
-    if (driveClientSecret) {
-        document.getElementById('drive-client-secret').value = driveClientSecret;
-    }
-    if (driveRefreshToken) {
-        document.getElementById('drive-refresh-token').value = driveRefreshToken;
-    }
+    
     if (remoteFilename) {
         document.getElementById('remote-filename').value = remoteFilename;
     }
@@ -478,12 +489,9 @@ function checkDocumentReady() {
 }
 function initCloudBackup() {
     const isBackupEnabled = localStorage.getItem('clouddb-backup-enabled') === 'true';
-    const driveClientId = localStorage.getItem('drive-client-id');
-    const driveClientSecret = localStorage.getItem('drive-client-secret');
-    const driveRefreshToken = localStorage.getItem('drive-refresh-token');
     const remoteFilename = localStorage.getItem('remote-filename') || 'typingmind-bk.json';
 
-    if (isBackupEnabled && driveClientId && driveClientSecret && driveRefreshToken) {
+    if (isBackupEnabled && remoteFilename) {
         importFromGoogleDrive();
     }
 }
