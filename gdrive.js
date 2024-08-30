@@ -368,11 +368,11 @@ async function getGoogleAccessToken(serviceAccountKey) {
 async function signWithPrivateKey(data, privateKeyPEM) {
     const pemHeader = "-----BEGIN PRIVATE KEY-----";
     const pemFooter = "-----END PRIVATE KEY-----";
-    const pemContents = privateKeyPEM.substring(pemHeader.length, privateKeyPEM.length - pemFooter.length);
-    const binaryDerString = window.atob(pemContents);
+    const pemContents = privateKeyPEM.replace(pemHeader, '').replace(pemFooter, '').replace(/\s+/g, '');
+    const binaryDerString = atob(pemContents);  // Correct usage of atob without splitting content
     const binaryDer = str2ab(binaryDerString);
 
-    const key = await window.crypto.subtle.importKey(
+    const key = await crypto.subtle.importKey(
         'pkcs8',
         binaryDer,
         {
@@ -384,7 +384,7 @@ async function signWithPrivateKey(data, privateKeyPEM) {
     );
 
     const enc = new TextEncoder();
-    const signature = await window.crypto.subtle.sign(
+    const signature = await crypto.subtle.sign(
         {
             name: 'RSASSA-PKCS1-v1_5'
         },
@@ -410,7 +410,8 @@ function arrayBufferToBase64Url(buffer) {
     for (let i = 0; i < byteArray.byteLength; i++) {
         binaryString += String.fromCharCode(byteArray[i]);
     }
-    const base64String = window.btoa(binaryString);
+    const base64String = btoa(binaryString);
+    // Replace characters according to Base64URL specs
     return base64String.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
