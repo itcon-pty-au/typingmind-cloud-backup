@@ -274,6 +274,7 @@ async function exportToCloud() {
         }
         region = regionParts.slice(0, 2).join('.');
     } catch (error) {
+        displayMessage('AppData sync to Cloud failed!', 'white');
         return;
     }
     let token = '';
@@ -293,6 +294,7 @@ async function exportToCloud() {
         const tokenData = await response.json();
         token = tokenData.access_token; 
     } catch (error) {
+        displayMessage('AppData sync to Cloud failed!', 'white');
         return;
     }
     try {
@@ -343,6 +345,7 @@ async function exportToCloud() {
             } 
         }
     } catch (error) {
+        displayMessage('AppData sync to Cloud failed!', 'white');
     }
 }
 async function importFromCloud() {
@@ -372,6 +375,7 @@ async function importFromCloud() {
         }
         region = regionParts.slice(0, 2).join('.');
     } catch (error) {
+        displayMessage('AppData sync from Cloud failed!', 'white');
         return;
     }
     let token = '';
@@ -391,6 +395,7 @@ async function importFromCloud() {
         const tokenData = await response.json();
         token = tokenData.access_token;
     } catch (error) {
+        displayMessage('AppData sync from Cloud failed!', 'white');
         return;
     }
     try {
@@ -449,6 +454,7 @@ async function importFromCloud() {
         } else {
         }
     } catch (error) {
+        displayMessage('AppData sync from Cloud failed!', 'white');
     }
 }
 function exportBackupData() {
