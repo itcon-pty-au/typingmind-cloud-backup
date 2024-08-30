@@ -556,7 +556,7 @@ function populateFormFromLocalStorage() {
         document.getElementById('db-doc-id').value = dbDocId; 
     }
     if (syncInterval) { 
-        document.getElementById('sync-interval').value = dbDocId; 
+        document.getElementById('sync-interval').value = syncInterval; 
     }
 }
 function checkDocumentReady() {
