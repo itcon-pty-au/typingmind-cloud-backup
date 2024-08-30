@@ -369,26 +369,58 @@ async function getGoogleAccessToken(serviceAccountKey) {
     return tokenData.access_token;
 }
 
-async function signWithPrivateKey(data, privateKey) {
-    const enc = new TextEncoder();
+async function signWithPrivateKey(data, privateKeyPEM) {
+    // Decode PEM key
+    const pemHeader = "-----BEGIN PRIVATE KEY-----";
+    const pemFooter = "-----END PRIVATE KEY-----";
+    const pemContents = privateKeyPEM.substring(pemHeader.length, privateKeyPEM.length - pemFooter.length);
+    const binaryDerString = window.atob(pemContents);
+    const binaryDer = str2ab(binaryDerString);
+
+    // Import the private key
     const key = await window.crypto.subtle.importKey(
         'pkcs8',
-        enc.encode(privateKey),
-        { name: 'RSAS-PKCS1-v1_5', hash: 'SHA-256' },
+        binaryDer,
+        {
+            name: 'RSASSA-PKCS1-v1_5', // Updated to correct algorithm
+            hash: { name: 'SHA-256' }
+        },
         true,
         ['sign']
     );
 
+    // Sign the data
+    const enc = new TextEncoder();
     const signature = await window.crypto.subtle.sign(
         {
-            name: 'RSAS-PKCS1-v1_5',
+            name: 'RSASSA-PKCS1-v1_5'
         },
         key,
         enc.encode(data)
     );
     
     // Convert signature to Base64URL format
-    return btoa(String.fromCharCode(...new Uint8Array(signature))).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+    return arrayBufferToBase64Url(signature);
+}
+
+function str2ab(str) {
+    const buf = new ArrayBuffer(str.length);
+    const bufView = new Uint8Array(buf);
+    for (let i = 0, strLen = str.length; i < strLen; i++) {
+        bufView[i] = str.charCodeAt(i);
+    }
+    return buf;
+}
+
+function arrayBufferToBase64Url(buffer) {
+    const byteArray = new Uint8Array(buffer);
+    let binaryString = '';
+    for (let i = 0; i < byteArray.byteLength; i++) {
+        binaryString += String.fromCharCode(byteArray[i]);
+    }
+    const base64String = window.btoa(binaryString);
+    // Replace characters according to Base64URL specs
+    return base64String.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 async function importFromGoogleDrive() {
