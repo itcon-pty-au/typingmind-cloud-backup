@@ -40,19 +40,19 @@ if (cloudButtonDiv) {
                             <div class="space-y-4">
                                 <!-- Form to collect Google Drive API information --> <!--UPDATED-->
                                 <div>
-                                    <label for="drive-client-id" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Google Drive Client ID</label> <!--UPDATED-->
+                                    <label for="drive-client-id" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Google Drive Client ID *</label> <!--UPDATED-->
                                     <input id="drive-client-id" name="drive-client-id" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width:-webkit-fill-available" required> <!--UPDATED-->
                                 </div>
                                 <div>
-                                    <label for="drive-client-secret" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Google Drive Client Secret</label> <!--UPDATED-->
+                                    <label for="drive-client-secret" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Google Drive Client Secret *</label> <!--UPDATED-->
                                     <input id="drive-client-secret" name="drive-client-secret" type="password" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width:-webkit-fill-available" required> <!--UPDATED-->
                                 </div>
                                 <div>
-                                    <label for="drive-refresh-token" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Google Drive Refresh Token</label> <!--UPDATED-->
+                                    <label for="drive-refresh-token" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Google Drive Refresh Token *</label> <!--UPDATED-->
                                     <input id="drive-refresh-token" name="drive-refresh-token" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width:-webkit-fill-available">
                                 </div>
                                 <div>
-                                    <label for="remote-filename" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Remote File Name</label> <!--UPDATED-->
+                                    <label for="remote-filename" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Remote File Name *</label> <!--UPDATED-->
                                     <input id="remote-filename" name="remote-filename" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width:-webkit-fill-available" required> <!--UPDATED-->
                                 </div>
                                 <div>
