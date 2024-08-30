@@ -317,13 +317,19 @@ async function exportToGoogleDrive() {
         displayMessage('AppData sync to Google Drive failed!', 'white');
     }
 }
-async function getGoogleAccessToken(serviceAccountKey) { 
-    const jwt = require('jsonwebtoken'); // Assuming you have a library to handle JWT creation
-
+async function getGoogleAccessToken(serviceAccountKey) {
     const scope = 'https://www.googleapis.com/auth/drive';
+    
+    // Create the header
+    const header = {
+        alg: "RS256",
+        typ: "JWT"
+    };
+
     const now = Math.floor(Date.now() / 1000);
     const expiryTime = now + 3600; // 1 hour expiry time
 
+    // Create the claims
     const claims = {
         iss: serviceAccountKey.client_email,
         scope: scope,
@@ -332,11 +338,20 @@ async function getGoogleAccessToken(serviceAccountKey) {
         iat: now,
     };
 
-    const token = jwt.sign(claims, serviceAccountKey.private_key, { algorithm: 'RS256' });
+    // Encode the header and claims as Base64URL
+    const base64UrlHeader = btoa(JSON.stringify(header)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+    const base64UrlClaims = btoa(JSON.stringify(claims)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+
+    // Create the signature
+    const signatureInput = `${base64UrlHeader}.${base64UrlClaims}`;
+    const signature = await signWithPrivateKey(signatureInput, serviceAccountKey.private_key);
     
+    const jwt = `${signatureInput}.${signature}`;
+    
+    // Get the access token
     const params = new URLSearchParams();
     params.append('grant_type', 'urn:ietf:params:oauth:grant-type:jwt-bearer');
-    params.append('assertion', token);
+    params.append('assertion', jwt);
 
     const response = await fetch('https://oauth2.googleapis.com/token', {
         method: 'POST',
@@ -353,6 +368,29 @@ async function getGoogleAccessToken(serviceAccountKey) {
 
     return tokenData.access_token;
 }
+
+async function signWithPrivateKey(data, privateKey) {
+    const enc = new TextEncoder();
+    const key = await window.crypto.subtle.importKey(
+        'pkcs8',
+        enc.encode(privateKey),
+        { name: 'RSAS-PKCS1-v1_5', hash: 'SHA-256' },
+        true,
+        ['sign']
+    );
+
+    const signature = await window.crypto.subtle.sign(
+        {
+            name: 'RSAS-PKCS1-v1_5',
+        },
+        key,
+        enc.encode(data)
+    );
+    
+    // Convert signature to Base64URL format
+    return btoa(String.fromCharCode(...new Uint8Array(signature))).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
 async function importFromGoogleDrive() {
     console.log("Starting import from Google Drive..."); // Log start of function execution
 
