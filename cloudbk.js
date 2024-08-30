@@ -2,16 +2,16 @@ var cloudButtonDiv = document.querySelector('button[data-element-id="cloud-butto
 
 if (cloudButtonDiv) {
     cloudButtonDiv.style.display = 'none';
-    var newButton = document.createElement('button');
-    newButton.type = 'button';
-    newButton.setAttribute('data-element-id', 'cloud-db-button');
-    newButton.className = 'cursor-default bg-white/20 text-white group flex items-center justify-center rounded-md px-2 py-1 text-xs hover:bg-white/40 transition-all space-x-2 relative';
-    newButton.innerHTML = `
+    var cloudBkpBtn = document.createElement('button');
+    cloudBkpBtn.type = 'button';
+    cloudBkpBtn.setAttribute('data-element-id', 'cloud-db-button');
+    cloudBkpBtn.className = 'cursor-default bg-white/20 text-white group flex items-center justify-center rounded-md px-2 py-1 text-xs hover:bg-white/40 transition-all space-x-2 relative';
+    cloudBkpBtn.innerHTML = `
     <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 640 512" class="w-4 h-4" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg">
         <path d="M537.6 226.6c4.1-10.7 6.4-22.4 6.4-34.6 0-53-43-96-96-96-19.7 0-38.1 6-53.3 16.2C367 64.2 315.3 32 256 32c-88.4 0-160 71.6-160 160 0 2.7.1 5.4.2 8.1C40.2 219.8 0 273.2 0 336c0 79.5 64.5 144 144 144h368c70.7 0 128-57.3 128-128 0-61.9-44-113.6-102.4-125.4zM393.4 288H328v112c0 8.8-7.2 16-16 16h-48c-8.8 0-16-7.2-16-16V288h-65.4c-14.3 0-21.4-17.2-11.3-27.3l105.4-105.4c6.2-6.2 16.4-6.2 22.6 0l105.4 105.4c10.1 10.1 2.9 27.3-11.3 27.3z"></path>
     </svg>`;
-    cloudButtonDiv.parentNode.insertBefore(newButton, cloudButtonDiv.nextSibling);
-    newButton.addEventListener('click', function () {
+    cloudButtonDiv.parentNode.insertBefore(cloudBkpBtn, cloudButtonDiv.nextSibling);
+    cloudBkpBtn.addEventListener('click', function () {
         var existingModal = document.querySelector('div[data-element-id="pop-up-modal-dbbackup"]');
         if (existingModal) { return; }
         var modalPopup = document.createElement('div');
@@ -32,7 +32,7 @@ if (cloudButtonDiv) {
                                 Cloud Backup
                             </h3>
                             <div class="flex items-center justify-start"><label class="inline-flex items-center justify-start flex-shrink-0 w-full">
-                                <button data-element-id="clouddb-backup-enabled" class="bg-gray-300 h-6 w-11 cursor-pointer relative inline-flex flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2" id="plugins-switch" role="switch" type="button" tabindex="0" aria-checked="false" data-headlessui-state="">
+                                <button data-element-id="clouddb-backup-enabled" class="bg-gray-300 h-6 w-11 cursor-pointer relative inline-flex flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2" id="cloudbk-switch" role="switch" type="button" tabindex="0" aria-checked="false" data-headlessui-state="">
                                     <span aria-hidden="true" class="translate-x-0 h-5 w-5 pointer-events-none inline-block transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
                                 </button></label></div>
                         </div>
@@ -75,8 +75,8 @@ if (cloudButtonDiv) {
                                     </svg>
                                     <span>Import from Cloud</span>
                                 </button>
-                                <div id="cloud-action-msg" class="text-center"></div> <!-- NEW: Element to display success message after both buttons --> <!-- UPDATED -->
-                                <div id="last-cloud-sync-msg" class="text-center text-white mt-2"></div> <!-- NEW: Element to display last sync time --> <!-- UPDATED -->
+                                <div id="cloud-action-msg" class="text-center"></div>
+                                <div id="last-cloud-sync-msg" class="text-center text-white mt-2"></div>
                             </div>
                         </div>
                         
@@ -123,7 +123,7 @@ if (cloudButtonDiv) {
         if (lastCloudSync && document.getElementById("last-cloud-sync-msg")) {
             document.getElementById("last-cloud-sync-msg").innerHTML = `Last synced at ${lastCloudSync}`;
         }
-        var pluginSwitch = document.getElementById('plugins-switch');
+        var cloudBackupSwitch = document.getElementById('cloudbk-switch');
         var cloudImportBtn = document.getElementById('cloud-import-btn');
         var cloudExportBtn = document.getElementById('cloud-export-btn');
         var dbApiKeyInput = document.getElementById('db-api-key'); 
@@ -135,11 +135,11 @@ if (cloudButtonDiv) {
         populateFormFromLocalStorage(); 
         const savedState = localStorage.getItem('clouddb-backup-enabled');
         if (savedState === 'true') {
-            pluginSwitch.setAttribute('aria-checked', 'true');
-            pluginSwitch.classList.remove('bg-gray-300');
-            pluginSwitch.classList.add('bg-blue-600');
-            pluginSwitch.querySelector('span').classList.remove('translate-x-0');
-            pluginSwitch.querySelector('span').classList.add('translate-x-5');
+            cloudBackupSwitch.setAttribute('aria-checked', 'true');
+            cloudBackupSwitch.classList.remove('bg-gray-300');
+            cloudBackupSwitch.classList.add('bg-blue-600');
+            cloudBackupSwitch.querySelector('span').classList.remove('translate-x-0');
+            cloudBackupSwitch.querySelector('span').classList.add('translate-x-5');
             dbApiKeyInput.removeAttribute('disabled'); 
             dbAppIdInput.removeAttribute('disabled'); 
             dbNameInput.removeAttribute('disabled'); 
@@ -156,36 +156,25 @@ if (cloudButtonDiv) {
                 cloudExportBtn.removeAttribute('disabled');
             }
         }
-
-        pluginSwitch.addEventListener('click', function () {
-            var isChecked = pluginSwitch.getAttribute('aria-checked') === 'true';
+        cloudBackupSwitch.addEventListener('click', function () {
+            var isChecked = cloudBackupSwitch.getAttribute('aria-checked') === 'true';
             if (isChecked) {
-                pluginSwitch.setAttribute('aria-checked', 'false');
-                pluginSwitch.classList.remove('bg-blue-600');
-                pluginSwitch.classList.add('bg-gray-300');
-                pluginSwitch.querySelector('span').classList.remove('translate-x-5');
-                pluginSwitch.querySelector('span').classList.add('translate-x-0');
-                // cloudImportBtn.setAttribute('disabled', 'disabled');
-                // cloudExportBtn.setAttribute('disabled', 'disabled');
-                dbApiKeyInput.setAttribute('disabled', 'disabled'); 
-                dbAppIdInput.setAttribute('disabled', 'disabled'); 
-                dbNameInput.setAttribute('disabled', 'disabled'); 
-                dbCollectionInput.setAttribute('disabled', 'disabled');
-                syncIntervalInput.setAttribute('disabled', 'disabled');
+                cloudBackupSwitch.setAttribute('aria-checked', 'false');
+                cloudBackupSwitch.classList.remove('bg-blue-600');
+                cloudBackupSwitch.classList.add('bg-gray-300');
+                cloudBackupSwitch.querySelector('span').classList.remove('translate-x-5');
+                cloudBackupSwitch.querySelector('span').classList.add('translate-x-0');
                 localStorage.setItem('clouddb-backup-enabled', 'false');
+                stopBackupInterval();
             } else {
-                pluginSwitch.setAttribute('aria-checked', 'true');
-                pluginSwitch.classList.remove('bg-gray-300');
-                pluginSwitch.classList.add('bg-blue-600');
-                pluginSwitch.querySelector('span').classList.remove('translate-x-0');
-                pluginSwitch.querySelector('span').classList.add('translate-x-5');
-                dbApiKeyInput.removeAttribute('disabled'); 
-                dbAppIdInput.removeAttribute('disabled'); 
-                dbNameInput.removeAttribute('disabled'); 
-                dbCollectionInput.removeAttribute('disabled');
-                syncIntervalInput.removeAttribute('disabled');
+                cloudBackupSwitch.setAttribute('aria-checked', 'true');
+                cloudBackupSwitch.classList.remove('bg-gray-300');
+                cloudBackupSwitch.classList.add('bg-blue-600');
+                cloudBackupSwitch.querySelector('span').classList.remove('translate-x-0');
+                cloudBackupSwitch.querySelector('span').classList.add('translate-x-5');
                 toggleCloudButtons();
                 localStorage.setItem('clouddb-backup-enabled', 'true');
+                startBackupInterval();
             }
         });
         dbApiKeyInput.addEventListener('input', toggleCloudButtons);
@@ -249,11 +238,20 @@ if (cloudButtonDiv) {
         if (!localStorage.getItem('sync-interval')) {
             localStorage.setItem('sync-interval', 5)
         }
-        if (syncInterval > 0 && localStorage.getItem("clouddb-backup-enabled") === "true") {
-            setInterval(async () => {
-                await exportToCloud();
-            }, 60000 * syncInterval);
+        function startBackupInterval() {
+            if (syncInterval > 0 && localStorage.getItem("clouddb-backup-enabled") === "true") {
+                setInterval(async () => {
+                    await exportToCloud();
+                }, 60000 * syncInterval);
+            }
         }
+        function stopBackupInterval() {
+            if (backupIntervalId) {
+                clearInterval(backupIntervalId);
+                backupIntervalId = null;
+            }
+        }
+        startBackupInterval();
     });
 }
 async function exportToCloud() {
