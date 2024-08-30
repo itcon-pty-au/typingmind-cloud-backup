@@ -22,6 +22,11 @@
 3. Ensure Backup toggle is Off. Fill out the **Backup & Sync** form with the required details, ensuring the Document ID/Remote file name is populated. Refer to the other typingmind instance to get this detail. Or get it from the cloud.
 4. Click “Import from Cloud/Google Drive” to do an adhoc sync from cloud.
 
+## How to Obtain Google Drive API Credentials: Client ID, Client Secret, and Refresh Token
+Generate Client ID and Secret: https://github.com/ivanvermeyen/laravel-google-drive-demo/blob/master/README/1-getting-your-dlient-id-and-secret.md
+Add yourself as a test user in APIs & Services > OAuth consent screen > Test users
+Obtain the Refresh Token: https://github.com/ivanvermeyen/laravel-google-drive-demo/blob/master/README/2-getting-your-refresh-token.md
+
 ## Contributing
 Contributions are welcome! Please feel free to submit a pull request or open an issue to discuss changes or features.
 
