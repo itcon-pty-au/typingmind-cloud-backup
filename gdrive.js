@@ -247,79 +247,45 @@ if (cloudButtonDiv) {
         startBackupInterval();
     });
 }
-async function exportToGoogleDrive() {
-    console.log("Starting export to Google Drive..."); // Log start of function execution
 
-    const remoteFilename = localStorage.getItem('remote-filename');
-    const serviceAccountKey = JSON.parse(localStorage.getItem('service-account-key')); // Retrieve stored Service Account Key from localStorage
-    
-    let googleAccessToken;
-    try {
-        googleAccessToken = await getGoogleAccessToken(serviceAccountKey);
-        console.log("Successfully retrieved Google Access Token."); // Log token retrieval success
-    } catch (error) {
-        console.error("Failed to get Google Access Token:", error); // Log error if token retrieval fails
-        displayMessage('AppData sync to Google Drive failed!', 'white');
-        return;
-    }
+async function signWithPrivateKey(data, privateKeyPEM) {
+    // Sanitize PEM key
+    const pemContents = privateKeyPEM
+        .replace(/\n/g, '')
+        .replace('-----BEGIN PRIVATE KEY-----', '')
+        .replace('-----END PRIVATE KEY-----', '');
+    const binaryDerString = atob(pemContents);
+    const binaryDer = str2ab(binaryDerString);
 
-    try {
-        const exportData = await exportBackupData(); // Export the local data
-        const metadata = {
-            name: remoteFilename,
-            mimeType: 'application/json',
-        };
+    // Import the private key
+    const key = await window.crypto.subtle.importKey(
+        'pkcs8',
+        binaryDer,
+        {
+            name: 'RSASSA-PKCS1-v1_5', // Updated to correct algorithm
+            hash: { name: 'SHA-256' }
+        },
+        true,
+        ['sign']
+    );
 
-        const initResponse = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${googleAccessToken}`,
-                'Content-Type': 'application/json; charset=UTF-8',
-            },
-            body: JSON.stringify(metadata),
-        });
+    // Sign the data
+    const enc = new TextEncoder();
+    const signature = await window.crypto.subtle.sign(
+        {
+            name: 'RSASSA-PKCS1-v1_5'
+        },
+        key,
+        enc.encode(data)
+    );
 
-        const location = initResponse.headers.get('Location');
-        console.log("Location for upload:", location); // Log the location URL for the resumable upload
-
-        if (!location) {
-            throw new Error('Failed to initiate resumable upload session. Location header not found.');
-        }
-
-        const uploadResponse = await fetch(location, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'Content-Range': `bytes 0-${JSON.stringify(exportData).length - 1}/${JSON.stringify(exportData).length}`,
-            },
-            body: JSON.stringify(exportData),
-        });
-
-        console.log("Upload response status:", uploadResponse.status); // Log the upload response status
-
-        if (uploadResponse.ok) {
-            const currentTime = new Date().toLocaleString('en-AU', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: true,
-            });
-            localStorage.setItem('last-cloud-sync', currentTime);
-            console.log("AppData synced to Google Drive successfully at", currentTime); // Log successful sync and time
-            displayMessage('AppData synced to Google Drive successfully!', 'white');
-        } else {
-            throw new Error(`Upload failed with status: ${uploadResponse.status} - ${uploadResponse.statusText}`);
-        }
-    } catch (error) {
-        console.error("Export to Google Drive failed:", error); // Log any error caught in the export process
-        displayMessage('AppData sync to Google Drive failed!', 'white');
-    }
+    // Convert signature to Base64URL format
+    return arrayBufferToBase64Url(signature);
 }
+
 async function getGoogleAccessToken(serviceAccountKey) {
     const scope = 'https://www.googleapis.com/auth/drive';
-    
+
     // Create the header
     const header = {
         alg: "RS256",
@@ -345,9 +311,9 @@ async function getGoogleAccessToken(serviceAccountKey) {
     // Create the signature
     const signatureInput = `${base64UrlHeader}.${base64UrlClaims}`;
     const signature = await signWithPrivateKey(signatureInput, serviceAccountKey.private_key);
-    
+
     const jwt = `${signatureInput}.${signature}`;
-    
+
     // Get the access token
     const params = new URLSearchParams();
     params.append('grant_type', 'urn:ietf:params:oauth:grant-type:jwt-bearer');
@@ -369,58 +335,75 @@ async function getGoogleAccessToken(serviceAccountKey) {
     return tokenData.access_token;
 }
 
-async function signWithPrivateKey(data, privateKeyPEM) {
-    // Decode PEM key
-    const pemHeader = "-----BEGIN PRIVATE KEY-----";
-    const pemFooter = "-----END PRIVATE KEY-----";
-    const pemContents = privateKeyPEM.substring(pemHeader.length, privateKeyPEM.length - pemFooter.length);
-    const binaryDerString = window.atob(pemContents);
-    const binaryDer = str2ab(binaryDerString);
+async function exportToGoogleDrive() {
+    console.log("Starting export to Google Drive...");
 
-    // Import the private key
-    const key = await window.crypto.subtle.importKey(
-        'pkcs8',
-        binaryDer,
-        {
-            name: 'RSASSA-PKCS1-v1_5', // Updated to correct algorithm
-            hash: { name: 'SHA-256' }
-        },
-        true,
-        ['sign']
-    );
+    const remoteFilename = localStorage.getItem('remote-filename');
+    const serviceAccountKey = JSON.parse(localStorage.getItem('service-account-key'));
 
-    // Sign the data
-    const enc = new TextEncoder();
-    const signature = await window.crypto.subtle.sign(
-        {
-            name: 'RSASSA-PKCS1-v1_5'
-        },
-        key,
-        enc.encode(data)
-    );
-    
-    // Convert signature to Base64URL format
-    return arrayBufferToBase64Url(signature);
-}
-
-function str2ab(str) {
-    const buf = new ArrayBuffer(str.length);
-    const bufView = new Uint8Array(buf);
-    for (let i = 0, strLen = str.length; i < strLen; i++) {
-        bufView[i] = str.charCodeAt(i);
+    let googleAccessToken;
+    try {
+        googleAccessToken = await getGoogleAccessToken(serviceAccountKey);
+        console.log("Successfully retrieved Google Access Token.");
+    } catch (error) {
+        console.error("Failed to get Google Access Token:", error);
+        displayMessage('AppData sync to Google Drive failed!', 'white');
+        return;
     }
-    return buf;
-}
 
-function arrayBufferToBase64Url(buffer) {
-    const byteArray = new Uint8Array(buffer);
-    let binaryString = '';
-    for (let i = 0; i < byteArray.byteLength; i++) {
-        binaryString += String.fromCharCode(byteArray[i]);
+    try {
+        const exportData = await exportBackupData();
+        const metadata = {
+            name: remoteFilename,
+            mimeType: 'application/json',
+        };
+
+        const initResponse = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${googleAccessToken}`,
+                'Content-Type': 'application/json; charset=UTF-8',
+            },
+            body: JSON.stringify(metadata),
+        });
+
+        const location = initResponse.headers.get('Location');
+        console.log("Location for upload:", location);
+
+        if (!location) {
+            throw new Error('Failed to initiate resumable upload session. Location header not found.');
+        }
+
+        const uploadResponse = await fetch(location, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Range': `bytes 0-${JSON.stringify(exportData).length - 1}/${JSON.stringify(exportData).length}`,
+            },
+            body: JSON.stringify(exportData),
+        });
+
+        console.log("Upload response status:", uploadResponse.status);
+
+        if (uploadResponse.ok) {
+            const currentTime = new Date().toLocaleString('en-AU', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: true,
+            });
+            localStorage.setItem('last-cloud-sync', currentTime);
+            console.log("AppData synced to Google Drive successfully at", currentTime);
+            displayMessage('AppData synced to Google Drive successfully!', 'white');
+        } else {
+            throw new Error(`Upload failed with status: ${uploadResponse.status} - ${uploadResponse.statusText}`);
+        }
+    } catch (error) {
+        console.error("Export to Google Drive failed:", error);
+        displayMessage('AppData sync to Google Drive failed!', 'white');
     }
-    const base64String = window.btoa(binaryString);
-    // Replace characters according to Base64URL specs
-    return base64String.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 async function importFromGoogleDrive() {
