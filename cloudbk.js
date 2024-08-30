@@ -59,6 +59,10 @@ if (cloudButtonDiv) {
                                     <label for="db-doc-id" class="block text-sm font-medium text-gray-700 dark:text-gray-400">MongoDB Document ID</label>
                                     <input id="db-doc-id" name="db-doc-id" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width:-webkit-fill-available">
                                 </div>
+                                <div>
+                                    <label for="sync-interval" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Auto backup interval (min)</label>
+                                    <input id="sync-interval" name="sync-interval" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" value="" style="width:-webkit-fill-available">
+                                </div>
                                 <button id="cloud-export-btn" type="button" class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
                                     <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024" fill-rule="evenodd" class="w-4 h-4 mr-2" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg">
                                         <path d="M880 112H144c-17.7 0-32 14.3-32 32v736c0 17.7 14.3 32 32 32h360c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H184V184h656v320c0 4.4-3.6 8 8 8h56c4.4 0 8-3.6 8-8V144c0-17.7-14.3-32-32-32ZM770.87 824.869l-52.2 52.2c-4.7 4.7-1.9 12.8 4.7 13.6l179.4 21c5.1.6 9.5-3.7 8.9-8.9l-21-179.4c-.8-6.6-8.9-9.4-13.6-4.7l-52.4 52.4-256.2-256.2c-3.1-3.1-8.2-3.1-11.3 0l-42.4 42.4c-3.1 3.1-3.1 8.2 0 11.3l256.1 256.3Z" transform="matrix(1 0 0 -1 0 1024)"></path>
@@ -127,6 +131,7 @@ if (cloudButtonDiv) {
         var dbNameInput = document.getElementById('db-name'); 
         var dbCollectionInput = document.getElementById('db-collection'); 
         var dbDocIdInput = document.getElementById('db-doc-id');
+        var syncIntervalInput = document.getElementById('sync-interval');
         populateFormFromLocalStorage(); 
         const savedState = localStorage.getItem('clouddb-backup-enabled');
         if (savedState === 'true') {
@@ -138,7 +143,8 @@ if (cloudButtonDiv) {
             dbApiKeyInput.removeAttribute('disabled'); 
             dbAppIdInput.removeAttribute('disabled'); 
             dbNameInput.removeAttribute('disabled'); 
-            dbCollectionInput.removeAttribute('disabled'); 
+            dbCollectionInput.removeAttribute('disabled');
+            syncIntervalInput.removeAttribute('disabled'); 
             toggleCloudButtons();
         }
         function toggleCloudButtons() {
@@ -165,6 +171,7 @@ if (cloudButtonDiv) {
                 dbAppIdInput.setAttribute('disabled', 'disabled'); 
                 dbNameInput.setAttribute('disabled', 'disabled'); 
                 dbCollectionInput.setAttribute('disabled', 'disabled');
+                syncIntervalInput.setAttribute('disabled', 'disabled');
                 localStorage.setItem('clouddb-backup-enabled', 'false');
             } else {
                 pluginSwitch.setAttribute('aria-checked', 'true');
@@ -176,6 +183,7 @@ if (cloudButtonDiv) {
                 dbAppIdInput.removeAttribute('disabled'); 
                 dbNameInput.removeAttribute('disabled'); 
                 dbCollectionInput.removeAttribute('disabled');
+                syncIntervalInput.removeAttribute('disabled');
                 toggleCloudButtons();
                 localStorage.setItem('clouddb-backup-enabled', 'true');
             }
@@ -198,6 +206,7 @@ if (cloudButtonDiv) {
             localStorage.setItem('db-name', dbNameInput.value.trim()); 
             localStorage.setItem('db-collection', dbCollectionInput.value.trim());
             localStorage.setItem('db-doc-id', dbDocIdInput.value.trim());
+            localStorage.setItem('sync-interval', syncIntervalInput.value.trim());
             const currentTime = new Date().toLocaleString('en-AU', {
                 day: '2-digit',
                 month: '2-digit',
@@ -218,7 +227,7 @@ if (cloudButtonDiv) {
             localStorage.setItem('db-api-key', dbApiKeyInput.value.trim()); 
             localStorage.setItem('db-name', dbNameInput.value.trim()); 
             localStorage.setItem('db-collection', dbCollectionInput.value.trim());
-            localStorage.setItem('db-doc-id', dbDocIdInput.value.trim());
+            localStorage.setItem('sync-interval', syncIntervalInput.value.trim());
             const currentTime = new Date().toLocaleString('en-AU', {
                 day: '2-digit',
                 month: '2-digit',
@@ -530,6 +539,7 @@ function populateFormFromLocalStorage() {
     const dbName = localStorage.getItem('db-name');
     const dbCollection = localStorage.getItem('db-collection');
     const dbDocId = localStorage.getItem('db-doc-id');
+    const syncInterval = localStorage.getItem('sync-interval');
     if (dbAppId) {
         document.getElementById('db-app-id').value = dbAppId; 
     }
@@ -544,6 +554,9 @@ function populateFormFromLocalStorage() {
     }
     if (dbDocId) { 
         document.getElementById('db-doc-id').value = dbDocId; 
+    }
+    if (syncInterval) { 
+        document.getElementById('sync-interval').value = dbDocId; 
     }
 }
 function checkDocumentReady() {
