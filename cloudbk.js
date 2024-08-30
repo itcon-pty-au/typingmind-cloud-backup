@@ -237,6 +237,9 @@ if (cloudButtonDiv) {
             localStorage.setItem('last-cloud-sync', currentTime);
         });
         const syncInterval = parseInt(localStorage.getItem('sync-interval'), 10) || 5;
+        if (localStorage.getItem('sync-interval')) {
+            localStorage.setItem('sync-interval', 5)
+        }
         if (syncInterval > 0 && localStorage.getItem("clouddb-backup-enabled") === "true") {
             setInterval(async () => {
                 await exportToCloud();
