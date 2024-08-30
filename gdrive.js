@@ -243,18 +243,36 @@ if (cloudButtonDiv) {
     });
 }
 async function exportToGoogleDrive() {
-    const clientId = localStorage.getItem('drive-client-id');
+    console.log("Starting export to Google Drive..."); // Log start of function execution
+
+    const clientId = localStorage.getItem('drive-client-id'); // Retrieve client credentials
     const clientSecret = localStorage.getItem('drive-client-secret');
     const refreshToken = localStorage.getItem('drive-refresh-token');
     const remoteFilename = localStorage.getItem('remote-filename');
-    const googleAccessToken = await getGoogleAccessToken(clientId, clientSecret, refreshToken);
+
+    console.log("Client ID:", clientId); // Log retrieved client ID
+    console.log("Client Secret:", clientSecret !== null ? "(hidden)" : null); // Indicate that client secret is retrieved without exposing it
+    console.log("Refresh Token:", refreshToken !== null ? "(hidden)" : null);
+    console.log("Remote Filename:", remoteFilename); // Log the remote filename
+
+    let googleAccessToken;
     try {
-        const exportData = await exportBackupData();
+        googleAccessToken = await getGoogleAccessToken(clientId, clientSecret, refreshToken);
+        console.log("Successfully retrieved Google Access Token."); // Log token retrieval success
+    } catch (error) {
+        console.error("Failed to get Google Access Token:", error); // Log error if token retrieval fails
+        displayMessage('AppData sync to Google Drive failed!', 'white');
+        return;
+    }
+
+    try {
+        const exportData = await exportBackupData(); // Export the local data
         const metadata = {
             name: remoteFilename,
             mimeType: 'application/json',
         };
-        const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
+
+        const initResponse = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${googleAccessToken}`,
@@ -262,10 +280,14 @@ async function exportToGoogleDrive() {
             },
             body: JSON.stringify(metadata),
         });
-        const location = response.headers.get('Location');
+
+        const location = initResponse.headers.get('Location');
+        console.log("Location for upload:", location); // Log the location URL for the resumable upload
+
         if (!location) {
-            throw new Error('Failed to initiate resumable upload session.');
+            throw new Error('Failed to initiate resumable upload session. Location header not found.');
         }
+
         const uploadResponse = await fetch(location, {
             method: 'PUT',
             headers: {
@@ -274,6 +296,9 @@ async function exportToGoogleDrive() {
             },
             body: JSON.stringify(exportData),
         });
+
+        console.log("Upload response status:", uploadResponse.status); // Log the upload response status
+
         if (uploadResponse.ok) {
             const currentTime = new Date().toLocaleString('en-AU', {
                 day: '2-digit',
@@ -284,15 +309,13 @@ async function exportToGoogleDrive() {
                 hour12: true,
             });
             localStorage.setItem('last-cloud-sync', currentTime);
+            console.log("AppData synced to Google Drive successfully at", currentTime); // Log successful sync and time
             displayMessage('AppData synced to Google Drive successfully!', 'white');
-            var lastCloudSync = localStorage.getItem("last-cloud-sync");
-            if (lastCloudSync && document.getElementById("last-cloud-sync-msg")) {
-                document.getElementById("last-cloud-sync-msg").innerHTML = `Last synced at ${lastCloudSync}`;
-            }
         } else {
-            throw new Error('Upload failed.');
+            throw new Error(`Upload failed with status: ${uploadResponse.status} - ${uploadResponse.statusText}`);
         }
     } catch (error) {
+        console.error("Export to Google Drive failed:", error); // Log any error caught in the export process
         displayMessage('AppData sync to Google Drive failed!', 'white');
     }
 }
@@ -323,31 +346,65 @@ async function getGoogleAccessToken(clientId, clientSecret, refreshToken) {
     }
 }
 async function importFromGoogleDrive() {
-    const clientId = localStorage.getItem('drive-client-id');
+    console.log("Starting import from Google Drive..."); // Log start of function execution
+
+    const clientId = localStorage.getItem('drive-client-id'); // Retrieve client credentials
     const clientSecret = localStorage.getItem('drive-client-secret');
     const refreshToken = localStorage.getItem('drive-refresh-token');
     const remoteFilename = localStorage.getItem('remote-filename');
-    const googleAccessToken = await getGoogleAccessToken(clientId, clientSecret, refreshToken);
+
+    console.log("Client ID:", clientId); // Log retrieved client ID
+    console.log("Client Secret:", clientSecret !== null ? "(hidden)" : null); // Indicate that client secret is retrieved without exposing it
+    console.log("Refresh Token:", refreshToken !== null ? "(hidden)" : null);
+    console.log("Remote Filename:", remoteFilename); // Log the remote filename
+
+    let googleAccessToken;
+    try {
+        googleAccessToken = await getGoogleAccessToken(clientId, clientSecret, refreshToken);
+        console.log("Successfully retrieved Google Access Token."); // Log token retrieval success
+    } catch (error) {
+        console.error("Failed to get Google Access Token:", error); // Log error if token retrieval fails
+        displayMessage('AppData sync from Google Drive failed!', 'white');
+        return;
+    }
+
     try {
         const query = `name='${remoteFilename}' and trashed=false`;
+
         const driveQueryResponse = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&spaces=drive&fields=files(id)`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${googleAccessToken}`,
             },
         });
+
         const driveQueryData = await driveQueryResponse.json();
+        console.log("Drive query data:", driveQueryData); // Log the result of the query to find the file
+
         const fileId = driveQueryData.files[0]?.id;
+
         if (!fileId) {
             throw new Error('No file found in Google Drive for the given filename.');
         }
+
+        console.log("File ID retrieved:", fileId); // Log the retrieved file ID
+
         const downloadResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${googleAccessToken}`,
             },
         });
+
+        console.log("Download response status:", downloadResponse.status); // Log the download response status
+
+        if (!downloadResponse.ok) {
+            throw new Error(`Failed to download file from Google Drive. Status: ${downloadResponse.status}`);
+        }
+
         const backupData = await downloadResponse.json();
+        console.log("Downloaded backup data:", backupData); // Log the downloaded data
+
         if (backupData) {
             for (var key in backupData.localStorage) {
                 localStorage.setItem(key, backupData.localStorage[key]);
@@ -369,21 +426,24 @@ async function importFromGoogleDrive() {
                     hour12: true,
                 });
                 transaction.oncomplete = function () {
-                    displayMessage('AppData synced from Google Drive successfully!', 'white'); 
+                    console.log("AppData synced from Google Drive successfully at", currentTime); // Log successful sync and time
+                    displayMessage('AppData synced from Google Drive successfully!', 'white');
                     localStorage.setItem('last-cloud-sync', currentTime);
-                    var lastCloudSync = localStorage.getItem("last-cloud-sync");
-                    if (lastCloudSync && document.getElementById("last-cloud-sync-msg")) {
-                        document.getElementById("last-cloud-sync-msg").innerHTML = `Last synced at ${lastCloudSync}`;
-                    }
                 };
                 transaction.onerror = function (error) {
+                    console.error("Failed to sync data from IndexedDB. Error:", error); // Log any error in indexedDB transaction
                     displayMessage('Failed to sync data from IndexedDB!', 'white');
                 };
             };
+            request.onerror = function (event) {
+                console.error("Failed to open IndexedDB. Error:", event.target.error); // Log any error in IndexedDB opening
+                displayMessage('Failed to open IndexedDB!', 'white');
+            };
         } else {
-            displayMessage('Failed to retrieve backup data from Google Drive!', 'white');
+            throw new Error('Downloaded backup data is empty or invalid.');
         }
     } catch (error) {
+        console.error("Import from Google Drive failed:", error); // Log any error caught in the import process
         displayMessage('AppData sync from Google Drive failed!', 'white');
     }
 }
