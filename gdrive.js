@@ -317,6 +317,34 @@ async function exportToGoogleDrive() {
         displayMessage('AppData sync to Google Drive failed!', 'white');
     }
 }
+
+function exportBackupData() {
+    return new Promise((resolve, reject) => {
+        var exportData = {
+            localStorage: { ...localStorage },
+            indexedDB: {}
+        };
+        var request = indexedDB.open('keyval-store', 1);
+        request.onsuccess = function (event) {
+            var db = event.target.result;
+            var transaction = db.transaction(['keyval'], 'readonly');
+            var store = transaction.objectStore('keyval');
+            store.getAllKeys().onsuccess = function (keyEvent) {
+                var keys = keyEvent.target.result;
+                store.getAll().onsuccess = function (valueEvent) {
+                    var values = valueEvent.target.result;
+                    keys.forEach((key, i) => {
+                        exportData.indexedDB[key] = values[i];
+                    });
+                    resolve(exportData);
+                };
+            };
+        };
+        request.onerror = function (error) {
+        };
+    });
+}
+
 // Fetches the access token using JWT
 async function getGoogleAccessToken(serviceAccountKey) {
     const scope = 'https://www.googleapis.com/auth/drive';
