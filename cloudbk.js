@@ -328,7 +328,6 @@ async function exportToCloud() {
         });
         if (response.ok) {
             const result = await response.json();
-            console.log("Result: " + result.insertedId);
             if (!document.getElementById('db-doc-id').value) {
                 localStorage.setItem('db-doc-id', result.insertedId);
                 document.getElementById('db-doc-id').value = result.insertedId;
