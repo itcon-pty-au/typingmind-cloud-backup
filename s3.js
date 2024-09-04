@@ -218,11 +218,10 @@ function importDataToStorage(data) {
 
         const objectStore = transaction.objectStore("keyval");
 
-        for (var key in data.indexedDB) {
-            if (data.indexedDB.hasOwnProperty(key)) {
-                objectStore.put(data.indexedDB[key], key);
-            }
-        }
+        // Process each imported record
+        Object.keys(data).forEach(key => {
+            objectStore.put(data[key], key);
+        });
 
         transaction.oncomplete = () => {
             console.log("All records imported successfully!");
@@ -266,10 +265,9 @@ function exportIndexedDB() {
             const allRecords = objectStore.getAll();
 
             allRecords.onsuccess = function (event) {
-                data["keyval"] = event.target.result.map(record => ({
-                    key: record.key, // key field
-                    value: record,   // value field
-                }));
+                event.target.result.forEach(record => {
+                    data[record.key] = record;  // Store each record separately using its own key
+                });
                 resolve(data);
             };
 
