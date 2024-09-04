@@ -181,7 +181,7 @@ function openSyncModal() {
 
             actionMsgElement.textContent = `Import successful!`;
             actionMsgElement.style.color = 'green';
-            modalPopup.remove(); // Close modal after import
+            //modalPopup.remove(); // Close modal after import
             setTimeout(()=>{
                 actionMsgElement.textContent = "";
             }, 3000);
@@ -217,12 +217,12 @@ function importDataToStorage(data) {
         const transaction = db.transaction(["keyval"], "readwrite");
 
         const objectStore = transaction.objectStore("keyval");
-        const records = data.indexedDB["keyval"] || [];
-
-        records.forEach(record => {
-            console.log("Putting value", record.value, "with key", record.key);
-            objectStore.put(record.value, record.key); // Specify the key explicitly
-        });
+        
+        for (var key in importedData.indexedDB) {
+            if (importedData.indexedDB.hasOwnProperty(key)) {
+                store.put(importedData.indexedDB[key], key);
+            }
+        }
 
         transaction.oncomplete = () => {
             console.log("All records imported successfully!");
