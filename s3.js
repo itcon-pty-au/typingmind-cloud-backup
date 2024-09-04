@@ -23,11 +23,22 @@ function openSyncModal() {
     modalPopup.innerHTML = `
         <div class="inline-block w-full align-bottom bg-white dark:bg-zinc-950 rounded-lg px-4 pb-4 text-left shadow-xl transform transition-all sm:my-8 sm:p-6 sm:align-middle pt-4 overflow-hidden sm:max-w-lg">
             <div class="text-gray-800 dark:text-white text-left text-sm">
-                <h3 class="text-center text-xl font-bold">Backup & Sync</h3>
-                <div class="flex items-center justify-start"><label class="inline-flex items-center flex-shrink-0 w-full">
-                        <button data-element-id="clouddb-backup-enabled" class="bg-gray-300 h-6 w-11 cursor-pointer relative inline-flex flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2" id="cloudbk-switch" role="switch" type="button" tabindex="0" aria-checked="false" data-headlessui-state="">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-center text-xl font-bold">Backup & Sync</h3>
+                    <div class="relative group">
+                        <span class="cursor-pointer" id="info-icon">ℹ️</span>
+                        <div id="tooltip" class="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded-md px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10">
+                            Dummy text about cloud backup.
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center justify-start space-x-2">
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-400">Enable Automated Cloud Backups</span>
+                    <label class="inline-flex items-center flex-shrink-0">
+                        <button data-element-id="clouddb-backup-enabled" class="bg-gray-300 h-6 w-11 cursor-pointer relative inline-flex flex-shrink-0 rounded-full border-2 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2" id="cloudbk-switch" role="switch" type="button" tabindex="0" aria-checked="false" data-headlessui-state="">
                             <span aria-hidden="true" class="translate-x-0 h-5 w-5 pointer-events-none inline-block transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
-                        </button></label></div>
+                        </button>
+                    </label>
                 </div>
                 <div class="space-y-4">
                     <div>
@@ -113,6 +124,46 @@ function openSyncModal() {
 
     updateButtonState();
 
+    // Tooltip auto-hide logic
+    const infoIcon = document.getElementById('info-icon');
+    const tooltip = document.getElementById('tooltip');
+    let tooltipTimeout;
+
+    function showTooltip() {
+        tooltip.classList.add('opacity-100');
+        tooltip.classList.remove('opacity-0');
+        tooltipTimeout = setTimeout(() => {
+            hideTooltip();
+        }, 5000);
+    }
+
+    function hideTooltip() {
+        tooltip.classList.add('opacity-0');
+        tooltip.classList.remove('opacity-100');
+    }
+
+    infoIcon.addEventListener('mouseover', () => {
+        clearTimeout(tooltipTimeout);
+        tooltip.classList.add('opacity-100');
+        tooltip.classList.remove('opacity-0');
+    });
+
+    infoIcon.addEventListener('mouseleave', () => {
+        clearTimeout(tooltipTimeout);
+        tooltipTimeout = setTimeout(() => {
+            hideTooltip();
+        }, 5000);
+    });
+
+    tooltip.addEventListener('mouseover', () => {
+        clearTimeout(tooltipTimeout);
+    });
+
+    tooltip.querySelector('.close-btn').addEventListener('click', () => {
+        clearTimeout(tooltipTimeout);
+        hideTooltip();
+    });
+
     // Save button click handler
     document.getElementById('save-aws-details-btn').addEventListener('click', function () {
         localStorage.setItem('aws-bucket', awsBucketInput.value.trim());
@@ -129,14 +180,28 @@ function openSyncModal() {
     // Save switch state to localStorage
     cloudbkSwitch.addEventListener('click', function () {
         const isChecked = cloudbkSwitch.getAttribute('aria-checked') === 'true';
+
+        // Check if all AWS fields are populated before enabling backup
+        if (!isChecked && (!awsBucketInput.value.trim() || !awsAccessKeyInput.value.trim() || !awsSecretKeyInput.value.trim())) {
+            const actionMsgElement = document.getElementById('action-msg');
+            actionMsgElement.textContent = "Please fill in all AWS fields before enabling backup.";
+            actionMsgElement.style.color = 'red';
+            setTimeout(()=>{
+                actionMsgElement.textContent = "";
+            }, 3000);
+            return;
+        }
+
         if (isChecked) {
             cloudbkSwitch.setAttribute('aria-checked', 'false');
             cloudbkSwitch.classList.remove('bg-blue-600');
             cloudbkSwitch.querySelector('span').classList.remove('translate-x-5');
+            cloudbkSwitch.querySelector('span').classList.add('translate-x-0');
         } else {
             cloudbkSwitch.setAttribute('aria-checked', 'true');
             cloudbkSwitch.classList.add('bg-blue-600');
             cloudbkSwitch.querySelector('span').classList.add('translate-x-5');
+            cloudbkSwitch.querySelector('span').classList.remove('translate-x-0');
         }
         localStorage.setItem('clouddb-backup-enabled', !isChecked);
     });
@@ -279,7 +344,7 @@ function importDataToStorage(data) {
 function exportBackupData() {
     return new Promise((resolve, reject) => {
         var exportData = {
-            localStorage: { ...localStorage },
+            localStorage : { ...localStorage },
             indexedDB: {}
         };
         var request = indexedDB.open('keyval-store', 1);
@@ -299,33 +364,136 @@ function exportBackupData() {
             };
         };
         request.onerror = function (error) {
+            reject(error);
         };
     });
 }
 
-function exportIndexedDB() {
-    return new Promise((resolve) => {
-        const data = {};
-        const request = indexedDB.open("keyval-store");
-        request.onsuccess = function (event) {
-            const db = event.target.result;
-            const transaction = db.transaction("keyval", "readonly");
-            const objectStore = transaction.objectStore("keyval");
-            const allRecords = objectStore.getAll();
-            allRecords.onsuccess = function (event) {
-                event.target.result.forEach(record => {
-                    data[record.key] = record.value;
+// Function to handle automated backup on data change
+function setupAutomatedBackup() {
+    // Watch for changes in localStorage
+    window.addEventListener('storage', async (event) => {
+        if (localStorage.getItem('clouddb-backup-enabled') === 'true') {
+            await backupToS3();
+        }
+    });
+
+    // Watch for changes in IndexedDB
+    const request = indexedDB.open("keyval-store");
+    request.onsuccess = function (event) {
+        const db = event.target.result;
+        const transaction = db.transaction(["keyval"], "readonly");
+        const objectStore = transaction.objectStore("keyval");
+
+        objectStore.openCursor().onsuccess = function(event) {
+            const cursor = event.target.result;
+            if (cursor) {
+                cursor.continue();
+            } else {
+                const observer = new PerformanceObserver((list) => {
+                    if (localStorage.getItem('clouddb-backup-enabled') === 'true') {
+                        backupToS3();
+                    }
                 });
-                resolve(data);
-            };
-            allRecords.onerror = function (event) {
-                console.error("Error fetching records from object store:", event.target.error);
-                resolve({});
-            };
+                observer.observe({ entryTypes: ['measure'] });
+            }
         };
-        request.onerror = function (event) {
-            console.error("IndexedDB error:", event.target.error);
-            resolve({});
-        };
+    };
+}
+
+// Function to handle backup to S3
+async function backupToS3() {
+    const bucketName = localStorage.getItem('aws-bucket');
+    const awsAccessKey = localStorage.getItem('aws-access-key');
+    const awsSecretKey = localStorage.getItem('aws-secret-key');
+
+    if (!bucketName || !awsAccessKey || !awsSecretKey) {
+        console.warn("AWS credentials are missing. Automated backup skipped.");
+        return;
+    }
+
+    // If AWS SDK is not already loaded, load it
+    if (typeof AWS === 'undefined') {
+        await loadAwsSdk();
+    }
+
+    // Initialize AWS SDK
+    AWS.config.update({
+        accessKeyId: awsAccessKey,
+        secretAccessKey: awsSecretKey,
+        region: 'ap-southeast-2'
+    });
+
+    const data = await exportBackupData();
+    const dataStr = JSON.stringify(data);
+    const dataFileName = 'typingmind-backup.json';
+    const s3 = new AWS.S3();
+    const uploadParams = {
+        Bucket: bucketName,
+        Key: dataFileName,
+        Body: dataStr,
+        ContentType: 'application/json'
+    };
+
+    s3.upload(uploadParams, function (err, data) {
+        if (err) {
+            console.error(`Error uploading data: ${err.message}`);
+        } else {
+            console.log(`Automated backup successful! File uploaded to: ${data.Location}`);
+            const currentTime = new Date().toLocaleString();
+            localStorage.setItem('last-cloud-sync', currentTime);
+        }
     });
 }
+
+// On page load, check if automated backup is enabled and import data from S3
+document.addEventListener('DOMContentLoaded', async () => {
+    const isBackupEnabled = localStorage.getItem('clouddb-backup-enabled') === 'true';
+    if (isBackupEnabled) {
+        await importFromS3();
+    }
+    setupAutomatedBackup();
+});
+
+// Function to handle import from S3
+async function importFromS3() {
+    const bucketName = localStorage.getItem('aws-bucket');
+    const awsAccessKey = localStorage.getItem('aws-access-key');
+    const awsSecretKey = localStorage.getItem('aws-secret-key');
+
+    if (!bucketName || !awsAccessKey || !awsSecretKey) {
+        console.warn("AWS credentials are missing. Automated import skipped.");
+        return;
+    }
+
+    // If AWS SDK is not already loaded, load it
+    if (typeof AWS === 'undefined') {
+        await loadAwsSdk();
+    }
+
+    // Initialize AWS SDK
+    AWS.config.update({
+        accessKeyId: awsAccessKey,
+        secretAccessKey: awsSecretKey,
+        region: 'ap-southeast-2'
+    });
+
+    const s3 = new AWS.S3();
+    const params = {
+        Bucket: bucketName,
+        Key: 'typingmind-backup.json'
+    };
+
+    // Fetch the data from S3
+    s3.getObject(params, function (err, data) {
+        if (err) {
+            console.error(`Error fetching data: ${err.message}`);
+            return;
+        }
+        // Parse the data and store it back to localStorage and IndexedDB
+        const importedData = JSON.parse(data.Body.toString('utf-8'));
+        importDataToStorage(importedData);
+        console.log(`Automated import successful!`);
+    });
+}
+
