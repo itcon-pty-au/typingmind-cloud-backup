@@ -237,17 +237,31 @@ function importDataToStorage(data) {
 }
 
 // Function to export data from localStorage and IndexedDB
-async function exportBackupData() {
-    const localStorageData = {};
-    for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        localStorageData[key] = localStorage.getItem(key);
-    }
-    const indexedDBData = await exportIndexedDB();
-    return {
-        localStorage: localStorageData,
-        indexedDB: indexedDBData
-    };
+function exportBackupData() {
+    return new Promise((resolve, reject) => {
+        var exportData = {
+            localStorage: { ...localStorage },
+            indexedDB: {}
+        };
+        var request = indexedDB.open('keyval-store', 1);
+        request.onsuccess = function (event) {
+            var db = event.target.result;
+            var transaction = db.transaction(['keyval'], 'readonly');
+            var store = transaction.objectStore('keyval');
+            store.getAllKeys().onsuccess = function (keyEvent) {
+                var keys = keyEvent.target.result;
+                store.getAll().onsuccess = function (valueEvent) {
+                    var values = valueEvent.target.result;
+                    keys.forEach((key, i) => {
+                        exportData.indexedDB[key] = values[i];
+                    });
+                    resolve(exportData);
+                };
+            };
+        };
+        request.onerror = function (error) {
+        };
+    });
 }
 
 // Function to fetch data from IndexedDB
