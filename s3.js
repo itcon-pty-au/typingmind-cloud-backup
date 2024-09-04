@@ -202,6 +202,8 @@ async function loadAwsSdk() {
 
 // Function to import data to localStorage and IndexedDB
 function importDataToStorage(data) {
+    console.log("Imported data", data);
+
     // Import to localStorage
     Object.keys(data.localStorage).forEach(key => {
         localStorage.setItem(key, data.localStorage[key]);
@@ -218,6 +220,7 @@ function importDataToStorage(data) {
         const records = data.indexedDB["keyval"] || [];
 
         records.forEach(record => {
+            console.log("Putting value", record.value, "with key", record.key);
             objectStore.put(record.value, record.key); // Specify the key explicitly
         });
 
@@ -259,22 +262,26 @@ function exportIndexedDB() {
             const db = event.target.result;
             const transaction = db.transaction(db.objectStoreNames, "readonly");
 
-            for (let storeName of db.objectStoreNames) {
-                const objectStore = transaction.objectStore(storeName);
-                const allRecords = objectStore.getAll();
+            const objectStore = transaction.objectStore("keyval");
+            const allRecords = objectStore.getAll();
 
-                allRecords.onsuccess = function (event) {
-                    data[storeName] = event.target.result;
-                    if (Object.keys(data).length === db.objectStoreNames.length) {
-                        resolve(data);
-                    }
-                };
-            }
+            allRecords.onsuccess = function (event) {
+                data["keyval"] = event.target.result.map(record => ({
+                    key: record.key, // key field
+                    value: record,   // value field
+                }));
+                resolve(data);
+            };
+
+            allRecords.onerror = function (event) {
+                console.error("Error fetching records from object store:", event.target.error);
+                resolve({});
+            };
         };
 
         request.onerror = function (event) {
             console.error("IndexedDB error:", event.target.error);
-            resolve(data);
+            resolve({});
         };
     });
 }
