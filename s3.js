@@ -69,6 +69,7 @@ function openSyncModal() {
             </div>
         </div>`;
     document.body.appendChild(modalPopup);
+
     const awsBucketInput = document.getElementById('aws-bucket');
     const awsAccessKeyInput = document.getElementById('aws-access-key');
     const awsSecretKeyInput = document.getElementById('aws-secret-key');
@@ -87,7 +88,9 @@ function openSyncModal() {
     // Initialize the state of the switch
     if (isBackupEnabled) {
         cloudbkSwitch.setAttribute('aria-checked', 'true');
+        cloudbkSwitch.classList.remove('bg-gray-300');
         cloudbkSwitch.classList.add('bg-blue-600');
+        cloudbkSwitch.querySelector('span').classList.remove('translate-x-0');
         cloudbkSwitch.querySelector('span').classList.add('translate-x-5');
     }
 
