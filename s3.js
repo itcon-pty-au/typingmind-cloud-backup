@@ -115,7 +115,7 @@ function openSyncModal() {
 
         const data = await exportBackupData();
         const dataStr = JSON.stringify(data);
-        const dataFileName = 'typingmind-backup.json'; // Static file name for export
+        const dataFileName = 'typingmind-backup.json';
 
         const s3 = new AWS.S3();
         const uploadParams = {
@@ -157,15 +157,14 @@ function openSyncModal() {
         AWS.config.update({
             accessKeyId: awsAccessKey,
             secretAccessKey: awsSecretKey,
-            region: 'ap-southeast-2' // You can change this to your desired region
+            region: 'ap-southeast-2'
         });
 
         const s3 = new AWS.S3();
         const params = {
             Bucket: bucketName,
-            Key: 'typingmind-backup.json' // Static file name for import
+            Key: 'typingmind-backup.json'
         };
-
         // Fetch the data from S3
         s3.getObject(params, function (err, data) {
             const actionMsgElement = document.getElementById('action-msg');
@@ -174,11 +173,9 @@ function openSyncModal() {
                 actionMsgElement.style.color = 'red';
                 return;
             }
-
             // Parse the data and store it back to localStorage and IndexedDB
             const importedData = JSON.parse(data.Body.toString('utf-8'));
             importDataToStorage(importedData);
-
             actionMsgElement.textContent = `Import successful!`;
             actionMsgElement.style.color = 'green';
             //modalPopup.remove(); // Close modal after import
@@ -200,38 +197,28 @@ async function loadAwsSdk() {
     });
 }
 
-// Function to import data to localStorage and IndexedDB
 function importDataToStorage(data) {
     console.log("Imported data", data);
-
-    // Import to localStorage
+    // Import the localStorage records
     Object.keys(data.localStorage).forEach(key => {
         localStorage.setItem(key, data.localStorage[key]);
     });
-
-    // Open the IndexedDB
     const request = indexedDB.open("keyval-store");
-
     request.onsuccess = function (event) {
         const db = event.target.result;
         const transaction = db.transaction(["keyval"], "readwrite");
-
         const objectStore = transaction.objectStore("keyval");
-
-        // Process each imported record
-        Object.keys(data).forEach(key => {
+        // Import the IndexedDB records
+        Object.keys(data.indexedDB.keyval).forEach(key => {
             objectStore.put(data[key], key);
         });
-
         transaction.oncomplete = () => {
             console.log("All records imported successfully!");
         };
-
         transaction.onerror = (e) => {
             console.error("Error during import transaction:", e.target.error);
         };
     };
-
     request.onerror = function (event) {
         console.error("Error opening IndexedDB:", event.target.error);
     };
@@ -256,7 +243,6 @@ function exportIndexedDB() {
     return new Promise((resolve) => {
         const data = {};
         const request = indexedDB.open("keyval-store");
-
         request.onsuccess = function (event) {
             const db = event.target.result;
             const transaction = db.transaction(db.objectStoreNames, "readonly");
@@ -266,17 +252,15 @@ function exportIndexedDB() {
 
             allRecords.onsuccess = function (event) {
                 event.target.result.forEach(record => {
-                    data[record.key] = record;  // Store each record separately using its own key
+                    data[record.key] = record;
                 });
                 resolve(data);
             };
-
             allRecords.onerror = function (event) {
                 console.error("Error fetching records from object store:", event.target.error);
                 resolve({});
             };
         };
-
         request.onerror = function (event) {
             console.error("IndexedDB error:", event.target.error);
             resolve({});
