@@ -217,7 +217,7 @@ function importDataToStorage(data) {
         const transaction = db.transaction(["keyval"], "readwrite");
 
         const objectStore = transaction.objectStore("keyval");
-        
+
         for (var key in data.indexedDB) {
             if (data.indexedDB.hasOwnProperty(key)) {
                 objectStore.put(data.indexedDB[key], key);
