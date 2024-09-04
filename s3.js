@@ -31,7 +31,7 @@ function openSyncModal() {
                             Step 1: Fill form & Save<br/>
                             Step 2: If you want to Create/Update data in S3 with the data in the current typingmind instance, click on "Export to S3".<br/>
                             Step 3: If you want to update data in the current typingmind instance with the backed up data in S3, click on "Import from S3".<br/>
-                            Step 4: If you want to automatically sync data between this instance and S3 going forward, Toggle the "Enable Automated Cloud Backups". [ By doing this - When you open typingmind, it will refresh the latest data from cloud. Plus, any update to the data in the current typingmind instance will will trigger an update to S3 backup in real time.]
+                            Step 4: If you want to automatically sync data between this typing instance and S3 going forward, toggle the "Enable Automated Cloud Backups". [ By doing this - When you open typingmind, it will refresh the latest data from cloud. Plus, any update to the data in the current typingmind instance will will trigger an update to S3 backup in real time.]
                         </div>
                     </div>
                 </div>
