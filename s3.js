@@ -23,9 +23,9 @@ function openSyncModal() {
     modalPopup.innerHTML = `
         <div class="inline-block w-full align-bottom bg-white dark:bg-zinc-950 rounded-lg px-4 pb-4 text-left shadow-xl transform transition-all sm:my-8 sm:p-6 sm:align-middle pt-4 overflow-hidden sm:max-w-lg">
             <div class="text-gray-800 dark:text-white text-left text-sm">
-                <div class="flex justify-between items-center">
+                <div class="flex justify-center items-center mb-4">
                     <h3 class="text-center text-xl font-bold">Backup & Sync</h3>
-                    <div class="relative group">
+                    <div class="relative group ml-2">
                         <span class="cursor-pointer" id="info-icon">ℹ️</span>
                         <div id="tooltip" class="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded-md px-2 py-1 opacity-100 transition-opacity duration-300 z-10">
                             Dummy text about cloud backup.
