@@ -199,26 +199,35 @@ async function loadAwsSdk() {
 
 function importDataToStorage(data) {
     console.log("Imported data", data);
-    // Import the localStorage records
+
+    // Import to localStorage
     Object.keys(data.localStorage).forEach(key => {
         localStorage.setItem(key, data.localStorage[key]);
     });
+
+    // Open the IndexedDB
     const request = indexedDB.open("keyval-store");
+
     request.onsuccess = function (event) {
         const db = event.target.result;
         const transaction = db.transaction(["keyval"], "readwrite");
+
         const objectStore = transaction.objectStore("keyval");
-        // Import the IndexedDB records
-        Object.keys(data.indexedDB.keyval).forEach(key => {
-            objectStore.put(data.indexedDB.keyval[key], key);
+
+        // Process each imported record
+        Object.keys(data.indexedDB).forEach(key => {
+            objectStore.put(data.indexedDB[key], key);
         });
+
         transaction.oncomplete = () => {
             console.log("All records imported successfully!");
         };
+
         transaction.onerror = (e) => {
             console.error("Error during import transaction:", e.target.error);
         };
     };
+
     request.onerror = function (event) {
         console.error("Error opening IndexedDB:", event.target.error);
     };
@@ -243,24 +252,27 @@ function exportIndexedDB() {
     return new Promise((resolve) => {
         const data = {};
         const request = indexedDB.open("keyval-store");
+
         request.onsuccess = function (event) {
             const db = event.target.result;
-            const transaction = db.transaction(db.objectStoreNames, "readonly");
+            const transaction = db.transaction("keyval", "readonly");
 
             const objectStore = transaction.objectStore("keyval");
             const allRecords = objectStore.getAll();
 
             allRecords.onsuccess = function (event) {
                 event.target.result.forEach(record => {
-                    data[record.key] = record;
+                    data[record.key] = record.value;
                 });
                 resolve(data);
             };
+
             allRecords.onerror = function (event) {
                 console.error("Error fetching records from object store:", event.target.error);
                 resolve({});
             };
         };
+
         request.onerror = function (event) {
             console.error("IndexedDB error:", event.target.error);
             resolve({});
