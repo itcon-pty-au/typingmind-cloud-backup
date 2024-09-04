@@ -27,7 +27,7 @@ function openSyncModal() {
                     <h3 class="text-center text-xl font-bold">Backup & Sync</h3>
                     <div class="relative group ml-2">
                         <span class="cursor-pointer" id="info-icon">ℹ️</span>
-                        <div id="tooltip" class="absolute z-10 -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded-md px-2 py-1 opacity-100 transition-opacity duration-300">
+                        <div id="tooltip" class="absolute z-10 -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded-md px-2 py-1 min-w-[150px] opacity-100 transition-opacity duration-300">
                             Dummy text about cloud backup.
                         </div>
                     </div>
