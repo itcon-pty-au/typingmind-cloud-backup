@@ -27,10 +27,10 @@ function openSyncModal() {
                     <h3 class="text-center text-xl font-bold">Backup & Sync</h3>
                     <div class="relative group ml-2">
                         <span class="cursor-pointer" id="info-icon">ℹ️</span>
-                        <div id="tooltip" class="absolute z-10 -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded-md px-2 py-1 min-w-[150px] opacity-100 transition-opacity duration-300">
-                            Step 1: Fill form & Save
-                            Step 2: If you want to Create/Update data in S3 with the data in the current typingmind instance, click on "Export to S3".
-                            Step 3: If you want to update data in the current typingmind instance with the backed up data in S3, click on "Import from S3".
+                        <div id="tooltip" class="absolute z-10 -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded-md px-2 py-1 min-w-[300px] opacity-100 transition-opacity duration-300">
+                            Step 1: Fill form & Save<br/>
+                            Step 2: If you want to Create/Update data in S3 with the data in the current typingmind instance, click on "Export to S3".<br/>
+                            Step 3: If you want to update data in the current typingmind instance with the backed up data in S3, click on "Import from S3".<br/>
                             Step 4: If you want to automatically sync data between this instance and S3 going forward, Toggle the "Enable Automated Cloud Backups". [ By doing this - When you open typingmind, it will refresh the latest data from cloud. Plus, any update to the data in the current typingmind instance will will trigger an update to S3 backup in real time.]
                         </div>
                     </div>
