@@ -57,7 +57,7 @@ function openSyncModal() {
                                     <input id="aws-secret-key" name="aws-secret-key" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                 </div>
                                 <div class="flex justify-between space-x-2">
-                                    <button id="save-aws-details-btn" type="button" class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
+                                    <button id="save-aws-details-btn" type="button" class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors" disabled>
                                         Save
                                     </button>
                                 </div>
@@ -114,6 +114,7 @@ function openSyncModal() {
         const isDisabled = !awsBucketInput.value.trim() || !awsAccessKeyInput.value.trim() || !awsSecretKeyInput.value.trim();
         document.getElementById('export-to-s3-btn').disabled = isDisabled;
         document.getElementById('import-from-s3-btn').disabled = isDisabled;
+        document.getElementById('save-aws-details-btn').disabled = isDisabled;
     }
 
     modalPopup.addEventListener('click', function (event) {
