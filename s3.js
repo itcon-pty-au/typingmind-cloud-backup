@@ -214,9 +214,12 @@ function importDataToStorage(data) {
 
         const objectStore = transaction.objectStore("keyval");
 
+        data = data.indexedDB.keyval
+        console.log("IndexedDB data", data);
+
         // Process each imported record
-        Object.keys(data.indexedDB).forEach(key => {
-            objectStore.put(data.indexedDB[key], key);
+        Object.keys(data).forEach(key => {
+            objectStore.put(data[key], key);
         });
 
         transaction.oncomplete = () => {
