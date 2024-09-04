@@ -27,7 +27,7 @@ function openSyncModal() {
                     <h3 class="text-center text-xl font-bold">Backup & Sync</h3>
                     <div class="relative group">
                         <span class="cursor-pointer" id="info-icon">ℹ️</span>
-                        <div id="tooltip" class="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded-md px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10">
+                        <div id="tooltip" class="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded-md px-2 py-1 opacity-100 transition-opacity duration-300 z-10">
                             Dummy text about cloud backup.
                         </div>
                     </div>
@@ -159,10 +159,8 @@ function openSyncModal() {
         clearTimeout(tooltipTimeout);
     });
 
-    tooltip.querySelector('.close-btn').addEventListener('click', () => {
-        clearTimeout(tooltipTimeout);
-        hideTooltip();
-    });
+    // Initially show tooltip and hide it after 5 seconds
+    showTooltip();
 
     // Save button click handler
     document.getElementById('save-aws-details-btn').addEventListener('click', function () {
@@ -175,6 +173,7 @@ function openSyncModal() {
         setTimeout(()=>{
             actionMsgElement.textContent = "";
         }, 3000);
+        updateButtonState();
     });
 
     // Save switch state to localStorage
@@ -204,6 +203,11 @@ function openSyncModal() {
             cloudbkSwitch.querySelector('span').classList.remove('translate-x-0');
         }
         localStorage.setItem('clouddb-backup-enabled', !isChecked);
+
+        // If enabling, immediately perform an import from S3
+        if (!isChecked) {
+            importFromS3();
+        }
     });
 
     // Export button click handler
@@ -324,7 +328,7 @@ function importDataToStorage(data) {
         const db = event.target.result;
         const transaction = db.transaction(["keyval"], "readwrite");
         const objectStore = transaction.objectStore("keyval");
-        data = data.indexedDB
+        data = data.indexedDB;
         Object.keys(data).forEach(key => {
             objectStore.put(data[key], key);
         });
@@ -390,12 +394,12 @@ function setupAutomatedBackup() {
             if (cursor) {
                 cursor.continue();
             } else {
-                const observer = new PerformanceObserver((list) => {
+                const observer = new MutationObserver((mutations) => {
                     if (localStorage.getItem('clouddb-backup-enabled') === 'true') {
                         backupToS3();
                     }
                 });
-                observer.observe({ entryTypes: ['measure'] });
+                observer.observe(document, { attributes: true, childList: true, subtree: true });
             }
         };
     };
@@ -494,6 +498,7 @@ async function importFromS3() {
         const importedData = JSON.parse(data.Body.toString('utf-8'));
         importDataToStorage(importedData);
         console.log(`Automated import successful!`);
+        const currentTime = new Date().toLocaleString();
+        localStorage.setItem('last-cloud-sync', currentTime);
     });
 }
-
