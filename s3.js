@@ -22,42 +22,58 @@ function openSyncModal() {
     modalPopup.setAttribute('data-element-id', 'sync-modal-dbbackup');
     modalPopup.className = 'fixed inset-0 bg-gray-800 transition-all bg-opacity-75 flex items-center justify-center z-[60]';
     modalPopup.innerHTML = `
-            <div class="inline-block w-full align-bottom bg-white dark:bg-zinc-950 rounded-lg px-4 pb-4 text-left shadow-xl transform transition-all sm:my-8 sm:p-6 sm:align-middle pt-4 overflow-hidden sm:max-w-lg">
-                <div class="text-gray-800 dark:text-white text-left text-sm">
-                    <h2 class="text-center text-xl font-bold">Backup & Sync</h2>
-                    <hr class="my-4">
-                    <div class="space-y-4">
-                        <div>
-                            <div class="my-4 bg-gray-100 px-3 py-3 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
-                                <div class="space-y-4">
-                                    <div>
-                                        <label for="aws-bucket" class="block text-sm font-medium text-gray-700 dark:text-gray-400">S3 Bucket Name</label>
-                                        <input id="aws-bucket" name="aws-bucket" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
-                                    </div>
-                                    <div>
-                                        <label for="aws-access-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">AWS Access Key</label>
-                                        <input id="aws-access-key" name="aws-access-key" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
-                                    </div>
-                                    <div>
-                                        <label for="aws-secret-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">AWS Secret Key</label>
-                                        <input id="aws-secret-key" name="aws-secret-key" type="text" class="grow px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
-                                    </div>
+        <div class="inline-block w-full align-bottom bg-white dark:bg-zinc-950 rounded-lg px-4 pb-4 text-left shadow-xl transform transition-all sm:my-8 sm:p-6 sm:align-middle pt-4 overflow-hidden sm:max-w-lg">
+            <div class="text-gray-800 dark:text-white text-left text-sm">
+                <h2 class="text-center text-xl font-bold">Backup & Sync</h2>
+                <hr class="my-4">
+                <div class="space-y-4">
+                    <div>
+                        <div class="my-4 bg-gray-100 px-3 py-3 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
+                            <div class="space-y-4">
+                                <div>
+                                    <label for="aws-bucket" class="block text-sm font-medium text-gray-700 dark:text-gray-400">S3 Bucket Name</label>
+                                    <input id="aws-bucket" name="aws-bucket" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                                </div>
+                                <div>
+                                    <label for="aws-access-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">AWS Access Key</label>
+                                    <input id="aws-access-key" name="aws-access-key" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                                </div>
+                                <div>
+                                    <label for="aws-secret-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">AWS Secret Key</label>
+                                    <input id="aws-secret-key" name="aws-secret-key" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                 </div>
                             </div>
                         </div>
-                        <div class="flex justify-between">
-                            <button id="export-to-s3-btn" type="button" class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
-                                Export to S3
-                            </button>
-                            <button id="import-from-s3-btn" type="button" class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors">
-                                Import from S3
-                            </button>
-                        </div>
-                        <div id="action-msg" class="text-center"></div>
                     </div>
+                    <div class="flex justify-between space-x-2">
+                        <button id="save-aws-details-btn" type="button" class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
+                            Save
+                        </button>
+                        <button id="export-to-s3-btn" type="button" class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
+                            Export to S3
+                        </button>
+                        <button id="import-from-s3-btn" type="button" class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
+                            Import from S3
+                        </button>
+                    </div>
+                    <div id="action-msg" class="text-center"></div>
                 </div>
-            </div>`;
+            </div>
+        </div>`;
     document.body.appendChild(modalPopup);
+
+    const awsBucketInput = document.getElementById('aws-bucket');
+    const awsAccessKeyInput = document.getElementById('aws-access-key');
+    const awsSecretKeyInput = document.getElementById('aws-secret-key');
+
+    // Load AWS details from localStorage if they exist
+    const savedBucket = localStorage.getItem('aws-bucket');
+    const savedAccessKey = localStorage.getItem('aws-access-key');
+    const savedSecretKey = localStorage.getItem('aws-secret-key');
+
+    if (savedBucket) awsBucketInput.value = savedBucket;
+    if (savedAccessKey) awsAccessKeyInput.value = savedAccessKey;
+    if (savedSecretKey) awsSecretKeyInput.value = savedSecretKey;
 
     // Add click event to close modal
     modalPopup.addEventListener('click', function (event) {
@@ -66,11 +82,26 @@ function openSyncModal() {
         }
     });
 
+    // Save button click handler
+    document.getElementById('save-aws-details-btn').addEventListener('click', function () {
+        localStorage.setItem('aws-bucket', awsBucketInput.value.trim());
+        localStorage.setItem('aws-access-key', awsAccessKeyInput.value.trim());
+        localStorage.setItem('aws-secret-key', awsSecretKeyInput.value.trim());
+        const actionMsgElement = document.getElementById('action-msg');
+        actionMsgElement.textContent = "AWS details saved!";
+        actionMsgElement.style.color = 'green';
+    });
+
     // Export button click handler
     document.getElementById('export-to-s3-btn').addEventListener('click', async function () {
-        const bucketName = document.getElementById('aws-bucket').value.trim();
-        const awsAccessKey = document.getElementById('aws-access-key').value.trim();
-        const awsSecretKey = document.getElementById('aws-secret-key').value.trim();
+        const bucketName = awsBucketInput.value.trim();
+        const awsAccessKey = awsAccessKeyInput.value.trim();
+        const awsSecretKey = awsSecretKeyInput.value.trim();
+
+        // If AWS SDK is not already loaded, load it
+        if (typeof AWS === 'undefined') {
+            await loadAwsSdk();
+        }
 
         // Initialize AWS SDK
         AWS.config.update({
@@ -106,10 +137,15 @@ function openSyncModal() {
     });
 
     // Import button click handler
-    document.getElementById('import-from-s3-btn').addEventListener('click', function () {
-        const bucketName = document.getElementById('aws-bucket').value.trim();
-        const awsAccessKey = document.getElementById('aws-access-key').value.trim();
-        const awsSecretKey = document.getElementById('aws-secret-key').value.trim();
+    document.getElementById('import-from-s3-btn').addEventListener('click', async function () {
+        const bucketName = awsBucketInput.value.trim();
+        const awsAccessKey = awsAccessKeyInput.value.trim();
+        const awsSecretKey = awsSecretKeyInput.value.trim();
+
+        // If AWS SDK is not already loaded, load it
+        if (typeof AWS === 'undefined') {
+            await loadAwsSdk();
+        }
 
         // Initialize AWS SDK
         AWS.config.update({
@@ -141,6 +177,17 @@ function openSyncModal() {
             actionMsgElement.style.color = 'green';
             modalPopup.remove(); // Close modal after import
         });
+    });
+}
+
+// Function to load AWS SDK asynchronously
+async function loadAwsSdk() {
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://sdk.amazonaws.com/js/aws-sdk-2.804.0.min.js';
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
     });
 }
 
