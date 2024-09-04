@@ -220,7 +220,7 @@ function importDataToStorage(data) {
         
         for (var key in data.indexedDB) {
             if (data.indexedDB.hasOwnProperty(key)) {
-                store.put(data.indexedDB[key], key);
+                objectStore.put(data.indexedDB[key], key);
             }
         }
 
