@@ -225,6 +225,8 @@ function openSyncModal() {
             setTimeout(()=>{
                 actionMsgElement.textContent = "";
             }, 3000);
+            const currentTime = new Date().toLocaleString();
+            localStorage.setItem('last-cloud-sync', currentTime);
         });
     });
 }
