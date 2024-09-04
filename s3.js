@@ -90,6 +90,9 @@ function openSyncModal() {
         const actionMsgElement = document.getElementById('action-msg');
         actionMsgElement.textContent = "AWS details saved!";
         actionMsgElement.style.color = 'green';
+        setTimeout(()=>{
+            actionMsgElement.textContent = "";
+        }, 3000);
     });
 
     // Export button click handler
@@ -107,12 +110,12 @@ function openSyncModal() {
         AWS.config.update({
             accessKeyId: awsAccessKey,
             secretAccessKey: awsSecretKey,
-            region: 'us-east-1' // You can change this to your desired region
+            region: 'ap-southeast-2'
         });
 
-        const data = await exportBackupData(); // Export local storage and IndexedDB data
+        const data = await exportBackupData();
         const dataStr = JSON.stringify(data);
-        const dataFileName = `backup_${new Date().toISOString()}.json`;
+        const dataFileName = 'typingmind-backup.json'; // Static file name for export
 
         const s3 = new AWS.S3();
         const uploadParams = {
@@ -133,6 +136,9 @@ function openSyncModal() {
                 actionMsgElement.style.color = 'green';
                 localStorage.setItem('last-cloud-sync', new Date().toLocaleString());
             }
+            setTimeout(()=>{
+                actionMsgElement.textContent = "";
+            }, 3000);
         });
     });
 
@@ -151,13 +157,13 @@ function openSyncModal() {
         AWS.config.update({
             accessKeyId: awsAccessKey,
             secretAccessKey: awsSecretKey,
-            region: 'us-east-1' // You can change this to your desired region
+            region: 'ap-southeast-2' // You can change this to your desired region
         });
 
         const s3 = new AWS.S3();
         const params = {
             Bucket: bucketName,
-            Key: 'backup.json' // Replace with your expected file name
+            Key: 'typingmind-backup.json' // Static file name for import
         };
 
         // Fetch the data from S3
@@ -176,6 +182,9 @@ function openSyncModal() {
             actionMsgElement.textContent = `Import successful!`;
             actionMsgElement.style.color = 'green';
             modalPopup.remove(); // Close modal after import
+            setTimeout(()=>{
+                actionMsgElement.textContent = "";
+            }, 3000);
         });
     });
 }
@@ -210,7 +219,7 @@ function importDataToStorage(data) {
             const records = data.indexedDB[storeName] || [];
 
             records.forEach(record => {
-                objectStore.put(record); // Add or update records
+                objectStore.put(record);
             });
         }
     };
