@@ -199,7 +199,7 @@ function importDataToStorage(data) {
     });
 
     // Assume you have an IndexedDB setup with a specific schema
-    const request = indexedDB.open("keyval-store"); // Replace with your database name
+    const request = indexedDB.open("keyval-store");
 
     request.onsuccess = function (event) {
         const db = event.target.result;
