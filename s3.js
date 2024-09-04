@@ -219,7 +219,18 @@ function importDataToStorage(data) {
             const records = data.indexedDB[storeName] || [];
 
             records.forEach(record => {
-                objectStore.put(record);
+                if (objectStore.keyPath) {
+                    objectStore.put(record);  // Inline key
+                } else {
+                    // Use a specific field as the key, e.g., `id`
+                    // Make sure the record has this field; adjust if your schema uses a different key field
+                    const key = record.Key || record.key;  // Adjust according to your schema
+                    if (key) {
+                        objectStore.put(record, key);  // Out-of-line key
+                    } else {
+                        console.warn(`Record in store ${storeName} lacks a required key field.`);
+                    }
+                }
             });
         }
     };
