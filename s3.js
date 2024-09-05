@@ -150,7 +150,7 @@ function openSyncModal() {
         updateButtonState();
     });
 
-    // Save switch state to localStorage
+    // Save switch state to localStorage and update appearance on click
     cloudbkSwitch.addEventListener('click', function () {
         const isChecked = cloudbkSwitch.getAttribute('aria-checked') === 'true';
 
