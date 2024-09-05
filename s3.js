@@ -110,6 +110,13 @@ function openSyncModal() {
         cloudbkSwitch.querySelector('span').classList.remove('translate-x-0');
         cloudbkSwitch.querySelector('span').classList.add('translate-x-5');
     }
+    else {
+        cloudbkSwitch.setAttribute('aria-checked', 'true');
+        cloudbkSwitch.classList.remove('bg-blue-600');
+        cloudbkSwitch.classList.add('bg-gray-300');
+        cloudbkSwitch.querySelector('span').classList.remove('translate-x-5');
+        cloudbkSwitch.querySelector('span').classList.add('translate-x-0');
+    }
 
     // Update button enable/disable state
     function updateButtonState() {
@@ -204,15 +211,17 @@ function openSyncModal() {
         }
 
         if (isChecked) {
-            cloudbkSwitch.setAttribute('aria-checked', 'false');
-            cloudbkSwitch.classList.remove('bg-blue-600');
-            cloudbkSwitch.querySelector('span').classList.remove('translate-x-5');
-            cloudbkSwitch.querySelector('span').classList.add('translate-x-0');
+            cloudbkSwitch.setAttribute('aria-checked', 'true');
+            cloudbkSwitch.classList.remove('bg-gray-300');
+            cloudbkSwitch.classList.add('bg-blue-600');
+            cloudbkSwitch.querySelector('span').classList.remove('translate-x-0');
+            cloudbkSwitch.querySelector('span').classList.add('translate-x-5');
         } else {
             cloudbkSwitch.setAttribute('aria-checked', 'true');
-            cloudbkSwitch.classList.add('bg-blue-600');
-            cloudbkSwitch.querySelector('span').classList.add('translate-x-5');
-            cloudbkSwitch.querySelector('span').classList.remove('translate-x-0');
+            cloudbkSwitch.classList.remove('bg-blue-600');
+            cloudbkSwitch.classList.add('bg-gray-300');
+            cloudbkSwitch.querySelector('span').classList.remove('translate-x-5');
+            cloudbkSwitch.querySelector('span').classList.add('translate-x-0');
         }
         localStorage.setItem('clouddb-backup-enabled', !isChecked);
     });
