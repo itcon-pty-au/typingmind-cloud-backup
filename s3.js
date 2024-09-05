@@ -95,17 +95,41 @@ function openSyncModal() {
     const savedAccessKey = localStorage.getItem('aws-access-key');
     const savedSecretKey = localStorage.getItem('aws-secret-key');
     const lastSync = localStorage.getItem('last-cloud-sync');
+    const isBackupEnabled = localStorage.getItem('clouddb-backup-enabled') === 'true';
 
     if (savedBucket) awsBucketInput.value = savedBucket;
     if (savedAccessKey) awsAccessKeyInput.value = savedAccessKey;
     if (savedSecretKey) awsSecretKeyInput.value = savedSecretKey;
     if (lastSync) document.getElementById('last-sync-msg').innerText = `Last sync done at ${lastSync}`;
 
+    // Initialize the state of the switch
+    if (isBackupEnabled) {
+        cloudbkSwitch.setAttribute('aria-checked', 'true');
+        cloudbkSwitch.classList.remove('bg-gray-300');
+        cloudbkSwitch.classList.add('bg-blue-600');
+        cloudbkSwitch.querySelector('span').classList.remove('translate-x-0');
+        cloudbkSwitch.querySelector('span').classList.add('translate-x-5');
+    }
+
+    // Update button enable/disable state
+    function updateButtonState() {
+        const isDisabled = !awsBucketInput.value.trim() || !awsAccessKeyInput.value.trim() || !awsSecretKeyInput.value.trim();
+        document.getElementById('export-to-s3-btn').disabled = isDisabled;
+        document.getElementById('import-from-s3-btn').disabled = isDisabled;
+        document.getElementById('save-aws-details-btn').disabled = isDisabled;
+    }
+
     modalPopup.addEventListener('click', function (event) {
         if (event.target === modalPopup) {
             modalPopup.remove();
         }
     });
+
+    awsBucketInput.addEventListener('input', updateButtonState);
+    awsAccessKeyInput.addEventListener('input', updateButtonState);
+    awsSecretKeyInput.addEventListener('input', updateButtonState);
+
+    updateButtonState();
 
     // Tooltip toggle logic
     const infoIcon = document.getElementById('info-icon');
@@ -180,15 +204,15 @@ function openSyncModal() {
         }
 
         if (isChecked) {
-            cloudbkSwitch.setAttribute('aria-checked', 'true');
-            cloudbkSwitch.classList.add('bg-blue-600');
-            cloudbkSwitch.querySelector('span').classList.add('translate-x-5');
-            cloudbkSwitch.querySelector('span').classList.remove('translate-x-0');
-        } else {
             cloudbkSwitch.setAttribute('aria-checked', 'false');
             cloudbkSwitch.classList.remove('bg-blue-600');
             cloudbkSwitch.querySelector('span').classList.remove('translate-x-5');
             cloudbkSwitch.querySelector('span').classList.add('translate-x-0');
+        } else {
+            cloudbkSwitch.setAttribute('aria-checked', 'true');
+            cloudbkSwitch.classList.add('bg-blue-600');
+            cloudbkSwitch.querySelector('span').classList.add('translate-x-5');
+            cloudbkSwitch.querySelector('span').classList.remove('translate-x-0');
         }
         localStorage.setItem('clouddb-backup-enabled', !isChecked);
     });
