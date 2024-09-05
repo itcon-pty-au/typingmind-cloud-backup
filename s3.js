@@ -26,7 +26,7 @@ function openSyncModal() {
                 <div class="flex justify-center items-center mb-4">
                     <h3 class="text-center text-xl font-bold">Backup & Sync</h3>
                     <div class="relative group ml-2">
-                        <span class="cursor-pointer" id="info-icon"><b>i</b></span>
+                        <span class="cursor-pointer" id="info-icon">ℹ</span>
                         <div id="tooltip" style="width: 250px; margin-top: 0.5em;" class="absolute z-10 -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded-md px-2 py-1 opacity-90 transition-opacity duration-300">
                             <b>Step 1:</b> Fill form & Save<br/><br/>
                             <b>Step 2:</b> To create/update the backup in S3 with the data in this typingmind instance, click on "Export to S3". Instead, if you want to update data in this typingmind instance with the existing backup in S3, click on "Import from S3".<br/><br/>
