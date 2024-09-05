@@ -30,7 +30,7 @@ function openSyncModal() {
                         <div id="tooltip" style="width: 250px; margin-top: 0.5em;" class="absolute z-10 -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded-md px-2 py-1 opacity-90 transition-opacity duration-300 opacity-0 transition-opacity">
                             <b>Step 1:</b> Fill form & Save<br/><br/>
                             <b>Step 2:</b> To create/update the backup in S3 with the data in this typingmind instance, click on "Export to S3". Instead, if you want to update data in this typingmind instance with the existing backup in S3, click on "Import from S3".<br/><br/>
-                            <b>Step 3:</b> To automatically sync data between this typing instance and S3 going forward, toggle the "Enable Automated Cloud Backups". [ By doing this - When you open typingmind, it will refresh the latest data from S3. Also, any update to the data in the current typingmind instance will will trigger an update to S3 backup in real time.]
+                            <b>Step 3:</b> To automatically sync data between this typing instance and S3 going forward, toggle the "Enable Automated Cloud Backups". [ By doing this - When you open typingmind, it will refresh the latest data from S3. Also, any update to the data in the current typingmind instance will trigger an update to S3 backup in real time.]
                         </div>
                     </div>
                 </div>
@@ -178,7 +178,13 @@ function openSyncModal() {
         }
 
         updateSwitchAppearance(!isChecked);
-        localStorage.setItem('clouddb-backup-enabled', !isChecked);
+        localStorage.setItem('clouddb-backup-enabled', !isChecked); // Save switch state to localStorage
+        const actionMsgElement = document.getElementById('action-msg');
+        actionMsgElement.textContent = isChecked ? "Automated backups disabled." : "Automated backups enabled.";
+        actionMsgElement.style.color = isChecked ? 'red' : 'green'; // Update message color based on state
+        setTimeout(() => {
+            actionMsgElement.textContent = ""; // Clear action message after a delay
+        }, 3000);
     });
 
     // Generic upload to S3 function
