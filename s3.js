@@ -29,15 +29,15 @@ function openSyncModal() {
                         <span class="cursor-pointer" id="info-icon">ℹ</span>
                         <div id="tooltip" style="width: 250px; margin-top: 0.5em;" class="absolute z-10 -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded-md px-2 py-1 opacity-90 transition-opacity duration-300 opacity-0 transition-opacity">
                             <b>Step 1:</b> Fill form & Save<br/><br/>
-                            <b>Step 2:</b> To create/update the backup in S3 with the data in this typingmind instance, click on "Export to S3". Instead, if you want to update data in this typingmind instance with the existing backup in S3, click on "Import from S3".<br/><br/>
-                            <b>Step 3:</b> To automatically sync data between this typing instance and S3 going forward, toggle the "Enable Automated Cloud Backups". [ By doing this - When you open typingmind, it will refresh the latest data from S3. Also, any update to the data in the current typingmind instance will trigger an update to S3 backup in real time.]
+                            <b>Step 2:</b> Click on "Export to S3" to create/update backup, or "Import from S3" to restore.<br/><br/>
+                            <b>Step 3:</b> Toggle "Enable Automated Cloud Backups" for ongoing sync.
                         </div>
                     </div>
                 </div>
                 <div class="flex items-center justify-start space-x-2">
                     <span class="text-sm font-medium text-gray-700 dark:text-gray-400">Enable Automated Cloud Backups</span>
                     <label class="inline-flex items-center flex-shrink-0">
-                        <button data-element-id="clouddb-backup-enabled" class="bg-gray-300 h-6 w-11 cursor-pointer relative inline-flex flex-shrink-0 rounded-full border-2 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2" id="cloudbk-switch" role="switch" type="button" tabindex="0" aria-checked="false" data-headlessui-state="">
+                        <button data-element-id="clouddb-backup-enabled" class="bg-gray-300 h-6 w-11 cursor-pointer relative inline-flex flex-shrink-0 rounded-full border-2 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2" id="cloudbk-switch" role="switch" type="button" tabindex="0" aria-checked="false">
                             <span aria-hidden="true" class="translate-x-0 h-5 w-5 pointer-events-none inline-block transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
                         </button>
                     </label>
@@ -93,16 +93,6 @@ function openSyncModal() {
         secretKey: document.getElementById('aws-secret-key'),
     };
     const cloudbkSwitch = document.getElementById('cloudbk-switch');
-    const savedBucket = localStorage.getItem('aws-bucket');
-    const savedAccessKey = localStorage.getItem('aws-access-key');
-    const savedSecretKey = localStorage.getItem('aws-secret-key');
-    const lastSync = localStorage.getItem('last-cloud-sync');
-    const isBackupEnabled = localStorage.getItem('clouddb-backup-enabled') === 'true';
-
-    if (savedBucket) awsInputs.bucket.value = savedBucket;
-    if (savedAccessKey) awsInputs.accessKey.value = savedAccessKey;
-    if (savedSecretKey) awsInputs.secretKey.value = savedSecretKey;
-    if (lastSync) document.getElementById('last-sync-msg').innerText = `Last sync done at ${lastSync}`;
 
     // Initialize the state of the switch
     function updateSwitchAppearance(isChecked) {
@@ -113,45 +103,38 @@ function openSyncModal() {
         cloudbkSwitch.querySelector('span').classList.toggle('translate-x-0', !isChecked);
     }
 
-    updateSwitchAppearance(isBackupEnabled);
-    
-    // Update button enable/disable state
+    // Button enabling logic
     function updateButtonState() {
         const isDisabled = !awsInputs.bucket.value.trim() || !awsInputs.accessKey.value.trim() || !awsInputs.secretKey.value.trim();
         document.getElementById('export-to-s3-btn').disabled = isDisabled;
         document.getElementById('import-from-s3-btn').disabled = isDisabled;
         document.getElementById('save-aws-details-btn').disabled = isDisabled;
+
+        // If any input box is empty, toggle off the switch
+        if (isDisabled && cloudbkSwitch.getAttribute('aria-checked') === 'true') {
+            updateSwitchAppearance(false);
+            localStorage.setItem('clouddb-backup-enabled', 'false');
+            document.getElementById('action-msg').textContent = "Automated backups disabled.";
+            document.getElementById('action-msg').style.color = 'red'; 
+            setTimeout(() => {
+                document.getElementById('action-msg').textContent = ""; 
+            }, 3000);
+        }
     }
 
+    // Modal click to close
     modalPopup.addEventListener('click', function (event) {
         if (event.target === modalPopup) {
             modalPopup.remove();
         }
     });
 
+    // Event listeners for inputs
     Object.values(awsInputs).forEach(input => {
         input.addEventListener('input', updateButtonState);
     });
 
     updateButtonState();
-
-    // Tooltip toggle logic
-    const infoIcon = document.getElementById('info-icon');
-    const tooltip = document.getElementById('tooltip');
-    let tooltipTimeout;
-
-    function toggleTooltip(action) {
-        tooltip.classList.toggle('opacity-100', action === 'show');
-        tooltip.classList.toggle('opacity-0', action === 'hide');
-        if (action === 'show') {
-            tooltipTimeout = setTimeout(() => toggleTooltip('hide'), 5000);
-        }
-    }
-
-    infoIcon.addEventListener('click', () => toggleTooltip(tooltip.classList.contains('opacity-100') ? 'hide' : 'show'));
-    infoIcon.addEventListener('mouseover', () => toggleTooltip('show'));
-    infoIcon.addEventListener('mouseleave', () => tooltipTimeout = setTimeout(() => toggleTooltip('hide'), 5000));
-    tooltip.addEventListener('mouseover', () => clearTimeout(tooltipTimeout));
 
     // Save button click handler
     document.getElementById('save-aws-details-btn').addEventListener('click', function () {
@@ -171,8 +154,8 @@ function openSyncModal() {
     cloudbkSwitch.addEventListener('click', function () {
         const isChecked = cloudbkSwitch.getAttribute('aria-checked') === 'true';
 
-        // Check if all AWS fields are populated before enabling backup
-        if (!isChecked && (!awsInputs.bucket.value.trim() || !awsInputs.accessKey.value.trim() || !awsInputs.secretKey.value.trim())) {
+        // If turning on, check if all fields are populated
+        if (!isChecked && (awsInputs.bucket.value.trim() === '' || awsInputs.accessKey.value.trim() === '' || awsInputs.secretKey.value.trim() === '')) {
             document.getElementById('action-msg').textContent = "Please fill in all AWS fields before enabling backup.";
             return;
         }
@@ -180,10 +163,10 @@ function openSyncModal() {
         updateSwitchAppearance(!isChecked);
         localStorage.setItem('clouddb-backup-enabled', !isChecked); // Save switch state to localStorage
         const actionMsgElement = document.getElementById('action-msg');
-        actionMsgElement.textContent = isChecked ? "Automated backups disabled." : "Automated backups enabled.";
-        actionMsgElement.style.color = isChecked ? 'red' : 'green'; // Update message color based on state
+        actionMsgElement.textContent = !isChecked ? "Automated backups enabled." : "Automated backups disabled.";
+        actionMsgElement.style.color = !isChecked ? 'green' : 'red';
         setTimeout(() => {
-            actionMsgElement.textContent = ""; // Clear action message after a delay
+            actionMsgElement.textContent = ""; 
         }, 3000);
     });
 
@@ -214,7 +197,7 @@ function openSyncModal() {
             ContentType: 'application/json'
         };
 
-        s3.upload(uploadParams, function (err, data) {
+        s3.upload(uploadParams, function (err) {
             const actionMsgElement = document.getElementById('action-msg');
             if (err) {
                 actionMsgElement.textContent = `Error uploading data: ${err.message}`;
@@ -302,9 +285,9 @@ function importDataToStorage(data) {
         const db = event.target.result;
         const transaction = db.transaction(["keyval"], "readwrite");
         const objectStore = transaction.objectStore("keyval");
-        data = data.indexedDB;
-        Object.keys(data).forEach(key => {
-            objectStore.put(data[key], key);
+        const indexedDBData = data.indexedDB;
+        Object.keys(indexedDBData).forEach(key => {
+            objectStore.put(indexedDBData[key], key);
         });
         transaction.oncomplete = () => {
             console.log("All records imported successfully!");
