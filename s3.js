@@ -160,11 +160,13 @@ function openSyncModal() {
             return;
         }
 
-        updateSwitchAppearance(!isChecked);
-        localStorage.setItem('clouddb-backup-enabled', !isChecked); // Save switch state to localStorage
+        // Toggle the switch state
+        const newCheckedState = !isChecked;
+        updateSwitchAppearance(newCheckedState);
+        localStorage.setItem('clouddb-backup-enabled', newCheckedState); // Save switch state to localStorage
         const actionMsgElement = document.getElementById('action-msg');
-        actionMsgElement.textContent = !isChecked ? "Automated backups enabled." : "Automated backups disabled.";
-        actionMsgElement.style.color = !isChecked ? 'green' : 'red';
+        actionMsgElement.textContent = newCheckedState ? "Automated backups enabled." : "Automated backups disabled.";
+        actionMsgElement.style.color = newCheckedState ? 'green' : 'red';
         setTimeout(() => {
             actionMsgElement.textContent = ""; 
         }, 3000);
