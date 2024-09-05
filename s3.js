@@ -20,7 +20,7 @@ function openSyncModal() {
     var modalPopup = document.createElement('div');
     modalPopup.setAttribute('data-element-id', 'sync-modal-dbbackup');
     modalPopup.className = 'fixed inset-0 bg-gray-800 transition-all bg-opacity-75 flex items-center justify-center z-[60]';
-    modalPopup.innerHTML = `
+    modalPopup.innerHTML = /* HTML */ `
         <div class="inline-block w-full align-bottom bg-white dark:bg-zinc-950 rounded-lg px-4 pb-4 text-left shadow-xl transform transition-all sm:my-8 sm:p-6 sm:align-middle pt-4 overflow-hidden sm:max-w-lg">
             <div class="text-gray-800 dark:text-white text-left text-sm">
                 <div class="flex justify-center items-center mb-4">
@@ -87,9 +87,11 @@ function openSyncModal() {
         </div>`;
     document.body.appendChild(modalPopup);
 
-    const awsBucketInput = document.getElementById('aws-bucket');
-    const awsAccessKeyInput = document.getElementById('aws-access-key');
-    const awsSecretKeyInput = document.getElementById('aws-secret-key');
+    const awsInputs = {
+        bucket: document.getElementById('aws-bucket'),
+        accessKey: document.getElementById('aws-access-key'),
+        secretKey: document.getElementById('aws-secret-key'),
+    };
     const cloudbkSwitch = document.getElementById('cloudbk-switch');
     const savedBucket = localStorage.getItem('aws-bucket');
     const savedAccessKey = localStorage.getItem('aws-access-key');
@@ -97,30 +99,25 @@ function openSyncModal() {
     const lastSync = localStorage.getItem('last-cloud-sync');
     const isBackupEnabled = localStorage.getItem('clouddb-backup-enabled') === 'true';
 
-    if (savedBucket) awsBucketInput.value = savedBucket;
-    if (savedAccessKey) awsAccessKeyInput.value = savedAccessKey;
-    if (savedSecretKey) awsSecretKeyInput.value = savedSecretKey;
+    if (savedBucket) awsInputs.bucket.value = savedBucket;
+    if (savedAccessKey) awsInputs.accessKey.value = savedAccessKey;
+    if (savedSecretKey) awsInputs.secretKey.value = savedSecretKey;
     if (lastSync) document.getElementById('last-sync-msg').innerText = `Last sync done at ${lastSync}`;
 
     // Initialize the state of the switch
-    if (isBackupEnabled) {
-        cloudbkSwitch.setAttribute('aria-checked', 'true');
-        cloudbkSwitch.classList.remove('bg-gray-300');
-        cloudbkSwitch.classList.add('bg-blue-600');
-        cloudbkSwitch.querySelector('span').classList.remove('translate-x-0');
-        cloudbkSwitch.querySelector('span').classList.add('translate-x-5');
-    }
-    else {
-        cloudbkSwitch.setAttribute('aria-checked', 'true');
-        cloudbkSwitch.classList.remove('bg-blue-600');
-        cloudbkSwitch.classList.add('bg-gray-300');
-        cloudbkSwitch.querySelector('span').classList.remove('translate-x-5');
-        cloudbkSwitch.querySelector('span').classList.add('translate-x-0');
+    function updateSwitchAppearance(isChecked) {
+        cloudbkSwitch.setAttribute('aria-checked', String(isChecked));
+        cloudbkSwitch.classList.toggle('bg-gray-300', !isChecked);
+        cloudbkSwitch.classList.toggle('bg-blue-600', isChecked);
+        cloudbkSwitch.querySelector('span').classList.toggle('translate-x-5', isChecked);
+        cloudbkSwitch.querySelector('span').classList.toggle('translate-x-0', !isChecked);
     }
 
+    updateSwitchAppearance(isBackupEnabled);
+    
     // Update button enable/disable state
     function updateButtonState() {
-        const isDisabled = !awsBucketInput.value.trim() || !awsAccessKeyInput.value.trim() || !awsSecretKeyInput.value.trim();
+        const isDisabled = !awsInputs.bucket.value.trim() || !awsInputs.accessKey.value.trim() || !awsInputs.secretKey.value.trim();
         document.getElementById('export-to-s3-btn').disabled = isDisabled;
         document.getElementById('import-from-s3-btn').disabled = isDisabled;
         document.getElementById('save-aws-details-btn').disabled = isDisabled;
@@ -132,9 +129,9 @@ function openSyncModal() {
         }
     });
 
-    awsBucketInput.addEventListener('input', updateButtonState);
-    awsAccessKeyInput.addEventListener('input', updateButtonState);
-    awsSecretKeyInput.addEventListener('input', updateButtonState);
+    Object.values(awsInputs).forEach(input => {
+        input.addEventListener('input', updateButtonState);
+    });
 
     updateButtonState();
 
@@ -143,49 +140,24 @@ function openSyncModal() {
     const tooltip = document.getElementById('tooltip');
     let tooltipTimeout;
 
-    function showTooltip() {
-        tooltip.classList.add('opacity-100');
-        tooltip.classList.remove('opacity-0');
-        tooltipTimeout = setTimeout(() => {
-            hideTooltip();
-        }, 5000);
-    }
-
-    function hideTooltip() {
-        tooltip.classList.add('opacity-0');
-        tooltip.classList.remove('opacity-100');
-    }
-
-    infoIcon.addEventListener('click', () => {
-        const isVisible = tooltip.classList.contains('opacity-100');
-        if (isVisible) {
-            hideTooltip();
-        } else {
-            showTooltip();
+    function toggleTooltip(action) {
+        tooltip.classList.toggle('opacity-100', action === 'show');
+        tooltip.classList.toggle('opacity-0', action === 'hide');
+        if (action === 'show') {
+            tooltipTimeout = setTimeout(() => toggleTooltip('hide'), 5000);
         }
-    });
+    }
 
-    infoIcon.addEventListener('mouseover', () => {
-        clearTimeout(tooltipTimeout);
-        showTooltip();
-    });
-
-    infoIcon.addEventListener('mouseleave', () => {
-        clearTimeout(tooltipTimeout);
-        tooltipTimeout = setTimeout(() => {
-            hideTooltip();
-        }, 5000);
-    });
-
-    tooltip.addEventListener('mouseover', () => {
-        clearTimeout(tooltipTimeout);
-    });
+    infoIcon.addEventListener('click', () => toggleTooltip(tooltip.classList.contains('opacity-100') ? 'hide' : 'show'));
+    infoIcon.addEventListener('mouseover', () => toggleTooltip('show'));
+    infoIcon.addEventListener('mouseleave', () => tooltipTimeout = setTimeout(() => toggleTooltip('hide'), 5000));
+    tooltip.addEventListener('mouseover', () => clearTimeout(tooltipTimeout));
 
     // Save button click handler
     document.getElementById('save-aws-details-btn').addEventListener('click', function () {
-        localStorage.setItem('aws-bucket', awsBucketInput.value.trim());
-        localStorage.setItem('aws-access-key', awsAccessKeyInput.value.trim());
-        localStorage.setItem('aws-secret-key', awsSecretKeyInput.value.trim());
+        localStorage.setItem('aws-bucket', awsInputs.bucket.value.trim());
+        localStorage.setItem('aws-access-key', awsInputs.accessKey.value.trim());
+        localStorage.setItem('aws-secret-key', awsInputs.secretKey.value.trim());
         const actionMsgElement = document.getElementById('action-msg');
         actionMsgElement.textContent = "AWS details saved!";
         actionMsgElement.style.color = 'green';
@@ -200,44 +172,25 @@ function openSyncModal() {
         const isChecked = cloudbkSwitch.getAttribute('aria-checked') === 'true';
 
         // Check if all AWS fields are populated before enabling backup
-        if (!isChecked && (!awsBucketInput.value.trim() || !awsAccessKeyInput.value.trim() || !awsSecretKeyInput.value.trim())) {
-            const actionMsgElement = document.getElementById('action-msg');
-            actionMsgElement.textContent = "Please fill in all AWS fields before enabling backup.";
-            actionMsgElement.style.color = 'red';
-            setTimeout(() => {
-                actionMsgElement.textContent = "";
-            }, 3000);
+        if (!isChecked && (!awsInputs.bucket.value.trim() || !awsInputs.accessKey.value.trim() || !awsInputs.secretKey.value.trim())) {
+            document.getElementById('action-msg').textContent = "Please fill in all AWS fields before enabling backup.";
             return;
         }
 
-        if (isChecked) {
-            cloudbkSwitch.setAttribute('aria-checked', 'true');
-            cloudbkSwitch.classList.remove('bg-gray-300');
-            cloudbkSwitch.classList.add('bg-blue-600');
-            cloudbkSwitch.querySelector('span').classList.remove('translate-x-0');
-            cloudbkSwitch.querySelector('span').classList.add('translate-x-5');
-        } else {
-            cloudbkSwitch.setAttribute('aria-checked', 'true');
-            cloudbkSwitch.classList.remove('bg-blue-600');
-            cloudbkSwitch.classList.add('bg-gray-300');
-            cloudbkSwitch.querySelector('span').classList.remove('translate-x-5');
-            cloudbkSwitch.querySelector('span').classList.add('translate-x-0');
-        }
+        updateSwitchAppearance(!isChecked);
         localStorage.setItem('clouddb-backup-enabled', !isChecked);
     });
 
-    // Export button click handler
-    document.getElementById('export-to-s3-btn').addEventListener('click', async function () {
-        const bucketName = awsBucketInput.value.trim();
-        const awsAccessKey = awsAccessKeyInput.value.trim();
-        const awsSecretKey = awsSecretKeyInput.value.trim();
+    // Generic upload to S3 function
+    async function uploadToS3(isExport) {
+        const bucketName = awsInputs.bucket.value.trim();
+        const awsAccessKey = awsInputs.accessKey.value.trim();
+        const awsSecretKey = awsInputs.secretKey.value.trim();
 
-        // If AWS SDK is not already loaded, load it
         if (typeof AWS === 'undefined') {
             await loadAwsSdk();
         }
 
-        // Initialize AWS SDK
         AWS.config.update({
             accessKeyId: awsAccessKey,
             secretAccessKey: awsSecretKey,
@@ -255,14 +208,13 @@ function openSyncModal() {
             ContentType: 'application/json'
         };
 
-        // Upload to S3
         s3.upload(uploadParams, function (err, data) {
             const actionMsgElement = document.getElementById('action-msg');
             if (err) {
                 actionMsgElement.textContent = `Error uploading data: ${err.message}`;
                 actionMsgElement.style.color = 'red';
             } else {
-                actionMsgElement.textContent = `Export successful!`;
+                actionMsgElement.textContent = isExport ? 'Export successful!' : 'Import successful!';
                 actionMsgElement.style.color = 'green';
                 const currentTime = new Date().toLocaleString();
                 localStorage.setItem('last-cloud-sync', currentTime);
@@ -272,20 +224,21 @@ function openSyncModal() {
                 actionMsgElement.textContent = "";
             }, 3000);
         });
-    });
+    }
+
+    // Export button click handler
+    document.getElementById('export-to-s3-btn').addEventListener('click', () => uploadToS3(true));
 
     // Import button click handler
     document.getElementById('import-from-s3-btn').addEventListener('click', async function () {
-        const bucketName = awsBucketInput.value.trim();
-        const awsAccessKey = awsAccessKeyInput.value.trim();
-        const awsSecretKey = awsSecretKeyInput.value.trim();
+        const bucketName = awsInputs.bucket.value.trim();
+        const awsAccessKey = awsInputs.accessKey.value.trim();
+        const awsSecretKey = awsInputs.secretKey.value.trim();
 
-        // If AWS SDK is not already loaded, load it
         if (typeof AWS === 'undefined') {
             await loadAwsSdk();
         }
 
-        // Initialize AWS SDK
         AWS.config.update({
             accessKeyId: awsAccessKey,
             secretAccessKey: awsSecretKey,
@@ -297,7 +250,7 @@ function openSyncModal() {
             Bucket: bucketName,
             Key: 'typingmind-backup.json'
         };
-        // Fetch the data from S3
+        
         s3.getObject(params, function (err, data) {
             const actionMsgElement = document.getElementById('action-msg');
             if (err) {
@@ -305,7 +258,6 @@ function openSyncModal() {
                 actionMsgElement.style.color = 'red';
                 return;
             }
-            // Parse the data and store it back to localStorage and IndexedDB
             const importedData = JSON.parse(data.Body.toString('utf-8'));
             importDataToStorage(importedData);
             actionMsgElement.textContent = `Import successful!`;
@@ -455,7 +407,7 @@ async function backupToS3() {
         ContentType: 'application/json'
     };
 
-    s3.upload(uploadParams, function (err, data) {
+    s3.upload(uploadParams, function (err) {
         if (err) {
             console.error(`Error uploading data: ${err.message}`);
         } else {
