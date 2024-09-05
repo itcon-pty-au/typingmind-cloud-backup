@@ -27,7 +27,7 @@ function openSyncModal() {
                     <h3 class="text-center text-xl font-bold">Backup & Sync</h3>
                     <div class="relative group ml-2">
                         <span class="cursor-pointer" id="info-icon">ℹ</span>
-                        <div id="tooltip" style="width: 250px; margin-top: 0.5em;" class="absolute z-10 -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded-md px-2 py-1 opacity-90 transition-opacity duration-300">
+                        <div id="tooltip" style="width: 250px; margin-top: 0.5em;" class="absolute z-10 -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded-md px-2 py-1 opacity-90 transition-opacity duration-300 opacity-0 transition-opacity">
                             <b>Step 1:</b> Fill form & Save<br/><br/>
                             <b>Step 2:</b> To create/update the backup in S3 with the data in this typingmind instance, click on "Export to S3". Instead, if you want to update data in this typingmind instance with the existing backup in S3, click on "Import from S3".<br/><br/>
                             <b>Step 3:</b> To automatically sync data between this typing instance and S3 going forward, toggle the "Enable Automated Cloud Backups". [ By doing this - When you open typingmind, it will refresh the latest data from S3. Also, any update to the data in the current typingmind instance will will trigger an update to S3 backup in real time.]
@@ -131,7 +131,7 @@ function openSyncModal() {
 
     updateButtonState();
 
-    // Tooltip auto-hide logic
+    // Tooltip toggle logic
     const infoIcon = document.getElementById('info-icon');
     const tooltip = document.getElementById('tooltip');
     let tooltipTimeout;
@@ -149,10 +149,18 @@ function openSyncModal() {
         tooltip.classList.remove('opacity-100');
     }
 
+    infoIcon.addEventListener('click', () => {
+        const isVisible = tooltip.classList.contains('opacity-100');
+        if (isVisible) {
+            hideTooltip();
+        } else {
+            showTooltip();
+        }
+    });
+
     infoIcon.addEventListener('mouseover', () => {
         clearTimeout(tooltipTimeout);
-        tooltip.classList.add('opacity-100');
-        tooltip.classList.remove('opacity-0');
+        showTooltip();
     });
 
     infoIcon.addEventListener('mouseleave', () => {
@@ -166,9 +174,6 @@ function openSyncModal() {
         clearTimeout(tooltipTimeout);
     });
 
-    // Initially show tooltip and hide it after 5 seconds
-    showTooltip();
-
     // Save button click handler
     document.getElementById('save-aws-details-btn').addEventListener('click', function () {
         localStorage.setItem('aws-bucket', awsBucketInput.value.trim());
@@ -177,7 +182,7 @@ function openSyncModal() {
         const actionMsgElement = document.getElementById('action-msg');
         actionMsgElement.textContent = "AWS details saved!";
         actionMsgElement.style.color = 'green';
-        setTimeout(()=>{
+        setTimeout(() => {
             actionMsgElement.textContent = "";
         }, 3000);
         updateButtonState();
@@ -192,7 +197,7 @@ function openSyncModal() {
             const actionMsgElement = document.getElementById('action-msg');
             actionMsgElement.textContent = "Please fill in all AWS fields before enabling backup.";
             actionMsgElement.style.color = 'red';
-            setTimeout(()=>{
+            setTimeout(() => {
                 actionMsgElement.textContent = "";
             }, 3000);
             return;
@@ -210,11 +215,6 @@ function openSyncModal() {
             cloudbkSwitch.querySelector('span').classList.remove('translate-x-0');
         }
         localStorage.setItem('clouddb-backup-enabled', !isChecked);
-
-        // If enabling, immediately perform an import from S3
-        if (!isChecked) {
-            importFromS3();
-        }
     });
 
     // Export button click handler
@@ -253,13 +253,13 @@ function openSyncModal() {
                 actionMsgElement.textContent = `Error uploading data: ${err.message}`;
                 actionMsgElement.style.color = 'red';
             } else {
-                actionMsgElement.textContent = `Export successful! File uploaded to: ${data.Location}`;
+                actionMsgElement.textContent = `Export successful!`;
                 actionMsgElement.style.color = 'green';
                 const currentTime = new Date().toLocaleString();
                 localStorage.setItem('last-cloud-sync', currentTime);
                 document.getElementById('last-sync-msg').innerText = `Last sync done at ${currentTime}`;
             }
-            setTimeout(()=>{
+            setTimeout(() => {
                 actionMsgElement.textContent = "";
             }, 3000);
         });
@@ -301,7 +301,7 @@ function openSyncModal() {
             importDataToStorage(importedData);
             actionMsgElement.textContent = `Import successful!`;
             actionMsgElement.style.color = 'green';
-            setTimeout(()=>{
+            setTimeout(() => {
                 actionMsgElement.textContent = "";
             }, 3000);
             const currentTime = new Date().toLocaleString();
@@ -355,7 +355,7 @@ function importDataToStorage(data) {
 function exportBackupData() {
     return new Promise((resolve, reject) => {
         var exportData = {
-            localStorage : { ...localStorage },
+            localStorage: { ...localStorage },
             indexedDB: {}
         };
         var request = indexedDB.open('keyval-store', 1);
@@ -450,7 +450,7 @@ async function backupToS3() {
         if (err) {
             console.error(`Error uploading data: ${err.message}`);
         } else {
-            console.log(`Automated backup successful! File uploaded to: ${data.Location}`);
+            console.log(`Automated backup successful!`);
             const currentTime = new Date().toLocaleString();
             localStorage.setItem('last-cloud-sync', currentTime);
         }
