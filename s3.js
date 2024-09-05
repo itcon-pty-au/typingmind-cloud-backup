@@ -20,7 +20,7 @@ function openSyncModal() {
     var modalPopup = document.createElement('div');
     modalPopup.setAttribute('data-element-id', 'sync-modal-dbbackup');
     modalPopup.className = 'fixed inset-0 bg-gray-800 transition-all bg-opacity-75 flex items-center justify-center z-[60]';
-    modalPopup.innerHTML = /* HTML */ `
+    modalPopup.innerHTML = `
         <div class="inline-block w-full align-bottom bg-white dark:bg-zinc-950 rounded-lg px-4 pb-4 text-left shadow-xl transform transition-all sm:my-8 sm:p-6 sm:align-middle pt-4 overflow-hidden sm:max-w-lg">
             <div class="text-gray-800 dark:text-white text-left text-sm">
                 <div class="flex justify-center items-center mb-4">
@@ -92,35 +92,6 @@ function openSyncModal() {
         accessKey: document.getElementById('aws-access-key'),
         secretKey: document.getElementById('aws-secret-key'),
     };
-    const cloudbkSwitch = document.getElementById('cloudbk-switch');
-
-    // Initialize the state of the switch
-    function updateSwitchAppearance(isChecked) {
-        cloudbkSwitch.setAttribute('aria-checked', String(isChecked));
-        cloudbkSwitch.classList.toggle('bg-gray-300', !isChecked);
-        cloudbkSwitch.classList.toggle('bg-blue-600', isChecked);
-        cloudbkSwitch.querySelector('span').classList.toggle('translate-x-5', isChecked);
-        cloudbkSwitch.querySelector('span').classList.toggle('translate-x-0', !isChecked);
-    }
-
-    // Button enabling logic
-    function updateButtonState() {
-        const isDisabled = !awsInputs.bucket.value.trim() || !awsInputs.accessKey.value.trim() || !awsInputs.secretKey.value.trim();
-        document.getElementById('export-to-s3-btn').disabled = isDisabled;
-        document.getElementById('import-from-s3-btn').disabled = isDisabled;
-        document.getElementById('save-aws-details-btn').disabled = isDisabled;
-
-        // If any input box is empty, toggle off the switch
-        if (isDisabled && cloudbkSwitch.getAttribute('aria-checked') === 'true') {
-            updateSwitchAppearance(false);
-            localStorage.setItem('clouddb-backup-enabled', 'false');
-            document.getElementById('action-msg').textContent = "Automated backups disabled.";
-            document.getElementById('action-msg').style.color = 'red'; 
-            setTimeout(() => {
-                document.getElementById('action-msg').textContent = ""; 
-            }, 3000);
-        }
-    }
 
     // Modal click to close
     modalPopup.addEventListener('click', function (event) {
@@ -128,13 +99,6 @@ function openSyncModal() {
             modalPopup.remove();
         }
     });
-
-    // Event listeners for inputs
-    Object.values(awsInputs).forEach(input => {
-        input.addEventListener('input', updateButtonState);
-    });
-
-    updateButtonState();
 
     // Save button click handler
     document.getElementById('save-aws-details-btn').addEventListener('click', function () {
@@ -146,29 +110,6 @@ function openSyncModal() {
         actionMsgElement.style.color = 'green';
         setTimeout(() => {
             actionMsgElement.textContent = "";
-        }, 3000);
-        updateButtonState();
-    });
-
-    // Save switch state to localStorage and update appearance on click
-    cloudbkSwitch.addEventListener('click', function () {
-        const isChecked = cloudbkSwitch.getAttribute('aria-checked') === 'true';
-
-        // If turning on, check if all fields are populated
-        if (!isChecked && (awsInputs.bucket.value.trim() === '' || awsInputs.accessKey.value.trim() === '' || awsInputs.secretKey.value.trim() === '')) {
-            document.getElementById('action-msg').textContent = "Please fill in all AWS fields before enabling backup.";
-            return;
-        }
-
-        // Toggle the switch state
-        const newCheckedState = !isChecked;
-        updateSwitchAppearance(newCheckedState);
-        localStorage.setItem('clouddb-backup-enabled', newCheckedState); // Save switch state to localStorage
-        const actionMsgElement = document.getElementById('action-msg');
-        actionMsgElement.textContent = newCheckedState ? "Automated backups enabled." : "Automated backups disabled.";
-        actionMsgElement.style.color = newCheckedState ? 'green' : 'red';
-        setTimeout(() => {
-            actionMsgElement.textContent = ""; 
         }, 3000);
     });
 
