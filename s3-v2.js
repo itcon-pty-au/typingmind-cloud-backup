@@ -167,6 +167,7 @@ function openSyncModal() {
             actionMsgElement.textContent = "";
         }, 3000);
         updateButtonState();
+        checkAndImportBackup()
     });
 
     // Function to check for backup file and import it
