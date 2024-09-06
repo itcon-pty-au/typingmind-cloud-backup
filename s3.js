@@ -338,9 +338,6 @@ async function backupToS3() {
                 element.innerText = `Last sync done at ${currentTime}`;
             }
         }
-        setTimeout(() => {
-            actionMsgElement.textContent = "";
-        }, 3000);
     });
 }
 
