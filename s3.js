@@ -197,35 +197,18 @@ function openSyncModal() {
                     await importFromS3();
                     wasImportSuccessful = true;
                 }
-                monitorLocalStorageAndIndexedDB();
             });
         }
     }
 
     checkAndImportBackup();
 
-    // Function to monitor changes in localStorage
-    function monitorLocalStorageAndIndexedDB() {
-        const originalSetItem = localStorage.setItem;
-        localStorage.setItem = function (key, value) {
-            originalSetItem.apply(this, arguments);
-            if (wasImportSuccessful) {
-                const now = Date.now();
-                if (now - lastBackupTime > 5000) {
-                    backupToS3();
-                    lastBackupTime = now;
-                }
-            }
-        };
-
-        const request = indexedDB.open("keyval-store");
-        request.onsuccess = function (event) {
-            const db = event.target.result;
-            db.onversionchange = () => {
-                location.reload();
-            };
-        };
-    }
+    // Initiate periodic backup every 5 seconds if wasImportSuccessful is true
+    setInterval(async () => {
+        if (wasImportSuccessful) {
+            await backupToS3();
+        }
+    }, 5000);
 
     // Export button click handler
     document.getElementById('export-to-s3-btn').addEventListener('click', async function () {
