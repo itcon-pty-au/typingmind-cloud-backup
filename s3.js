@@ -184,12 +184,17 @@ function openSyncModal() {
 
     // Export button click handler
     document.getElementById('export-to-s3-btn').addEventListener('click', async function () {
+        isExportInProgress = true;
         await backupToS3();
+        console.log(`Synced to S3 at ${new Date().toLocaleString()}`);
+        isExportInProgress = false;
     });
 
     // Import button click handler
     document.getElementById('import-from-s3-btn').addEventListener('click', async function () {
-            await importFromS3();
+        await importFromS3();
+        console.log(`Synced from S3 at ${new Date().toLocaleString()}`);
+        wasImportSuccessful = true;
     });
 
 }
