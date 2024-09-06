@@ -1,5 +1,7 @@
 # TypingMind S3 Backup Extension
 
+[If you found this useful, please consider buying me a coffee](https://buymeacoffee.com/itcon) :heart:!
+
 ## Features
 - Extension to enable automatic backup & restore of app data to S3.
 - Automatically restores the latest backup version from S3 to your TypingMind instance when you first open the app (provided a backup exists).
@@ -65,6 +67,9 @@ Update AWS Account ID, IAM username and AWS bucket name
 ]
 ``
 Update "https://*.hostname.com"
+
+## About me
+I am a passionate developer dedicated to creating useful tools that can benefit the community. My goal is to distribute all of my projects as open source, enabling others to learn, contribute, and innovate together. If you appreciate my work and want to support my efforts, feel free to [buy me a coffee](https://buymeacoffee.com/itcon) :heart:!
 
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
