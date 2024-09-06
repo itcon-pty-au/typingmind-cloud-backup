@@ -1,34 +1,68 @@
 # TypingMind Cloud Backup Extension
 
+## AWS Config
+1. Create a user in Amazon IAM
+2. Create Access Key for the user
+3. Add Permission Policies to the user -> "AmazonS3FullAccess"
+3. Create a bucket.
+4. Open Bucket > Permissions > Bucket Policy
+``
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::<AWS Account ID>:user/<IAM username>"
+            },
+            "Action": [
+                "s3:PutObject",
+                "s3:GetObject"
+            ],
+            "Resource": "arn:aws:s3:::<AWS bucket name>/*"
+        }
+    ]
+}
+``
+5. Open Bucket > Permissions > CORS
+``
+[
+    {
+        "AllowedHeaders": [
+            "*"
+        ],
+        "AllowedMethods": [
+            "HEAD",
+            "GET",
+            "PUT",
+            "POST"
+        ],
+        "AllowedOrigins": [
+            "https://*.hostname.com"
+        ],
+        "ExposeHeaders": [
+            "Access-Control-Allow-Origin"
+        ],
+        "MaxAgeSeconds": 3000
+    }
+]
+``
+
 ## Features
-- Automatically restores the latest version from the cloud to your TypingMind instance when you first open the app (provided a backup exists).
-- Enables auto backing up of your TypingMind data to the cloud at a defined interval.
+- Extension to enable automatic backup & restore of app data to S3.
+- Automatically restores the latest backup version from S3 to your TypingMind instance when you first open the app (provided a backup exists).
+- Enables auto backing up of your TypingMind data to S3 throughout the session.
 
-## How the Extension Works
-- **WARNING:** Unlike the elegant in-house solution from TypingMind, this extension may have some rough edges due to the inherent limitations of what an extension can and cannot do.
-- **PREREQUISITE:** Ensure you take a local backup using Menu > Backup & Sync > Export before using this plugin.
+## PREREQUISITE: Ensure you take a local backup using Menu > Backup & Sync > Export before using this plugin to prevent any data loss.
   
-### Steps to Enable Backup
-1. Once the extension is installed, the cloud button in the bottom of the left sidebar will use the new cloud backup logic. You can enable automatic backup by clicking on the **Cloud Backup** toggle.
-2. Provide the mandatory parameters in the form.
-3. You can do adhoc cloud backups and restore using the respective buttons.
-4. When the app first loads (and if the Cloud Backup toggle is on), it will automatically import the latest backup from the cloud to the app. (Assuming form is saved with proper values) 
-5. Subsequently, as per the Auto Backup Interval, the data is automatically backed up to the cloud. If no value is provided in the Backup Interval field, backups will occur every 5 minutes.
-6. Before exiting the app, it is recommended to perform an ad-hoc backup to capture the latest app snapshot.
-
-## Using This Extension on a Second Device to Sync Data
-1. Assume this is a new instance of TypingMind that has no data to back up and all you want to do is restore the cloud backup to the new instance.
-2. Install the extension.
-3. Ensure Backup toggle is Off. Fill out the **Backup & Sync** form with the required details, ensuring the Document ID/Remote file name is populated. Refer to the other typingmind instance to get this detail. Or get it from the cloud.
-4. Click “Import from Cloud/Google Drive” to do an adhoc sync from cloud.
-
-## How to Obtain Google Drive API Credentials: Client ID, Client Secret, and Refresh Token
-1. Generate Client ID and Secret: https://github.com/ivanvermeyen/laravel-google-drive-demo/blob/master/README/1-getting-your-dlient-id-and-secret.md
-2. Add yourself as a test user in APIs & Services > OAuth consent screen > Test users
-3. Obtain the Refresh Token: https://github.com/ivanvermeyen/laravel-google-drive-demo/blob/master/README/2-getting-your-refresh-token.md
-
-## Contributing
-Contributions are welcome! Please feel free to submit a pull request or open an issue to discuss changes or features.
+### Using this extension
+1. Once the extension is installed, the cloud button in the bottom of the left sidebar will use the new cloud backup logic.
+2. Provide the AWS details in the form. [These are stored locally in your browser]
+3. The save button checks if there is a backup already in S3, if yes it restores it and updates the local typingmind instance.
+4. Manually refresh the page to reflect the new data. CTRL + F5 will help as well.
+4. If there is no backup in S3, it is expected that you do an adhoc "Export to S3" to kickstart the process.
+3. You can do adhoc cloud backups and restore using the respective buttons in the form.
+4. When the local data is changed, it triggers a backup to S3. However, calls are capped at 1 every 15 seconds.
 
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
