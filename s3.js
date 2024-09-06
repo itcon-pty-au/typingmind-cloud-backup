@@ -333,7 +333,10 @@ async function backupToS3() {
             // }, 3000);
             const currentTime = new Date().toLocaleString();
             localStorage.setItem('last-cloud-sync', currentTime);
-            document.getElementById('last-sync-msg').innerText = `Last sync done at ${currentTime}`;
+            var element = document.getElementById('last-sync-msg');
+            if (element !== null) {
+                element.innerText = `Last sync done at ${currentTime}`;
+            }
         }
         setTimeout(() => {
             actionMsgElement.textContent = "";
@@ -380,6 +383,10 @@ async function importFromS3() {
         // }, 3000);
         const currentTime = new Date().toLocaleString();
         localStorage.setItem('last-cloud-sync', currentTime);
+        var element = document.getElementById('last-sync-msg');
+        if (element !== null) {
+            element.innerText = `Last sync done at ${currentTime}`;
+        }
         wasImportSuccessful = true;
         //console.log("[Import from S3 button listener] wasImportSuccessful set to", wasImportSuccessful);
     });
