@@ -17,6 +17,7 @@ if (cloudButtonDiv) {
 let wasImportSuccessful = false;
 let lastBackupTime = 0;
 let isExportInProgress = false;
+let backupInterval;
 
 // Function to execute upon page load completion
 async function onLoad() { 
@@ -124,7 +125,9 @@ function openSyncModal() {
     // Visibility change event listener
     document.addEventListener('visibilitychange', async () => {
         if (!document.hidden) {
-            await checkAndImportBackup();
+            await checkAndImportBackup(); 
+        } else {
+            clearInterval(backupInterval);
         }
     });
 
@@ -223,7 +226,7 @@ function openSyncModal() {
 
     // Function to start the backup interval
     function startBackupInterval() {
-        const backupInterval = setInterval(async () => {
+        backupInterval = setInterval(async () => {
             if (wasImportSuccessful && !isExportInProgress) {
                 isExportInProgress = true;
                 await backupToS3();
@@ -232,9 +235,6 @@ function openSyncModal() {
             }
         }, 5000);
     }
-
-    // Call the onLoad function once the page has fully loaded
-    window.onload = onLoad;
 
 }
 
@@ -380,3 +380,6 @@ async function importFromS3() {
         wasImportSuccessful = true;
     });
 }
+
+// Call the onLoad function once the page has fully loaded
+window.onload = onLoad;
