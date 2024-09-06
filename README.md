@@ -24,6 +24,7 @@
     ]
 }
 ``
+Replace <AWS Account ID>, <IAM username> and <AWS bucket name>
 5. Open Bucket > Permissions > CORS
 ``
 [
@@ -47,6 +48,7 @@
     }
 ]
 ``
+Update "https://*.hostname.com"
 
 ## Features
 - Extension to enable automatic backup & restore of app data to S3.
