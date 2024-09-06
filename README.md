@@ -55,7 +55,7 @@ Update "https://*.hostname.com"
 - Automatically restores the latest backup version from S3 to your TypingMind instance when you first open the app (provided a backup exists).
 - Enables auto backing up of your TypingMind data to S3 throughout the session.
 
-## PREREQUISITE: Ensure you take a local backup using Menu > Backup & Sync > Export before using this plugin to prevent any data loss.
+#### PREREQUISITE: Ensure you take a local backup using Menu > Backup & Sync > Export before using this plugin to prevent any data loss.
   
 ### Using this extension
 1. Once the extension is installed, the cloud button in the bottom of the left sidebar will use the new cloud backup logic.
