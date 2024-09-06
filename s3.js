@@ -18,6 +18,12 @@ let wasImportSuccessful = false;
 let lastBackupTime = 0;
 let isExportInProgress = false;
 
+// Function to execute upon page load completion
+async function onLoad() { 
+    await checkAndImportBackup();
+    startBackupInterval();
+}
+
 function openSyncModal() {
     var existingModal = document.querySelector('div[data-element-id="sync-modal-dbbackup"]');
     if (existingModal) { return; }
@@ -212,29 +218,21 @@ function openSyncModal() {
         }
     }
 
-    // Start periodic backup only when the page is visible
-    const backupInterval = setInterval(async () => {
-        if (wasImportSuccessful && !isExportInProgress) {
-            isExportInProgress = true;
-            await backupToS3();
-            console.log(`Synced to S3 at ${new Date().toISOString()}`);
-            isExportInProgress = false;
-        }
-    }, 5000);
+    // Function to start the backup interval
+    function startBackupInterval() {
+        const backupInterval = setInterval(async () => {
+            if (wasImportSuccessful && !isExportInProgress) {
+                isExportInProgress = true;
+                await backupToS3();
+                console.log(`Synced to S3 at ${new Date().toISOString()}`);
+                isExportInProgress = false;
+            }
+        }, 5000);
+    }
 
-    // Export button click handler
-    document.getElementById('export-to-s3-btn').addEventListener('click', async function () {
-        isExportInProgress = true;
-        await backupToS3();
-        console.log(`Synced to S3 at ${new Date().toISOString()}`);
-        isExportInProgress = false;
-    });
+    // Call the onLoad function once the page has fully loaded
+    window.onload = onLoad;
 
-    // Import button click handler
-    document.getElementById('import-from-s3-btn').addEventListener('click', async function () {
-        await importFromS3();
-        console.log(`Synced from S3 at ${new Date().toISOString()}`);
-    });
 }
 
 // Function to load AWS SDK asynchronously
