@@ -1,6 +1,6 @@
 # TypingMind S3 Backup Extension
 
-[If you found this useful, please consider buying me a coffee](https://buymeacoffee.com/itcon){target="_blank"} :heart:!
+[If you found this useful, please consider buying me a coffee](https://buymeacoffee.com/itcon):heart:!
 
 ## Features
 - Extension to enable automatic backup & restore of app data to S3.
