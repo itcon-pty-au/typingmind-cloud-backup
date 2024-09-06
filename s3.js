@@ -21,6 +21,8 @@ let isExportInProgress = false;
 // Function to execute upon page load completion
 async function onLoad() { 
     await checkAndImportBackup();
+    const lastSync = localStorage.getItem('last-cloud-sync');
+    if (lastSync) document.getElementById('last-sync-msg').innerText = `Last sync done at ${lastSync}`;
     startBackupInterval();
 }
 
