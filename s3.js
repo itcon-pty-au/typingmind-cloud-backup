@@ -212,14 +212,14 @@ function openSyncModal() {
     document.getElementById('export-to-s3-btn').addEventListener('click', async function () {
         isExportInProgress = true;
         await backupToS3();
-        console.log(`Synced to S3 at ${new Date().toLocaleString()}`);
+        //console.log(`Synced to S3 at ${new Date().toLocaleString()}`);
         isExportInProgress = false;
     });
 
     // Import button click handler
     document.getElementById('import-from-s3-btn').addEventListener('click', async function () {
         await importFromS3();
-        console.log(`Synced from S3 at ${new Date().toLocaleString()}`);
+        //console.log(`Synced from S3 at ${new Date().toLocaleString()}`);
         wasImportSuccessful = true;
     });
 
@@ -270,7 +270,7 @@ async function checkAndImportBackup() {
         s3.getObject(params, async function (err) {
             if (!err) {
                 await importFromS3();
-                console.log(`Synced from S3 at ${new Date().toLocaleString()}`);
+                //console.log(`Synced from S3 at ${new Date().toLocaleString()}`);
                 wasImportSuccessful = true;
             }
         });
@@ -284,7 +284,7 @@ function startBackupInterval() {
         if (wasImportSuccessful && !isExportInProgress) {
             isExportInProgress = true;
             await backupToS3();
-            console.log(`Synced to S3 at ${new Date().toLocaleString()}`);
+            //console.log(`Synced to S3 at ${new Date().toLocaleString()}`);
             isExportInProgress = false;
         }
     }, 5000);
