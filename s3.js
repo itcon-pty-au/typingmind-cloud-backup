@@ -125,7 +125,10 @@ function openSyncModal() {
     // Visibility change event listener
     document.addEventListener('visibilitychange', async () => {
         if (!document.hidden) {
-            await checkAndImportBackup(); 
+            await checkAndImportBackup();
+            const lastSync = localStorage.getItem('last-cloud-sync');
+            if (lastSync) document.getElementById('last-sync-msg').innerText = `Last sync done at ${lastSync}`;
+            startBackupInterval();
         } else {
             clearInterval(backupInterval);
         }
