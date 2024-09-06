@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         await checkAndImportBackup();
+        const currentTime = new Date().toLocaleString();
         const lastSync = localStorage.getItem('last-cloud-sync');
         var element = document.getElementById('last-sync-msg');
         if (lastSync) {
@@ -110,6 +111,7 @@ function openSyncModal() {
     if (savedBucket) awsBucketInput.value = savedBucket;
     if (savedAccessKey) awsAccessKeyInput.value = savedAccessKey;
     if (savedSecretKey) awsSecretKeyInput.value = savedSecretKey;
+    const currentTime = new Date().toLocaleString();
     var element = document.getElementById('last-sync-msg');
     if (lastSync) {
         if (element !== null) {
@@ -192,6 +194,7 @@ function openSyncModal() {
         }, 3000);
         updateButtonState();
         checkAndImportBackup();
+        const currentTime = new Date().toLocaleString();
         const lastSync = localStorage.getItem('last-cloud-sync');
         var element = document.getElementById('last-sync-msg');
         if (lastSync) {
@@ -224,6 +227,7 @@ function openSyncModal() {
 document.addEventListener('visibilitychange', async () => {
     if (!document.hidden) {
         await checkAndImportBackup();
+        const currentTime = new Date().toLocaleString();
         const lastSync = localStorage.getItem('last-cloud-sync');
         var element = document.getElementById('last-sync-msg');
         if (lastSync) {
