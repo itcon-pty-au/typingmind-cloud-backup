@@ -1,17 +1,3 @@
-// document.addEventListener('DOMContentLoaded', async () => {
-//     await checkAndImportBackup();
-//     const currentTime = new Date().toLocaleString();
-//     const lastSync = localStorage.getItem('last-cloud-sync');
-//     var element = document.getElementById('last-sync-msg');
-//     if (lastSync) {
-//         if (element !== null) {
-//             element.innerText = `Last sync done at ${currentTime}`;
-//             element = null;
-//         }
-//     }
-//     startBackupInterval();
-// });
-
 // Handle page load
 const checkDOMLoaded = setInterval(async () => {
     if (document.readyState === 'complete' && wasImportSuccessful !== true) {
@@ -30,7 +16,7 @@ const checkDOMLoaded = setInterval(async () => {
     }
 }, 5000);
 
-
+// Replace button
 const cloudButtonDiv = document.querySelector('button[data-element-id="cloud-button"]');
 if (cloudButtonDiv) {
     cloudButtonDiv.style.display = 'none';
@@ -47,6 +33,7 @@ if (cloudButtonDiv) {
     });
 }
 
+// New Popup 
 let wasImportSuccessful = false;
 let lastBackupTime = 0;
 let isExportInProgress = false;
