@@ -1,5 +1,4 @@
-// Call the onLoad function once the page has fully loaded
-window.onload = onLoad;
+document.addEventListener('DOMContentLoaded', onLoad);
 
 const cloudButtonDiv = document.querySelector('button[data-element-id="cloud-button"]');
 if (cloudButtonDiv) {
