@@ -7,7 +7,7 @@
   
 ## Using this extension
 1. Load "https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js" into Menu > Preferences > Extension in Typingmind.
-2. Once the extension is installed, the cloud button in the bottom of the left sidebar will use the new cloud backup logic.
+2. Once the extension is installed, the cloud button in the bottom of the left sidebar will use the new extension. [The popup should now show a form where you can provide AWS S3 details. If not, refresh the page.]
 3. Provide the AWS details in the form. [These are stored locally in your browser]
 4. The save button checks if there is a backup already in S3, if yes it restores it and updates the local typingmind instance.
 5. Manually refresh the page to reflect the new data. CTRL + F5 if it does not.
