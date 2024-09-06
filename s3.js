@@ -16,6 +16,7 @@ if (cloudButtonDiv) {
 
 let wasImportSuccessful = false;
 let lastBackupTime = 0;
+let isExportInProgress = false;
 
 function openSyncModal() {
     var existingModal = document.querySelector('div[data-element-id="sync-modal-dbbackup"]');
@@ -112,6 +113,13 @@ function openSyncModal() {
 
     updateButtonState();
 
+    // Visibility change event listener
+    document.addEventListener('visibilitychange', async () => {
+        if (!document.hidden) {
+            await checkAndImportBackup();
+        }
+    });
+
     const infoIcon = document.getElementById('info-icon');
     const tooltip = document.getElementById('tooltip');
     let tooltipTimeout;
@@ -198,18 +206,17 @@ function openSyncModal() {
                 if (!err) {
                     await importFromS3();
                     wasImportSuccessful = true;
-                    //console.log("[checkAndImportBackup function] wasImportSuccessful set to", wasImportSuccessful);
                 }
             });
         }
     }
 
-    checkAndImportBackup();
-
-    // Initiate periodic backup every 5 seconds if wasImportSuccessful is true
-    setInterval(async () => {
-        if (wasImportSuccessful) {
+    // Start periodic backup only when the page is visible
+    const backupInterval = setInterval(async () => {
+        if (wasImportSuccessful && !isExportInProgress) {
+            isExportInProgress = true;
             await backupToS3();
+            isExportInProgress = false;
         }
     }, 5000);
 
@@ -220,7 +227,7 @@ function openSyncModal() {
 
     // Import button click handler
     document.getElementById('import-from-s3-btn').addEventListener('click', async function () {
-            await importFromS3();
+        await importFromS3();
     });
 }
 
@@ -237,8 +244,6 @@ async function loadAwsSdk() {
 
 // Function to import data from S3 to localStorage and IndexedDB
 function importDataToStorage(data) {
-    //console.log("Imported data", data);
-
     Object.keys(data.localStorage).forEach(key => {
         localStorage.setItem(key, data.localStorage[key]);
     });
@@ -252,16 +257,7 @@ function importDataToStorage(data) {
         Object.keys(data).forEach(key => {
             objectStore.put(data[key], key);
         });
-        // transaction.oncomplete = () => {
-        //     console.log("All records imported successfully!");
-        // };
-        // transaction.onerror = (e) => {
-        //     console.error("Error during import transaction:", e.target.error);
-        // };
     };
-    // request.onerror = function (event) {
-    //     console.error("Error opening IndexedDB:", event.target.error);
-    // };
 }
 
 // Function to export data from localStorage and IndexedDB
@@ -326,11 +322,6 @@ async function backupToS3() {
             actionMsgElement.textContent = `Error uploading data: ${err.message}`;
             actionMsgElement.style.color = 'white';
         } else {
-            // actionMsgElement.textContent = `Export successful!`;
-            // actionMsgElement.style.color = 'white';
-            // setTimeout(() => {
-            //     actionMsgElement.textContent = "";
-            // }, 3000);
             const currentTime = new Date().toLocaleString();
             localStorage.setItem('last-cloud-sync', currentTime);
             var element = document.getElementById('last-sync-msg');
@@ -373,11 +364,6 @@ async function importFromS3() {
 
         const importedData = JSON.parse(data.Body.toString('utf-8'));
         importDataToStorage(importedData);
-        //actionMsgElement.textContent = `Import successful!`;
-        //actionMsgElement.style.color = 'white';
-        // setTimeout(() => {
-        //     actionMsgElement.textContent = "";
-        // }, 3000);
         const currentTime = new Date().toLocaleString();
         localStorage.setItem('last-cloud-sync', currentTime);
         var element = document.getElementById('last-sync-msg');
@@ -385,6 +371,5 @@ async function importFromS3() {
             element.innerText = `Last sync done at ${currentTime}`;
         }
         wasImportSuccessful = true;
-        //console.log("[Import from S3 button listener] wasImportSuccessful set to", wasImportSuccessful);
     });
 }
