@@ -295,9 +295,9 @@ function exportBackupData() {
 
 // Function to handle backup to S3
 async function backupToS3() {
-    const bucketName = awsBucketInput.value.trim();
-    const awsAccessKey = awsAccessKeyInput.value.trim();
-    const awsSecretKey = awsSecretKeyInput.value.trim();
+    const bucketName = localStorage.getItem('aws-bucket');
+    const awsAccessKey = localStorage.getItem('aws-access-key');
+    const awsSecretKey = localStorage.getItem('aws-secret-key');
 
     if (typeof AWS === 'undefined') {
         await loadAwsSdk();
@@ -340,9 +340,9 @@ async function backupToS3() {
 
 // Function to handle import from S3
 async function importFromS3() {
-    const bucketName = awsBucketInput.value.trim();
-    const awsAccessKey = awsAccessKeyInput.value.trim();
-    const awsSecretKey = awsSecretKeyInput.value.trim();
+    const bucketName = localStorage.getItem('aws-bucket');
+    const awsAccessKey = localStorage.getItem('aws-access-key');
+    const awsSecretKey = localStorage.getItem('aws-secret-key');
 
     if (typeof AWS === 'undefined') {
         await loadAwsSdk();
