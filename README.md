@@ -5,7 +5,7 @@
 - Automatically restores the latest backup version from S3 to your TypingMind instance when you first open the app (provided a backup exists).
 - Enables auto backing up of your TypingMind data to S3 throughout the session.
 
-## PREREQUISITE
+## Warning!
 Ensure you take a local backup using Menu > Backup & Sync > Export before using this plugin to prevent any data loss.
   
 ## Using this extension
@@ -41,7 +41,8 @@ Ensure you take a local backup using Menu > Backup & Sync > Export before using 
     ]
 }
 ``
-Replace <AWS Account ID>, <IAM username> and <AWS bucket name>
+Update AWS Account ID, IAM username and AWS bucket name
+
 5. Open Bucket > Permissions > CORS
 ``
 [
