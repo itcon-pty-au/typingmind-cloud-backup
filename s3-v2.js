@@ -14,8 +14,8 @@ if (cloudButtonDiv) {
     });
 }
 
-let wasImportSuccessful = false; // Transient variable for import status
-let lastBackupTime = 0; // Variable to track the last backup time
+let wasImportSuccessful = false;
+let lastBackupTime = 0;
 
 function openSyncModal() {
     var existingModal = document.querySelector('div[data-element-id="sync-modal-dbbackup"]');
@@ -31,9 +31,7 @@ function openSyncModal() {
                     <div class="relative group ml-2">
                         <span class="cursor-pointer" id="info-icon">ℹ</span>
                         <div id="tooltip" style="width: 250px; margin-top: 0.5em;" class="absolute z-10 -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded-md px-2 py-1 opacity-90 transition-opacity duration-300 opacity-0 transition-opacity">
-                            <b>Step 1:</b> Fill form & Save<br/><br/>
-                            <b>Step 2:</b> To create/update the backup in S3 with the data in this typingmind instance, click on "Export to S3". Instead, if you want to update data in this typingmind instance with the existing backup in S3, click on "Import from S3".<br/><br/>
-                            <b>Step 3:</b> To automatically sync data between this typing instance and S3 going forward, toggle the "Enable Automated Cloud Backups". [ By doing this - When you open typingmind, it will refresh the latest data from S3. Also, any update to the data in the current typingmind instance will trigger an update to S3 backup in real time.]
+                            Fill form & Save. <br/><br/> Initial backup: You will need to click on "Export to S3" to create your first backup in S3. Thereafter, automatic backups are done to S3.<br/><br/> Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the data in this typingmind instance.
                         </div>
                     </div>
                 </div>
@@ -196,17 +194,15 @@ function openSyncModal() {
 
             s3.getObject(params, async function (err) {
                 if (!err) {
-                    // If backup exists, import data
                     await importFromS3();
-                    wasImportSuccessful = true; // Updated to confirm import success
+                    wasImportSuccessful = true;
                 }
-                // Monitor for changes in localStorage
                 monitorLocalStorageAndIndexedDB();
             });
         }
     }
 
-    checkAndImportBackup(); // Run on modal open
+    checkAndImportBackup();
 
     // Function to monitor changes in localStorage
     function monitorLocalStorageAndIndexedDB() {
@@ -215,10 +211,9 @@ function openSyncModal() {
             originalSetItem.apply(this, arguments);
             if (wasImportSuccessful) {
                 const now = Date.now();
-                // Trigger backup if more than 15 seconds have passed
                 if (now - lastBackupTime > 15000) {
-                    backupToS3(); // Run ad-hoc backup to S3 if import was successful
-                    lastBackupTime = now; // Update the last backup time
+                    backupToS3();
+                    lastBackupTime = now;
                 }
             }
         };
@@ -227,7 +222,7 @@ function openSyncModal() {
         request.onsuccess = function (event) {
             const db = event.target.result;
             db.onversionchange = () => {
-                location.reload(); // Reload if there's a version change
+                location.reload();
             };
         };
     }
@@ -316,7 +311,7 @@ function openSyncModal() {
             }, 3000);
             const currentTime = new Date().toLocaleString();
             localStorage.setItem('last-cloud-sync', currentTime);
-            wasImportSuccessful = true; // Update import status
+            wasImportSuccessful = true;
         });
     });
 }
@@ -332,6 +327,7 @@ async function loadAwsSdk() {
     });
 }
 
+// Function to import data from S3 to localStorage and IndexedDB
 function importDataToStorage(data) {
     console.log("Imported data", data);
 
@@ -470,6 +466,6 @@ async function importFromS3() {
         console.log(`Automated import successful!`);
         const currentTime = new Date().toLocaleString();
         localStorage.setItem('last-cloud-sync', currentTime);
-        wasImportSuccessful = true; // Update import status
+        wasImportSuccessful = true; 
     });
 }
