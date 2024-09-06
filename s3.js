@@ -214,7 +214,7 @@ function openSyncModal() {
             s3.getObject(params, async function (err) {
                 if (!err) {
                     await importFromS3();
-                    console.log(`Synced from S3 at ${new Date().toISOString()}`);
+                    console.log(`Synced from S3 at ${new Date().toLocaleString()}`);
                     wasImportSuccessful = true;
                 }
             });
@@ -227,7 +227,7 @@ function openSyncModal() {
             if (wasImportSuccessful && !isExportInProgress) {
                 isExportInProgress = true;
                 await backupToS3();
-                console.log(`Synced to S3 at ${new Date().toISOString()}`);
+                console.log(`Synced to S3 at ${new Date().toLocaleString()}`);
                 isExportInProgress = false;
             }
         }, 5000);
