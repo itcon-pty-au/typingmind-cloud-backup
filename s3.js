@@ -211,7 +211,7 @@ function openSyncModal() {
             originalSetItem.apply(this, arguments);
             if (wasImportSuccessful) {
                 const now = Date.now();
-                if (now - lastBackupTime > 15000) {
+                if (now - lastBackupTime > 5000) {
                     backupToS3();
                     lastBackupTime = now;
                 }
