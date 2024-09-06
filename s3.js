@@ -206,8 +206,13 @@ document.addEventListener('visibilitychange', async () => {
     if (!document.hidden) {
         await checkAndImportBackup();
         const lastSync = localStorage.getItem('last-cloud-sync');
-        if (lastSync) document.getElementById('last-sync-msg').innerText = `Last sync done at ${lastSync}`;
-        startBackupInterval(); // Ensure interval starts when the page becomes visible
+        var element = document.getElementById('last-sync-msg');
+        if (lastSync) {
+            if (element !== null) {
+                element.innerText = `Last sync done at ${currentTime}`;
+            }
+        }
+        startBackupInterval();
     } else {
         clearInterval(backupInterval);
     }
@@ -248,7 +253,7 @@ async function checkAndImportBackup() {
 
 // Function to start the backup interval
 function startBackupInterval() {
-    clearInterval(backupInterval); // Ensure existing interval is cleared before starting a new one
+    clearInterval(backupInterval);
     backupInterval = setInterval(async () => {
         if (wasImportSuccessful && !isExportInProgress) {
             isExportInProgress = true;
