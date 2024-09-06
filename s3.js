@@ -34,14 +34,14 @@ function openSyncModal() {
                         </div>
                     </div>
                 </div>
-                <div class="flex items-center justify-start space-x-2">
+               <!-- <div class="flex items-center justify-start space-x-2">
                     <span class="text-sm font-medium text-gray-700 dark:text-gray-400">Enable Automated Cloud Backups</span>
                     <label class="inline-flex items-center flex-shrink-0">
                         <button data-element-id="clouddb-backup-enabled" class="bg-gray-300 h-6 w-11 cursor-pointer relative inline-flex flex-shrink-0 rounded-full border-2 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2" id="cloudbk-switch" role="switch" type="button" tabindex="0" aria-checked="false" data-headlessui-state="">
                             <span aria-hidden="true" class="translate-x-0 h-5 w-5 pointer-events-none inline-block transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
                         </button>
                     </label>
-                </div>
+                </div> -->
                 <div class="space-y-4">
                     <div>
                         <div class="my-4 bg-gray-100 px-3 py-3 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
@@ -90,12 +90,12 @@ function openSyncModal() {
     const awsBucketInput = document.getElementById('aws-bucket');
     const awsAccessKeyInput = document.getElementById('aws-access-key');
     const awsSecretKeyInput = document.getElementById('aws-secret-key');
-    const cloudbkSwitch = document.getElementById('cloudbk-switch');
+    //const cloudbkSwitch = document.getElementById('cloudbk-switch');
     const savedBucket = localStorage.getItem('aws-bucket');
     const savedAccessKey = localStorage.getItem('aws-access-key');
     const savedSecretKey = localStorage.getItem('aws-secret-key');
     const lastSync = localStorage.getItem('last-cloud-sync');
-    const isBackupEnabled = localStorage.getItem('clouddb-backup-enabled') === 'true';
+    //const isBackupEnabled = localStorage.getItem('clouddb-backup-enabled') === 'true';
 
     if (savedBucket) awsBucketInput.value = savedBucket;
     if (savedAccessKey) awsAccessKeyInput.value = savedAccessKey;
@@ -103,21 +103,21 @@ function openSyncModal() {
     if (lastSync) document.getElementById('last-sync-msg').innerText = `Last sync done at ${lastSync}`;
 
     // Initialize the state of the switch
-    if (isBackupEnabled) {
-        cloudbkSwitch.setAttribute('aria-checked', 'true');
-        cloudbkSwitch.classList.remove('bg-gray-300');
-        cloudbkSwitch.classList.add('bg-blue-600');
-        cloudbkSwitch.querySelector('span').classList.remove('translate-x-0');
-        cloudbkSwitch.querySelector('span').classList.add('translate-x-5');
-    }
+    // if (isBackupEnabled) {
+    //     cloudbkSwitch.setAttribute('aria-checked', 'true');
+    //     cloudbkSwitch.classList.remove('bg-gray-300');
+    //     cloudbkSwitch.classList.add('bg-blue-600');
+    //     cloudbkSwitch.querySelector('span').classList.remove('translate-x-0');
+    //     cloudbkSwitch.querySelector('span').classList.add('translate-x-5');
+    // }
 
     // Update button enable/disable state
-    function updateButtonState() {
-        const isDisabled = !awsBucketInput.value.trim() || !awsAccessKeyInput.value.trim() || !awsSecretKeyInput.value.trim();
-        document.getElementById('export-to-s3-btn').disabled = isDisabled;
-        document.getElementById('import-from-s3-btn').disabled = isDisabled;
-        document.getElementById('save-aws-details-btn').disabled = isDisabled;
-    }
+    // function updateButtonState() {
+    //     const isDisabled = !awsBucketInput.value.trim() || !awsAccessKeyInput.value.trim() || !awsSecretKeyInput.value.trim();
+    //     document.getElementById('export-to-s3-btn').disabled = isDisabled;
+    //     document.getElementById('import-from-s3-btn').disabled = isDisabled;
+    //     document.getElementById('save-aws-details-btn').disabled = isDisabled;
+    // }
 
     modalPopup.addEventListener('click', function (event) {
         if (event.target === modalPopup) {
@@ -125,11 +125,11 @@ function openSyncModal() {
         }
     });
 
-    awsBucketInput.addEventListener('input', updateButtonState);
-    awsAccessKeyInput.addEventListener('input', updateButtonState);
-    awsSecretKeyInput.addEventListener('input', updateButtonState);
+    // awsBucketInput.addEventListener('input', updateButtonState);
+    // awsAccessKeyInput.addEventListener('input', updateButtonState);
+    // awsSecretKeyInput.addEventListener('input', updateButtonState);
 
-    updateButtonState();
+    // updateButtonState();
 
     // Tooltip toggle logic
     const infoIcon = document.getElementById('info-icon');
@@ -188,34 +188,34 @@ function openSyncModal() {
         updateButtonState();
     });
 
-    // Save switch state to localStorage
-    cloudbkSwitch.addEventListener('click', function () {
-        const isChecked = cloudbkSwitch.getAttribute('aria-checked') === 'true';
+    // // Save switch state to localStorage
+    // cloudbkSwitch.addEventListener('click', function () {
+    //     const isChecked = cloudbkSwitch.getAttribute('aria-checked') === 'true';
 
-        // Check if all AWS fields are populated before enabling backup
-        if (!isChecked && (!awsBucketInput.value.trim() || !awsAccessKeyInput.value.trim() || !awsSecretKeyInput.value.trim())) {
-            const actionMsgElement = document.getElementById('action-msg');
-            actionMsgElement.textContent = "Please fill in all AWS fields before enabling backup.";
-            actionMsgElement.style.color = 'red';
-            setTimeout(() => {
-                actionMsgElement.textContent = "";
-            }, 3000);
-            return;
-        }
+    //     // Check if all AWS fields are populated before enabling backup
+    //     if (!isChecked && (!awsBucketInput.value.trim() || !awsAccessKeyInput.value.trim() || !awsSecretKeyInput.value.trim())) {
+    //         const actionMsgElement = document.getElementById('action-msg');
+    //         actionMsgElement.textContent = "Please fill in all AWS fields before enabling backup.";
+    //         actionMsgElement.style.color = 'red';
+    //         setTimeout(() => {
+    //             actionMsgElement.textContent = "";
+    //         }, 3000);
+    //         return;
+    //     }
 
-        if (isChecked) {
-            cloudbkSwitch.setAttribute('aria-checked', 'false');
-            cloudbkSwitch.classList.remove('bg-blue-600');
-            cloudbkSwitch.querySelector('span').classList.remove('translate-x-5');
-            cloudbkSwitch.querySelector('span').classList.add('translate-x-0');
-        } else {
-            cloudbkSwitch.setAttribute('aria-checked', 'true');
-            cloudbkSwitch.classList.add('bg-blue-600');
-            cloudbkSwitch.querySelector('span').classList.add('translate-x-5');
-            cloudbkSwitch.querySelector('span').classList.remove('translate-x-0');
-        }
-        localStorage.setItem('clouddb-backup-enabled', !isChecked);
-    });
+    //     if (isChecked) {
+    //         cloudbkSwitch.setAttribute('aria-checked', 'false');
+    //         cloudbkSwitch.classList.remove('bg-blue-600');
+    //         cloudbkSwitch.querySelector('span').classList.remove('translate-x-5');
+    //         cloudbkSwitch.querySelector('span').classList.add('translate-x-0');
+    //     } else {
+    //         cloudbkSwitch.setAttribute('aria-checked', 'true');
+    //         cloudbkSwitch.classList.add('bg-blue-600');
+    //         cloudbkSwitch.querySelector('span').classList.add('translate-x-5');
+    //         cloudbkSwitch.querySelector('span').classList.remove('translate-x-0');
+    //     }
+    //     localStorage.setItem('clouddb-backup-enabled', !isChecked);
+    // });
 
     // Export button click handler
     document.getElementById('export-to-s3-btn').addEventListener('click', async function () {
@@ -381,36 +381,36 @@ function exportBackupData() {
 }
 
 // Function to handle automated backup on data change
-function setupAutomatedBackup() {
-    // Watch for changes in localStorage
-    window.addEventListener('storage', async (event) => {
-        if (localStorage.getItem('clouddb-backup-enabled') === 'true') {
-            await backupToS3();
-        }
-    });
+// function setupAutomatedBackup() {
+//     // Watch for changes in localStorage
+//     window.addEventListener('storage', async (event) => {
+//         if (localStorage.getItem('clouddb-backup-enabled') === 'true') {
+//             await backupToS3();
+//         }
+//     });
 
-    // Watch for changes in IndexedDB
-    const request = indexedDB.open("keyval-store");
-    request.onsuccess = function (event) {
-        const db = event.target.result;
-        const transaction = db.transaction(["keyval"], "readonly");
-        const objectStore = transaction.objectStore("keyval");
+//     // Watch for changes in IndexedDB
+//     const request = indexedDB.open("keyval-store");
+//     request.onsuccess = function (event) {
+//         const db = event.target.result;
+//         const transaction = db.transaction(["keyval"], "readonly");
+//         const objectStore = transaction.objectStore("keyval");
 
-        objectStore.openCursor().onsuccess = function(event) {
-            const cursor = event.target.result;
-            if (cursor) {
-                cursor.continue();
-            } else {
-                const observer = new MutationObserver((mutations) => {
-                    if (localStorage.getItem('clouddb-backup-enabled') === 'true') {
-                        backupToS3();
-                    }
-                });
-                observer.observe(document, { attributes: true, childList: true, subtree: true });
-            }
-        };
-    };
-}
+//         objectStore.openCursor().onsuccess = function(event) {
+//             const cursor = event.target.result;
+//             if (cursor) {
+//                 cursor.continue();
+//             } else {
+//                 const observer = new MutationObserver((mutations) => {
+//                     if (localStorage.getItem('clouddb-backup-enabled') === 'true') {
+//                         backupToS3();
+//                     }
+//                 });
+//                 observer.observe(document, { attributes: true, childList: true, subtree: true });
+//             }
+//         };
+//     };
+// }
 
 // Function to handle backup to S3
 async function backupToS3() {
@@ -458,13 +458,13 @@ async function backupToS3() {
 }
 
 // On page load, check if automated backup is enabled and import data from S3
-document.addEventListener('DOMContentLoaded', async () => {
-    const isBackupEnabled = localStorage.getItem('clouddb-backup-enabled') === 'true';
-    if (isBackupEnabled) {
-        await importFromS3();
-    }
-    setupAutomatedBackup();
-});
+// document.addEventListener('DOMContentLoaded', async () => {
+//     const isBackupEnabled = localStorage.getItem('clouddb-backup-enabled') === 'true';
+//     if (isBackupEnabled) {
+//         await importFromS3();
+//     }
+//     setupAutomatedBackup();
+// });
 
 // Function to handle import from S3
 async function importFromS3() {
