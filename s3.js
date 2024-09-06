@@ -182,6 +182,16 @@ function openSyncModal() {
         startBackupInterval();
     });
 
+    // Export button click handler
+    document.getElementById('export-to-s3-btn').addEventListener('click', async function () {
+        await backupToS3();
+    });
+
+    // Import button click handler
+    document.getElementById('import-from-s3-btn').addEventListener('click', async function () {
+            await importFromS3();
+    });
+
 }
 
 // Visibility change event listener
@@ -383,6 +393,3 @@ async function importFromS3() {
         wasImportSuccessful = true;
     });
 }
-
-// Call the onLoad function once the page has fully loaded
-window.onload = onLoad;
