@@ -26,7 +26,7 @@ async function onLoad() {
     await checkAndImportBackup();
     const lastSync = localStorage.getItem('last-cloud-sync');
     if (lastSync) document.getElementById('last-sync-msg').innerText = `Last sync done at ${lastSync}`;
-    startBackupInterval();
+    startBackupInterval(); // Ensure interval starts correctly on page load
 }
 
 function openSyncModal() {
@@ -178,10 +178,10 @@ function openSyncModal() {
             actionMsgElement.textContent = "";
         }, 3000);
         updateButtonState();
-        checkAndImportBackup();
+        checkAndImportBackup(); // Check for backup after saving
         const lastSync = localStorage.getItem('last-cloud-sync');
         if (lastSync) document.getElementById('last-sync-msg').innerText = `Last sync done at ${lastSync}`;
-        startBackupInterval();
+        startBackupInterval(); // Start backup interval after saving details
     });
 
     // Export button click handler
@@ -207,7 +207,7 @@ document.addEventListener('visibilitychange', async () => {
         await checkAndImportBackup();
         const lastSync = localStorage.getItem('last-cloud-sync');
         if (lastSync) document.getElementById('last-sync-msg').innerText = `Last sync done at ${lastSync}`;
-        startBackupInterval();
+        startBackupInterval(); // Ensure interval starts when the page becomes visible
     } else {
         clearInterval(backupInterval);
     }
@@ -248,6 +248,7 @@ async function checkAndImportBackup() {
 
 // Function to start the backup interval
 function startBackupInterval() {
+    clearInterval(backupInterval); // Ensure existing interval is cleared before starting a new one
     backupInterval = setInterval(async () => {
         if (wasImportSuccessful && !isExportInProgress) {
             isExportInProgress = true;
