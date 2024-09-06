@@ -1,4 +1,4 @@
-# TypingMind Cloud Backup Extension
+# TypingMind S3 Backup Extension
 
 ## Features
 - Extension to enable automatic backup & restore of app data to S3.
