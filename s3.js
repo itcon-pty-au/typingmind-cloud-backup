@@ -1,4 +1,19 @@
-document.addEventListener('DOMContentLoaded', onLoad);
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        await checkAndImportBackup();
+        const lastSync = localStorage.getItem('last-cloud-sync');
+        var element = document.getElementById('last-sync-msg');
+        if (lastSync) {
+            if (element !== null) {
+                element.innerText = `Last sync done at ${currentTime}`;
+                element = null;
+            }
+        }
+        startBackupInterval();
+    } catch (error) {
+        console.error("Error during page load operations:", error);
+    }
+});
 
 const cloudButtonDiv = document.querySelector('button[data-element-id="cloud-button"]');
 if (cloudButtonDiv) {
@@ -20,14 +35,6 @@ let wasImportSuccessful = false;
 let lastBackupTime = 0;
 let isExportInProgress = false;
 let backupInterval;
-
-// Function to execute upon page load completion
-async function onLoad() { 
-    await checkAndImportBackup();
-    const lastSync = localStorage.getItem('last-cloud-sync');
-    if (lastSync) document.getElementById('last-sync-msg').innerText = `Last sync done at ${lastSync}`;
-    startBackupInterval(); // Ensure interval starts correctly on page load
-}
 
 function openSyncModal() {
     var existingModal = document.querySelector('div[data-element-id="sync-modal-dbbackup"]');
@@ -103,7 +110,13 @@ function openSyncModal() {
     if (savedBucket) awsBucketInput.value = savedBucket;
     if (savedAccessKey) awsAccessKeyInput.value = savedAccessKey;
     if (savedSecretKey) awsSecretKeyInput.value = savedSecretKey;
-    if (lastSync) document.getElementById('last-sync-msg').innerText = `Last sync done at ${lastSync}`;
+    var element = document.getElementById('last-sync-msg');
+    if (lastSync) {
+        if (element !== null) {
+            element.innerText = `Last sync done at ${currentTime}`;
+            element = null;
+        }
+    }
 
     function updateButtonState() {
         const isDisabled = !awsBucketInput.value.trim() || !awsAccessKeyInput.value.trim() || !awsSecretKeyInput.value.trim();
@@ -178,10 +191,16 @@ function openSyncModal() {
             actionMsgElement.textContent = "";
         }, 3000);
         updateButtonState();
-        checkAndImportBackup(); // Check for backup after saving
+        checkAndImportBackup();
         const lastSync = localStorage.getItem('last-cloud-sync');
-        if (lastSync) document.getElementById('last-sync-msg').innerText = `Last sync done at ${lastSync}`;
-        startBackupInterval(); // Start backup interval after saving details
+        var element = document.getElementById('last-sync-msg');
+        if (lastSync) {
+            if (element !== null) {
+                element.innerText = `Last sync done at ${currentTime}`;
+                element = null;
+            }
+        }
+        startBackupInterval();
     });
 
     // Export button click handler
@@ -210,6 +229,7 @@ document.addEventListener('visibilitychange', async () => {
         if (lastSync) {
             if (element !== null) {
                 element.innerText = `Last sync done at ${currentTime}`;
+                element = null;
             }
         }
         startBackupInterval();
