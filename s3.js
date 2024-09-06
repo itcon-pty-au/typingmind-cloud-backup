@@ -167,6 +167,8 @@ function openSyncModal() {
         }, 3000);
         updateButtonState();
         checkAndImportBackup();
+        const lastSync = localStorage.getItem('last-cloud-sync');
+        if (lastSync) document.getElementById('last-sync-msg').innerText = `Last sync done at ${lastSync}`;
     });
 
     // Function to check for backup file and import it
@@ -196,6 +198,7 @@ function openSyncModal() {
                 if (!err) {
                     await importFromS3();
                     wasImportSuccessful = true;
+                    console.log("[checkAndImportBackup function] wasImportSuccessful set to", wasImportSuccessful);
                 }
             });
         }
@@ -212,90 +215,12 @@ function openSyncModal() {
 
     // Export button click handler
     document.getElementById('export-to-s3-btn').addEventListener('click', async function () {
-        const bucketName = awsBucketInput.value.trim();
-        const awsAccessKey = awsAccessKeyInput.value.trim();
-        const awsSecretKey = awsSecretKeyInput.value.trim();
-
-        if (typeof AWS === 'undefined') {
-            await loadAwsSdk();
-        }
-
-        AWS.config.update({
-            accessKeyId: awsAccessKey,
-            secretAccessKey: awsSecretKey,
-            region: 'ap-southeast-2'
-        });
-
-        const data = await exportBackupData();
-        const dataStr = JSON.stringify(data);
-        const dataFileName = 'typingmind-backup.json';
-        const s3 = new AWS.S3();
-        const uploadParams = {
-            Bucket: bucketName,
-            Key: dataFileName,
-            Body: dataStr,
-            ContentType: 'application/json'
-        };
-
-        s3.upload(uploadParams, function (err, data) {
-            const actionMsgElement = document.getElementById('action-msg');
-            if (err) {
-                actionMsgElement.textContent = `Error uploading data: ${err.message}`;
-                actionMsgElement.style.color = 'white';
-            } else {
-                actionMsgElement.textContent = `Export successful!`;
-                actionMsgElement.style.color = 'white';
-                const currentTime = new Date().toLocaleString();
-                localStorage.setItem('last-cloud-sync', currentTime);
-                document.getElementById('last-sync-msg').innerText = `Last sync done at ${currentTime}`;
-            }
-            setTimeout(() => {
-                actionMsgElement.textContent = "";
-            }, 3000);
-        });
+        await backupToS3();
     });
 
     // Import button click handler
     document.getElementById('import-from-s3-btn').addEventListener('click', async function () {
-        const bucketName = awsBucketInput.value.trim();
-        const awsAccessKey = awsAccessKeyInput.value.trim();
-        const awsSecretKey = awsSecretKeyInput.value.trim();
-
-        if (typeof AWS === 'undefined') {
-            await loadAwsSdk();
-        }
-
-        AWS.config.update({
-            accessKeyId: awsAccessKey,
-            secretAccessKey: awsSecretKey,
-            region: 'ap-southeast-2'
-        });
-
-        const s3 = new AWS.S3();
-        const params = {
-            Bucket: bucketName,
-            Key: 'typingmind-backup.json'
-        };
-
-        s3.getObject(params, function (err, data) {
-            const actionMsgElement = document.getElementById('action-msg');
-            if (err) {
-                actionMsgElement.textContent = `Error fetching data: ${err.message}`;
-                actionMsgElement.style.color = 'white';
-                return;
-            }
-
-            const importedData = JSON.parse(data.Body.toString('utf-8'));
-            importDataToStorage(importedData);
-            actionMsgElement.textContent = `Import successful!`;
-            actionMsgElement.style.color = 'white';
-            setTimeout(() => {
-                actionMsgElement.textContent = "";
-            }, 3000);
-            const currentTime = new Date().toLocaleString();
-            localStorage.setItem('last-cloud-sync', currentTime);
-            wasImportSuccessful = true;
-        });
+            await importFromS3();
     });
 }
 
@@ -370,14 +295,9 @@ function exportBackupData() {
 
 // Function to handle backup to S3
 async function backupToS3() {
-    const bucketName = localStorage.getItem('aws-bucket');
-    const awsAccessKey = localStorage.getItem('aws-access-key');
-    const awsSecretKey = localStorage.getItem('aws-secret-key');
-
-    if (!bucketName || !awsAccessKey || !awsSecretKey) {
-        console.warn("AWS credentials are missing. Automated backup skipped.");
-        return;
-    }
+    const bucketName = awsBucketInput.value.trim();
+    const awsAccessKey = awsAccessKeyInput.value.trim();
+    const awsSecretKey = awsSecretKeyInput.value.trim();
 
     if (typeof AWS === 'undefined') {
         await loadAwsSdk();
@@ -401,26 +321,28 @@ async function backupToS3() {
     };
 
     s3.upload(uploadParams, function (err, data) {
+        const actionMsgElement = document.getElementById('action-msg');
         if (err) {
-            console.error(`Error uploading data: ${err.message}`);
+            actionMsgElement.textContent = `Error uploading data: ${err.message}`;
+            actionMsgElement.style.color = 'white';
         } else {
-            console.log(`Automated backup successful!`);
+            actionMsgElement.textContent = `Export successful!`;
+            actionMsgElement.style.color = 'white';
             const currentTime = new Date().toLocaleString();
             localStorage.setItem('last-cloud-sync', currentTime);
+            document.getElementById('last-sync-msg').innerText = `Last sync done at ${currentTime}`;
         }
+        setTimeout(() => {
+            actionMsgElement.textContent = "";
+        }, 3000);
     });
 }
 
 // Function to handle import from S3
 async function importFromS3() {
-    const bucketName = localStorage.getItem('aws-bucket');
-    const awsAccessKey = localStorage.getItem('aws-access-key');
-    const awsSecretKey = localStorage.getItem('aws-secret-key');
-
-    if (!bucketName || !awsAccessKey || !awsSecretKey) {
-        console.warn("AWS credentials are missing. Automated import skipped.");
-        return;
-    }
+    const bucketName = awsBucketInput.value.trim();
+    const awsAccessKey = awsAccessKeyInput.value.trim();
+    const awsSecretKey = awsSecretKeyInput.value.trim();
 
     if (typeof AWS === 'undefined') {
         await loadAwsSdk();
@@ -439,16 +361,23 @@ async function importFromS3() {
     };
 
     s3.getObject(params, function (err, data) {
+        const actionMsgElement = document.getElementById('action-msg');
         if (err) {
-            console.error(`Error fetching data: ${err.message}`);
+            actionMsgElement.textContent = `Error fetching data: ${err.message}`;
+            actionMsgElement.style.color = 'white';
             return;
         }
 
         const importedData = JSON.parse(data.Body.toString('utf-8'));
         importDataToStorage(importedData);
-        console.log(`Automated import successful!`);
+        actionMsgElement.textContent = `Import successful!`;
+        actionMsgElement.style.color = 'white';
+        setTimeout(() => {
+            actionMsgElement.textContent = "";
+        }, 3000);
         const currentTime = new Date().toLocaleString();
         localStorage.setItem('last-cloud-sync', currentTime);
-        wasImportSuccessful = true; 
+        wasImportSuccessful = true;
+        console.log("[Import from S3 button listener] wasImportSuccessful set to", wasImportSuccessful);
     });
 }
