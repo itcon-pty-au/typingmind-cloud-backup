@@ -14,6 +14,9 @@ if (cloudButtonDiv) {
     });
 }
 
+let wasImportSuccessful = false;
+let lastBackupTime = 0;
+
 function openSyncModal() {
     var existingModal = document.querySelector('div[data-element-id="sync-modal-dbbackup"]');
     if (existingModal) { return; }
@@ -28,9 +31,7 @@ function openSyncModal() {
                     <div class="relative group ml-2">
                         <span class="cursor-pointer" id="info-icon">ℹ</span>
                         <div id="tooltip" style="width: 250px; margin-top: 0.5em;" class="absolute z-10 -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded-md px-2 py-1 opacity-90 transition-opacity duration-300 opacity-0 transition-opacity">
-                            <b>Step 1:</b> Fill form & Save<br/><br/>
-                            <b>Step 2:</b> To create/update the backup in S3 with the data in this typingmind instance, click on "Export to S3". Instead, if you want to update data in this typingmind instance with the existing backup in S3, click on "Import from S3".<br/><br/>
-                            <b>Step 3:</b> To automatically sync data between this typing instance and S3 going forward, toggle the "Enable Automated Cloud Backups". [ By doing this - When you open typingmind, it will refresh the latest data from S3. Also, any update to the data in the current typingmind instance will will trigger an update to S3 backup in real time.]
+                            Fill form & Save. <br/><br/> Initial backup: You will need to click on "Export to S3" to create your first backup in S3. Thereafter, automatic backups are done to S3.<br/><br/> Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the data in this typingmind instance.
                         </div>
                     </div>
                 </div>
@@ -165,7 +166,66 @@ function openSyncModal() {
             actionMsgElement.textContent = "";
         }, 3000);
         updateButtonState();
+        checkAndImportBackup();
     });
+
+    // Function to check for backup file and import it
+    async function checkAndImportBackup() {
+        const bucketName = localStorage.getItem('aws-bucket');
+        const awsAccessKey = localStorage.getItem('aws-access-key');
+        const awsSecretKey = localStorage.getItem('aws-secret-key');
+
+        if (bucketName && awsAccessKey && awsSecretKey) {
+            if (typeof AWS === 'undefined') {
+                await loadAwsSdk();
+            }
+
+            AWS.config.update({
+                accessKeyId: awsAccessKey,
+                secretAccessKey: awsSecretKey,
+                region: 'ap-southeast-2'
+            });
+
+            const s3 = new AWS.S3();
+            const params = {
+                Bucket: bucketName,
+                Key: 'typingmind-backup.json'
+            };
+
+            s3.getObject(params, async function (err) {
+                if (!err) {
+                    await importFromS3();
+                    wasImportSuccessful = true;
+                }
+                monitorLocalStorageAndIndexedDB();
+            });
+        }
+    }
+
+    checkAndImportBackup();
+
+    // Function to monitor changes in localStorage
+    function monitorLocalStorageAndIndexedDB() {
+        const originalSetItem = localStorage.setItem;
+        localStorage.setItem = function (key, value) {
+            originalSetItem.apply(this, arguments);
+            if (wasImportSuccessful) {
+                const now = Date.now();
+                if (now - lastBackupTime > 15000) {
+                    backupToS3();
+                    lastBackupTime = now;
+                }
+            }
+        };
+
+        const request = indexedDB.open("keyval-store");
+        request.onsuccess = function (event) {
+            const db = event.target.result;
+            db.onversionchange = () => {
+                location.reload();
+            };
+        };
+    }
 
     // Export button click handler
     document.getElementById('export-to-s3-btn').addEventListener('click', async function () {
@@ -251,6 +311,7 @@ function openSyncModal() {
             }, 3000);
             const currentTime = new Date().toLocaleString();
             localStorage.setItem('last-cloud-sync', currentTime);
+            wasImportSuccessful = true;
         });
     });
 }
@@ -266,6 +327,7 @@ async function loadAwsSdk() {
     });
 }
 
+// Function to import data from S3 to localStorage and IndexedDB
 function importDataToStorage(data) {
     console.log("Imported data", data);
 
@@ -404,5 +466,6 @@ async function importFromS3() {
         console.log(`Automated import successful!`);
         const currentTime = new Date().toLocaleString();
         localStorage.setItem('last-cloud-sync', currentTime);
+        wasImportSuccessful = true; 
     });
 }
