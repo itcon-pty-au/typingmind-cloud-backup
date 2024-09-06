@@ -185,6 +185,7 @@ function openSyncModal() {
         checkAndImportBackup();
         const lastSync = localStorage.getItem('last-cloud-sync');
         if (lastSync) document.getElementById('last-sync-msg').innerText = `Last sync done at ${lastSync}`;
+        startBackupInterval();
     });
 
     // Function to check for backup file and import it
