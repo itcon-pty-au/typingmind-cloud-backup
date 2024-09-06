@@ -1,20 +1,41 @@
-document.addEventListener('DOMContentLoaded', async () => {
-    try {
-        await checkAndImportBackup();
-        const currentTime = new Date().toLocaleString();
-        const lastSync = localStorage.getItem('last-cloud-sync');
-        var element = document.getElementById('last-sync-msg');
-        if (lastSync) {
-            if (element !== null) {
-                element.innerText = `Last sync done at ${currentTime}`;
-                element = null;
+// Wrapping code in a function to ensure it runs after the DOM is fully loaded
+(function () {
+    function init() {
+        document.addEventListener('DOMContentLoaded', async () => {
+            console.log('DOMContentLoaded event triggered');
+            await checkAndImportBackup();
+            const currentTime = new Date().toLocaleString();
+            const lastSync = localStorage.getItem('last-cloud-sync');
+            var element = document.getElementById('last-sync-msg');
+            if (lastSync) {
+                if (element !== null) {
+                    element.innerText = `Last sync done at ${currentTime}`;
+                    element = null;
+                }
             }
-        }
-        startBackupInterval();
-    } catch (error) {
-        console.error("Error during page load operations:", error);
+            startBackupInterval();
+        });
     }
-});
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+
+// document.addEventListener('DOMContentLoaded', async () => {
+//     await checkAndImportBackup();
+//     const currentTime = new Date().toLocaleString();
+//     const lastSync = localStorage.getItem('last-cloud-sync');
+//     var element = document.getElementById('last-sync-msg');
+//     if (lastSync) {
+//         if (element !== null) {
+//             element.innerText = `Last sync done at ${currentTime}`;
+//             element = null;
+//         }
+//     }
+//     startBackupInterval();
+// });
 
 const cloudButtonDiv = document.querySelector('button[data-element-id="cloud-button"]');
 if (cloudButtonDiv) {
