@@ -112,12 +112,12 @@ function openSyncModal() {
     // }
 
     // Update button enable/disable state
-    // function updateButtonState() {
-    //     const isDisabled = !awsBucketInput.value.trim() || !awsAccessKeyInput.value.trim() || !awsSecretKeyInput.value.trim();
-    //     document.getElementById('export-to-s3-btn').disabled = isDisabled;
-    //     document.getElementById('import-from-s3-btn').disabled = isDisabled;
-    //     document.getElementById('save-aws-details-btn').disabled = isDisabled;
-    // }
+    function updateButtonState() {
+        const isDisabled = !awsBucketInput.value.trim() || !awsAccessKeyInput.value.trim() || !awsSecretKeyInput.value.trim();
+        document.getElementById('export-to-s3-btn').disabled = isDisabled;
+        document.getElementById('import-from-s3-btn').disabled = isDisabled;
+        document.getElementById('save-aws-details-btn').disabled = isDisabled;
+    }
 
     modalPopup.addEventListener('click', function (event) {
         if (event.target === modalPopup) {
@@ -125,11 +125,11 @@ function openSyncModal() {
         }
     });
 
-    // awsBucketInput.addEventListener('input', updateButtonState);
-    // awsAccessKeyInput.addEventListener('input', updateButtonState);
-    // awsSecretKeyInput.addEventListener('input', updateButtonState);
+    awsBucketInput.addEventListener('input', updateButtonState);
+    awsAccessKeyInput.addEventListener('input', updateButtonState);
+    awsSecretKeyInput.addEventListener('input', updateButtonState);
 
-    // updateButtonState();
+    updateButtonState();
 
     // Tooltip toggle logic
     const infoIcon = document.getElementById('info-icon');
