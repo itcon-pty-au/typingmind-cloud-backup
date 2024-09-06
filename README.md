@@ -3,10 +3,7 @@
 ## Features
 - Extension to enable automatic backup & restore of app data to S3.
 - Automatically restores the latest backup version from S3 to your TypingMind instance when you first open the app (provided a backup exists).
-- Enables auto backing up of your TypingMind data to S3 throughout the session.
-
-## Warning!
-Ensure you take a local backup using Menu > Backup & Sync > Export before using this plugin to prevent any data loss.
+- Enables automatic backing up of your TypingMind data to S3 throughout the session.
   
 ## Using this extension
 1. Load "https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js" into Menu > Preferences > Extension in Typingmind.
