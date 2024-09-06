@@ -122,18 +122,6 @@ function openSyncModal() {
 
     updateButtonState();
 
-    // Visibility change event listener
-    document.addEventListener('visibilitychange', async () => {
-        if (!document.hidden) {
-            await checkAndImportBackup();
-            const lastSync = localStorage.getItem('last-cloud-sync');
-            if (lastSync) document.getElementById('last-sync-msg').innerText = `Last sync done at ${lastSync}`;
-            startBackupInterval();
-        } else {
-            clearInterval(backupInterval);
-        }
-    });
-
     const infoIcon = document.getElementById('info-icon');
     const tooltip = document.getElementById('tooltip');
     let tooltipTimeout;
@@ -194,51 +182,63 @@ function openSyncModal() {
         startBackupInterval();
     });
 
-    // Function to check for backup file and import it
-    async function checkAndImportBackup() {
-        const bucketName = localStorage.getItem('aws-bucket');
-        const awsAccessKey = localStorage.getItem('aws-access-key');
-        const awsSecretKey = localStorage.getItem('aws-secret-key');
+}
 
-        if (bucketName && awsAccessKey && awsSecretKey) {
-            if (typeof AWS === 'undefined') {
-                await loadAwsSdk();
-            }
+// Visibility change event listener
+document.addEventListener('visibilitychange', async () => {
+    if (!document.hidden) {
+        await checkAndImportBackup();
+        const lastSync = localStorage.getItem('last-cloud-sync');
+        if (lastSync) document.getElementById('last-sync-msg').innerText = `Last sync done at ${lastSync}`;
+        startBackupInterval();
+    } else {
+        clearInterval(backupInterval);
+    }
+});
 
-            AWS.config.update({
-                accessKeyId: awsAccessKey,
-                secretAccessKey: awsSecretKey,
-                region: 'ap-southeast-2'
-            });
+// Function to check for backup file and import it
+async function checkAndImportBackup() {
+    const bucketName = localStorage.getItem('aws-bucket');
+    const awsAccessKey = localStorage.getItem('aws-access-key');
+    const awsSecretKey = localStorage.getItem('aws-secret-key');
 
-            const s3 = new AWS.S3();
-            const params = {
-                Bucket: bucketName,
-                Key: 'typingmind-backup.json'
-            };
-
-            s3.getObject(params, async function (err) {
-                if (!err) {
-                    await importFromS3();
-                    console.log(`Synced from S3 at ${new Date().toLocaleString()}`);
-                    wasImportSuccessful = true;
-                }
-            });
+    if (bucketName && awsAccessKey && awsSecretKey) {
+        if (typeof AWS === 'undefined') {
+            await loadAwsSdk();
         }
-    }
 
-    // Function to start the backup interval
-    function startBackupInterval() {
-        backupInterval = setInterval(async () => {
-            if (wasImportSuccessful && !isExportInProgress) {
-                isExportInProgress = true;
-                await backupToS3();
-                console.log(`Synced to S3 at ${new Date().toLocaleString()}`);
-                isExportInProgress = false;
+        AWS.config.update({
+            accessKeyId: awsAccessKey,
+            secretAccessKey: awsSecretKey,
+            region: 'ap-southeast-2'
+        });
+
+        const s3 = new AWS.S3();
+        const params = {
+            Bucket: bucketName,
+            Key: 'typingmind-backup.json'
+        };
+
+        s3.getObject(params, async function (err) {
+            if (!err) {
+                await importFromS3();
+                console.log(`Synced from S3 at ${new Date().toLocaleString()}`);
+                wasImportSuccessful = true;
             }
-        }, 5000);
+        });
     }
+}
 
+// Function to start the backup interval
+function startBackupInterval() {
+    backupInterval = setInterval(async () => {
+        if (wasImportSuccessful && !isExportInProgress) {
+            isExportInProgress = true;
+            await backupToS3();
+            console.log(`Synced to S3 at ${new Date().toLocaleString()}`);
+            isExportInProgress = false;
+        }
+    }, 5000);
 }
 
 // Function to load AWS SDK asynchronously
