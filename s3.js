@@ -198,7 +198,7 @@ function openSyncModal() {
                 if (!err) {
                     await importFromS3();
                     wasImportSuccessful = true;
-                    console.log("[checkAndImportBackup function] wasImportSuccessful set to", wasImportSuccessful);
+                    //console.log("[checkAndImportBackup function] wasImportSuccessful set to", wasImportSuccessful);
                 }
             });
         }
@@ -237,7 +237,7 @@ async function loadAwsSdk() {
 
 // Function to import data from S3 to localStorage and IndexedDB
 function importDataToStorage(data) {
-    console.log("Imported data", data);
+    //console.log("Imported data", data);
 
     Object.keys(data.localStorage).forEach(key => {
         localStorage.setItem(key, data.localStorage[key]);
@@ -252,16 +252,16 @@ function importDataToStorage(data) {
         Object.keys(data).forEach(key => {
             objectStore.put(data[key], key);
         });
-        transaction.oncomplete = () => {
-            console.log("All records imported successfully!");
-        };
-        transaction.onerror = (e) => {
-            console.error("Error during import transaction:", e.target.error);
-        };
+        // transaction.oncomplete = () => {
+        //     console.log("All records imported successfully!");
+        // };
+        // transaction.onerror = (e) => {
+        //     console.error("Error during import transaction:", e.target.error);
+        // };
     };
-    request.onerror = function (event) {
-        console.error("Error opening IndexedDB:", event.target.error);
-    };
+    // request.onerror = function (event) {
+    //     console.error("Error opening IndexedDB:", event.target.error);
+    // };
 }
 
 // Function to export data from localStorage and IndexedDB
@@ -326,8 +326,11 @@ async function backupToS3() {
             actionMsgElement.textContent = `Error uploading data: ${err.message}`;
             actionMsgElement.style.color = 'white';
         } else {
-            actionMsgElement.textContent = `Export successful!`;
-            actionMsgElement.style.color = 'white';
+            // actionMsgElement.textContent = `Export successful!`;
+            // actionMsgElement.style.color = 'white';
+            // setTimeout(() => {
+            //     actionMsgElement.textContent = "";
+            // }, 3000);
             const currentTime = new Date().toLocaleString();
             localStorage.setItem('last-cloud-sync', currentTime);
             document.getElementById('last-sync-msg').innerText = `Last sync done at ${currentTime}`;
@@ -370,14 +373,14 @@ async function importFromS3() {
 
         const importedData = JSON.parse(data.Body.toString('utf-8'));
         importDataToStorage(importedData);
-        actionMsgElement.textContent = `Import successful!`;
-        actionMsgElement.style.color = 'white';
-        setTimeout(() => {
-            actionMsgElement.textContent = "";
-        }, 3000);
+        //actionMsgElement.textContent = `Import successful!`;
+        //actionMsgElement.style.color = 'white';
+        // setTimeout(() => {
+        //     actionMsgElement.textContent = "";
+        // }, 3000);
         const currentTime = new Date().toLocaleString();
         localStorage.setItem('last-cloud-sync', currentTime);
         wasImportSuccessful = true;
-        console.log("[Import from S3 button listener] wasImportSuccessful set to", wasImportSuccessful);
+        //console.log("[Import from S3 button listener] wasImportSuccessful set to", wasImportSuccessful);
     });
 }
