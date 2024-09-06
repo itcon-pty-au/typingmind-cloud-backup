@@ -15,6 +15,7 @@ if (cloudButtonDiv) {
 }
 
 let wasImportSuccessful = false; // Transient variable for import status
+let lastBackupTime = 0; // Variable to track the last backup time
 
 function openSyncModal() {
     var existingModal = document.querySelector('div[data-element-id="sync-modal-dbbackup"]');
@@ -32,7 +33,7 @@ function openSyncModal() {
                         <div id="tooltip" style="width: 250px; margin-top: 0.5em;" class="absolute z-10 -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded-md px-2 py-1 opacity-90 transition-opacity duration-300 opacity-0 transition-opacity">
                             <b>Step 1:</b> Fill form & Save<br/><br/>
                             <b>Step 2:</b> To create/update the backup in S3 with the data in this typingmind instance, click on "Export to S3". Instead, if you want to update data in this typingmind instance with the existing backup in S3, click on "Import from S3".<br/><br/>
-                            <b>Step 3:</b> To automatically sync data between this typing instance and S3 going forward, toggle the "Enable Automated Cloud Backups". [ By doing this - When you open typingmind, it will refresh the latest data from S3. Also, any update to the data in the current typingmind instance will will trigger an update to S3 backup in real time.]
+                            <b>Step 3:</b> To automatically sync data between this typing instance and S3 going forward, toggle the "Enable Automated Cloud Backups". [ By doing this - When you open typingmind, it will refresh the latest data from S3. Also, any update to the data in the current typingmind instance will trigger an update to S3 backup in real time.]
                         </div>
                     </div>
                 </div>
@@ -167,7 +168,7 @@ function openSyncModal() {
             actionMsgElement.textContent = "";
         }, 3000);
         updateButtonState();
-        checkAndImportBackup()
+        checkAndImportBackup();
     });
 
     // Function to check for backup file and import it
@@ -213,7 +214,12 @@ function openSyncModal() {
         localStorage.setItem = function (key, value) {
             originalSetItem.apply(this, arguments);
             if (wasImportSuccessful) {
-                backupToS3(); // Run ad-hoc backup to S3 if import was successful
+                const now = Date.now();
+                // Trigger backup if more than 15 seconds have passed
+                if (now - lastBackupTime > 15000) {
+                    backupToS3(); // Run ad-hoc backup to S3 if import was successful
+                    lastBackupTime = now; // Update the last backup time
+                }
             }
         };
 
