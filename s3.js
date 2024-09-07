@@ -166,14 +166,10 @@ function openSyncModal() {
 
   const infoIcon = document.getElementById("info-icon");
   const tooltip = document.getElementById("tooltip");
-  let tooltipTimeout;
 
   function showTooltip() {
     tooltip.classList.add("opacity-100");
     tooltip.classList.remove("opacity-0");
-    tooltipTimeout = setTimeout(() => {
-      hideTooltip();
-    }, 15000);
   }
 
   function hideTooltip() {
