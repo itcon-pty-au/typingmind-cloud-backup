@@ -1,16 +1,15 @@
 # TypingMind S3 Backup Extension
 
+[If you found this useful, please consider buying me a coffee](https://buymeacoffee.com/itcon):heart:!
+
 ## Features
 - Extension to enable automatic backup & restore of app data to S3.
 - Automatically restores the latest backup version from S3 to your TypingMind instance when you first open the app (provided a backup exists).
-- Enables auto backing up of your TypingMind data to S3 throughout the session.
-
-## Warning!
-Ensure you take a local backup using Menu > Backup & Sync > Export before using this plugin to prevent any data loss.
+- Enables automatic backing up of your TypingMind data to S3 throughout the session.
   
 ## Using this extension
 1. Load "https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js" into Menu > Preferences > Extension in Typingmind.
-2. Once the extension is installed, the cloud button in the bottom of the left sidebar will use the new cloud backup logic.
+2. Once the extension is installed, the cloud button in the bottom of the left sidebar will use the new extension. [The popup should now show a form where you can provide AWS S3 details. If not, refresh the page.]
 3. Provide the AWS details in the form. [These are stored locally in your browser]
 4. The save button checks if there is a backup already in S3, if yes it restores it and updates the local typingmind instance.
 5. Manually refresh the page to reflect the new data. CTRL + F5 if it does not.
@@ -94,6 +93,9 @@ Update AWS Account ID, IAM username and AWS bucket name
 ]
 ``
 Update "https://*.hostname.com"
+
+## About me
+I am a passionate developer dedicated to creating useful tools that can benefit the community. My goal is to distribute all of my projects as open source, enabling others to learn, contribute, and innovate together. If you appreciate my work and want to support my efforts, feel free to [buy me a coffee](https://buymeacoffee.com/itcon) :heart:!
 
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
