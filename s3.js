@@ -173,7 +173,7 @@ function openSyncModal() {
     tooltip.classList.remove("opacity-0");
     tooltipTimeout = setTimeout(() => {
       hideTooltip();
-    }, 5000);
+    }, 15000);
   }
 
   function hideTooltip() {
