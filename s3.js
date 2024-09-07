@@ -190,22 +190,6 @@ function openSyncModal() {
     }
   });
 
-  infoIcon.addEventListener("mouseover", () => {
-    clearTimeout(tooltipTimeout);
-    showTooltip();
-  });
-
-  infoIcon.addEventListener("mouseleave", () => {
-    clearTimeout(tooltipTimeout);
-    tooltipTimeout = setTimeout(() => {
-      hideTooltip();
-    }, 5000);
-  });
-
-  tooltip.addEventListener("mouseover", () => {
-    clearTimeout(tooltipTimeout);
-  });
-
   // Save button click handler
   document
     .getElementById("save-aws-details-btn")
