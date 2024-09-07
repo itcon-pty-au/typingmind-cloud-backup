@@ -21,7 +21,33 @@ Ensure you take a local backup using Menu > Backup & Sync > Export before using 
 ## AWS Config
 1. Create a user in Amazon IAM
 2. Create Access Key for the user
-3. Add Permission Policies to the user -> "AmazonS3FullAccess"
+3. Add Permission Policies to the user. This policy only allow read and write access to the specific backup file.
+``
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Effect": "Allow",
+			"Action": [
+				"s3:GetObject",
+				"s3:PutObject"
+			],
+			"Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json"
+		},
+		{
+			"Effect": "Deny",  // UPDATED
+			"Action": "s3:DeleteObject",  // UPDATED
+			"Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json"
+		},
+		{
+			"Effect": "Deny",
+			"Action": "s3:*",
+			"Resource": "arn:aws:s3:::<AWS bucket name>/*"
+		}
+	]
+}
+``
+
 3. Create a bucket.
 4. Open Bucket > Permissions > Bucket Policy
 ``
