@@ -31,17 +31,7 @@
 				"s3:GetObject",
 				"s3:PutObject"
 			],
-			"Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json"
-		},
-		{
-			"Effect": "Deny",
-			"Action": "s3:DeleteObject",
-			"Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json"
-		},
-		{
-			"Effect": "Deny",
-			"Action": "s3:*",
-			"Resource": "arn:aws:s3:::<AWS bucket name>/*"
+			"Resource": "arn:aws:s3:::<AWS Account ID>/typingmind-backup.json"
 		}
 	]
 }
