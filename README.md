@@ -34,8 +34,8 @@
 			"Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json"
 		},
 		{
-			"Effect": "Deny",  // UPDATED
-			"Action": "s3:DeleteObject",  // UPDATED
+			"Effect": "Deny",
+			"Action": "s3:DeleteObject",
 			"Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json"
 		},
 		{
