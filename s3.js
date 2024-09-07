@@ -16,28 +16,35 @@ const checkDOMLoaded = setInterval(async () => {
   }
 }, 5000);
 
-// Replace button
-const cloudButtonDiv = document.querySelector(
-  'button[data-element-id="cloud-button"]'
-);
-if (cloudButtonDiv) {
-  cloudButtonDiv.style.display = "none";
-  var cloudSyncBtn = document.createElement("button");
-  cloudSyncBtn.type = "button";
-  cloudSyncBtn.setAttribute("data-element-id", "cloud-sync-button");
-  cloudSyncBtn.className =
-    "cursor-default bg-white/20 text-white group flex items-center justify-center rounded-md px-2 py-1 text-xs hover:bg-white/40 transition-all space-x-2 relative";
-  cloudSyncBtn.innerHTML = `<svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 640 512" class="w-4 h-4" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg">
-        <path d="M537.6 226.6c4.1-10.7 6.4-22.4 6.4-34.6 0-53-43-96-96-96-19.7 0-38.1 6-53.3 16.2C367 64.2 315.3 32 256 32c-88.4 0-160 71.6-160 160 0 2.7.1 5.4.2 8.1C40.2 219.8 0 273.2 0 336c0 79.5 64.5 144 144 144h368c70.7 0 128-57.3 128-128 0-61.9-44-113.6-102.4-125.4zM393.4 288H328v112c0 8.8-7.2 16-16 16h-48c-8.8 0-16-7.2-16-16V288h-65.4c-14.3 0-21.4-17.2-11.3-27.3l105.4-105.4c6.2-6.2 16.4-6.2 22.6 0l105.4 105.4c10.1 10.1 2.9 27.3-11.3 27.3z"></path>
-    </svg>`;
-  cloudButtonDiv.parentNode.insertBefore(
-    cloudSyncBtn,
-    cloudButtonDiv.nextSibling
-  );
-  cloudSyncBtn.addEventListener("click", function () {
-    openSyncModal();
-  });
-}
+// Create a new button
+const cloudSyncBtn = document.createElement('button');
+cloudSyncBtn.setAttribute('data-element-id', 'cloud-sync-button');
+cloudSyncBtn.className = 'cursor-default group flex items-center justify-center p-1 text-sm font-medium flex-col group focus:outline-0 focus:text-white text-white/70';
+
+const cloudIconSVG = `
+<svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 640 512" class="h-6 w-6 flex-shrink-0" aria-hidden="true" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg">
+    <path d="M512 224c0-70.7-57.3-128-128-128-11.2 0-22 1.5-32.5 4-13.5-37.8-49.5-64-89.5-64C199.5 36 128 107.5 128 192c0 12.3 1.5 24.2 4.3 35.5C74.5 234.3 0 303.5 0 384c0 70.7 57.3 128 128 128h384c70.7 0 128-57.3 128-128s-57.3-128-128-128zm0 192H128c-35.3 0-64-28.7-64-64 0-31.9 23.9-58.4 54.5-63.4C130.1 272.7 164 240 208 240c23.1 0 43.5 10.2 58.1 26.5 17.3-16.6 41.7-26.5 66.9-26.5 53 0 96 43 96 96 0 35.3-28.7 64-64 64z"></path>
+</svg>
+`;
+
+const textSpan = document.createElement('span');
+textSpan.className = 'text-[11px]';
+textSpan.innerText = 'Backup';
+
+const iconSpan = document.createElement('span');
+iconSpan.className = 'block group-hover:bg-white/30 w-[35px] h-[35px] transition-all rounded-lg flex items-center justify-center group-hover:text-white/90';
+iconSpan.innerHTML = cloudIconSVG;
+
+cloudSyncBtn.appendChild(iconSpan);
+cloudSyncBtn.appendChild(textSpan);
+
+const teamsButton = document.querySelector('[data-element-id="workspace-tab-teams"]');
+teamsButton.parentNode.insertBefore(cloudSyncBtn, teamsButton.nextSibling);
+
+// Attach modal to new button
+cloudSyncBtn.addEventListener("click", function () {
+openSyncModal();
+});
 
 // New Popup
 let wasImportSuccessful = false;
