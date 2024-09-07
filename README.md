@@ -20,7 +20,7 @@
 ## AWS Config
 1. Create a user in Amazon IAM
 2. Create Access Key for the user
-3. Add Permission Policies to the user. This policy only allow read and write access to the specific backup file.
+3. Add Permission Policies [Inline Policy] for the user. This policy only allow read and write access to the specific backup file.
 ``
 {
 	"Version": "2012-10-17",
