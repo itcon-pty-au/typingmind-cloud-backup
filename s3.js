@@ -22,9 +22,7 @@ cloudSyncBtn.setAttribute('data-element-id', 'cloud-sync-button');
 cloudSyncBtn.className = 'cursor-default group flex items-center justify-center p-1 text-sm font-medium flex-col group focus:outline-0 focus:text-white text-white/70';
 
 const cloudIconSVG = `
-<svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 640 512" class="h-6 w-6 flex-shrink-0" aria-hidden="true" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg">
-    <path d="M512 224c0-70.7-57.3-128-128-128-11.2 0-22 1.5-32.5 4-13.5-37.8-49.5-64-89.5-64C199.5 36 128 107.5 128 192c0 12.3 1.5 24.2 4.3 35.5C74.5 234.3 0 303.5 0 384c0 70.7 57.3 128 128 128h384c70.7 0 128-57.3 128-128s-57.3-128-128-128zm0 192H128c-35.3 0-64-28.7-64-64 0-31.9 23.9-58.4 54.5-63.4C130.1 272.7 164 240 208 240c23.1 0 43.5 10.2 58.1 26.5 17.3-16.6 41.7-26.5 66.9-26.5 53 0 96 43 96 96 0 35.3-28.7 64-64 64z"></path>
-</svg>
+<svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 6400 5120" class="h-6 w-6 flex-shrink-0" aria-hidden="true" height="10em" width="10em" xmlns="http://www.w3.org/2000/svg"><path d="M5120 2240c0 -707 -573 -1280 -1280 -1280 -112 0 -220 15 -325 40C3380 622 3020 360 2620 360c-625 0 -1340 715 -1340 1560 0 123 15 242 43 355C745 2343 0 3035 0 3840c0 707 573 1280 1280 1280h3840c707 0 1280 -573 1280 -1280s-573 -1280 -1280 -1280zm0 1920"/></svg>
 `;
 
 const textSpan = document.createElement('span');
