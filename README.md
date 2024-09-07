@@ -20,7 +20,7 @@
 ## AWS Config
 1. Create a user in Amazon IAM
 2. Create Access Key for the user
-3. Add Permission Policies to the user. This policy only allow read and write access to the specific backup file.
+3. Add Permission Policies [Inline Policy] for the user. This policy only allow read and write access to the specific backup file.
 ``
 {
 	"Version": "2012-10-17",
@@ -31,17 +31,7 @@
 				"s3:GetObject",
 				"s3:PutObject"
 			],
-			"Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json"
-		},
-		{
-			"Effect": "Deny",
-			"Action": "s3:DeleteObject",
-			"Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json"
-		},
-		{
-			"Effect": "Deny",
-			"Action": "s3:*",
-			"Resource": "arn:aws:s3:::<AWS bucket name>/*"
+			"Resource": "arn:aws:s3:::<AWS Account ID>/typingmind-backup.json"
 		}
 	]
 }
