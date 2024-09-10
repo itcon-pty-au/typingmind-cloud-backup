@@ -37,7 +37,7 @@
 }
 ``
 
-3. Create a bucket.
+3. Create a bucket. Due to security reasons, it is recommended to create a new bucket for this activity and ensure that no other files are stored in it.
 4. Open Bucket > Permissions > Bucket Policy
 ``
 {
@@ -57,7 +57,7 @@
     ]
 }
 ``
-Update AWS Account ID, IAM username and AWS bucket name
+Update AWS Account ID, IAM username and AWS bucket name in the policy with your specific values.
 
 5. Open Bucket > Permissions > CORS
 ``
@@ -82,7 +82,7 @@ Update AWS Account ID, IAM username and AWS bucket name
     }
 ]
 ``
-Update "https://*.hostname.com"
+Update "https://*.hostname.com" with your specific value.
 
 ## About me
 I am a passionate developer dedicated to creating useful tools that can benefit the community. My goal is to distribute all of my projects as open source, enabling others to learn, contribute, and innovate together. If you appreciate my work and want to support my efforts, feel free to [buy me a coffee](https://buymeacoffee.com/itcon) :heart:!
