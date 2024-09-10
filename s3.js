@@ -1,8 +1,3 @@
-// Load CryptoJS library
-var script = document.createElement("script");
-script.src = "https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.9-1/crypto-js.js";
-document.head.appendChild(script);
-
 // Handle page load
 const checkDOMLoaded = setInterval(async () => {
   if (document.readyState === "complete" && wasImportSuccessful !== true) {
@@ -46,7 +41,7 @@ teamsButton.parentNode.insertBefore(cloudSyncBtn, teamsButton.nextSibling);
 
 // Attach modal to new button
 cloudSyncBtn.addEventListener("click", function () {
-  openSyncModal();
+openSyncModal();
 });
 
 // New Popup
@@ -54,16 +49,6 @@ let wasImportSuccessful = false;
 let lastBackupTime = 0;
 let isExportInProgress = false;
 let backupInterval;
-const divStyle = "flex_items_center_justify_between_gap_1";
-
-function encrypt(text) {
-  return CryptoJS.AES.encrypt(text, divStyle).toString();
-}
-
-function decrypt(ciphertext) {
-  const bytes = CryptoJS.AES.decrypt(ciphertext, divStyle);
-  return bytes.toString(CryptoJS.enc.Utf8);
-}
 
 function openSyncModal() {
   var existingModal = document.querySelector(
@@ -100,11 +85,11 @@ function openSyncModal() {
                                 </div>
                                 <div>
                                     <label for="aws-access-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">AWS Access Key</label>
-                                    <input id="aws-access-key" type="password" name="aws-access-key" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                                    <input id="aws-access-key" name="aws-access-key" type="password" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                 </div>
                                 <div>
                                     <label for="aws-secret-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">AWS Secret Key</label>
-                                    <input id="aws-secret-key" type="password" name="aws-secret-key" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                                    <input id="aws-secret-key" name="aws-secret-key" type="password" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                 </div>
                                 <div class="flex justify-between space-x-2">
                                     <button id="save-aws-details-btn" type="button" class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors" disabled>
@@ -144,8 +129,8 @@ function openSyncModal() {
   const lastSync = localStorage.getItem("last-cloud-sync");
 
   if (savedBucket) awsBucketInput.value = savedBucket;
-  if (savedAccessKey) awsAccessKeyInput.value = decrypt(savedAccessKey);
-  if (savedSecretKey) awsSecretKeyInput.value = decrypt(savedSecretKey);
+  if (savedAccessKey) awsAccessKeyInput.value = savedAccessKey;
+  if (savedSecretKey) awsSecretKeyInput.value = savedSecretKey;
   const currentTime = new Date().toLocaleString();
   var element = document.getElementById("last-sync-msg");
   if (lastSync) {
@@ -204,8 +189,8 @@ function openSyncModal() {
     .getElementById("save-aws-details-btn")
     .addEventListener("click", function () {
       localStorage.setItem("aws-bucket", awsBucketInput.value.trim());
-      localStorage.setItem("aws-access-key", encrypt(awsAccessKeyInput.value.trim()));
-      localStorage.setItem("aws-secret-key", encrypt(awsSecretKeyInput.value.trim()));
+      localStorage.setItem("aws-access-key", awsAccessKeyInput.value.trim());
+      localStorage.setItem("aws-secret-key", awsSecretKeyInput.value.trim());
       const actionMsgElement = document.getElementById("action-msg");
       actionMsgElement.textContent = "AWS details saved!";
       actionMsgElement.style.color = "white";
@@ -268,8 +253,8 @@ document.addEventListener("visibilitychange", async () => {
 // Function to check for backup file and import it
 async function checkAndImportBackup() {
   const bucketName = localStorage.getItem("aws-bucket");
-  const awsAccessKey = decrypt(localStorage.getItem("aws-access-key"));
-  const awsSecretKey = decrypt(localStorage.getItem("aws-secret-key"));
+  const awsAccessKey = localStorage.getItem("aws-access-key");
+  const awsSecretKey = localStorage.getItem("aws-secret-key");
 
   if (bucketName && awsAccessKey && awsSecretKey) {
     if (typeof AWS === "undefined") {
@@ -328,27 +313,21 @@ async function loadAwsSdk() {
 
 // Function to import data from S3 to localStorage and IndexedDB
 function importDataToStorage(data) {
-    Object.keys(localStorage).forEach((key) => {
-      localStorage.removeItem(key);
+  Object.keys(data.localStorage).forEach((key) => {
+    localStorage.setItem(key, data.localStorage[key]);
+  });
+
+  const request = indexedDB.open("keyval-store");
+  request.onsuccess = function (event) {
+    const db = event.target.result;
+    const transaction = db.transaction(["keyval"], "readwrite");
+    const objectStore = transaction.objectStore("keyval");
+    data = data.indexedDB;
+    Object.keys(data).forEach((key) => {
+      objectStore.put(data[key], key);
     });
-    const request = indexedDB.open("keyval-store");
-    request.onsuccess = function (event) {
-      const db = event.target.result;
-      const transaction = db.transaction(["keyval"], "readwrite");
-      const objectStore = transaction.objectStore("keyval");
-  
-      objectStore.clear().onsuccess = function () {
-        data = data.indexedDB;
-        Object.keys(data).forEach((key) => {
-          objectStore.put(data[key], key);
-        });
-      };
-    };
-  
-    Object.keys(data.localStorage).forEach((key) => {
-      localStorage.setItem(key, data.localStorage[key]);
-    });
-  }
+  };
+}
 
 // Function to export data from localStorage and IndexedDB
 function exportBackupData() {
@@ -382,8 +361,8 @@ function exportBackupData() {
 // Function to handle backup to S3
 async function backupToS3() {
   const bucketName = localStorage.getItem("aws-bucket");
-  const awsAccessKey = decrypt(localStorage.getItem("aws-access-key"));
-  const awsSecretKey = decrypt(localStorage.getItem("aws-secret-key"));
+  const awsAccessKey = localStorage.getItem("aws-access-key");
+  const awsSecretKey = localStorage.getItem("aws-secret-key");
 
   if (typeof AWS === "undefined") {
     await loadAwsSdk();
@@ -426,8 +405,8 @@ async function backupToS3() {
 // Function to handle import from S3
 async function importFromS3() {
   const bucketName = localStorage.getItem("aws-bucket");
-  const awsAccessKey = decrypt(localStorage.getItem("aws-access-key"));
-  const awsSecretKey = decrypt(localStorage.getItem("aws-secret-key"));
+  const awsAccessKey = localStorage.getItem("aws-access-key");
+  const awsSecretKey = localStorage.getItem("aws-secret-key");
 
   if (typeof AWS === "undefined") {
     await loadAwsSdk();
