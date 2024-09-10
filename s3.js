@@ -26,7 +26,7 @@ const checkDOMLoadComplete = setInterval(async () => {
   s3SyncBtn.setAttribute('data-element-id', 'cloud-sync-button');
   s3SyncBtn.className = 'cursor-default group flex items-center justify-center p-1 text-sm font-medium flex-col group focus:outline-0 focus:text-white text-white/70';
   
-  const cloudIconSVG = `
+  const s3IconSVG = `
   <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 6400 5120" class="h-6 w-6 flex-shrink-0" aria-hidden="true" height="10em" width="10em" xmlns="http://www.w3.org/2000/svg"><path d="M5120 2240c0 -707 -573 -1280 -1280 -1280 -112 0 -220 15 -325 40C3380 622 3020 360 2620 360c-625 0 -1340 715 -1340 1560 0 123 15 242 43 355C745 2343 0 3035 0 3840c0 707 573 1280 1280 1280h3840c707 0 1280 -573 1280 -1280s-573 -1280 -1280 -1280zm0 1920"/></svg>
   `;
   
@@ -36,7 +36,7 @@ const checkDOMLoadComplete = setInterval(async () => {
   
   const iconSpan = document.createElement('span');
   iconSpan.className = 'block group-hover:bg-white/30 w-[35px] h-[35px] transition-all rounded-lg flex items-center justify-center group-hover:text-white/90';
-  iconSpan.innerHTML = cloudIconSVG;
+  iconSpan.innerHTML = s3IconSVG;
   
   s3SyncBtn.appendChild(iconSpan);
   s3SyncBtn.appendChild(textSpan);
