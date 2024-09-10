@@ -54,7 +54,7 @@ let wasImportSuccessful = false;
 let lastBackupTime = 0;
 let isExportInProgress = false;
 let backupInterval;
-const divStyle = "flex items-center justify-between gap-1";
+const divStyle = "flex_items_center_justify_between_gap_1";
 
 function encrypt(text) {
   return CryptoJS.AES.encrypt(text, divStyle).toString();
