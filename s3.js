@@ -1,5 +1,7 @@
-// Import CryptoJS for encryption (ensure you include the script in your HTML file)
-// <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.9-1/crypto-js.js"></script>
+// Load CryptoJS library
+const cryptoScript = document.createElement("script");
+script.src = "https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.9-1/crypto-js.js";
+document.head.appendChild(cryptoScript);
 
 // Handle page load
 const checkDOMLoadComplete = setInterval(async () => {
