@@ -50,10 +50,10 @@ var checkDOMLoadComplete = setInterval(async () => {
   });
   
   // New Popup
-  let wasImportSuccessful = false;
-  let lastBackupTime = 0;
-  let isExportInProgress = false;
-  let backupInterval;
+  var wasImportSuccessful = false;
+  var lastBackupTime = 0;
+  var isExportInProgress = false;
+  var backupInterval;
   var divStyle = "flex items-center justify-between gap-1";
   
   function encrypt(text) {
