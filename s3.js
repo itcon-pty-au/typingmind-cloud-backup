@@ -30,16 +30,16 @@ var checkDOMLoadComplete = setInterval(async () => {
   <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 6400 5120" class="h-6 w-6 flex-shrink-0" aria-hidden="true" height="10em" width="10em" xmlns="http://www.w3.org/2000/svg"><path d="M5120 2240c0 -707 -573 -1280 -1280 -1280 -112 0 -220 15 -325 40C3380 622 3020 360 2620 360c-625 0 -1340 715 -1340 1560 0 123 15 242 43 355C745 2343 0 3035 0 3840c0 707 573 1280 1280 1280h3840c707 0 1280 -573 1280 -1280s-573 -1280 -1280 -1280zm0 1920"/></svg>
   `;
   
-  var textSpan = document.createElement('span');
-  textSpan.className = 'text-[11px]';
-  textSpan.innerText = 'Backup';
+  var bkpTextSpan = document.createElement('span');
+  bkpTextSpan.className = 'text-[11px]';
+  bkpTextSpan.innerText = 'Backup';
   
   var iconSpan = document.createElement('span');
   iconSpan.className = 'block group-hover:bg-white/30 w-[35px] h-[35px] transition-all rounded-lg flex items-center justify-center group-hover:text-white/90';
   iconSpan.innerHTML = s3IconSVG;
   
   s3SyncBtn.appendChild(iconSpan);
-  s3SyncBtn.appendChild(textSpan);
+  s3SyncBtn.appendChild(bkpTextSpan);
   
   var teamsButton = document.querySelector('[data-element-id="workspace-tab-teams"]');
   teamsButton.parentNode.insertBefore(s3SyncBtn, teamsButton.nextSibling);
