@@ -322,10 +322,13 @@ function importDataToStorage(data) {
     const db = event.target.result;
     const transaction = db.transaction(["keyval"], "readwrite");
     const objectStore = transaction.objectStore("keyval");
-    data = data.indexedDB;
-    Object.keys(data).forEach((key) => {
-      objectStore.put(data[key], key);
-    });
+    const deleteRequest = objectStore.clear();
+    deleteRequest.onsuccess = function () {
+      data = data.indexedDB;
+      Object.keys(data).forEach((key) => {
+        objectStore.put(data[key], key);
+      });
+    };
   };
 }
 
