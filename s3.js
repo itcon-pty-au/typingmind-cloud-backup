@@ -313,21 +313,27 @@ async function loadAwsSdk() {
 
 // Function to import data from S3 to localStorage and IndexedDB
 function importDataToStorage(data) {
-  Object.keys(data.localStorage).forEach((key) => {
-    localStorage.setItem(key, data.localStorage[key]);
-  });
-
-  const request = indexedDB.open("keyval-store");
-  request.onsuccess = function (event) {
-    const db = event.target.result;
-    const transaction = db.transaction(["keyval"], "readwrite");
-    const objectStore = transaction.objectStore("keyval");
-    data = data.indexedDB;
-    Object.keys(data).forEach((key) => {
-      objectStore.put(data[key], key);
+    Object.keys(localStorage).forEach((key) => {
+      localStorage.removeItem(key);
     });
-  };
-}
+    const request = indexedDB.open("keyval-store");
+    request.onsuccess = function (event) {
+      const db = event.target.result;
+      const transaction = db.transaction(["keyval"], "readwrite");
+      const objectStore = transaction.objectStore("keyval");
+  
+      objectStore.clear().onsuccess = function () {
+        data = data.indexedDB;
+        Object.keys(data).forEach((key) => {
+          objectStore.put(data[key], key);
+        });
+      };
+    };
+  
+    Object.keys(data.localStorage).forEach((key) => {
+      localStorage.setItem(key, data.localStorage[key]);
+    });
+  }
 
 // Function to export data from localStorage and IndexedDB
 function exportBackupData() {
