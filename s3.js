@@ -2,9 +2,9 @@
 // <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/3.1.9-1/crypto-js.js"></script>
 
 // Handle page load
-const checkDOMLoaded = setInterval(async () => {
+const checkDOMLoadComplete = setInterval(async () => {
     if (document.readyState === "complete" && wasImportSuccessful !== true) {
-      clearInterval(checkDOMLoaded);
+      clearInterval(checkDOMLoadComplete);
       await checkAndImportBackup();
       const currentTime = new Date().toLocaleString();
       const lastSync = localStorage.getItem("last-cloud-sync");
