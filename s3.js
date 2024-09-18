@@ -518,25 +518,31 @@ async function handleBackupFiles() {
   const bucketName = localStorage.getItem("aws-bucket");
   const awsAccessKey = localStorage.getItem("aws-access-key");
   const awsSecretKey = localStorage.getItem("aws-secret-key");
+
   if (typeof AWS === "undefined") {
     await loadAwsSdk();
   }
+  
   AWS.config.update({
     accessKeyId: awsAccessKey,
     secretAccessKey: awsSecretKey,
     region: "ap-southeast-2",
   });
+
   const s3 = new AWS.S3();
   const params = {
     Bucket: bucketName,
     Prefix: "typingmind-backup.json",
   };
+
   const currentDateSuffix = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+
   s3.listObjectsV2(params, async (err, data) => {
     if (err) {
       console.error("Error listing S3 objects:", err);
       return;
     }
+
     if (data.Contents.length > 0) {
       const lastModified = data.Contents[0].LastModified;
       const lastModifiedDate = new Date(lastModified);
@@ -551,6 +557,7 @@ async function handleBackupFiles() {
         await s3.copyObject(copyParams).promise();
         console.log(`Successfully created a copy of backup: ${copyParams.Key}`);
       }
+
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(today.getDate() - 30);
 
