@@ -3,6 +3,12 @@ const checkDOMLoaded = setInterval(async () => {
   if (document.readyState === "complete" && wasImportSuccessful !== true) {
     clearInterval(checkDOMLoaded);
     var importSuccessful = await checkAndImportBackup();
+    const storedSuffix = localStorage.getItem("last-backup-suffix");
+    const currentDateSuffix = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    if (!storedSuffix || currentDateSuffix > storedSuffix) {
+      await handleBackupFiles();
+      localStorage.setItem("last-backup-suffix", currentDateSuffix);
+    }
     const currentTime = new Date().toLocaleString();
     const lastSync = localStorage.getItem("last-cloud-sync");
     var element = document.getElementById("last-sync-msg");
@@ -11,8 +17,8 @@ const checkDOMLoaded = setInterval(async () => {
         element.innerText = `Last sync done at ${currentTime}`;
         element = null;
       }
+      startBackupInterval();
     }
-    startBackupInterval();
   }
 }, 5000);
 
@@ -256,8 +262,8 @@ document.addEventListener("visibilitychange", async () => {
         element.innerText = `Last sync done at ${currentTime}`;
         element = null;
       }
+      startBackupInterval();
     }
-    startBackupInterval();
   } else {
     clearInterval(backupInterval);
   }
@@ -425,9 +431,9 @@ async function backupToS3() {
       if (element !== null) {
         element.innerText = `Last sync done at ${currentTime}`;
       }
+      startBackupInterval();
     }
   });
-  startBackupInterval();
 }
 
 // Function to handle import from S3
@@ -498,5 +504,63 @@ async function validateAwsCredentials(bucketName, accessKey, secretKey) {
         resolve(data);
       }
     });
+  });
+}
+
+// Function to create a dated backup copy and purge old backups
+async function handleBackupFiles() {
+  const bucketName = localStorage.getItem("aws-bucket");
+  const awsAccessKey = localStorage.getItem("aws-access-key");
+  const awsSecretKey = localStorage.getItem("aws-secret-key");
+  if (typeof AWS === "undefined") {
+    await loadAwsSdk();
+  }
+  AWS.config.update({
+    accessKeyId: awsAccessKey,
+    secretAccessKey: awsSecretKey,
+    region: "ap-southeast-2",
+  });
+  const s3 = new AWS.S3();
+  const params = {
+    Bucket: bucketName,
+    Prefix: "typingmind-backup.json",
+  };
+  const currentDateSuffix = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  s3.listObjectsV2(params, async (err, data) => {
+    if (err) {
+      console.error("Error listing S3 objects:", err);
+      return;
+    }
+    if (data.Contents.length > 0) {
+      const lastModified = data.Contents[0].LastModified;
+      const lastModifiedDate = new Date(lastModified);
+      const today = new Date();
+
+      if (lastModifiedDate.setHours(0, 0, 0, 0) < today.setHours(0, 0, 0, 0)) {
+        const copyParams = {
+          Bucket: bucketName,
+          CopySource: `${bucketName}/typingmind-backup.json`,
+          Key: `typingmind-backup-${currentDateSuffix}.json`,
+        };
+        await s3.copyObject(copyParams).promise();
+        console.log(`Successfully created a copy of backup: ${copyParams.Key}`);
+      }
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(today.getDate() - 30);
+
+      for (const file of data.Contents) {
+        if (file.Key.endsWith('.json') && file.Key !== "typingmind-backup.json") {
+          const fileDate = new Date(file.LastModified);
+          if (fileDate < thirtyDaysAgo) {
+            const deleteParams = {
+              Bucket: bucketName,
+              Key: file.Key,
+            };
+            await s3.deleteObject(deleteParams).promise();
+            console.log(`Deleted old backup file: ${file.Key}`);
+          }
+        }
+      }
+    }
   });
 }
