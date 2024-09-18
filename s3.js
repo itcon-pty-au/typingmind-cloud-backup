@@ -185,12 +185,16 @@ function openSyncModal() {
   });
 
   // Save button click handler
-  document
-    .getElementById("save-aws-details-btn")
-    .addEventListener("click", function () {
-      localStorage.setItem("aws-bucket", awsBucketInput.value.trim());
-      localStorage.setItem("aws-access-key", awsAccessKeyInput.value.trim());
-      localStorage.setItem("aws-secret-key", awsSecretKeyInput.value.trim());
+  document.getElementById("save-aws-details-btn").addEventListener("click", async function () {
+    const bucketName = awsBucketInput.value.trim();
+    const accessKey = awsAccessKeyInput.value.trim();
+    const secretKey = awsSecretKeyInput.value.trim();
+  
+    try {
+      await validateAwsCredentials(bucketName, accessKey, secretKey);
+      localStorage.setItem("aws-bucket", bucketName);
+      localStorage.setItem("aws-access-key", accessKey);
+      localStorage.setItem("aws-secret-key", secretKey);
       const actionMsgElement = document.getElementById("action-msg");
       actionMsgElement.textContent = "AWS details saved!";
       actionMsgElement.style.color = "white";
@@ -209,7 +213,12 @@ function openSyncModal() {
         }
       }
       startBackupInterval();
-    });
+    } catch (err) {
+      const actionMsgElement = document.getElementById("action-msg");
+      actionMsgElement.textContent = `Invalid AWS details: ${err.message}`;
+      actionMsgElement.style.color = "red";
+    }
+  }); 
 
   // Export button click handler
   document
@@ -444,5 +453,34 @@ async function importFromS3() {
       element.innerText = `Last sync done at ${currentTime}`;
     }
     wasImportSuccessful = true;
+  });
+}
+
+// Validate the AWS connection
+async function validateAwsCredentials(bucketName, accessKey, secretKey) {
+  if (typeof AWS === "undefined") {
+    await loadAwsSdk();
+  }
+
+  AWS.config.update({
+    accessKeyId: accessKey,
+    secretAccessKey: secretKey,
+    region: "ap-southeast-2",
+  });
+
+  const s3 = new AWS.S3();
+  const params = {
+    Bucket: bucketName,
+    MaxKeys: 1,
+  };
+
+  return new Promise((resolve, reject) => {
+    s3.listObjectsV2(params, function(err, data) {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(data);
+      }
+    });
   });
 }
