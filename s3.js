@@ -4,7 +4,7 @@ const checkDOMLoaded = setInterval(async () => {
     clearInterval(checkDOMLoaded);
     var importSuccessful = await checkAndImportBackup();
     const storedSuffix = localStorage.getItem("last-daily-backup-in-s3");
-    const currentDateSuffix = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const currentDateSuffix = new Date().toLocaleString().slice(0, 10).replace(/-/g, "");
     if (!storedSuffix || currentDateSuffix > storedSuffix) {
       await handleBackupFiles();
       localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
