@@ -2,11 +2,11 @@
 const checkDOMLoaded = setInterval(async () => {
   if (document.readyState === "complete" && wasImportSuccessful !== true) {
     clearInterval(checkDOMLoaded);
-    await checkAndImportBackup();
+    var importSuccessful = await checkAndImportBackup();
     const currentTime = new Date().toLocaleString();
     const lastSync = localStorage.getItem("last-cloud-sync");
     var element = document.getElementById("last-sync-msg");
-    if (lastSync) {
+    if (lastSync && importSuccessful) {
       if (element !== null) {
         element.innerText = `Last sync done at ${currentTime}`;
         element = null;
@@ -202,11 +202,11 @@ function openSyncModal() {
         actionMsgElement.textContent = "";
       }, 3000);
       updateButtonState();
-      checkAndImportBackup();
+      var importSuccessful = checkAndImportBackup();
       const currentTime = new Date().toLocaleString();
       const lastSync = localStorage.getItem("last-cloud-sync");
       var element = document.getElementById("last-sync-msg");
-      if (lastSync) {
+      if (lastSync && importSuccessful) {
         if (element !== null) {
           element.innerText = `Last sync done at ${currentTime}`;
           element = null;
@@ -243,11 +243,11 @@ function openSyncModal() {
 // Visibility change event listener
 document.addEventListener("visibilitychange", async () => {
   if (!document.hidden) {
-    await checkAndImportBackup();
+    var importSuccessfulawait = checkAndImportBackup();
     const currentTime = new Date().toLocaleString();
     const lastSync = localStorage.getItem("last-cloud-sync");
     var element = document.getElementById("last-sync-msg");
-    if (lastSync) {
+    if (lastSync && importSuccessful) {
       if (element !== null) {
         element.innerText = `Last sync done at ${currentTime}`;
         element = null;
@@ -282,25 +282,30 @@ async function checkAndImportBackup() {
       Key: "typingmind-backup.json",
     };
 
-    s3.getObject(params, async function (err) {
-      if (!err) {
-        await importFromS3();
-        //console.log(`Synced from S3 at ${new Date().toLocaleString()}`);
-        wasImportSuccessful = true;
-      } else {
-        if (err.code === 'NoSuchKey') {
-          alert(
-            "Backup file not found in S3! Run an adhoc 'Export to S3' first."
-          );
+    return new Promise((resolve) => {
+      s3.getObject(params, async function (err) {
+        if (!err) {
+          await importFromS3();
+          //console.log(`Synced from S3 at ${new Date().toLocaleString()}`);
+          wasImportSuccessful = true;
+          resolve(true);
         } else {
-          localStorage.setItem("aws-bucket", "");
-          localStorage.setItem("aws-access-key", "");
-          localStorage.setItem("aws-secret-key", "");
-          alert("Failed to connect to AWS. Please check your credentials.");
+          if (err.code === 'NoSuchKey') {
+            alert(
+              "Backup file not found in S3! Run an adhoc 'Export to S3' first."
+            );
+          } else {
+            localStorage.setItem("aws-bucket", "");
+            localStorage.setItem("aws-access-key", "");
+            localStorage.setItem("aws-secret-key", "");
+            alert("Failed to connect to AWS. Please check your credentials.");
+          }
+          resolve(false);
         }
-      }
+      });
     });
   }
+  return false;
 }
 
 // Function to start the backup interval
