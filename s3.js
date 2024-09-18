@@ -217,6 +217,9 @@ function openSyncModal() {
       const actionMsgElement = document.getElementById("action-msg");
       actionMsgElement.textContent = `Invalid AWS details: ${err.message}`;
       actionMsgElement.style.color = "red";
+      localStorage.setItem("aws-bucket", "");
+      localStorage.setItem("aws-access-key", "");
+      localStorage.setItem("aws-secret-key", "");
     }
   }); 
 
