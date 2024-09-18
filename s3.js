@@ -14,7 +14,9 @@ const checkDOMLoaded = setInterval(async () => {
         element = null;
       }
       if (!storedSuffix || currentDateSuffix > storedSuffix) {
+        console.log("Inside if in dom load")
         await handleBackupFiles();
+        console.log("handleBackupFiles complete")
         localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
       }
       startBackupInterval();
@@ -265,6 +267,7 @@ document.addEventListener("visibilitychange", async () => {
         element = null;
       }
       if (!storedSuffix || currentDateSuffix > storedSuffix) {
+        console.log("Inside if in visibility change")
         await handleBackupFiles();
         localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
       }
@@ -536,6 +539,7 @@ async function handleBackupFiles() {
   };
 
   const currentDateSuffix = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  console.log("currentDateSuffix: " & currentDateSuffix)
 
   s3.listObjectsV2(params, async (err, data) => {
     if (err) {
@@ -549,6 +553,7 @@ async function handleBackupFiles() {
       const today = new Date();
 
       if (lastModifiedDate.setHours(0, 0, 0, 0) < today.setHours(0, 0, 0, 0)) {
+      console.log("Lastmodified less than today if condition")
         const copyParams = {
           Bucket: bucketName,
           CopySource: `${bucketName}/typingmind-backup.json`,
