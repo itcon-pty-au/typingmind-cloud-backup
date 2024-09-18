@@ -8,6 +8,7 @@
 - Enables automatic backing up of your TypingMind data to S3 throughout the session.
   
 ## Using this extension
+WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXPORT" before setting up the extension.
 1. Load "https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js" into Menu > Preferences > Extension in Typingmind.
 2. Once the extension is installed, a new Backup button will be added to the menu. Clicking on this will bring up the S3 backup configuration form.
 3. Provide the AWS details in the form. [These are stored locally in your browser]
@@ -18,26 +19,10 @@
 4. When the local data is changed, the extension triggers a backup to S3 automatically. However, these calls are capped at 1 every 5 seconds.
 
 ## AWS Config
-1. Create a user in Amazon IAM
-2. Create Access Key for the user
-3. Click on Permissions tab > Add Permissions > Create Inline Policy > Click on JSON view. Paste the below policy into the policy editor. This policy allows read and write access to the specific backup file.
-``
-{
-	"Version": "2012-10-17",
-	"Statement": [
-		{
-			"Effect": "Allow",
-			"Action": [
-				"s3:GetObject",
-				"s3:PutObject"
-			],
-			"Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json"
-		}
-	]
-}
-``
-4. Create a bucket. Due to security reasons, it is recommended to create a new bucket for this activity and ensure that no other files are stored in it.
-5. Open Bucket > Permissions > Bucket Policy
+1. Create a user in Amazon IAM. In permissions option, select "Add user to group" but don't select any group. In next screen, "Create user".
+2. Open the user. Create Access Key for the user. In Step 1, select "Other", you can skip Step 2 and directly create Access Key. Copy the Access key and Secret Key and store it securely. You will need this to configure the extension.
+3. Create a bucket with the default settings. Due to security reasons, it is recommended to create a new bucket for Typingmind backup and ensure that no other files are stored in it.
+4. Open Bucket > Permissions > Bucket Policy
 ``
 {
     "Version": "2012-10-17",
@@ -48,10 +33,14 @@
                 "AWS": "arn:aws:iam::<AWS Account ID>:user/<IAM username>"
             },
             "Action": [
-                "s3:PutObject",
-                "s3:GetObject"
+                "s3:ListBucket",
+                "s3:GetObject",
+                "s3:PutObject"
             ],
-            "Resource": "arn:aws:s3:::<AWS bucket name>/*"
+            "Resource": [
+                "arn:aws:s3:::<AWS bucket name>",
+                "arn:aws:s3:::<AWS bucket name>/*"
+            ]
         }
     ]
 }
