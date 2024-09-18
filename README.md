@@ -19,8 +19,8 @@
 
 ## AWS Config
 1. Create a user in Amazon IAM
-2. Create Access Key for the user
-3. Create a bucket. Due to security reasons, it is recommended to create a new bucket for this activity and ensure that no other files are stored in it.
+2. Create Access Key for the user. Copy the Access key and Secret Key and store it securely. You will need this to configure the extension.
+3. Create a bucket. Due to security reasons, it is recommended to create a new bucket for Typingmind backup and ensure that no other files are stored in it.
 4. Open Bucket > Permissions > Bucket Policy
 ``
 {
