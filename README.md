@@ -82,7 +82,7 @@ Update AWS Account ID, IAM username and AWS bucket name in the policy with your 
     }
 ]
 ``
-Update "https://*.hostname.com" with your specific value. This allows executing S3 commands from only the specified hostname.
+Update "https://*.hostname.com" with your specific hostname in case you are self hosting Typingmind (e.g. https://chat.yourhostname.com). If you are using Typingmind cloud, hostname should be https://typingmind.com. This restricts executing S3 commands from only the specified hostname providing better security.
 
 ## About me
 I am a passionate developer dedicated to creating useful tools that can benefit the community. My goal is to distribute all of my projects as open source, enabling others to learn, contribute, and innovate together. If you appreciate my work and want to support my efforts, feel free to [buy me a coffee](https://buymeacoffee.com/itcon) :heart:!
