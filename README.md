@@ -31,7 +31,7 @@
 				"s3:GetObject",
 				"s3:PutObject"
 			],
-			"Resource": "arn:aws:s3:::<AWS Account ID>/typingmind-backup.json"
+			"Resource": "arn:aws:s3:::<AWS Bucket name>/typingmind-backup.json"
 		}
 	]
 }
@@ -96,7 +96,7 @@ If you are using typingcloud, use the below
             "POST"
         ],
         "AllowedOrigins": [
-            "https://*.typingmind.com"
+            "https://www.typingmind.com"
         ],
         "ExposeHeaders": [
             "Access-Control-Allow-Origin"
