@@ -220,6 +220,7 @@ function openSyncModal() {
       localStorage.setItem("aws-bucket", "");
       localStorage.setItem("aws-access-key", "");
       localStorage.setItem("aws-secret-key", "");
+      clearInterval(backupInterval);
     }
   }); 
 
