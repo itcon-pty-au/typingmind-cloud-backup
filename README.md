@@ -20,7 +20,7 @@
 ## AWS Config
 1. Create a user in Amazon IAM
 2. Create Access Key for the user
-3. Add Permission Policies [Inline Policy] for the user. This policy only allow read and write access to the specific backup file.
+3. Click on Permissions tab > Add Permissions > Create Inline Policy > Click on JSON view. Paste the below policy into the policy editor. This policy allows read and write access to the specific backup file.
 ``
 {
 	"Version": "2012-10-17",
@@ -31,14 +31,13 @@
 				"s3:GetObject",
 				"s3:PutObject"
 			],
-			"Resource": "arn:aws:s3:::<AWS Bucket name>/typingmind-backup.json"
+			"Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json"
 		}
 	]
 }
 ``
-
-3. Create a bucket. Due to security reasons, it is recommended to create a new bucket for this activity and ensure that no other files are stored in it.
-4. Open Bucket > Permissions > Bucket Policy
+4. Create a bucket. Due to security reasons, it is recommended to create a new bucket for this activity and ensure that no other files are stored in it.
+5. Open Bucket > Permissions > Bucket Policy
 ``
 {
     "Version": "2012-10-17",
@@ -59,7 +58,7 @@
 ``
 Update AWS Account ID, IAM username and AWS bucket name in the policy with your specific values.
 
-5. Open Bucket > Permissions > CORS
+6. Open Bucket > Permissions > CORS
 ``
 [
     {
