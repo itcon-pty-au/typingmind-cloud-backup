@@ -208,7 +208,7 @@ function openSyncModal() {
         actionMsgElement.textContent = "";
       }, 3000);
       updateButtonState();
-      var importSuccessful = checkAndImportBackup();
+      var importSuccessful = await checkAndImportBackup();
       const currentTime = new Date().toLocaleString();
       const lastSync = localStorage.getItem("last-cloud-sync");
       var element = document.getElementById("last-sync-msg");
@@ -253,7 +253,9 @@ function openSyncModal() {
 // Visibility change event listener
 document.addEventListener("visibilitychange", async () => {
   if (!document.hidden) {
-    var importSuccessfulawait = checkAndImportBackup();
+    var importSuccessful = await checkAndImportBackup();
+    const storedSuffix = localStorage.getItem("last-daily-backup-in-s3");
+    const currentDateSuffix = new Date().toLocaleString().slice(0, 10).replace(/-/g, "");
     const currentTime = new Date().toLocaleString();
     const lastSync = localStorage.getItem("last-cloud-sync");
     var element = document.getElementById("last-sync-msg");
@@ -261,6 +263,10 @@ document.addEventListener("visibilitychange", async () => {
       if (element !== null) {
         element.innerText = `Last sync done at ${currentTime}`;
         element = null;
+      }
+      if (!storedSuffix || currentDateSuffix > storedSuffix) {
+        await handleBackupFiles();
+        localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
       }
       startBackupInterval();
     }
