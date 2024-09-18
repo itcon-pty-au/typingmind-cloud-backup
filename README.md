@@ -82,6 +82,28 @@ Update AWS Account ID, IAM username and AWS bucket name in the policy with your 
     }
 ]
 ``
+If you are using typingcloud, use the below
+``
+[
+    {
+        "AllowedHeaders": [
+            "*"
+        ],
+        "AllowedMethods": [
+            "HEAD",
+            "GET",
+            "PUT",
+            "POST"
+        ],
+        "AllowedOrigins": [
+            "https://*.typingmind.com"
+        ],
+        "ExposeHeaders": [
+            "Access-Control-Allow-Origin"
+        ],
+        "MaxAgeSeconds": 3000
+    }
+``
 Update "https://*.hostname.com" with your specific hostname in case you are self hosting Typingmind (e.g. https://chat.yourhostname.com). If you are using Typingmind cloud, hostname should be https://typingmind.com. This restricts executing S3 commands from only the specified hostname providing better security.
 
 ## About me
