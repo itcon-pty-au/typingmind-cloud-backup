@@ -103,6 +103,7 @@ If you are using typingcloud, use the below
         ],
         "MaxAgeSeconds": 3000
     }
+]
 ``
 Update "https://*.hostname.com" with your specific hostname in case you are self hosting Typingmind (e.g. https://chat.yourhostname.com). If you are using Typingmind cloud, hostname should be https://typingmind.com. This restricts executing S3 commands from only the specified hostname providing better security.
 
