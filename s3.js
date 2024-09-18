@@ -288,9 +288,16 @@ async function checkAndImportBackup() {
         //console.log(`Synced from S3 at ${new Date().toLocaleString()}`);
         wasImportSuccessful = true;
       } else {
-        alert(
-          "Backup file not found in S3! Run an adhoc 'Export to S3' first."
-        );
+        if (err.code === 'NoSuchKey') {
+          alert(
+            "Backup file not found in S3! Run an adhoc 'Export to S3' first."
+          );
+        } else {
+          localStorage.setItem("aws-bucket", "");
+          localStorage.setItem("aws-access-key", "");
+          localStorage.setItem("aws-secret-key", "");
+          alert("Failed to connect to AWS. Please check your credentials.");
+        }
       }
     });
   }
