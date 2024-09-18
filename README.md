@@ -23,17 +23,24 @@
 3. Click on Permissions tab > Add Permissions > Create Inline Policy > Click on JSON view. Paste the below policy into the policy editor. This policy allows read and write access to the specific backup file.
 ``
 {
-	"Version": "2012-10-17",
-	"Statement": [
-		{
-			"Effect": "Allow",
-			"Action": [
-				"s3:GetObject",
-				"s3:PutObject"
-			],
-			"Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json"
-		}
-	]
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:GetObject",
+                "s3:PutObject"
+            ],
+            "Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:ListBucket"
+            ],
+            "Resource": "arn:aws:s3:::<AWS bucket name>"
+        }
+    ]
 }
 ``
 4. Create a bucket. Due to security reasons, it is recommended to create a new bucket for this activity and ensure that no other files are stored in it.
