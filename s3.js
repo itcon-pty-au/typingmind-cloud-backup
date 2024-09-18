@@ -4,7 +4,7 @@ const checkDOMLoaded = setInterval(async () => {
     clearInterval(checkDOMLoaded);
     var importSuccessful = await checkAndImportBackup();
     const storedSuffix = localStorage.getItem("last-daily-backup-in-s3");
-    const currentDateSuffix = new Date().toLocaleString().slice(0, 10).replace(/-/g, "");
+    const currentDateSuffix = new Date().toLocaleString().slice(0, 9).replace(/-/g, "");
     const currentTime = new Date().toLocaleString();
     const lastSync = localStorage.getItem("last-cloud-sync");
     var element = document.getElementById("last-sync-msg");
@@ -14,10 +14,7 @@ const checkDOMLoaded = setInterval(async () => {
         element = null;
       }
       if (!storedSuffix || currentDateSuffix > storedSuffix) {
-        console.log("Inside if in dom load")
         await handleBackupFiles();
-        console.log("handleBackupFiles complete")
-        localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
       }
       startBackupInterval();
     }
@@ -267,7 +264,6 @@ document.addEventListener("visibilitychange", async () => {
         element = null;
       }
       if (!storedSuffix || currentDateSuffix > storedSuffix) {
-        console.log("Inside if in visibility change")
         await handleBackupFiles();
         localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
       }
@@ -537,32 +533,26 @@ async function handleBackupFiles() {
     Bucket: bucketName,
     Prefix: "typingmind-backup.json",
   };
-
-  const currentDateSuffix = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  console.log("currentDateSuffix: " & currentDateSuffix)
-
+  const currentDateSuffix = new Date().toLocaleString().slice(0, 9).replace(/-/g, "");
   s3.listObjectsV2(params, async (err, data) => {
     if (err) {
       console.error("Error listing S3 objects:", err);
       return;
     }
-
     if (data.Contents.length > 0) {
       const lastModified = data.Contents[0].LastModified;
       const lastModifiedDate = new Date(lastModified);
       const today = new Date();
-
       if (lastModifiedDate.setHours(0, 0, 0, 0) < today.setHours(0, 0, 0, 0)) {
-      console.log("Lastmodified less than today if condition")
         const copyParams = {
           Bucket: bucketName,
           CopySource: `${bucketName}/typingmind-backup.json`,
           Key: `typingmind-backup-${currentDateSuffix}.json`,
         };
         await s3.copyObject(copyParams).promise();
-        console.log(`Successfully created a copy of backup: ${copyParams.Key}`);
+        //console.log(`Successfully created a copy of backup: ${copyParams.Key}`);
+        localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
       }
-
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(today.getDate() - 30);
 
@@ -575,7 +565,7 @@ async function handleBackupFiles() {
               Key: file.Key,
             };
             await s3.deleteObject(deleteParams).promise();
-            console.log(`Deleted old backup file: ${file.Key}`);
+            //console.log(`Deleted old backup file: ${file.Key}`);
           }
         }
       }
