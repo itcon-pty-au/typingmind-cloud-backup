@@ -20,7 +20,7 @@
 ## AWS Config
 1. Create a user in Amazon IAM
 2. Create Access Key for the user
-3. Add Permission Policies [Inline Policy] for the user. This policy only allow read and write access to the specific backup file.
+3. Click on Permissions tab > Add Permissions > Create Inline Policy > Click on JSON view. Paste the below policy into the policy editor. This policy allows read and write access to the specific backup file.
 ``
 {
 	"Version": "2012-10-17",
@@ -31,14 +31,13 @@
 				"s3:GetObject",
 				"s3:PutObject"
 			],
-			"Resource": "arn:aws:s3:::<AWS Account ID>/typingmind-backup.json"
+			"Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json"
 		}
 	]
 }
 ``
-
-3. Create a bucket.
-4. Open Bucket > Permissions > Bucket Policy
+4. Create a bucket. Due to security reasons, it is recommended to create a new bucket for this activity and ensure that no other files are stored in it.
+5. Open Bucket > Permissions > Bucket Policy
 ``
 {
     "Version": "2012-10-17",
@@ -57,9 +56,9 @@
     ]
 }
 ``
-Update AWS Account ID, IAM username and AWS bucket name
+Update AWS Account ID, IAM username and AWS bucket name in the policy with your specific values.
 
-5. Open Bucket > Permissions > CORS
+6. Open Bucket > Permissions > CORS
 ``
 [
     {
@@ -82,7 +81,30 @@ Update AWS Account ID, IAM username and AWS bucket name
     }
 ]
 ``
-Update "https://*.hostname.com"
+If you are using typingcloud, use the below
+``
+[
+    {
+        "AllowedHeaders": [
+            "*"
+        ],
+        "AllowedMethods": [
+            "HEAD",
+            "GET",
+            "PUT",
+            "POST"
+        ],
+        "AllowedOrigins": [
+            "https://www.typingmind.com"
+        ],
+        "ExposeHeaders": [
+            "Access-Control-Allow-Origin"
+        ],
+        "MaxAgeSeconds": 3000
+    }
+]
+``
+Update "https://*.hostname.com" with your specific hostname in case you are self hosting Typingmind (e.g. https://chat.yourhostname.com). If you are using Typingmind cloud, hostname should be https://www.typingmind.com. This restricts executing S3 commands from only the specified hostname providing better security.
 
 ## About me
 I am a passionate developer dedicated to creating useful tools that can benefit the community. My goal is to distribute all of my projects as open source, enabling others to learn, contribute, and innovate together. If you appreciate my work and want to support my efforts, feel free to [buy me a coffee](https://buymeacoffee.com/itcon) :heart:!
