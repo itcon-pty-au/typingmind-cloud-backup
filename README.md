@@ -2,6 +2,8 @@
 
 [If you found this useful, please consider buying me a coffee](https://buymeacoffee.com/itcon):heart:!
 
+WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXPORT" before setting up the extension.
+
 ## Features
 - Extension to enable automatic backup & restore of app data to S3.
 - Automatically restores the latest backup version from S3 to your TypingMind instance when you first open the app (provided a backup exists).
