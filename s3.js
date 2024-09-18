@@ -3,11 +3,11 @@ const checkDOMLoaded = setInterval(async () => {
   if (document.readyState === "complete" && wasImportSuccessful !== true) {
     clearInterval(checkDOMLoaded);
     var importSuccessful = await checkAndImportBackup();
-    const storedSuffix = localStorage.getItem("last-backup-suffix");
+    const storedSuffix = localStorage.getItem("last-daily-backup-in-s3");
     const currentDateSuffix = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     if (!storedSuffix || currentDateSuffix > storedSuffix) {
       await handleBackupFiles();
-      localStorage.setItem("last-backup-suffix", currentDateSuffix);
+      localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
     }
     const currentTime = new Date().toLocaleString();
     const lastSync = localStorage.getItem("last-cloud-sync");
