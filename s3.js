@@ -5,10 +5,6 @@ const checkDOMLoaded = setInterval(async () => {
     var importSuccessful = await checkAndImportBackup();
     const storedSuffix = localStorage.getItem("last-daily-backup-in-s3");
     const currentDateSuffix = new Date().toLocaleString().slice(0, 10).replace(/-/g, "");
-    if (!storedSuffix || currentDateSuffix > storedSuffix) {
-      await handleBackupFiles();
-      localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
-    }
     const currentTime = new Date().toLocaleString();
     const lastSync = localStorage.getItem("last-cloud-sync");
     var element = document.getElementById("last-sync-msg");
@@ -16,6 +12,10 @@ const checkDOMLoaded = setInterval(async () => {
       if (element !== null) {
         element.innerText = `Last sync done at ${currentTime}`;
         element = null;
+      }
+      if (!storedSuffix || currentDateSuffix > storedSuffix) {
+        await handleBackupFiles();
+        localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
       }
       startBackupInterval();
     }
