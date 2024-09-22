@@ -46,7 +46,7 @@ teamsButton.parentNode.insertBefore(cloudSyncBtn, teamsButton.nextSibling);
 
 // Attach modal to new button
 cloudSyncBtn.addEventListener("click", function () {
-openSyncModal();
+  openSyncModal();
 });
 
 // New Popup
@@ -89,6 +89,10 @@ function openSyncModal() {
                                     <input id="aws-bucket" name="aws-bucket" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                 </div>
                                 <div>
+                                    <label for="aws-region" class="block text-sm font-medium text-gray-700 dark:text-gray-400">AWS Region</label>
+                                    <input id="aws-region" name="aws-region" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required value="ap-southeast-2">
+                                </div>
+                                <div>
                                     <label for="aws-access-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">AWS Access Key</label>
                                     <input id="aws-access-key" name="aws-access-key" type="password" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                 </div>
@@ -126,14 +130,17 @@ function openSyncModal() {
   document.body.appendChild(modalPopup);
 
   const awsBucketInput = document.getElementById("aws-bucket");
+  const awsRegionInput = document.getElementById("aws-region");
   const awsAccessKeyInput = document.getElementById("aws-access-key");
   const awsSecretKeyInput = document.getElementById("aws-secret-key");
   const savedBucket = localStorage.getItem("aws-bucket");
+  const savedRegion = localStorage.getItem("aws-region");
   const savedAccessKey = localStorage.getItem("aws-access-key");
   const savedSecretKey = localStorage.getItem("aws-secret-key");
   const lastSync = localStorage.getItem("last-cloud-sync");
 
   if (savedBucket) awsBucketInput.value = savedBucket;
+  if (savedRegion) awsRegionInput.value = savedRegion;
   if (savedAccessKey) awsAccessKeyInput.value = savedAccessKey;
   if (savedSecretKey) awsSecretKeyInput.value = savedSecretKey;
   const currentTime = new Date().toLocaleString();
@@ -148,6 +155,7 @@ function openSyncModal() {
   function updateButtonState() {
     const isDisabled =
       !awsBucketInput.value.trim() ||
+      !awsRegionInput.value.trim() ||
       !awsAccessKeyInput.value.trim() ||
       !awsSecretKeyInput.value.trim();
     document.getElementById("export-to-s3-btn").disabled = isDisabled;
@@ -162,6 +170,7 @@ function openSyncModal() {
   });
 
   awsBucketInput.addEventListener("input", updateButtonState);
+  awsRegionInput.addEventListener("input", updateButtonState);
   awsAccessKeyInput.addEventListener("input", updateButtonState);
   awsSecretKeyInput.addEventListener("input", updateButtonState);
 
@@ -192,12 +201,14 @@ function openSyncModal() {
   // Save button click handler
   document.getElementById("save-aws-details-btn").addEventListener("click", async function () {
     const bucketName = awsBucketInput.value.trim();
+    const region = awsRegionInput.value.trim();
     const accessKey = awsAccessKeyInput.value.trim();
     const secretKey = awsSecretKeyInput.value.trim();
   
     try {
       await validateAwsCredentials(bucketName, accessKey, secretKey);
       localStorage.setItem("aws-bucket", bucketName);
+      localStorage.setItem("aws-region", region);
       localStorage.setItem("aws-access-key", accessKey);
       localStorage.setItem("aws-secret-key", secretKey);
       const actionMsgElement = document.getElementById("action-msg");
@@ -223,6 +234,7 @@ function openSyncModal() {
       actionMsgElement.textContent = `Invalid AWS details: ${err.message}`;
       actionMsgElement.style.color = "red";
       localStorage.setItem("aws-bucket", "");
+      localStorage.setItem("aws-region", "");
       localStorage.setItem("aws-access-key", "");
       localStorage.setItem("aws-secret-key", "");
       clearInterval(backupInterval);
@@ -235,7 +247,6 @@ function openSyncModal() {
     .addEventListener("click", async function () {
       isExportInProgress = true;
       await backupToS3();
-      //console.log(`Synced to S3 at ${new Date().toLocaleString()}`);
       isExportInProgress = false;
     });
 
@@ -244,7 +255,6 @@ function openSyncModal() {
     .getElementById("import-from-s3-btn")
     .addEventListener("click", async function () {
       await importFromS3();
-      //console.log(`Synced from S3 at ${new Date().toLocaleString()}`);
       wasImportSuccessful = true;
     });
 }
@@ -277,6 +287,7 @@ document.addEventListener("visibilitychange", async () => {
 // Function to check for backup file and import it
 async function checkAndImportBackup() {
   const bucketName = localStorage.getItem("aws-bucket");
+  const awsRegion = localStorage.getItem("aws-region");
   const awsAccessKey = localStorage.getItem("aws-access-key");
   const awsSecretKey = localStorage.getItem("aws-secret-key");
 
@@ -288,7 +299,7 @@ async function checkAndImportBackup() {
     AWS.config.update({
       accessKeyId: awsAccessKey,
       secretAccessKey: awsSecretKey,
-      region: "ap-southeast-2",
+      region: awsRegion,
     });
 
     const s3 = new AWS.S3();
@@ -301,7 +312,6 @@ async function checkAndImportBackup() {
       s3.getObject(params, async function (err) {
         if (!err) {
           await importFromS3();
-          //console.log(`Synced from S3 at ${new Date().toLocaleString()}`);
           wasImportSuccessful = true;
           resolve(true);
         } else {
@@ -311,6 +321,7 @@ async function checkAndImportBackup() {
             );
           } else {
             localStorage.setItem("aws-bucket", "");
+            localStorage.setItem("aws-region", "");
             localStorage.setItem("aws-access-key", "");
             localStorage.setItem("aws-secret-key", "");
             alert("Failed to connect to AWS. Please check your credentials.");
@@ -330,7 +341,6 @@ function startBackupInterval() {
     if (wasImportSuccessful && !isExportInProgress) {
       isExportInProgress = true;
       await backupToS3();
-      //console.log(`Synced to S3 at ${new Date().toLocaleString()}`);
       isExportInProgress = false;
     }
   }, 5000);
@@ -400,6 +410,7 @@ function exportBackupData() {
 // Function to handle backup to S3
 async function backupToS3() {
   const bucketName = localStorage.getItem("aws-bucket");
+  const awsRegion = localStorage.getItem("aws-region");
   const awsAccessKey = localStorage.getItem("aws-access-key");
   const awsSecretKey = localStorage.getItem("aws-secret-key");
 
@@ -410,7 +421,7 @@ async function backupToS3() {
   AWS.config.update({
     accessKeyId: awsAccessKey,
     secretAccessKey: awsSecretKey,
-    region: "ap-southeast-2",
+    region: awsRegion,
   });
 
   const data = await exportBackupData();
@@ -444,6 +455,7 @@ async function backupToS3() {
 // Function to handle import from S3
 async function importFromS3() {
   const bucketName = localStorage.getItem("aws-bucket");
+  const awsRegion = localStorage.getItem("aws-region");
   const awsAccessKey = localStorage.getItem("aws-access-key");
   const awsSecretKey = localStorage.getItem("aws-secret-key");
 
@@ -454,7 +466,7 @@ async function importFromS3() {
   AWS.config.update({
     accessKeyId: awsAccessKey,
     secretAccessKey: awsSecretKey,
-    region: "ap-southeast-2",
+    region: awsRegion,
   });
 
   const s3 = new AWS.S3();
@@ -485,6 +497,7 @@ async function importFromS3() {
 
 // Validate the AWS connection
 async function validateAwsCredentials(bucketName, accessKey, secretKey) {
+  const awsRegion = localStorage.getItem("aws-region");
   if (typeof AWS === "undefined") {
     await loadAwsSdk();
   }
@@ -492,7 +505,7 @@ async function validateAwsCredentials(bucketName, accessKey, secretKey) {
   AWS.config.update({
     accessKeyId: accessKey,
     secretAccessKey: secretKey,
-    region: "ap-southeast-2",
+    region: awsRegion,
   });
 
   const s3 = new AWS.S3();
@@ -515,6 +528,7 @@ async function validateAwsCredentials(bucketName, accessKey, secretKey) {
 // Function to create a dated backup copy and purge old backups
 async function handleBackupFiles() {
   const bucketName = localStorage.getItem("aws-bucket");
+  const awsRegion = localStorage.getItem("aws-region");
   const awsAccessKey = localStorage.getItem("aws-access-key");
   const awsSecretKey = localStorage.getItem("aws-secret-key");
 
@@ -525,7 +539,7 @@ async function handleBackupFiles() {
   AWS.config.update({
     accessKeyId: awsAccessKey,
     secretAccessKey: awsSecretKey,
-    region: "ap-southeast-2",
+    region: awsRegion,
   });
 
   const s3 = new AWS.S3();
@@ -550,7 +564,6 @@ async function handleBackupFiles() {
           Key: `typingmind-backup-${currentDateSuffix}.json`,
         };
         await s3.copyObject(copyParams).promise();
-        //console.log(`Successfully created a copy of backup: ${copyParams.Key}`);
         localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
       }
       const thirtyDaysAgo = new Date();
@@ -565,7 +578,6 @@ async function handleBackupFiles() {
               Key: file.Key,
             };
             await s3.deleteObject(deleteParams).promise();
-            //console.log(`Deleted old backup file: ${file.Key}`);
           }
         }
       }
