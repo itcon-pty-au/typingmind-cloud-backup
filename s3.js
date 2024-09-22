@@ -90,7 +90,7 @@ function openSyncModal() {
                                 </div>
                                 <div>
                                     <label for="aws-region" class="block text-sm font-medium text-gray-700 dark:text-gray-400">AWS Region</label>
-                                    <input id="aws-region" name="aws-region" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required value="ap-southeast-2">
+                                    <input id="aws-region" name="aws-region" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required >
                                 </div>
                                 <div>
                                     <label for="aws-access-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">AWS Access Key</label>
