@@ -4,7 +4,7 @@ const checkDOMLoaded = setInterval(async () => {
     clearInterval(checkDOMLoaded);
     var importSuccessful = await checkAndImportBackup();
     const storedSuffix = localStorage.getItem("last-daily-backup-in-s3");
-    const currentDateSuffix = new Date().toLocaleString().slice(0, 9).replace(/-/g, "");
+    const currentDateSuffix = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
     const currentTime = new Date().toLocaleString();
     const lastSync = localStorage.getItem("last-cloud-sync");
     var element = document.getElementById("last-sync-msg");
@@ -264,7 +264,7 @@ document.addEventListener("visibilitychange", async () => {
   if (!document.hidden) {
     var importSuccessful = await checkAndImportBackup();
     const storedSuffix = localStorage.getItem("last-daily-backup-in-s3");
-    const currentDateSuffix = new Date().toLocaleString().slice(0, 10).replace(/-/g, "");
+    const currentDateSuffix = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
     const currentTime = new Date().toLocaleString();
     const lastSync = localStorage.getItem("last-cloud-sync");
     var element = document.getElementById("last-sync-msg");
@@ -535,7 +535,7 @@ async function handleBackupFiles() {
   if (typeof AWS === "undefined") {
     await loadAwsSdk();
   }
-  
+
   AWS.config.update({
     accessKeyId: awsAccessKey,
     secretAccessKey: awsSecretKey,
@@ -547,16 +547,21 @@ async function handleBackupFiles() {
     Bucket: bucketName,
     Prefix: "typingmind-backup.json",
   };
-  const currentDateSuffix = new Date().toLocaleString().slice(0, 9).replace(/-/g, "");
+  
+  const today = new Date();
+  const currentDateSuffix = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+
   s3.listObjectsV2(params, async (err, data) => {
     if (err) {
       console.error("Error listing S3 objects:", err);
       return;
     }
+    
     if (data.Contents.length > 0) {
       const lastModified = data.Contents[0].LastModified;
       const lastModifiedDate = new Date(lastModified);
-      const today = new Date();
+
+      // Check if the last modified date is older than today to create a new backup
       if (lastModifiedDate.setHours(0, 0, 0, 0) < today.setHours(0, 0, 0, 0)) {
         const copyParams = {
           Bucket: bucketName,
@@ -566,6 +571,8 @@ async function handleBackupFiles() {
         await s3.copyObject(copyParams).promise();
         localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
       }
+
+      // Purge backups older than 30 days
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(today.getDate() - 30);
 
