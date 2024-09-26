@@ -334,18 +334,6 @@ async function checkAndImportBackup() {
   return false;
 }
 
-// Function to start the backup interval
-function startBackupInterval() {
-  clearInterval(backupInterval);
-  backupInterval = setInterval(async () => {
-    if (wasImportSuccessful && !isExportInProgress) {
-      isExportInProgress = true;
-      await backupToS3();
-      isExportInProgress = false;
-    }
-  }, 5000);
-}
-
 // Function to load AWS SDK asynchronously
 async function loadAwsSdk() {
   return new Promise((resolve, reject) => {
@@ -428,28 +416,40 @@ async function backupToS3() {
   const dataStr = JSON.stringify(data);
   const dataFileName = "typingmind-backup.json";
   const s3 = new AWS.S3();
-  const uploadParams = {
-    Bucket: bucketName,
-    Key: dataFileName,
-    Body: dataStr,
-    ContentType: "application/json",
-  };
+  clearInterval(backupInterval);
+  if (isExportInProgress) return;
+  isExportInProgress = true;
 
-  s3.upload(uploadParams, function (err, data) {
-    const actionMsgElement = document.getElementById("action-msg");
-    if (err) {
-      actionMsgElement.textContent = `Error uploading data: ${err.message}`;
-      actionMsgElement.style.color = "white";
-    } else {
-      const currentTime = new Date().toLocaleString();
-      localStorage.setItem("last-cloud-sync", currentTime);
-      var element = document.getElementById("last-sync-msg");
-      if (element !== null) {
-        element.innerText = `Last sync done at ${currentTime}`;
-      }
-      startBackupInterval();
+  try {
+    const managedUpload = s3.upload(uploadParams, {
+      partSize: 10 * 1024 * 1024,
+      queueSize: 1,
+    });
+    await managedUpload.promise();
+    const currentTime = new Date().toLocaleString();
+    localStorage.setItem("last-cloud-sync", currentTime);
+    const element = document.getElementById("last-sync-msg");
+    if (element !== null) {
+      element.innerText = `Last sync done at ${currentTime}`;
     }
-  });
+  } catch (err) {
+    console.error(`Error uploading data: ${err.message}`);
+  } finally {
+    isExportInProgress = false;
+    startBackupInterval();
+  }
+}
+
+// Function to start the backup interval
+function startBackupInterval() {
+  clearInterval(backupInterval);
+  backupInterval = setInterval(async () => {
+    if (wasImportSuccessful && !isExportInProgress) {
+      isExportInProgress = true;
+      await backupToS3();
+      isExportInProgress = false;
+    }
+  }, 5000);
 }
 
 // Function to handle import from S3
