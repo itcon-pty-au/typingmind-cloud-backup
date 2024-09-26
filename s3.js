@@ -4,6 +4,7 @@ const checkDOMLoaded = setInterval(async () => {
     clearInterval(checkDOMLoaded);
     var importSuccessful = await checkAndImportBackup();
     const storedSuffix = localStorage.getItem("last-daily-backup-in-s3");
+    const today = new Date();
     const currentDateSuffix = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
     const currentTime = new Date().toLocaleString();
     const lastSync = localStorage.getItem("last-cloud-sync");
@@ -264,6 +265,7 @@ document.addEventListener("visibilitychange", async () => {
   if (!document.hidden) {
     var importSuccessful = await checkAndImportBackup();
     const storedSuffix = localStorage.getItem("last-daily-backup-in-s3");
+    const today = new Date();
     const currentDateSuffix = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
     const currentTime = new Date().toLocaleString();
     const lastSync = localStorage.getItem("last-cloud-sync");
