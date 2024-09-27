@@ -4,13 +4,13 @@
 
 ## Features
 - Extension to enable automatic backup & restore of app data to S3. (Full backup, not incremental)
-- A single backup file in S3 is maintained as the backup for your typingmind instance. This file is overwritten each time a backup is written to S3.
+- The entire typingmind data is stored in S3 as a single JSON file. This file is overwritten each time a backup is written to S3.
 - Automatically restores the latest backup version from S3 to your TypingMind instance when you first open the app (provided a backup exists).
 - Enables automatic backing up of your TypingMind data to S3 throughout the session as per backup interval configured.
 
 ## New features implemented in [Beta Repo](https://github.com/itcon-pty-au/typingmind-cloud-backup-beta)
 - Last 30 days 'backup of backup' for a stress free experience. Apart from the single backup file, the extension now creates a daily 'no-touch' zipped backup of the main backup file. In case the main backup file gets corrupted, you can restore it using the previous day's backup!
-- Added the bility to specify backup interval
+- Added the ability to specify backup interval
   
 ## Using this extension
 WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXPORT" before setting up the extension.
