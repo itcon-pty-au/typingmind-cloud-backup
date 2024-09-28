@@ -1,26 +1,37 @@
-// Handle page load
-const checkDOMLoaded = setInterval(async () => {
-  if (document.readyState === "complete" && wasImportSuccessful !== true) {
-    clearInterval(checkDOMLoaded);
-    var importSuccessful = await checkAndImportBackup();
-    const storedSuffix = localStorage.getItem("last-daily-backup-in-s3");
-    const today = new Date();
-    const currentDateSuffix = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-    const currentTime = new Date().toLocaleString();
-    const lastSync = localStorage.getItem("last-cloud-sync");
-    var element = document.getElementById("last-sync-msg");
-    if (lastSync && importSuccessful) {
-      if (element !== null) {
-        element.innerText = `Last sync done at ${currentTime}`;
-        element = null;
-      }
-      if (!storedSuffix || currentDateSuffix > storedSuffix) {
-        await handleBackupFiles();
-      }
-      startBackupInterval();
-    }
+let backupIntervalRunning = false;
+
+(async function checkDOMOrRunBackup() {
+  if (document.readyState === "complete") {
+    await handleDOMReady();
+  } else {
+    window.addEventListener('load', handleDOMReady);
   }
-}, 5000);
+})();
+
+async function handleDOMReady() {
+  window.removeEventListener('load', handleDOMReady);
+
+  var importSuccessful = await checkAndImportBackup();
+  const storedSuffix = localStorage.getItem("last-daily-backup-in-s3");
+  const today = new Date();
+  const currentDateSuffix = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+  const currentTime = new Date().toLocaleString();
+  const lastSync = localStorage.getItem("last-cloud-sync");
+  var element = document.getElementById("last-sync-msg");
+
+  if (lastSync && importSuccessful) {
+    if (element !== null) {
+      element.innerText = `Last sync done at ${currentTime}`;
+      element = null;
+    }
+    if (!storedSuffix || currentDateSuffix > storedSuffix) {
+      await handleBackupFiles();
+    }
+    startBackupInterval();
+  } else if (!backupIntervalRunning) {
+    startBackupInterval();
+  }
+}
 
 // Create a new button
 const cloudSyncBtn = document.createElement('button');
@@ -51,7 +62,6 @@ cloudSyncBtn.addEventListener("click", function () {
 });
 
 // New Popup
-let wasImportSuccessful = false;
 let lastBackupTime = 0;
 let isExportInProgress = false;
 let backupInterval;
@@ -270,6 +280,7 @@ document.addEventListener("visibilitychange", async () => {
     const currentTime = new Date().toLocaleString();
     const lastSync = localStorage.getItem("last-cloud-sync");
     var element = document.getElementById("last-sync-msg");
+
     if (lastSync && importSuccessful) {
       if (element !== null) {
         element.innerText = `Last sync done at ${currentTime}`;
@@ -279,10 +290,10 @@ document.addEventListener("visibilitychange", async () => {
         await handleBackupFiles();
         localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
       }
-      startBackupInterval();
+      if (!backupIntervalRunning) {
+        startBackupInterval();
+      }
     }
-  } else {
-    clearInterval(backupInterval);
   }
 });
 
@@ -338,7 +349,9 @@ async function checkAndImportBackup() {
 
 // Function to start the backup interval
 function startBackupInterval() {
+  if (backupIntervalRunning) return; 
   clearInterval(backupInterval);
+  backupIntervalRunning = true;
   backupInterval = setInterval(async () => {
     if (wasImportSuccessful && !isExportInProgress) {
       isExportInProgress = true;
@@ -409,7 +422,7 @@ function exportBackupData() {
   });
 }
 
-// Function to handle backup to S3
+// Function to handle backup to S3 with chunked multipart upload using Blob
 async function backupToS3() {
   const bucketName = localStorage.getItem("aws-bucket");
   const awsRegion = localStorage.getItem("aws-region");
@@ -428,30 +441,90 @@ async function backupToS3() {
 
   const data = await exportBackupData();
   const dataStr = JSON.stringify(data);
-  const dataFileName = "typingmind-backup.json";
-  const s3 = new AWS.S3();
-  const uploadParams = {
-    Bucket: bucketName,
-    Key: dataFileName,
-    Body: dataStr,
-    ContentType: "application/json",
-  };
+  const blob = new Blob([dataStr], { type: "application/json" });
+  const dataSize = blob.size;
+  const chunkSize = 10 * 1024 * 1024;
 
-  s3.upload(uploadParams, function (err, data) {
-    const actionMsgElement = document.getElementById("action-msg");
-    if (err) {
-      actionMsgElement.textContent = `Error uploading data: ${err.message}`;
-      actionMsgElement.style.color = "white";
-    } else {
-      const currentTime = new Date().toLocaleString();
-      localStorage.setItem("last-cloud-sync", currentTime);
-      var element = document.getElementById("last-sync-msg");
-      if (element !== null) {
-        element.innerText = `Last sync done at ${currentTime}`;
-      }
-      startBackupInterval();
+  const s3 = new AWS.S3();
+
+  if (dataSize > chunkSize) {
+    const createMultipartParams = {
+      Bucket: bucketName,
+      Key: "typingmind-backup.json",
+    };
+
+    const multipart = await s3.createMultipartUpload(createMultipartParams).promise();
+    const promises = [];
+
+    let partNumber = 1;
+    let start = 0;
+
+    while (start < dataSize) {
+      const end = Math.min(start + chunkSize, dataSize);
+      const chunkBlob = blob.slice(start, end);
+
+      const partPromise = new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          const partParams = {
+            Body: event.target.result,
+            Bucket: bucketName,
+            Key: "typingmind-backup.json",
+            PartNumber: partNumber,
+            UploadId: multipart.UploadId
+          };
+
+          try {
+            const result = await s3.uploadPart(partParams).promise();
+            resolve({ ETag: result.ETag, PartNumber: partNumber });
+          } catch (err) {
+            reject(err);
+          }
+
+          partNumber++;
+        };
+
+        reader.onerror = (error) => {
+          reject(error);
+        };
+
+        reader.readAsArrayBuffer(chunkBlob);
+      });
+
+      promises.push(partPromise);
+      start = end;
     }
-  });
+
+    const uploadedParts = await Promise.all(promises);
+
+    const completeParams = {
+      Bucket: bucketName,
+      Key: "typingmind-backup.json",
+      UploadId: multipart.UploadId,
+      MultipartUpload: {
+        Parts: uploadedParts,
+      },
+    };
+    await s3.completeMultipartUpload(completeParams).promise();
+
+  } else {
+    const putParams = {
+      Bucket: bucketName,
+      Key: "typingmind-backup.json",
+      Body: dataStr,
+      ContentType: "application/json",
+    };
+
+    await s3.putObject(putParams).promise();
+  }
+
+  const currentTime = new Date().toLocaleString();
+  localStorage.setItem("last-cloud-sync", currentTime);
+  var element = document.getElementById("last-sync-msg");
+  if (element !== null) {
+    element.innerText = `Last sync done at ${currentTime}`;
+  }
+  startBackupInterval();
 }
 
 // Function to handle import from S3
@@ -527,7 +600,7 @@ async function validateAwsCredentials(bucketName, accessKey, secretKey) {
   });
 }
 
-// Function to create a dated backup copy and purge old backups
+// Function to create a dated backup copy, zip it, and purge old backups
 async function handleBackupFiles() {
   const bucketName = localStorage.getItem("aws-bucket");
   const awsRegion = localStorage.getItem("aws-region");
@@ -549,7 +622,7 @@ async function handleBackupFiles() {
     Bucket: bucketName,
     Prefix: "typingmind-backup.json",
   };
-  
+
   const today = new Date();
   const currentDateSuffix = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
 
@@ -558,28 +631,38 @@ async function handleBackupFiles() {
       console.error("Error listing S3 objects:", err);
       return;
     }
-    
     if (data.Contents.length > 0) {
       const lastModified = data.Contents[0].LastModified;
       const lastModifiedDate = new Date(lastModified);
-
-      // Check if the last modified date is older than today to create a new backup
       if (lastModifiedDate.setHours(0, 0, 0, 0) < today.setHours(0, 0, 0, 0)) {
-        const copyParams = {
+        const getObjectParams = {
           Bucket: bucketName,
-          CopySource: `${bucketName}/typingmind-backup.json`,
-          Key: `typingmind-backup-${currentDateSuffix}.json`,
+          Key: 'typingmind-backup.json'
         };
-        await s3.copyObject(copyParams).promise();
+        const backupFile = await s3.getObject(getObjectParams).promise();
+        const backupContent = backupFile.Body;
+        const jszip = new JSZip();
+        jszip.file(`typingmind-backup-${currentDateSuffix}.json`, backupContent);
+        const compressedContent = await jszip.generateAsync({ type: "nodebuffer" });
+        const zipKey = `typingmind-backup-${currentDateSuffix}.zip`;
+        const uploadParams = {
+          Bucket: bucketName,
+          Key: zipKey,
+          Body: compressedContent,
+          ContentType: 'application/zip'
+        };
+        await s3.putObject(uploadParams).promise();
         localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
       }
 
       // Purge backups older than 30 days
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(today.getDate() - 30);
-
       for (const file of data.Contents) {
-        if (file.Key.endsWith('.json') && file.Key !== "typingmind-backup.json") {
+        if (
+          (file.Key.endsWith('.json') || file.Key.endsWith('.zip')) && 
+          file.Key !== "typingmind-backup.json"
+        ) {
           const fileDate = new Date(file.LastModified);
           if (fileDate < thirtyDaysAgo) {
             const deleteParams = {
