@@ -10,7 +10,6 @@
 
 ## New features implemented in [Beta Repo](https://github.com/itcon-pty-au/typingmind-cloud-backup-beta)
 - Last 30 days 'backup of backup' for a stress free experience. Apart from the single backup file, the extension now creates a daily 'no-touch' zipped backup of the main backup file. In case the main backup file gets corrupted, you can restore it using the previous day's backup!
-- Added the ability to specify backup interval
   
 ## Using this extension
 WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXPORT" before setting up the extension.
