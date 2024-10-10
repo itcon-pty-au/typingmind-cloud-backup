@@ -7,6 +7,7 @@
 - The entire typingmind data is stored in S3 as a single JSON file. This file is overwritten each time a backup is written to S3.
 - Automatically restores the latest backup version from S3 to your TypingMind instance when you first open the app (provided a backup exists).
 - Enables automatic backing up of your TypingMind data to S3 throughout the session as per backup interval configured.
+- Last 30 days 'backup of backup' for a stress free experience. Apart from the single backup file, the extension now creates a daily 'no-touch' zipped backup of the main backup file. In case the main backup file gets corrupted, you can restore it using the previous day's backup!
 
 ## New features implemented in [Beta Repo](https://github.com/itcon-pty-au/typingmind-cloud-backup-beta)
 - The repos are in sync currently. No new features added in Beta
