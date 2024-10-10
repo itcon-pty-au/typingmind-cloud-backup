@@ -288,7 +288,6 @@ document.addEventListener("visibilitychange", async () => {
       }
       if (!storedSuffix || currentDateSuffix > storedSuffix) {
         await handleBackupFiles();
-        localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
       }
       if (!backupIntervalRunning) {
         startBackupInterval();
@@ -367,6 +366,19 @@ async function loadAwsSdk() {
     const script = document.createElement("script");
     script.src = "https://sdk.amazonaws.com/js/aws-sdk-2.804.0.min.js";
     script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+// Function to dynamically load the JSZip library
+async function loadJSZip() {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.5.0/jszip.min.js";
+    script.onload = () => {
+      resolve(window.JSZip); // Pass JSZip to resolve
+    };
     script.onerror = reject;
     document.head.appendChild(script);
   });
@@ -602,6 +614,8 @@ async function validateAwsCredentials(bucketName, accessKey, secretKey) {
 
 // Function to create a dated backup copy, zip it, and purge old backups
 async function handleBackupFiles() {
+	console.log("Inside handleBackupFiles");
+  
   const bucketName = localStorage.getItem("aws-bucket");
   const awsRegion = localStorage.getItem("aws-region");
   const awsAccessKey = localStorage.getItem("aws-access-key");
@@ -620,7 +634,7 @@ async function handleBackupFiles() {
   const s3 = new AWS.S3();
   const params = {
     Bucket: bucketName,
-    Prefix: "typingmind-backup.json",
+    Prefix: "typingmind-backup-",
   };
 
   const today = new Date();
@@ -632,6 +646,7 @@ async function handleBackupFiles() {
       return;
     }
     if (data.Contents.length > 0) {
+    	console.log("Listobject API call: Object count is" + data.Contents.length);
       const lastModified = data.Contents[0].LastModified;
       const lastModifiedDate = new Date(lastModified);
       if (lastModifiedDate.setHours(0, 0, 0, 0) < today.setHours(0, 0, 0, 0)) {
@@ -641,10 +656,18 @@ async function handleBackupFiles() {
         };
         const backupFile = await s3.getObject(getObjectParams).promise();
         const backupContent = backupFile.Body;
-        const jszip = new JSZip();
-        jszip.file(`typingmind-backup-${currentDateSuffix}.json`, backupContent);
-        const compressedContent = await jszip.generateAsync({ type: "nodebuffer" });
-        const zipKey = `typingmind-backup-${currentDateSuffix}.zip`;
+        const jszip = await loadJSZip();
+        const zip = new jszip();
+        zip.file(`typingmind-backup-${currentDateSuffix}.json`, backupContent, {
+          compression: "DEFLATE",
+          compressionOptions: {
+            level: 9
+          }
+        });
+
+        const compressedContent = await zip.generateAsync({ type: "blob" });
+
+        const zipKey = `typingmind-backup-${currentDateSuffix}.zip`;        
         const uploadParams = {
           Bucket: bucketName,
           Key: zipKey,
