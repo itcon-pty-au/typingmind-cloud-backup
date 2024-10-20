@@ -1,4 +1,5 @@
 let backupIntervalRunning = false;
+let wasImportSuccessful = false;
 
 (async function checkDOMOrRunBackup() {
   if (document.readyState === "complete") {
