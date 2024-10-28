@@ -117,7 +117,7 @@ function openSyncModal() {
                                     <input id="aws-secret-key" name="aws-secret-key" type="password" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                 </div>
                                 <div class="flex justify-between space-x-2">
-                                    <button id="save-aws-details-btn" type="button" class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors" disabled>
+                                    <button id="-details-btn" type="button" class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors" disabled>
                                         Save
                                     </button>
                                 </div>
@@ -176,7 +176,7 @@ function openSyncModal() {
 			!awsSecretKeyInput.value.trim();
 		document.getElementById('export-to-s3-btn').disabled = isDisabled;
 		document.getElementById('import-from-s3-btn').disabled = isDisabled;
-		document.getElementById('save-aws-details-btn').disabled = isDisabled;
+		document.getElementById('-details-btn').disabled = isDisabled;
 	}
 
 	modalPopup.addEventListener('click', function (event) {
@@ -218,17 +218,18 @@ function openSyncModal() {
 	document
 		.getElementById('save-aws-details-btn')
 		.addEventListener('click', async function () {
+			let extensionURLs = JSON.parse(localStorage.getItem('TM_useExtensionURLs') || '[]');
+			if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
+				extensionURLs.push('https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js');
+				localStorage.setItem('TM_useExtensionURLs', JSON.stringify(extensionURLs));
+			}
 			const bucketName = awsBucketInput.value.trim();
 			const region = awsRegionInput.value.trim();
 			const accessKey = awsAccessKeyInput.value.trim();
 			const secretKey = awsSecretKeyInput.value.trim();
 
 			localStorage.setItem('aws-region', region);
-			let extensionURLs = JSON.parse(localStorage.getItem('TM_useExtensionURLs') || '[]');
-			if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
-				extensionURLs.push('https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js');
-				localStorage.setItem('TM_useExtensionURLs', JSON.stringify(extensionURLs));
-			}
+
 			try {
 				await validateAwsCredentials(bucketName, accessKey, secretKey);
 				localStorage.setItem('aws-bucket', bucketName);
@@ -252,6 +253,7 @@ function openSyncModal() {
 					}
 				}
 				startBackupInterval();
+				
 			} catch (err) {
 				const actionMsgElement = document.getElementById('action-msg');
 				actionMsgElement.textContent = `Invalid AWS details: ${err.message}`;
