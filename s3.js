@@ -224,7 +224,11 @@ function openSyncModal() {
 			const secretKey = awsSecretKeyInput.value.trim();
 
 			localStorage.setItem('aws-region', region);
-
+			let extensionURLs = JSON.parse(localStorage.getItem('TM_useExtensionURLs') || '[]');
+			if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
+				extensionURLs.push('https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js');
+				localStorage.setItem('TM_useExtensionURLs', JSON.stringify(extensionURLs));
+			}
 			try {
 				await validateAwsCredentials(bucketName, accessKey, secretKey);
 				localStorage.setItem('aws-bucket', bucketName);
