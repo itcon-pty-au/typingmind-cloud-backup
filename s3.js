@@ -363,7 +363,7 @@ function startBackupInterval() {
 			await backupToS3();
 			isExportInProgress = false;
 		}
-	}, 5000);
+	}, 60000);
 }
 
 // Function to load AWS SDK asynchronously
