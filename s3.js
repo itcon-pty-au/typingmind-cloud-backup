@@ -216,11 +216,12 @@ function openSyncModal() {
     const region = awsRegionInput.value.trim();
     const accessKey = awsAccessKeyInput.value.trim();
     const secretKey = awsSecretKeyInput.value.trim();
-  
+    
+    localStorage.setItem("aws-region", region);
+
     try {
       await validateAwsCredentials(bucketName, accessKey, secretKey);
       localStorage.setItem("aws-bucket", bucketName);
-      localStorage.setItem("aws-region", region);
       localStorage.setItem("aws-access-key", accessKey);
       localStorage.setItem("aws-secret-key", secretKey);
       const actionMsgElement = document.getElementById("action-msg");
@@ -246,7 +247,6 @@ function openSyncModal() {
       actionMsgElement.textContent = `Invalid AWS details: ${err.message}`;
       actionMsgElement.style.color = "red";
       localStorage.setItem("aws-bucket", "");
-      localStorage.setItem("aws-region", "");
       localStorage.setItem("aws-access-key", "");
       localStorage.setItem("aws-secret-key", "");
       clearInterval(backupInterval);
@@ -334,7 +334,6 @@ async function checkAndImportBackup() {
             );
           } else {
             localStorage.setItem("aws-bucket", "");
-            localStorage.setItem("aws-region", "");
             localStorage.setItem("aws-access-key", "");
             localStorage.setItem("aws-secret-key", "");
             alert("Failed to connect to AWS. Please check your credentials.");
