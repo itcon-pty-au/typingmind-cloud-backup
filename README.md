@@ -77,7 +77,7 @@ Update AWS Account ID, IAM username and AWS bucket name in the policy with your 
     }
 ]
 ``
-If you are using typingcloud, use the below
+If you are using typingmind cloud, use the below
 ``
 [
     {
