@@ -176,7 +176,7 @@ function openSyncModal() {
 			!awsSecretKeyInput.value.trim();
 		document.getElementById('export-to-s3-btn').disabled = isDisabled;
 		document.getElementById('import-from-s3-btn').disabled = isDisabled;
-		document.getElementById('-details-btn').disabled = isDisabled;
+		document.getElementById('save-aws-details-btn').disabled = isDisabled;
 	}
 
 	modalPopup.addEventListener('click', function (event) {
