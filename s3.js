@@ -622,7 +622,7 @@ async function validateAwsCredentials(bucketName, accessKey, secretKey) {
 
 // Function to create a dated backup copy, zip it, and purge old backups
 async function handleBackupFiles() {
-	console.log('Inside handleBackupFiles');
+	//console.log('Inside handleBackupFiles');
 
 	const bucketName = localStorage.getItem('aws-bucket');
 	const awsRegion = localStorage.getItem('aws-region');
@@ -653,11 +653,9 @@ async function handleBackupFiles() {
 			console.error('Error listing S3 objects:', err);
 			return;
 		}
-		console.log('object Count:' + data.Contents.length);
+		//console.log('object Count:' + data.Contents.length);
 		if (data.Contents.length > 0) {
-			console.log(
-				'Listobject API call: Object count is' + data.Contents.length
-			);
+			//console.log('Listobject API call: Object count is' + data.Contents.length);
 			const lastModified = data.Contents[0].LastModified;
 			const lastModifiedDate = new Date(lastModified);
 			if (lastModifiedDate.setHours(0, 0, 0, 0) < today.setHours(0, 0, 0, 0)) {
