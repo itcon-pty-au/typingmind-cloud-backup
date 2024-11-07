@@ -302,10 +302,15 @@ document.addEventListener('visibilitychange', async () => {
 			if (!storedSuffix || currentDateSuffix > storedSuffix) {
 				await handleBackupFiles();
 			}
-			if (!backupIntervalRunning) {
+			if (!backupIntervalRunning && localStorage.getItem('activeTabBackupRunning') !== 'true') {
 				startBackupInterval();
 			}
 		}
+	}
+	else {
+		localStorage.setItem('activeTabBackupRunning', 'false');
+		clearInterval(backupInterval);
+        	backupIntervalRunning = false;
 	}
 });
 
@@ -360,16 +365,20 @@ async function checkAndImportBackup() {
 
 // Function to start the backup interval
 function startBackupInterval() {
-	if (backupIntervalRunning) return;
-	clearInterval(backupInterval);
-	backupIntervalRunning = true;
-	backupInterval = setInterval(async () => {
-		if (wasImportSuccessful && !isExportInProgress) {
-			isExportInProgress = true;
-			await backupToS3();
-			isExportInProgress = false;
-		}
-	}, 60000);
+    if (backupIntervalRunning) return;
+    // Check if another tab is already running the backup
+    if (localStorage.getItem('activeTabBackupRunning') === 'true') {
+        return;
+    }
+    backupIntervalRunning = true;
+    localStorage.setItem('activeTabBackupRunning', 'true');
+    backupInterval = setInterval(async () => {
+        if (wasImportSuccessful && !isExportInProgress) {
+            isExportInProgress = true;
+            await backupToS3();
+            isExportInProgress = false;
+        }
+    }, 60000);
 }
 
 // Function to load AWS SDK asynchronously
