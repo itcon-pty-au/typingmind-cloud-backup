@@ -47,7 +47,16 @@ WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXP
                 "arn:aws:s3:::<AWS bucket name>",
                 "arn:aws:s3:::<AWS bucket name>/*"
             ]
-        }
+        },
+    		{
+                "Sid": "PreventSpecificFileDeletion",
+                "Effect": "Deny",
+                "Principal": {
+                    "AWS": "arn:aws:iam::<AWS Account ID>:user/<IAM username>"
+                },
+                "Action": "s3:DeleteObject",
+                "Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json"
+       }
     ]
 }
 ``
