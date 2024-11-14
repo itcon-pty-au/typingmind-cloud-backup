@@ -16,9 +16,10 @@ WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXP
 3. Provide the AWS details in the form. [These are stored locally in your browser]
 4. The save button checks if there is a backup already in S3, if yes it restores it and updates the local typingmind instance.
 5. Manually refresh the page to reflect the new data. CTRL + F5 if it does not.
-4. If there is no backup in S3, it is expected that you click on the "Export to S3" button in the configuration form to kickstart the backup process.
-3. You can do on demand cloud backups and restore using the respective buttons in the form - "Export to S3" and "Import from S3".
-4. Full backup to S3 is performed as per the backup interval configured. 
+6. If there is no backup in S3, it is expected that you click on the "Export to S3" button in the configuration form to kickstart the backup process.
+7. You can do on demand cloud backups and restore using the respective buttons in the form - "Export to S3" and "Import from S3".
+8. Full backup to S3 is performed every minute automatically.
+9. Whenever the page is loaded, it pulls the latest backed up version from S3 and refreshes the data. You may need to do a Ctrl + F5 (Force refresh) to make it reflect in the UI.
 
 ## AWS Config
 1. Create a user in Amazon IAM. In permissions option, select "Add user to group" but don't select any group. In next screen, "Create user".
