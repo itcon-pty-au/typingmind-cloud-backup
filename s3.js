@@ -498,12 +498,8 @@ async function backupToS3() {
                 const end = Math.min(start + chunkSize, dataSize);
                 const chunk = blob.slice(start, end);
 
-                // Convert chunk to Buffer
-                const arrayBuffer = await chunk.arrayBuffer();
-                const buffer = Buffer.from(arrayBuffer);
-
                 const partParams = {
-                    Body: buffer,
+                    Body: chunk,  // Use chunk directly
                     Bucket: bucketName,
                     Key: 'typingmind-backup.json',
                     PartNumber: partNumber,
@@ -511,12 +507,13 @@ async function backupToS3() {
                 };
 
                 try {
+                    console.log(`Uploading part ${partNumber}, size: ${chunk.size} bytes`);
                     const uploadResult = await s3.uploadPart(partParams).promise();
+                    console.log(`Part ${partNumber} uploaded, ETag: ${uploadResult.ETag}`);
                     parts.push({
                         ETag: uploadResult.ETag,
                         PartNumber: partNumber
                     });
-                    console.log(`Successfully uploaded part ${partNumber}`);
                 } catch (err) {
                     console.error(`Failed to upload part ${partNumber}:`, err);
                     // Abort the multipart upload
@@ -532,6 +529,7 @@ async function backupToS3() {
                 partNumber++;
             }
 
+            console.log('All parts uploaded, completing multipart upload');
             const completeParams = {
                 Bucket: bucketName,
                 Key: 'typingmind-backup.json',
@@ -542,6 +540,7 @@ async function backupToS3() {
             };
 
             await s3.completeMultipartUpload(completeParams).promise();
+            console.log('Multipart upload completed successfully');
         } else {
             // For small files, use regular upload
             const putParams = {
@@ -572,7 +571,6 @@ async function backupToS3() {
         throw error;
     }
 }
-
 
 // Function to handle import from S3
 async function importFromS3() {
