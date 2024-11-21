@@ -458,109 +458,121 @@ function exportBackupData() {
 
 // Function to handle backup to S3 with chunked multipart upload using Blob
 async function backupToS3() {
-	const bucketName = localStorage.getItem('aws-bucket');
-	const awsRegion = localStorage.getItem('aws-region');
-	const awsAccessKey = localStorage.getItem('aws-access-key');
-	const awsSecretKey = localStorage.getItem('aws-secret-key');
+    const bucketName = localStorage.getItem('aws-bucket');
+    const awsRegion = localStorage.getItem('aws-region');
+    const awsAccessKey = localStorage.getItem('aws-access-key');
+    const awsSecretKey = localStorage.getItem('aws-secret-key');
 
-	if (typeof AWS === 'undefined') {
-		await loadAwsSdk();
-	}
+    if (typeof AWS === 'undefined') {
+        await loadAwsSdk();
+    }
 
-	AWS.config.update({
-		accessKeyId: awsAccessKey,
-		secretAccessKey: awsSecretKey,
-		region: awsRegion,
-	});
+    AWS.config.update({
+        accessKeyId: awsAccessKey,
+        secretAccessKey: awsSecretKey,
+        region: awsRegion,
+    });
 
-	const data = await exportBackupData();
-	const dataStr = JSON.stringify(data);
-	const blob = new Blob([dataStr], { type: 'application/json' });
-	const dataSize = blob.size;
-	const chunkSize = 10 * 1024 * 1024;
+    const data = await exportBackupData();
+    const dataStr = JSON.stringify(data);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const dataSize = blob.size;
+    const chunkSize = 5 * 1024 * 1024;
 
-	const s3 = new AWS.S3();
+    const s3 = new AWS.S3();
 
-	if (dataSize > chunkSize) {
-		const createMultipartParams = {
-			Bucket: bucketName,
-			Key: 'typingmind-backup.json',
-		};
+    try {
+        if (dataSize > chunkSize) {
+            const createMultipartParams = {
+                Bucket: bucketName,
+                Key: 'typingmind-backup.json',
+                ContentType: 'application/json'
+            };
 
-		const multipart = await s3
-			.createMultipartUpload(createMultipartParams)
-			.promise();
-		const promises = [];
+            const multipart = await s3.createMultipartUpload(createMultipartParams).promise();
+            const parts = [];
+            let partNumber = 1;
+            let start = 0;
 
-		let partNumber = 1;
-		let start = 0;
+            while (start < dataSize) {
+                const end = Math.min(start + chunkSize, dataSize);
+                const chunk = blob.slice(start, end);
 
-		while (start < dataSize) {
-			const end = Math.min(start + chunkSize, dataSize);
-			const chunkBlob = blob.slice(start, end);
+                // Convert chunk to Buffer
+                const arrayBuffer = await chunk.arrayBuffer();
+                const buffer = Buffer.from(arrayBuffer);
 
-			const partPromise = new Promise((resolve, reject) => {
-				const reader = new FileReader();
-				reader.onload = async (event) => {
-					const partParams = {
-						Body: event.target.result,
-						Bucket: bucketName,
-						Key: 'typingmind-backup.json',
-						PartNumber: partNumber,
-						UploadId: multipart.UploadId,
-					};
+                const partParams = {
+                    Body: buffer,
+                    Bucket: bucketName,
+                    Key: 'typingmind-backup.json',
+                    PartNumber: partNumber,
+                    UploadId: multipart.UploadId
+                };
 
-					try {
-						const result = await s3.uploadPart(partParams).promise();
-						resolve({ ETag: result.ETag, PartNumber: partNumber });
-					} catch (err) {
-						reject(err);
-					}
+                try {
+                    const uploadResult = await s3.uploadPart(partParams).promise();
+                    parts.push({
+                        ETag: uploadResult.ETag,
+                        PartNumber: partNumber
+                    });
+                    console.log(`Successfully uploaded part ${partNumber}`);
+                } catch (err) {
+                    console.error(`Failed to upload part ${partNumber}:`, err);
+                    // Abort the multipart upload
+                    await s3.abortMultipartUpload({
+                        Bucket: bucketName,
+                        Key: 'typingmind-backup.json',
+                        UploadId: multipart.UploadId
+                    }).promise();
+                    throw err;
+                }
 
-					partNumber++;
-				};
+                start = end;
+                partNumber++;
+            }
 
-				reader.onerror = (error) => {
-					reject(error);
-				};
+            const completeParams = {
+                Bucket: bucketName,
+                Key: 'typingmind-backup.json',
+                UploadId: multipart.UploadId,
+                MultipartUpload: {
+                    Parts: parts
+                }
+            };
 
-				reader.readAsArrayBuffer(chunkBlob);
-			});
+            await s3.completeMultipartUpload(completeParams).promise();
+        } else {
+            // For small files, use regular upload
+            const putParams = {
+                Bucket: bucketName,
+                Key: 'typingmind-backup.json',
+                Body: dataStr,
+                ContentType: 'application/json'
+            };
 
-			promises.push(partPromise);
-			start = end;
-		}
+            await s3.putObject(putParams).promise();
+        }
 
-		const uploadedParts = await Promise.all(promises);
+        const currentTime = new Date().toLocaleString();
+        localStorage.setItem('last-cloud-sync', currentTime);
+        var element = document.getElementById('last-sync-msg');
+        if (element !== null) {
+            element.innerText = `Last sync done at ${currentTime}`;
+        }
+        startBackupInterval();
 
-		const completeParams = {
-			Bucket: bucketName,
-			Key: 'typingmind-backup.json',
-			UploadId: multipart.UploadId,
-			MultipartUpload: {
-				Parts: uploadedParts,
-			},
-		};
-		await s3.completeMultipartUpload(completeParams).promise();
-	} else {
-		const putParams = {
-			Bucket: bucketName,
-			Key: 'typingmind-backup.json',
-			Body: dataStr,
-			ContentType: 'application/json',
-		};
-
-		await s3.putObject(putParams).promise();
-	}
-
-	const currentTime = new Date().toLocaleString();
-	localStorage.setItem('last-cloud-sync', currentTime);
-	var element = document.getElementById('last-sync-msg');
-	if (element !== null) {
-		element.innerText = `Last sync done at ${currentTime}`;
-	}
-	startBackupInterval();
+    } catch (error) {
+        console.error('Backup failed:', error);
+        const actionMsgElement = document.getElementById('action-msg');
+        if (actionMsgElement) {
+            actionMsgElement.textContent = `Backup failed: ${error.message}`;
+            actionMsgElement.style.color = 'red';
+        }
+        throw error;
+    }
 }
+
 
 // Function to handle import from S3
 async function importFromS3() {
