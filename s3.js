@@ -529,6 +529,9 @@ async function backupToS3() {
                 partNumber++;
             }
 
+            // UPDATED: Sort the parts array by PartNumber in ascending order
+            parts.sort((a, b) => a.PartNumber - b.PartNumber);
+
             console.log('All parts uploaded, completing multipart upload');
             const completeParams = {
                 Bucket: bucketName,
