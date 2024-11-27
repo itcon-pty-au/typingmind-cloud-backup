@@ -15,7 +15,9 @@ async function handleDOMReady() {
 	var importSuccessful = await checkAndImportBackup();
 	const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
 	const today = new Date();
-	const currentDateSuffix = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+	const currentDateSuffix = `${today.getFullYear()}${String(
+		today.getMonth() + 1
+	).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
 	const currentTime = new Date().toLocaleString();
 	const lastSync = localStorage.getItem('last-cloud-sync');
 	var element = document.getElementById('last-sync-msg');
@@ -106,7 +108,7 @@ function openSyncModal() {
                                 </div>
                                 <div>
                                     <label for="aws-region" class="block text-sm font-medium text-gray-700 dark:text-gray-400">AWS Region</label>
-                                    <input id="aws-region" name="aws-region" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required >
+                                    <input id="aws-region" name="aws-region" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                 </div>
                                 <div>
                                     <label for="aws-access-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">AWS Access Key</label>
@@ -115,6 +117,10 @@ function openSyncModal() {
                                 <div>
                                     <label for="aws-secret-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">AWS Secret Key</label>
                                     <input id="aws-secret-key" name="aws-secret-key" type="password" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                                </div>
+                                <div>
+                                    <label for="aws-endpoint" class="block text-sm font-medium text-gray-700 dark:text-gray-400">AWS Endpoint</label>
+                                    <input id="aws-endpoint" name="aws-endpoint" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off">
                                 </div>
                                 <div class="flex justify-between space-x-2">
                                     <button id="save-aws-details-btn" type="button" class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors" disabled>
@@ -149,16 +155,19 @@ function openSyncModal() {
 	const awsRegionInput = document.getElementById('aws-region');
 	const awsAccessKeyInput = document.getElementById('aws-access-key');
 	const awsSecretKeyInput = document.getElementById('aws-secret-key');
+	const awsEndpointInput = document.getElementById('aws-endpoint');
 	const savedBucket = localStorage.getItem('aws-bucket');
 	const savedRegion = localStorage.getItem('aws-region');
 	const savedAccessKey = localStorage.getItem('aws-access-key');
 	const savedSecretKey = localStorage.getItem('aws-secret-key');
+	const savedEndpoint = localStorage.getItem('aws-endpoint');
 	const lastSync = localStorage.getItem('last-cloud-sync');
 
 	if (savedBucket) awsBucketInput.value = savedBucket;
 	if (savedRegion) awsRegionInput.value = savedRegion;
 	if (savedAccessKey) awsAccessKeyInput.value = savedAccessKey;
 	if (savedSecretKey) awsSecretKeyInput.value = savedSecretKey;
+	if (savedEndpoint) awsEndpointInput.value = savedEndpoint;
 	const currentTime = new Date().toLocaleString();
 	var element = document.getElementById('last-sync-msg');
 	if (lastSync) {
@@ -189,6 +198,7 @@ function openSyncModal() {
 	awsRegionInput.addEventListener('input', updateButtonState);
 	awsAccessKeyInput.addEventListener('input', updateButtonState);
 	awsSecretKeyInput.addEventListener('input', updateButtonState);
+	awsEndpointInput.addEventListener('input', updateButtonState);
 
 	updateButtonState();
 
@@ -218,17 +228,26 @@ function openSyncModal() {
 	document
 		.getElementById('save-aws-details-btn')
 		.addEventListener('click', async function () {
-			let extensionURLs = JSON.parse(localStorage.getItem('TM_useExtensionURLs') || '[]');
+			let extensionURLs = JSON.parse(
+				localStorage.getItem('TM_useExtensionURLs') || '[]'
+			);
 			if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
-				extensionURLs.push('https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js');
-				localStorage.setItem('TM_useExtensionURLs', JSON.stringify(extensionURLs));
+				extensionURLs.push(
+					'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
+				);
+				localStorage.setItem(
+					'TM_useExtensionURLs',
+					JSON.stringify(extensionURLs)
+				);
 			}
 			const bucketName = awsBucketInput.value.trim();
 			const region = awsRegionInput.value.trim();
 			const accessKey = awsAccessKeyInput.value.trim();
 			const secretKey = awsSecretKeyInput.value.trim();
+			const endpoint = awsEndpointInput.value.trim();
 
 			localStorage.setItem('aws-region', region);
+			localStorage.setItem('aws-endpoint', endpoint);
 
 			try {
 				await validateAwsCredentials(bucketName, accessKey, secretKey);
@@ -253,7 +272,6 @@ function openSyncModal() {
 					}
 				}
 				startBackupInterval();
-				
 			} catch (err) {
 				const actionMsgElement = document.getElementById('action-msg');
 				actionMsgElement.textContent = `Invalid AWS details: ${err.message}`;
@@ -289,7 +307,9 @@ document.addEventListener('visibilitychange', async () => {
 		var importSuccessful = await checkAndImportBackup();
 		const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
 		const today = new Date();
-		const currentDateSuffix = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+		const currentDateSuffix = `${today.getFullYear()}${String(
+			today.getMonth() + 1
+		).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
 		const currentTime = new Date().toLocaleString();
 		const lastSync = localStorage.getItem('last-cloud-sync');
 		var element = document.getElementById('last-sync-msg');
@@ -302,15 +322,17 @@ document.addEventListener('visibilitychange', async () => {
 			if (!storedSuffix || currentDateSuffix > storedSuffix) {
 				await handleBackupFiles();
 			}
-			if (!backupIntervalRunning && localStorage.getItem('activeTabBackupRunning') !== 'true') {
+			if (
+				!backupIntervalRunning &&
+				localStorage.getItem('activeTabBackupRunning') !== 'true'
+			) {
 				startBackupInterval();
 			}
 		}
-	}
-	else {
+	} else {
 		localStorage.setItem('activeTabBackupRunning', 'false');
 		clearInterval(backupInterval);
-        	backupIntervalRunning = false;
+		backupIntervalRunning = false;
 	}
 });
 
@@ -320,22 +342,29 @@ async function checkAndImportBackup() {
 	const awsRegion = localStorage.getItem('aws-region');
 	const awsAccessKey = localStorage.getItem('aws-access-key');
 	const awsSecretKey = localStorage.getItem('aws-secret-key');
+	const awsEndpoint = localStorage.getItem('aws-endpoint');
 
 	if (bucketName && awsAccessKey && awsSecretKey) {
 		if (typeof AWS === 'undefined') {
 			await loadAwsSdk();
 		}
 
-		AWS.config.update({
+		const awsConfig = {
 			accessKeyId: awsAccessKey,
 			secretAccessKey: awsSecretKey,
-			region: awsRegion,
-		});
+			region: awsRegion
+		};
+
+		if (awsEndpoint) {
+			awsConfig.endpoint = awsEndpoint;
+		}
+
+		AWS.config.update(awsConfig);
 
 		const s3 = new AWS.S3();
 		const params = {
 			Bucket: bucketName,
-			Key: 'typingmind-backup.json',
+			Key: 'typingmind-backup.json'
 		};
 
 		return new Promise((resolve) => {
@@ -365,20 +394,20 @@ async function checkAndImportBackup() {
 
 // Function to start the backup interval
 function startBackupInterval() {
-    if (backupIntervalRunning) return;
-    // Check if another tab is already running the backup
-    if (localStorage.getItem('activeTabBackupRunning') === 'true') {
-        return;
-    }
-    backupIntervalRunning = true;
-    localStorage.setItem('activeTabBackupRunning', 'true');
-    backupInterval = setInterval(async () => {
-        if (wasImportSuccessful && !isExportInProgress) {
-            isExportInProgress = true;
-            await backupToS3();
-            isExportInProgress = false;
-        }
-    }, 60000);
+	if (backupIntervalRunning) return;
+	// Check if another tab is already running the backup
+	if (localStorage.getItem('activeTabBackupRunning') === 'true') {
+		return;
+	}
+	backupIntervalRunning = true;
+	localStorage.setItem('activeTabBackupRunning', 'true');
+	backupInterval = setInterval(async () => {
+		if (wasImportSuccessful && !isExportInProgress) {
+			isExportInProgress = true;
+			await backupToS3();
+			isExportInProgress = false;
+		}
+	}, 60000);
 }
 
 // Function to load AWS SDK asynchronously
@@ -432,7 +461,7 @@ function exportBackupData() {
 	return new Promise((resolve, reject) => {
 		var exportData = {
 			localStorage: { ...localStorage },
-			indexedDB: {},
+			indexedDB: {}
 		};
 		var request = indexedDB.open('keyval-store', 1);
 		request.onsuccess = function (event) {
@@ -462,16 +491,23 @@ async function backupToS3() {
 	const awsRegion = localStorage.getItem('aws-region');
 	const awsAccessKey = localStorage.getItem('aws-access-key');
 	const awsSecretKey = localStorage.getItem('aws-secret-key');
+	const awsEndpoint = localStorage.getItem('aws-endpoint');
 
 	if (typeof AWS === 'undefined') {
 		await loadAwsSdk();
 	}
 
-	AWS.config.update({
+	const awsConfig = {
 		accessKeyId: awsAccessKey,
 		secretAccessKey: awsSecretKey,
-		region: awsRegion,
-	});
+		region: awsRegion
+	};
+
+	if (awsEndpoint) {
+		awsConfig.endpoint = awsEndpoint;
+	}
+
+	AWS.config.update(awsConfig);
 
 	const data = await exportBackupData();
 	const dataStr = JSON.stringify(data);
@@ -484,7 +520,7 @@ async function backupToS3() {
 	if (dataSize > chunkSize) {
 		const createMultipartParams = {
 			Bucket: bucketName,
-			Key: 'typingmind-backup.json',
+			Key: 'typingmind-backup.json'
 		};
 
 		const multipart = await s3
@@ -507,7 +543,7 @@ async function backupToS3() {
 						Bucket: bucketName,
 						Key: 'typingmind-backup.json',
 						PartNumber: partNumber,
-						UploadId: multipart.UploadId,
+						UploadId: multipart.UploadId
 					};
 
 					try {
@@ -538,8 +574,8 @@ async function backupToS3() {
 			Key: 'typingmind-backup.json',
 			UploadId: multipart.UploadId,
 			MultipartUpload: {
-				Parts: uploadedParts,
-			},
+				Parts: uploadedParts
+			}
 		};
 		await s3.completeMultipartUpload(completeParams).promise();
 	} else {
@@ -547,7 +583,7 @@ async function backupToS3() {
 			Bucket: bucketName,
 			Key: 'typingmind-backup.json',
 			Body: dataStr,
-			ContentType: 'application/json',
+			ContentType: 'application/json'
 		};
 
 		await s3.putObject(putParams).promise();
@@ -568,21 +604,28 @@ async function importFromS3() {
 	const awsRegion = localStorage.getItem('aws-region');
 	const awsAccessKey = localStorage.getItem('aws-access-key');
 	const awsSecretKey = localStorage.getItem('aws-secret-key');
+	const awsEndpoint = localStorage.getItem('aws-endpoint');
 
 	if (typeof AWS === 'undefined') {
 		await loadAwsSdk();
 	}
 
-	AWS.config.update({
+	const awsConfig = {
 		accessKeyId: awsAccessKey,
 		secretAccessKey: awsSecretKey,
-		region: awsRegion,
-	});
+		region: awsRegion
+	};
+
+	if (awsEndpoint) {
+		awsConfig.endpoint = awsEndpoint;
+	}
+
+	AWS.config.update(awsConfig);
 
 	const s3 = new AWS.S3();
 	const params = {
 		Bucket: bucketName,
-		Key: 'typingmind-backup.json',
+		Key: 'typingmind-backup.json'
 	};
 
 	s3.getObject(params, function (err, data) {
@@ -608,20 +651,28 @@ async function importFromS3() {
 // Validate the AWS connection
 async function validateAwsCredentials(bucketName, accessKey, secretKey) {
 	const awsRegion = localStorage.getItem('aws-region');
+	const awsEndpoint = localStorage.getItem('aws-endpoint');
+
 	if (typeof AWS === 'undefined') {
 		await loadAwsSdk();
 	}
 
-	AWS.config.update({
+	const awsConfig = {
 		accessKeyId: accessKey,
 		secretAccessKey: secretKey,
-		region: awsRegion,
-	});
+		region: awsRegion
+	};
+
+	if (awsEndpoint) {
+		awsConfig.endpoint = awsEndpoint;
+	}
+
+	AWS.config.update(awsConfig);
 
 	const s3 = new AWS.S3();
 	const params = {
 		Bucket: bucketName,
-		MaxKeys: 1,
+		MaxKeys: 1
 	};
 
 	return new Promise((resolve, reject) => {
@@ -643,25 +694,34 @@ async function handleBackupFiles() {
 	const awsRegion = localStorage.getItem('aws-region');
 	const awsAccessKey = localStorage.getItem('aws-access-key');
 	const awsSecretKey = localStorage.getItem('aws-secret-key');
+	const awsEndpoint = localStorage.getItem('aws-endpoint');
 
 	if (typeof AWS === 'undefined') {
 		await loadAwsSdk();
 	}
 
-	AWS.config.update({
+	const awsConfig = {
 		accessKeyId: awsAccessKey,
 		secretAccessKey: awsSecretKey,
-		region: awsRegion,
-	});
+		region: awsRegion
+	};
+
+	if (awsEndpoint) {
+		awsConfig.endpoint = awsEndpoint;
+	}
+
+	AWS.config.update(awsConfig);
 
 	const s3 = new AWS.S3();
 	const params = {
 		Bucket: bucketName,
-		Prefix: 'typingmind-backup',
+		Prefix: 'typingmind-backup'
 	};
 
 	const today = new Date();
-	const currentDateSuffix = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+	const currentDateSuffix = `${today.getFullYear()}${String(
+		today.getMonth() + 1
+	).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
 
 	s3.listObjectsV2(params, async (err, data) => {
 		if (err) {
@@ -676,7 +736,7 @@ async function handleBackupFiles() {
 			if (lastModifiedDate.setHours(0, 0, 0, 0) < today.setHours(0, 0, 0, 0)) {
 				const getObjectParams = {
 					Bucket: bucketName,
-					Key: 'typingmind-backup.json',
+					Key: 'typingmind-backup.json'
 				};
 				const backupFile = await s3.getObject(getObjectParams).promise();
 				const backupContent = backupFile.Body;
@@ -685,8 +745,8 @@ async function handleBackupFiles() {
 				zip.file(`typingmind-backup-${currentDateSuffix}.json`, backupContent, {
 					compression: 'DEFLATE',
 					compressionOptions: {
-						level: 9,
-					},
+						level: 9
+					}
 				});
 
 				const compressedContent = await zip.generateAsync({ type: 'blob' });
@@ -696,7 +756,7 @@ async function handleBackupFiles() {
 					Bucket: bucketName,
 					Key: zipKey,
 					Body: compressedContent,
-					ContentType: 'application/zip',
+					ContentType: 'application/zip'
 				};
 				await s3.putObject(uploadParams).promise();
 				localStorage.setItem('last-daily-backup-in-s3', currentDateSuffix);
@@ -714,7 +774,7 @@ async function handleBackupFiles() {
 					if (fileDate < thirtyDaysAgo) {
 						const deleteParams = {
 							Bucket: bucketName,
-							Key: file.Key,
+							Key: file.Key
 						};
 						await s3.deleteObject(deleteParams).promise();
 					}
