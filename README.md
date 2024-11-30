@@ -1,9 +1,9 @@
-# TypingMind S3 Backup Extension
+# TypingMind Cloud Backup Extension
 
 [If you found this useful, please consider buying me a coffee](https://buymeacoffee.com/itcon):heart:!
 
 ## Features
-- Extension to enable automatic backup & restore of app data to S3. (Full backup, not incremental)
+- Extension to enable automatic backup & restore of app data to AWS S3/S3 compatible cloud services. (Full backup, not incremental)
 - The entire typingmind data is stored in S3 as a single JSON file. This file is overwritten each time a backup is written to S3.
 - Automatically restores the latest backup version from S3 to your TypingMind instance when you first open the app (provided a backup exists).
 - Enables automatic backing up of your TypingMind data to S3 throughout the session as per backup interval configured.
