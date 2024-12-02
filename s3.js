@@ -58,10 +58,35 @@ iconSpan.innerHTML = cloudIconSVG;
 cloudSyncBtn.appendChild(iconSpan);
 cloudSyncBtn.appendChild(textSpan);
 
-const teamsButton = document.querySelector(
-	'[data-element-id="workspace-tab-teams"]'
-);
-teamsButton.parentNode.insertBefore(cloudSyncBtn, teamsButton.nextSibling);
+function insertCloudSyncButton() {
+    const teamsButton = document.querySelector('[data-element-id="workspace-tab-teams"]');
+    
+    if (teamsButton && teamsButton.parentNode) {
+        teamsButton.parentNode.insertBefore(cloudSyncBtn, teamsButton.nextSibling);
+        return true;
+    }
+    return false;
+}
+
+const observer = new MutationObserver((mutations) => {
+    if (insertCloudSyncButton()) {
+        observer.disconnect();
+    }
+});
+
+observer.observe(document.body, {
+    childList: true,
+    subtree: true
+});
+
+const maxAttempts = 10;
+let attempts = 0;
+const interval = setInterval(() => {
+    if (insertCloudSyncButton() || attempts >= maxAttempts) {
+        clearInterval(interval);
+    }
+    attempts++;
+}, 1000);
 
 // Attach modal to new button
 cloudSyncBtn.addEventListener('click', function () {
