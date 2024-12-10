@@ -4,7 +4,7 @@ const TIME_BACKUP_INTERVAL = 15;
 const TIME_BACKUP_FILE_PREFIX = `T-${TIME_BACKUP_INTERVAL}`;
 
 (async function checkDOMOrRunBackup() {
-	if (document.readyState === 'complete') {
+		if (document.readyState === 'complete') {
 		await handleDOMReady();
 	} else {
 		window.addEventListener('load', handleDOMReady);
@@ -13,7 +13,6 @@ const TIME_BACKUP_FILE_PREFIX = `T-${TIME_BACKUP_INTERVAL}`;
 
 async function handleDOMReady() {
 	window.removeEventListener('load', handleDOMReady);
-
 	var importSuccessful = await checkAndImportBackup();
 	const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
 	const today = new Date();
@@ -614,6 +613,19 @@ function importDataToStorage(data) {
 			});
 		};
 	};
+	// Handle disappearing extension issue
+	let extensionURLs = JSON.parse(
+		localStorage.getItem('TM_useExtensionURLs') || '[]'
+	);
+	if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
+		extensionURLs.push(
+			'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
+		);
+		localStorage.setItem(
+			'TM_useExtensionURLs',
+			JSON.stringify(extensionURLs)
+		);
+	}
 }
 
 // Function to export data from localStorage and IndexedDB
