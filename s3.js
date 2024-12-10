@@ -274,6 +274,7 @@ function openSyncModal() {
 
 	function hideTooltip() {
 		tooltip.classList.add('opacity-0');
+		tooltip.classList.remove('z-1');
 		tooltip.classList.remove('opacity-100');
 	}
 
