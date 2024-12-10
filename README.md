@@ -7,9 +7,10 @@
 - The entire typingmind data is stored in S3 as a single JSON file. This file is overwritten each time a backup is written to S3.
 - Automatically restores the latest backup version from S3 to your TypingMind instance when you load the app (provided a backup exists).
 - Enables automatic backing up of your TypingMind data to S3 throughout the session every minute.
-- Snapshot lets you backup the current typingmind data to the cloud when you need it. This is a 'no-touch' zipped backup that will permanently exist in the cloud till you chose to manually delete it.
-- A 'T-15 rolling snapshot' keeps a zipped snapshot of the typingmind instance from 15 minutes ago. This gives you a recent version of the backup that you can manually revert to in case of an unintended corruption of the main backup file. However, note that this is a rolling backup that gets overwritten every 15 minutes.
 - Last 30 days 'backup of backup' for a stress free experience. Apart from the single backup file, the extension now creates a daily 'no-touch' zipped backup of the main backup file. In case the main backup file gets corrupted, you can restore it using the previous day's backup!
+- ✨Snapshot lets you backup the current typingmind data to the cloud when you need it. This is a 'no-touch' zipped backup that will permanently exist in the cloud till you chose to manually delete it.
+- ✨A 'T-15 rolling snapshot' keeps a zipped snapshot of the typingmind instance from 15 minutes ago. This gives you a recent version of the backup that you can manually revert to in case of an unintended corruption of the main backup file. However, note that this is a rolling backup that gets overwritten every 15 minutes.
+- ✨Allows you to view all the backups in S3 and lets you download it or restore from the UI itself.
   
 ## Using this extension
 WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXPORT" before setting up the extension.
