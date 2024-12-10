@@ -121,7 +121,7 @@ function openSyncModal() {
                     <h3 class="text-center text-xl font-bold">Backup & Sync</h3>
                     <div class="relative group ml-2">
                         <span class="cursor-pointer" id="info-icon" style="color: white">ℹ</span>
-                        <div id="tooltip" style="width: 250px; margin-top: 0.5em;" class="absolute z-1 -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded-md px-2 py-1 opacity-90 transition-opacity duration-300 opacity-0 transition-opacity">
+                        <div id="tooltip" style="width: 250px; margin-top: 0.5em;" class="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded-md px-2 py-1 opacity-90 transition-opacity duration-300 opacity-0 transition-opacity">
                             Fill form & Save. If you are using Amazon S3 - fill in S3 Bucket Name, AWS Region, AWS Access Key, AWS Secret Key.<br/><br/> Initial backup: You will need to click on "Export to S3" to create your first backup in S3. Thereafter, automatic backups are done to S3 every 1 minute if the browser tab is active.<br/><br/> Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the data in this typingmind instance. <br/><br/> Adhoc Backup & Restore:  Use the "Export to S3" and "Import from S3" to perform on-demand backup or restore. Note that this overwrites the main backup. <br/><br/> Snapshot: Creates an instant 'no-touch' backup that will not be overwritten. <br/><br/> Download: You can select the backup data to be download and click on Download button to download it for local storage. <br/><br/> Restore: Select the backup you want to restore and Click on Restore. The typingmind data will be restored to the selected backup data/date.
                         </div>
                     </div>
@@ -269,12 +269,13 @@ function openSyncModal() {
 
 	function showTooltip() {
 		tooltip.classList.add('opacity-100');
+		tooltip.classList.remove('z-10');
 		tooltip.classList.remove('opacity-0');
 	}
 
 	function hideTooltip() {
 		tooltip.classList.add('opacity-0');
-		tooltip.classList.remove('z-1');
+		tooltip.classList.remove('z-10');
 		tooltip.classList.remove('opacity-100');
 	}
 
