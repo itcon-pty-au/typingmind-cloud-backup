@@ -662,7 +662,7 @@ function updateBackupButtons() {
     
     // Enable restore button if credentials exist and valid file is selected
     if (restoreBtn) {
-        restoreBtn.disabled = !bucketConfigured || !selectedFile;
+        restoreBtn.disabled = !bucketConfigured || !selectedFile || selectedFile === 'typingmind-backup.json';
         restoreBtn.classList.toggle('opacity-50', !bucketConfigured || !selectedFile);
     }
 }
