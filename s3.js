@@ -4,7 +4,7 @@ const TIME_BACKUP_INTERVAL = 15;
 const TIME_BACKUP_FILE_PREFIX = `T-${TIME_BACKUP_INTERVAL}`;
 
 (async function checkDOMOrRunBackup() {
-		if (document.readyState === 'complete') {
+	if (document.readyState === 'complete') {
 		await handleDOMReady();
 	} else {
 		window.addEventListener('load', handleDOMReady);
@@ -174,8 +174,34 @@ function openSyncModal() {
             <path d="M15 12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h1.172a3 3 0 0 0 2.12-.879l.83-.828A1 1 0 0 1 6.827 3h2.344a1 1 0 0 1 .707.293l.828.828A3 3 0 0 0 12.828 5H14a1 1 0 0 1 1 1v6zM2 4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-1.172a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 9.172 2H6.828a2 2 0 0 0-1.414.586l-.828.828A2 2 0 0 1 3.172 4H2z"/>
             <path d="M8 11a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5zm0 1a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM3 6.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0z"/>
         </svg><span>Snapshot</span>
-    </button>
-                    </div>
+    </button></div>
+<div class="mt-6 bg-gray-100 px-3 py-3 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
+    <div class="flex items-center justify-between mb-2">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">Available Backups</label>
+        <button id="refresh-backups-btn" class="text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50" disabled>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+            </svg>
+        </button>
+    </div>
+    <div class="space-y-2">
+        <div class="w-full">
+            <select id="backup-files" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700">
+                <option value="">Please configure AWS credentials first</option>
+            </select>
+        </div>
+        <div class="flex justify-end space-x-2">
+            <button id="download-backup-btn" class="px-3 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                Download
+            </button>
+            <button id="restore-backup-btn" class="px-3 py-2 text-sm text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                Restore
+            </button>
+        </div>
+    </div>
+</div>
+
+                    <!-- Status messages -->
                     <div class="text-center mt-4">
                         <span id="last-sync-msg"></span>
                     </div>
@@ -184,6 +210,7 @@ function openSyncModal() {
             </div>
         </div>`;
 	document.body.appendChild(modalPopup);
+	loadBackupFiles();
 
 	const awsBucketInput = document.getElementById('aws-bucket');
 	const awsRegionInput = document.getElementById('aws-region');
@@ -259,6 +286,19 @@ function openSyncModal() {
 		}
 	});
 
+	document
+		.getElementById('backup-files')
+		.addEventListener('change', updateBackupButtons);
+	document
+		.getElementById('download-backup-btn')
+		.addEventListener('click', downloadBackupFile);
+	document
+		.getElementById('restore-backup-btn')
+		.addEventListener('click', restoreBackupFile);
+	document
+		.getElementById('refresh-backups-btn')
+		.addEventListener('click', loadBackupFiles);
+
 	// Save button click handler
 	document
 		.getElementById('save-aws-details-btn')
@@ -296,6 +336,8 @@ function openSyncModal() {
 					actionMsgElement.textContent = '';
 				}, 3000);
 				updateButtonState();
+				updateBackupButtons();
+				await loadBackupFiles();
 				var importSuccessful = await checkAndImportBackup();
 				const currentTime = new Date().toLocaleString();
 				const lastSync = localStorage.getItem('last-cloud-sync');
@@ -336,75 +378,75 @@ function openSyncModal() {
 		});
 
 	// Snapshot button click handler
-// Inside openSyncModal function
-document
-    .getElementById('snapshot-btn')
-    .addEventListener('click', async function () {
-        const now = new Date();
-        const timestamp = now.getFullYear() +
-            String(now.getMonth() + 1).padStart(2, '0') +
-            String(now.getDate()).padStart(2, '0') + 
-            'T' +
-            String(now.getHours()).padStart(2, '0') +
-            String(now.getMinutes()).padStart(2, '0') +
-            String(now.getSeconds()).padStart(2, '0');
-            
-        const bucketName = localStorage.getItem('aws-bucket');
-        const data = await exportBackupData();
-        const dataStr = JSON.stringify(data);
+	// Inside openSyncModal function
+	document
+		.getElementById('snapshot-btn')
+		.addEventListener('click', async function () {
+			const now = new Date();
+			const timestamp =
+				now.getFullYear() +
+				String(now.getMonth() + 1).padStart(2, '0') +
+				String(now.getDate()).padStart(2, '0') +
+				'T' +
+				String(now.getHours()).padStart(2, '0') +
+				String(now.getMinutes()).padStart(2, '0') +
+				String(now.getSeconds()).padStart(2, '0');
 
-        try {
-            // Load JSZip
-            const jszip = await loadJSZip();
-            const zip = new jszip();
+			const bucketName = localStorage.getItem('aws-bucket');
+			const data = await exportBackupData();
+			const dataStr = JSON.stringify(data);
 
-            // Add the JSON data to the zip file
-            zip.file(`Snapshot_${timestamp}.json`, dataStr, {
-                compression: 'DEFLATE',
-                compressionOptions: {
-                    level: 9
-                }
-            });
+			try {
+				// Load JSZip
+				const jszip = await loadJSZip();
+				const zip = new jszip();
 
-            // Generate the zip content
-            const compressedContent = await zip.generateAsync({ type: 'blob' });
+				// Add the JSON data to the zip file
+				zip.file(`Snapshot_${timestamp}.json`, dataStr, {
+					compression: 'DEFLATE',
+					compressionOptions: {
+						level: 9,
+					},
+				});
 
-            const s3 = new AWS.S3();
-            const putParams = {
-                Bucket: bucketName,
-                Key: `Snapshot_${timestamp}.zip`,
-                Body: compressedContent,
-                ContentType: 'application/zip'
-            };
+				// Generate the zip content
+				const compressedContent = await zip.generateAsync({ type: 'blob' });
 
-            await s3.putObject(putParams).promise();
-            
-            // Update last sync message with snapshot status
-            const lastSyncElement = document.getElementById('last-sync-msg');
-            const currentTime = new Date().toLocaleString();
-            lastSyncElement.textContent = `Snapshot successfully saved to the cloud at ${currentTime}`;
-            
-            // Revert back to regular sync status after 3 seconds
-            setTimeout(() => {
-                const lastSync = localStorage.getItem('last-cloud-sync');
-                if (lastSync) {
-                    lastSyncElement.textContent = `Last sync done at ${lastSync}`;
-                }
-            }, 3000);
+				const s3 = new AWS.S3();
+				const putParams = {
+					Bucket: bucketName,
+					Key: `Snapshot_${timestamp}.zip`,
+					Body: compressedContent,
+					ContentType: 'application/zip',
+				};
 
-        } catch (error) {
-            const lastSyncElement = document.getElementById('last-sync-msg');
-            lastSyncElement.textContent = `Error creating snapshot: ${error.message}`;
-            
-            // Revert back to regular sync status after 3 seconds
-            setTimeout(() => {
-                const lastSync = localStorage.getItem('last-cloud-sync');
-                if (lastSync) {
-                    lastSyncElement.textContent = `Last sync done at ${lastSync}`;
-                }
-            }, 3000);
-        }
-    });
+				await s3.putObject(putParams).promise();
+
+				// Update last sync message with snapshot status
+				const lastSyncElement = document.getElementById('last-sync-msg');
+				const currentTime = new Date().toLocaleString();
+				lastSyncElement.textContent = `Snapshot successfully saved to the cloud at ${currentTime}`;
+
+				// Revert back to regular sync status after 3 seconds
+				setTimeout(() => {
+					const lastSync = localStorage.getItem('last-cloud-sync');
+					if (lastSync) {
+						lastSyncElement.textContent = `Last sync done at ${lastSync}`;
+					}
+				}, 3000);
+			} catch (error) {
+				const lastSyncElement = document.getElementById('last-sync-msg');
+				lastSyncElement.textContent = `Error creating snapshot: ${error.message}`;
+
+				// Revert back to regular sync status after 3 seconds
+				setTimeout(() => {
+					const lastSync = localStorage.getItem('last-cloud-sync');
+					if (lastSync) {
+						lastSyncElement.textContent = `Last sync done at ${lastSync}`;
+					}
+				}, 3000);
+			}
+		});
 }
 
 // Visibility change event listener
@@ -552,6 +594,142 @@ async function checkAndImportBackup() {
 	return false;
 }
 
+async function loadBackupFiles() {
+    const bucketName = localStorage.getItem('aws-bucket');
+    const awsAccessKey = localStorage.getItem('aws-access-key');
+    const awsSecretKey = localStorage.getItem('aws-secret-key');
+    
+    const select = document.getElementById('backup-files');
+    
+    // Check if credentials are available
+    if (!bucketName || !awsAccessKey || !awsSecretKey) {
+        select.innerHTML = '<option value="">Please configure AWS credentials first</option>';
+        updateBackupButtons();
+        return;
+    }
+
+    const s3 = new AWS.S3();
+    
+    try {
+        const data = await s3.listObjectsV2({ Bucket: bucketName }).promise();
+        select.innerHTML = '';
+        
+        if (data.Contents.length === 0) {
+            select.innerHTML = '<option value="">No backup files found</option>';
+        } else {
+            // Sort files by last modified (newest first)
+            const files = data.Contents.sort((a, b) => b.LastModified - a.LastModified);
+            
+            files.forEach(file => {
+                const option = document.createElement('option');
+                option.value = file.Key;
+                option.textContent = `${file.Key} (${new Date(file.LastModified).toLocaleString()})`;
+                select.appendChild(option);
+            });
+        }
+        
+        updateBackupButtons();
+    } catch (error) {
+        console.error('Error loading backup files:', error);
+        select.innerHTML = '<option value="">Error loading backups</option>';
+        updateBackupButtons();
+    }
+}
+
+function updateBackupButtons() {
+    const select = document.getElementById('backup-files');
+    const downloadBtn = document.getElementById('download-backup-btn');
+    const restoreBtn = document.getElementById('restore-backup-btn');
+    const refreshBtn = document.getElementById('refresh-backups-btn');
+    
+    const bucketConfigured = localStorage.getItem('aws-bucket') && 
+                            localStorage.getItem('aws-access-key') && 
+                            localStorage.getItem('aws-secret-key');
+    
+    // Enable/disable refresh button based on credentials
+    if (refreshBtn) {
+        refreshBtn.disabled = !bucketConfigured;
+        refreshBtn.classList.toggle('opacity-50', !bucketConfigured);
+    }
+    
+    const selectedFile = select.value;
+    
+    // Enable download button if credentials exist and file is selected
+    if (downloadBtn) {
+        downloadBtn.disabled = !bucketConfigured || !selectedFile;
+        downloadBtn.classList.toggle('opacity-50', !bucketConfigured || !selectedFile);
+    }
+    
+    // Enable restore button if credentials exist and valid file is selected
+    if (restoreBtn) {
+        restoreBtn.disabled = !bucketConfigured || !selectedFile;
+        restoreBtn.classList.toggle('opacity-50', !bucketConfigured || !selectedFile);
+    }
+}
+
+async function downloadBackupFile() {
+	const bucketName = localStorage.getItem('aws-bucket');
+	const s3 = new AWS.S3();
+	const selectedFile = document.getElementById('backup-files').value;
+
+	try {
+		const data = await s3
+			.getObject({
+				Bucket: bucketName,
+				Key: selectedFile,
+			})
+			.promise();
+
+		const blob = new Blob([data.Body], { type: data.ContentType });
+		const url = window.URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = selectedFile;
+		document.body.appendChild(a);
+		a.click();
+		window.URL.revokeObjectURL(url);
+		document.body.removeChild(a);
+	} catch (error) {
+		console.error('Error downloading file:', error);
+	}
+}
+
+async function restoreBackupFile() {
+	const bucketName = localStorage.getItem('aws-bucket');
+	const s3 = new AWS.S3();
+	const selectedFile = document.getElementById('backup-files').value;
+
+	try {
+		const data = await s3
+			.getObject({
+				Bucket: bucketName,
+				Key: selectedFile,
+			})
+			.promise();
+
+		const jszip = await loadJSZip();
+		const zip = await jszip.loadAsync(data.Body);
+		const jsonFile = Object.keys(zip.files)[0];
+		const content = await zip.file(jsonFile).async('string');
+		const importedData = JSON.parse(content);
+
+		importDataToStorage(importedData);
+
+		const currentTime = new Date().toLocaleString();
+		localStorage.setItem('last-cloud-sync', currentTime);
+
+		const element = document.getElementById('last-sync-msg');
+		if (element) {
+			element.innerText = `Last sync done at ${currentTime}`;
+		}
+
+		alert('Backup restored successfully!');
+	} catch (error) {
+		console.error('Error restoring backup:', error);
+		alert('Error restoring backup: ' + error.message);
+	}
+}
+
 // Function to start the backup interval
 function startBackupInterval() {
 	if (backupIntervalRunning) return;
@@ -622,10 +800,7 @@ function importDataToStorage(data) {
 		extensionURLs.push(
 			'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
 		);
-		localStorage.setItem(
-			'TM_useExtensionURLs',
-			JSON.stringify(extensionURLs)
-		);
+		localStorage.setItem('TM_useExtensionURLs', JSON.stringify(extensionURLs));
 	}
 }
 
