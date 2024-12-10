@@ -268,7 +268,7 @@ function openSyncModal() {
 	const tooltip = document.getElementById('tooltip');
 
 	function showTooltip() {
-		tooltip.removeProperty('display');
+		tooltip.display('flex');
 		tooltip.classList.add('opacity-100');
 		tooltip.classList.remove('z-1');
 		tooltip.classList.add('z-2');
