@@ -1,5 +1,7 @@
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
+const TIME_BACKUP_INTERVAL = 15;
+const TIME_BACKUP_FILE_PREFIX = `T-${TIME_BACKUP_INTERVAL}`;
 
 (async function checkDOMOrRunBackup() {
 	if (document.readyState === 'complete') {
@@ -59,33 +61,35 @@ cloudSyncBtn.appendChild(iconSpan);
 cloudSyncBtn.appendChild(textSpan);
 
 function insertCloudSyncButton() {
-    const teamsButton = document.querySelector('[data-element-id="workspace-tab-teams"]');
-    
-    if (teamsButton && teamsButton.parentNode) {
-        teamsButton.parentNode.insertBefore(cloudSyncBtn, teamsButton.nextSibling);
-        return true;
-    }
-    return false;
+	const teamsButton = document.querySelector(
+		'[data-element-id="workspace-tab-teams"]'
+	);
+
+	if (teamsButton && teamsButton.parentNode) {
+		teamsButton.parentNode.insertBefore(cloudSyncBtn, teamsButton.nextSibling);
+		return true;
+	}
+	return false;
 }
 
 const observer = new MutationObserver((mutations) => {
-    if (insertCloudSyncButton()) {
-        observer.disconnect();
-    }
+	if (insertCloudSyncButton()) {
+		observer.disconnect();
+	}
 });
 
 observer.observe(document.body, {
-    childList: true,
-    subtree: true
+	childList: true,
+	subtree: true,
 });
 
 const maxAttempts = 10;
 let attempts = 0;
 const interval = setInterval(() => {
-    if (insertCloudSyncButton() || attempts >= maxAttempts) {
-        clearInterval(interval);
-    }
-    attempts++;
+	if (insertCloudSyncButton() || attempts >= maxAttempts) {
+		clearInterval(interval);
+	}
+	attempts++;
 }, 1000);
 
 // Attach modal to new button
@@ -110,7 +114,7 @@ function openSyncModal() {
 	modalPopup.style.paddingRight = '10px';
 	modalPopup.setAttribute('data-element-id', 'sync-modal-dbbackup');
 	modalPopup.className =
-		'fixed inset-0 bg-gray-800 transition-all bg-opacity-75 flex items-center justify-center z-[60]';
+		'bg-opacity-75 fixed inset-0 bg-gray-800 transition-all flex items-center justify-center z-[60]';
 	modalPopup.innerHTML = `
         <div class="inline-block w-full align-bottom bg-white dark:bg-zinc-950 rounded-lg px-4 pb-4 text-left shadow-xl transform transition-all sm:my-8 sm:p-6 sm:align-middle pt-4 overflow-hidden sm:max-w-lg">
             <div class="text-gray-800 dark:text-white text-left text-sm">
@@ -166,6 +170,12 @@ function openSyncModal() {
                                 <path d="M880 112H144c-17.7 0-32 14.3-32 32v736c0 17.7 14.3 32 32 32h360c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H184V184h656v320c0 4.4-3.6 8 8 8h56c4.4 0 8-3.6 8-8V144c0-17.7-14.3-32-32-32ZM653.3 599.4l52.2-52.2c4.7-4.7 1.9-12.8-4.7-13.6l-179.4-21c-5.1-.6-9.5 3.7-8.9 8.9l21 179.4c.8 6.6 8.9 9.4 13.6 4.7l52.4-52.4 256.2 256.2c3.1 3.1 8.2 3.1 11.3 0l42.4-42.4c3.1-3.1 3.1-8.2 0-11.3L653.3 599.4Z" transform="matrix(1 0 0 -1 0 1024)"></path>
                             </svg><span>Import from S3</span>
                         </button>
+                            <button id="snapshot-btn" type="button" class="inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors">
+        <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 16 16" class="w-4 h-4 mr-2" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg">
+            <path d="M15 12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h1.172a3 3 0 0 0 2.12-.879l.83-.828A1 1 0 0 1 6.827 3h2.344a1 1 0 0 1 .707.293l.828.828A3 3 0 0 0 12.828 5H14a1 1 0 0 1 1 1v6zM2 4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-1.172a2 2 0 0 1-1.414-.586l-.828-.828A2 2 0 0 0 9.172 2H6.828a2 2 0 0 0-1.414.586l-.828.828A2 2 0 0 1 3.172 4H2z"/>
+            <path d="M8 11a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5zm0 1a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM3 6.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0z"/>
+        </svg><span>Snapshot</span>
+    </button>
                     </div>
                     <div class="text-center mt-4">
                         <span id="last-sync-msg"></span>
@@ -324,6 +334,77 @@ function openSyncModal() {
 			await importFromS3();
 			wasImportSuccessful = true;
 		});
+
+	// Snapshot button click handler
+// Inside openSyncModal function
+document
+    .getElementById('snapshot-btn')
+    .addEventListener('click', async function () {
+        const now = new Date();
+        const timestamp = now.getFullYear() +
+            String(now.getMonth() + 1).padStart(2, '0') +
+            String(now.getDate()).padStart(2, '0') + 
+            'T' +
+            String(now.getHours()).padStart(2, '0') +
+            String(now.getMinutes()).padStart(2, '0') +
+            String(now.getSeconds()).padStart(2, '0');
+            
+        const bucketName = localStorage.getItem('aws-bucket');
+        const data = await exportBackupData();
+        const dataStr = JSON.stringify(data);
+
+        try {
+            // Load JSZip
+            const jszip = await loadJSZip();
+            const zip = new jszip();
+
+            // Add the JSON data to the zip file
+            zip.file(`Snapshot_${timestamp}.json`, dataStr, {
+                compression: 'DEFLATE',
+                compressionOptions: {
+                    level: 9
+                }
+            });
+
+            // Generate the zip content
+            const compressedContent = await zip.generateAsync({ type: 'blob' });
+
+            const s3 = new AWS.S3();
+            const putParams = {
+                Bucket: bucketName,
+                Key: `Snapshot_${timestamp}.zip`,
+                Body: compressedContent,
+                ContentType: 'application/zip'
+            };
+
+            await s3.putObject(putParams).promise();
+            
+            // Update last sync message with snapshot status
+            const lastSyncElement = document.getElementById('last-sync-msg');
+            const currentTime = new Date().toLocaleString();
+            lastSyncElement.textContent = `Snapshot successfully saved to the cloud at ${currentTime}`;
+            
+            // Revert back to regular sync status after 3 seconds
+            setTimeout(() => {
+                const lastSync = localStorage.getItem('last-cloud-sync');
+                if (lastSync) {
+                    lastSyncElement.textContent = `Last sync done at ${lastSync}`;
+                }
+            }, 3000);
+
+        } catch (error) {
+            const lastSyncElement = document.getElementById('last-sync-msg');
+            lastSyncElement.textContent = `Error creating snapshot: ${error.message}`;
+            
+            // Revert back to regular sync status after 3 seconds
+            setTimeout(() => {
+                const lastSync = localStorage.getItem('last-cloud-sync');
+                if (lastSync) {
+                    lastSyncElement.textContent = `Last sync done at ${lastSync}`;
+                }
+            }, 3000);
+        }
+    });
 }
 
 // Visibility change event listener
@@ -361,6 +442,60 @@ document.addEventListener('visibilitychange', async () => {
 	}
 });
 
+// Time based backup creates a rolling backup every X minutes. Default is 15 minutes
+// Update parameter 'TIME_BACKUP_INTERVAL' in the beginning of the code to customize this
+// This is to provide a secondary backup option in case of unintended corruption of the backup file
+async function handleTimeBasedBackup() {
+	const bucketName = localStorage.getItem('aws-bucket');
+	let lastTimeBackup = localStorage.getItem('last-time-based-no-touch-backup');
+	const currentTime = new Date().getTime();
+
+	if (!lastTimeBackup) {
+		localStorage.setItem(
+			'last-time-based-no-touch-backup',
+			new Date().toLocaleString()
+		);
+		lastTimeBackup = '0';
+	}
+
+	if (
+		lastTimeBackup === '0' ||
+		currentTime - new Date(lastTimeBackup).getTime() >=
+			TIME_BACKUP_INTERVAL * 60 * 1000
+	) {
+		const s3 = new AWS.S3();
+
+		try {
+			const data = await exportBackupData();
+			const dataStr = JSON.stringify(data);
+			const jszip = await loadJSZip();
+			const zip = new jszip();
+			zip.file(`${TIME_BACKUP_FILE_PREFIX}.json`, dataStr, {
+				compression: 'DEFLATE',
+				compressionOptions: {
+					level: 9,
+				},
+			});
+
+			const compressedContent = await zip.generateAsync({ type: 'blob' });
+			const uploadParams = {
+				Bucket: bucketName,
+				Key: `${TIME_BACKUP_FILE_PREFIX}.zip`,
+				Body: compressedContent,
+				ContentType: 'application/zip',
+			};
+
+			await s3.putObject(uploadParams).promise();
+			localStorage.setItem(
+				'last-time-based-no-touch-backup',
+				new Date(currentTime).toLocaleString()
+			);
+		} catch (error) {
+			console.error('Error creating time-based backup:', error);
+		}
+	}
+}
+
 // Function to check for backup file and import it
 async function checkAndImportBackup() {
 	const bucketName = localStorage.getItem('aws-bucket');
@@ -377,7 +512,7 @@ async function checkAndImportBackup() {
 		const awsConfig = {
 			accessKeyId: awsAccessKey,
 			secretAccessKey: awsSecretKey,
-			region: awsRegion
+			region: awsRegion,
 		};
 
 		if (awsEndpoint) {
@@ -389,7 +524,7 @@ async function checkAndImportBackup() {
 		const s3 = new AWS.S3();
 		const params = {
 			Bucket: bucketName,
-			Key: 'typingmind-backup.json'
+			Key: 'typingmind-backup.json',
 		};
 
 		return new Promise((resolve) => {
@@ -486,7 +621,7 @@ function exportBackupData() {
 	return new Promise((resolve, reject) => {
 		var exportData = {
 			localStorage: { ...localStorage },
-			indexedDB: {}
+			indexedDB: {},
 		};
 		var request = indexedDB.open('keyval-store', 1);
 		request.onsuccess = function (event) {
@@ -525,7 +660,7 @@ async function backupToS3() {
 	const awsConfig = {
 		accessKeyId: awsAccessKey,
 		secretAccessKey: awsSecretKey,
-		region: awsRegion
+		region: awsRegion,
 	};
 
 	if (awsEndpoint) {
@@ -545,7 +680,7 @@ async function backupToS3() {
 	if (dataSize > chunkSize) {
 		const createMultipartParams = {
 			Bucket: bucketName,
-			Key: 'typingmind-backup.json'
+			Key: 'typingmind-backup.json',
 		};
 
 		const multipart = await s3
@@ -568,7 +703,7 @@ async function backupToS3() {
 						Bucket: bucketName,
 						Key: 'typingmind-backup.json',
 						PartNumber: partNumber,
-						UploadId: multipart.UploadId
+						UploadId: multipart.UploadId,
 					};
 
 					try {
@@ -599,8 +734,8 @@ async function backupToS3() {
 			Key: 'typingmind-backup.json',
 			UploadId: multipart.UploadId,
 			MultipartUpload: {
-				Parts: uploadedParts
-			}
+				Parts: uploadedParts,
+			},
 		};
 		await s3.completeMultipartUpload(completeParams).promise();
 	} else {
@@ -608,12 +743,12 @@ async function backupToS3() {
 			Bucket: bucketName,
 			Key: 'typingmind-backup.json',
 			Body: dataStr,
-			ContentType: 'application/json'
+			ContentType: 'application/json',
 		};
 
 		await s3.putObject(putParams).promise();
 	}
-
+	await handleTimeBasedBackup();
 	const currentTime = new Date().toLocaleString();
 	localStorage.setItem('last-cloud-sync', currentTime);
 	var element = document.getElementById('last-sync-msg');
@@ -638,7 +773,7 @@ async function importFromS3() {
 	const awsConfig = {
 		accessKeyId: awsAccessKey,
 		secretAccessKey: awsSecretKey,
-		region: awsRegion
+		region: awsRegion,
 	};
 
 	if (awsEndpoint) {
@@ -650,7 +785,7 @@ async function importFromS3() {
 	const s3 = new AWS.S3();
 	const params = {
 		Bucket: bucketName,
-		Key: 'typingmind-backup.json'
+		Key: 'typingmind-backup.json',
 	};
 
 	s3.getObject(params, function (err, data) {
@@ -685,7 +820,7 @@ async function validateAwsCredentials(bucketName, accessKey, secretKey) {
 	const awsConfig = {
 		accessKeyId: accessKey,
 		secretAccessKey: secretKey,
-		region: awsRegion
+		region: awsRegion,
 	};
 
 	if (awsEndpoint) {
@@ -697,7 +832,7 @@ async function validateAwsCredentials(bucketName, accessKey, secretKey) {
 	const s3 = new AWS.S3();
 	const params = {
 		Bucket: bucketName,
-		MaxKeys: 1
+		MaxKeys: 1,
 	};
 
 	return new Promise((resolve, reject) => {
@@ -728,7 +863,7 @@ async function handleBackupFiles() {
 	const awsConfig = {
 		accessKeyId: awsAccessKey,
 		secretAccessKey: awsSecretKey,
-		region: awsRegion
+		region: awsRegion,
 	};
 
 	if (awsEndpoint) {
@@ -740,7 +875,7 @@ async function handleBackupFiles() {
 	const s3 = new AWS.S3();
 	const params = {
 		Bucket: bucketName,
-		Prefix: 'typingmind-backup'
+		Prefix: 'typingmind-backup',
 	};
 
 	const today = new Date();
@@ -761,7 +896,7 @@ async function handleBackupFiles() {
 			if (lastModifiedDate.setHours(0, 0, 0, 0) < today.setHours(0, 0, 0, 0)) {
 				const getObjectParams = {
 					Bucket: bucketName,
-					Key: 'typingmind-backup.json'
+					Key: 'typingmind-backup.json',
 				};
 				const backupFile = await s3.getObject(getObjectParams).promise();
 				const backupContent = backupFile.Body;
@@ -770,8 +905,8 @@ async function handleBackupFiles() {
 				zip.file(`typingmind-backup-${currentDateSuffix}.json`, backupContent, {
 					compression: 'DEFLATE',
 					compressionOptions: {
-						level: 9
-					}
+						level: 9,
+					},
 				});
 
 				const compressedContent = await zip.generateAsync({ type: 'blob' });
@@ -781,7 +916,7 @@ async function handleBackupFiles() {
 					Bucket: bucketName,
 					Key: zipKey,
 					Body: compressedContent,
-					ContentType: 'application/zip'
+					ContentType: 'application/zip',
 				};
 				await s3.putObject(uploadParams).promise();
 				localStorage.setItem('last-daily-backup-in-s3', currentDateSuffix);
@@ -799,7 +934,7 @@ async function handleBackupFiles() {
 					if (fileDate < thirtyDaysAgo) {
 						const deleteParams = {
 							Bucket: bucketName,
-							Key: file.Key
+							Key: file.Key,
 						};
 						await s3.deleteObject(deleteParams).promise();
 					}
