@@ -957,6 +957,13 @@ async function backupToS3() {
           console.log(`Upload progress: ${Math.min(progress, 100)}%`);
         }
 
+	// Additional Logging
+	console.log('Uploaded Parts before sorting:', JSON.stringify(uploadedParts, null, 2));
+	const sortedParts = uploadedParts
+  		.sort((a, b) => a.PartNumber - b.PartNumber);
+	console.log('Sorted Parts:', JSON.stringify(sortedParts, null, 2));
+	// End Additional logging
+	      
         // Complete the multipart upload
 	const completeParams = {
 	  Bucket: bucketName,
@@ -971,6 +978,25 @@ async function backupToS3() {
 	      }))
 	  }
 	};
+
+	console.log('Complete Multipart Upload Request:', JSON.stringify(completeParams, null, 2));
+
+	// Additional logging
+	try {
+	  const completeResult = await s3.completeMultipartUpload(completeParams).promise();
+	  console.log('Complete Multipart Upload Response:', JSON.stringify(completeResult, null, 2));
+	} catch (error) {
+	  console.log('Complete Multipart Upload Error Details:', {
+	    message: error.message,
+	    code: error.code,
+	    requestId: error.requestId,
+	    statusCode: error.statusCode,
+	    retryable: error.retryable,
+	    stack: error.stack
+	  });
+	  throw error;
+	}
+	// End Additional logging
 
         await s3.completeMultipartUpload(completeParams).promise();
         console.log('Multipart upload completed successfully');
