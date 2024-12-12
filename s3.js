@@ -963,10 +963,12 @@ async function backupToS3() {
 	  Key: 'typingmind-backup.json',
 	  UploadId: multipart.UploadId,
 	  MultipartUpload: {
-	    Parts: uploadedParts.map(part => ({
-	      ETag: part.ETag,
-	      PartNumber: part.PartNumber
-	    })).sort((a, b) => a.PartNumber - b.PartNumber)
+	    Parts: uploadedParts
+	      .sort((a, b) => a.PartNumber - b.PartNumber)
+	      .map(part => ({
+	        ETag: part.ETag,
+	        PartNumber: part.PartNumber
+	      }))
 	  }
 	};
 
