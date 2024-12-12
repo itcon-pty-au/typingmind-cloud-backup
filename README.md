@@ -1,5 +1,8 @@
 # TypingMind Cloud Backup Extension
 
+**⚠️ Important Notice for Users:**
+Please ensure that your Amazon S3 CORS configuration is updated to address issues with Multipart uploads. Failure to do so may result in upload failures and unexpected behavior. 
+
 [If you found this useful, please consider buying me a coffee](https://buymeacoffee.com/itcon):heart:!
 
 ## Features
