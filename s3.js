@@ -924,6 +924,7 @@ async function backupToS3() {
           while (retryCount < maxRetries) {
             try {
               const uploadResult = await s3.uploadPart(partParams).promise();
+	      console.log('Upload result:', uploadResult); 
               uploadedParts.push({
                 ETag: uploadResult.ETag,
                 PartNumber: partNumber
