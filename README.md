@@ -105,7 +105,8 @@ If you are using typingmind cloud, use the below
             "https://www.typingmind.com"
         ],
         "ExposeHeaders": [
-            "Access-Control-Allow-Origin"
+            "Access-Control-Allow-Origin",
+            "ETag"
         ],
         "MaxAgeSeconds": 3000
     }
