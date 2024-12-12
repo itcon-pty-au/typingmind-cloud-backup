@@ -1,8 +1,5 @@
-<div style="background-color: #ffcc00; padding: 10px; border-radius: 5px; text-align: center;">
-    <strong style="color: #000;">⚠️ Important Notice for Users:</strong><br>
-    Please ensure that your Amazon S3 CORS configuration is updated to address issues with Multipart uploads. 
-    Failure to do so may result in upload failures and unexpected behavior.<br>
-</div>
+⚠️ Important Notice ⚠️
+Please ensure that your Amazon S3 CORS configuration is updated to address issues with Multipart uploads. Refer Ste 6 in AWS Config below.
 
 # TypingMind Cloud Backup Extension
 
