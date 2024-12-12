@@ -928,7 +928,7 @@ async function backupToS3() {
                 ETag: uploadResult.ETag,
                 PartNumber: partNumber
               });
-              console.log(`Part ${partNumber} uploaded successfully`);
+              console.log(`Part ${partNumber} uploaded successfully with ETag: ${uploadResult.ETag}`);
               break; // Success, exit retry loop
             } catch (error) {
               console.error(`Error uploading part ${partNumber}:`, error);
@@ -970,12 +970,10 @@ async function backupToS3() {
 	  Key: 'typingmind-backup.json',
 	  UploadId: multipart.UploadId,
 	  MultipartUpload: {
-	    Parts: uploadedParts
-	      .sort((a, b) => a.PartNumber - b.PartNumber)
-	      .map(part => ({
-	        ETag: part.ETag,
-	        PartNumber: part.PartNumber
-	      }))
+	    Parts: sortedParts.map(part => ({
+	      ETag: part.ETag,
+	      PartNumber: part.PartNumber
+	    }))
 	  }
 	};
 
