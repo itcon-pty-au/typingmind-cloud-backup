@@ -1,7 +1,10 @@
-# TypingMind Cloud Backup Extension
+<div style="background-color: #ffcc00; padding: 10px; border-radius: 5px; text-align: center;">
+    <strong style="color: #000;">⚠️ Important Notice for Users:</strong><br>
+    Please ensure that your Amazon S3 CORS configuration is updated to address issues with Multipart uploads. 
+    Failure to do so may result in upload failures and unexpected behavior.<br>
+</div>
 
-**⚠️ Important Notice for Users:**
-Please ensure that your Amazon S3 CORS configuration is updated to address issues with Multipart uploads. Failure to do so may result in upload failures and unexpected behavior. 
+# TypingMind Cloud Backup Extension
 
 [If you found this useful, please consider buying me a coffee](https://buymeacoffee.com/itcon):heart:!
 
