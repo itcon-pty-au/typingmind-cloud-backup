@@ -958,14 +958,17 @@ async function backupToS3() {
         }
 
         // Complete the multipart upload
-        const completeParams = {
-          Bucket: bucketName,
-          Key: 'typingmind-backup.json',
-          UploadId: multipart.UploadId,
-          MultipartUpload: {
-            Parts: uploadedParts.sort((a, b) => a.PartNumber - b.PartNumber)
-          }
-        };
+	const completeParams = {
+	  Bucket: bucketName,
+	  Key: 'typingmind-backup.json',
+	  UploadId: multipart.UploadId,
+	  MultipartUpload: {
+	    Parts: uploadedParts.map(part => ({
+	      ETag: part.ETag,
+	      PartNumber: part.PartNumber
+	    })).sort((a, b) => a.PartNumber - b.PartNumber)
+	  }
+	};
 
         await s3.completeMultipartUpload(completeParams).promise();
         console.log('Multipart upload completed successfully');
