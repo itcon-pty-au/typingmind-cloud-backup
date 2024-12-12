@@ -885,6 +885,7 @@ async function backupToS3() {
 	const s3 = new AWS.S3();
 
 	if (dataSize > chunkSize) {
+		console.log('Starting Multipart upload to S3');
 		const createMultipartParams = {
 			Bucket: bucketName,
 			Key: 'typingmind-backup.json',
@@ -946,6 +947,7 @@ async function backupToS3() {
 		};
 		await s3.completeMultipartUpload(completeParams).promise();
 	} else {
+		console.log('Starting standard upload to S3');
 		const putParams = {
 			Bucket: bucketName,
 			Key: 'typingmind-backup.json',
