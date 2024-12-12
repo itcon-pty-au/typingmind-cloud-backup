@@ -1,5 +1,5 @@
-⚠️ Important Notice ⚠️<br/>
-Please ensure that your Amazon S3 CORS configuration is updated to address issues with Multipart uploads. Refer Ste 6 in AWS Config below.
+<div align="center">⚠️ Important Notice ⚠️<br/><br/>
+Please ensure that your Amazon S3 CORS configuration is updated to address issues with Multipart uploads. Refer Step 6 in AWS Config below.</div>
 
 # TypingMind Cloud Backup Extension
 
