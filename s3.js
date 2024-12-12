@@ -276,7 +276,7 @@ function openSyncModal() {
 	}
 
 	function hideTooltip() {
-		tooltip.style.display = 'none'
+		tooltip.style.display = 'none';
 		tooltip.classList.add('opacity-0');
 		tooltip.classList.remove('z-2');
 		tooltip.classList.add('z-1');
@@ -687,67 +687,183 @@ function updateBackupButtons() {
 }
 
 async function downloadBackupFile() {
-	const bucketName = localStorage.getItem('aws-bucket');
-	const s3 = new AWS.S3();
-	const selectedFile = document.getElementById('backup-files').value;
+  const bucketName = localStorage.getItem('aws-bucket');
+  const s3 = new AWS.S3();
+  const selectedFile = document.getElementById('backup-files').value;
 
-	try {
-		const data = await s3
-			.getObject({
-				Bucket: bucketName,
-				Key: selectedFile,
-			})
-			.promise();
+  try {
+    const data = await s3
+      .getObject({
+        Bucket: bucketName,
+        Key: selectedFile,
+      })
+      .promise();
 
-		const blob = new Blob([data.Body], { type: data.ContentType });
-		const url = window.URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = selectedFile;
-		document.body.appendChild(a);
-		a.click();
-		window.URL.revokeObjectURL(url);
-		document.body.removeChild(a);
-	} catch (error) {
-		console.error('Error downloading file:', error);
-	}
+    if (selectedFile.endsWith('.zip')) {
+      // For zip files, download directly
+      const blob = new Blob([data.Body], { type: 'application/zip' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = selectedFile;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } else {
+      // For JSON files, try to decode if possible
+      try {
+        const content = data.Body.toString('utf-8');
+        // Check if the content is base64 encoded
+        const isBase64 = /^[A-Za-z0-9+/=]+$/g.test(content.trim());
+        
+        let finalContent;
+        if (isBase64) {
+          // If it's encoded, decode it
+          const decodedData = decodeFromStorage(content);
+          finalContent = JSON.stringify(decodedData, null, 2);
+        } else {
+          // If it's not encoded, use as is
+          finalContent = content;
+        }
+
+        const blob = new Blob([finalContent], { type: 'application/json' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = selectedFile.replace('.json', '_decoded.json');
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } catch (e) {
+        // If decoding fails, download the raw content
+        console.warn('Failed to decode content, downloading raw file:', e);
+        const blob = new Blob([data.Body], { type: 'application/json' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = selectedFile;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }
+    }
+  } catch (error) {
+    console.error('Error downloading file:', error);
+    alert('Error downloading file: ' + error.message);
+  }
 }
 
 async function restoreBackupFile() {
-	const bucketName = localStorage.getItem('aws-bucket');
-	const s3 = new AWS.S3();
-	const selectedFile = document.getElementById('backup-files').value;
+  const bucketName = localStorage.getItem('aws-bucket');
+  const s3 = new AWS.S3();
+  const selectedFile = document.getElementById('backup-files').value;
 
-	try {
-		const data = await s3
-			.getObject({
-				Bucket: bucketName,
-				Key: selectedFile,
-			})
-			.promise();
+  try {
+    const data = await s3.getObject({
+      Bucket: bucketName,
+      Key: selectedFile,
+    }).promise();
 
-		const jszip = await loadJSZip();
-		const zip = await jszip.loadAsync(data.Body);
-		const jsonFile = Object.keys(zip.files)[0];
-		const content = await zip.file(jsonFile).async('string');
-		const importedData = JSON.parse(content);
+    if (!data || !data.Body) {
+      throw new Error('No data found in backup file');
+    }
 
-		importDataToStorage(importedData);
+    // If it's a zip file, handle it differently
+    if (selectedFile.endsWith('.zip')) {
+      const jszip = await loadJSZip();
+      const zip = await jszip.loadAsync(data.Body);
+      const files = Object.keys(zip.files);
+      
+      if (!files || files.length === 0) {
+        throw new Error('Zip file is empty');
+      }
 
-		const currentTime = new Date().toLocaleString();
-		localStorage.setItem('last-cloud-sync', currentTime);
+      const jsonFile = files[0];
+      const content = await zip.file(jsonFile).async('string');
+      
+      if (!content) {
+        throw new Error('No content found in zip file');
+      }
 
-		const element = document.getElementById('last-sync-msg');
-		if (element) {
-			element.innerText = `Last sync done at ${currentTime}`;
-		}
+      // Add debugging logs
+      //console.log('Zip content:', content);
 
-		alert('Backup restored successfully!');
-	} catch (error) {
-		console.error('Error restoring backup:', error);
-		alert('Error restoring backup: ' + error.message);
-	}
+      let importedData;
+      try {
+        importedData = JSON.parse(content);
+        
+        // Verify data structure before proceeding
+        if (!importedData || !importedData.localStorage || !importedData.indexedDB) {
+          throw new Error('Invalid backup data structure');
+        }
+
+        // Create a properly structured object for import
+        const dataToImport = {
+          localStorage: importedData.localStorage || {},
+          indexedDB: importedData.indexedDB || {}
+        };
+
+        //console.log('Data to import:', dataToImport);
+        importDataToStorage(dataToImport);
+      } catch (e) {
+        console.error('Parse error:', e);
+        throw new Error(`Failed to parse backup data: ${e.message}`);
+      }
+    } else {
+      // Handle regular JSON file
+      const content = data.Body.toString('utf-8');
+      
+      if (!content) {
+        throw new Error('Empty backup file');
+      }
+
+      //console.log('Raw content:', content);
+
+      try {
+        const decodedData = decodeFromStorage(content);
+        
+        // Verify data structure before proceeding
+        if (!decodedData || !decodedData.localStorage || !decodedData.indexedDB) {
+          throw new Error('Invalid backup data structure');
+        }
+
+        // Create a properly structured object for import
+        const dataToImport = {
+          localStorage: decodedData.localStorage || {},
+          indexedDB: decodedData.indexedDB || {}
+        };
+
+        //console.log('Decoded data:', dataToImport);
+        importDataToStorage(dataToImport);
+      } catch (e) {
+        console.error('Decode error:', e);
+        throw new Error(`Failed to decode backup data: ${e.message}`);
+      }
+    }
+
+    const currentTime = new Date().toLocaleString();
+    localStorage.setItem('last-cloud-sync', currentTime);
+    const element = document.getElementById('last-sync-msg');
+    if (element) {
+      element.innerText = `Last sync done at ${currentTime}`;
+    }
+
+    alert('Backup restored successfully!');
+  } catch (error) {
+    console.error('Error restoring backup:', error);
+    alert(`Error restoring backup: ${error.message}`);
+    
+    const element = document.getElementById('action-msg');
+    if (element) {
+      element.textContent = `Restore failed: ${error.message}`;
+      element.style.color = 'red';
+    }
+  }
 }
+
 
 // Function to start the backup interval
 function startBackupInterval() {
@@ -794,33 +910,72 @@ async function loadJSZip() {
 
 // Function to import data from S3 to localStorage and IndexedDB
 function importDataToStorage(data) {
-	Object.keys(data.localStorage).forEach((key) => {
-		localStorage.setItem(key, data.localStorage[key]);
-	});
+  // Validate input
+  if (!data || typeof data !== 'object') {
+    throw new Error('Invalid data format provided to importDataToStorage');
+  }
 
-	const request = indexedDB.open('keyval-store');
-	request.onsuccess = function (event) {
-		const db = event.target.result;
-		const transaction = db.transaction(['keyval'], 'readwrite');
-		const objectStore = transaction.objectStore('keyval');
-		const deleteRequest = objectStore.clear();
-		deleteRequest.onsuccess = function () {
-			data = data.indexedDB;
-			Object.keys(data).forEach((key) => {
-				objectStore.put(data[key], key);
-			});
-		};
-	};
-	// Handle disappearing extension issue
-	let extensionURLs = JSON.parse(
-		localStorage.getItem('TM_useExtensionURLs') || '[]'
-	);
-	if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
-		extensionURLs.push(
-			'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
-		);
-		localStorage.setItem('TM_useExtensionURLs', JSON.stringify(extensionURLs));
-	}
+  // Ensure required properties exist
+  data.localStorage = data.localStorage || {};
+  data.indexedDB = data.indexedDB || {};
+
+  // Import localStorage data
+  try {
+    Object.entries(data.localStorage).forEach(([key, value]) => {
+      if (key && value !== undefined) {
+        localStorage.setItem(key, value);
+      }
+    });
+  } catch (e) {
+    console.error('Error importing localStorage data:', e);
+  }
+
+  // Import IndexedDB data
+  const request = indexedDB.open('keyval-store');
+  
+  request.onerror = function(event) {
+    console.error('IndexedDB error:', event);
+    throw new Error('Failed to open IndexedDB');
+  };
+
+  request.onsuccess = function(event) {
+    const db = event.target.result;
+    const transaction = db.transaction(['keyval'], 'readwrite');
+    const objectStore = transaction.objectStore('keyval');
+
+    const deleteRequest = objectStore.clear();
+    
+    deleteRequest.onsuccess = function() {
+      Object.entries(data.indexedDB).forEach(([key, value]) => {
+        if (key && value !== undefined) {
+          try {
+            objectStore.put(value, key);
+          } catch (e) {
+            console.error(`Error setting IndexedDB key ${key}:`, e);
+          }
+        }
+      });
+    };
+
+    deleteRequest.onerror = function(event) {
+      console.error('Error clearing IndexedDB:', event);
+    };
+  };
+
+  // Handle extension URL
+  try {
+    let extensionURLs = JSON.parse(
+      localStorage.getItem('TM_useExtensionURLs') || '[]'
+    );
+    if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
+      extensionURLs.push(
+        'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
+      );
+      localStorage.setItem('TM_useExtensionURLs', JSON.stringify(extensionURLs));
+    }
+  } catch (e) {
+    console.error('Error handling extension URLs:', e);
+  }
 }
 
 // Function to export data from localStorage and IndexedDB
@@ -1013,7 +1168,6 @@ async function importFromS3() {
 		}
 		wasImportSuccessful = true;
 	});
-}
 
 // Validate the AWS connection
 async function validateAwsCredentials(bucketName, accessKey, secretKey) {
@@ -1051,6 +1205,138 @@ async function validateAwsCredentials(bucketName, accessKey, secretKey) {
 			}
 		});
 	});
+}
+
+// Enhanced utility functions for encoding/decoding using browser-safe methods
+function encodeForStorage(data) {
+    try {
+        const safeData = JSON.stringify(data, (key, value) => {
+            if (typeof value === 'string') {
+                return value
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&apos;')
+                    .replace(/\{\{/g, '__DBLCURLY_OPEN__')
+                    .replace(/\}\}/g, '__DBLCURLY_CLOSE__')
+                    .replace(/\\/g, '__BACKSLASH__')
+                    .replace(/\u0000-\u001F/g, '')
+                    .replace(/[\u007F-\u009F]/g, '');
+            }
+            return value;
+        });
+
+        // For regular backup/restore operations
+        return btoa(unescape(encodeURIComponent(safeData)));
+    } catch (error) {
+        console.error('Encoding error:', error);
+        throw error;
+    }
+}
+
+function decodeFromStorage(data) {
+  try {
+    // Check if the data is base64 encoded
+    const isBase64 = /^[A-Za-z0-9+/=]+$/g.test(data.trim());
+
+    let decodedString;
+    if (isBase64) {
+      // For regular backup/restore operations
+      decodedString = decodeURIComponent(escape(atob(data)));
+    } else {
+      // For downloaded files that are already in JSON format
+      decodedString = data;
+    }
+
+    return JSON.parse(decodedString, (key, value) => {
+      if (typeof value === 'string') {
+        return value
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&apos;/g, "'")
+          .replace(/__DBLCURLY_OPEN__/g, '{{')
+          .replace(/__DBLCURLY_CLOSE__/g, '}}')
+          .replace(/__BACKSLASH__/g, '\\');
+      }
+      return value;
+    });
+  } catch (error) {
+    console.error('Decoding error:', error);
+    // Instead of throwing, return the raw data
+    return data;
+  }
+}
+
+// Utility function to safely stringify JSON
+function safeStringify(obj) {
+	try {
+		return JSON.stringify(obj, (key, value) => {
+			if (value === undefined) {
+				return '__UNDEFINED__';
+			}
+			if (Number.isNaN(value)) {
+				return '__NAN__';
+			}
+			if (value === Infinity) {
+				return '__INFINITY__';
+			}
+			if (value === -Infinity) {
+				return '__NEGATIVE_INFINITY__';
+			}
+			if (typeof value === 'function') {
+				return `__FUNCTION__${value.toString()}`;
+			}
+			if (value instanceof Date) {
+				return `__DATE__${value.toISOString()}`;
+			}
+			if (value instanceof RegExp) {
+				return `__REGEXP__${value.toString()}`;
+			}
+			return value;
+		});
+	} catch (error) {
+		console.error('Error stringifying data:', error);
+		throw error;
+	}
+}
+
+// Utility function to safely parse JSON
+function safeParse(str) {
+	try {
+		return JSON.parse(str, (key, value) => {
+			if (typeof value === 'string') {
+				if (value === '__UNDEFINED__') {
+					return undefined;
+				}
+				if (value === '__NAN__') {
+					return NaN;
+				}
+				if (value === '__INFINITY__') {
+					return Infinity;
+				}
+				if (value === '__NEGATIVE_INFINITY__') {
+					return -Infinity;
+				}
+				if (value.startsWith('__FUNCTION__')) {
+					return new Function(`return ${value.slice(12)}`)();
+				}
+				if (value.startsWith('__DATE__')) {
+					return new Date(value.slice(8));
+				}
+				if (value.startsWith('__REGEXP__')) {
+					const match = value.slice(10).match(/\/(.*?)\/([gimy]*)$/);
+					return new RegExp(match[1], match[2]);
+				}
+			}
+			return value;
+		});
+	} catch (error) {
+		console.error('Error parsing data:', error);
+		throw error;
+	}
 }
 
 // Function to create a dated backup copy, zip it, and purge old backups
