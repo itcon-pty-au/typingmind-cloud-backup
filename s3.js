@@ -1168,7 +1168,7 @@ async function importFromS3() {
 		}
 		wasImportSuccessful = true;
 	});
-
+}
 // Validate the AWS connection
 async function validateAwsCredentials(bucketName, accessKey, secretKey) {
 	const awsRegion = localStorage.getItem('aws-region');
