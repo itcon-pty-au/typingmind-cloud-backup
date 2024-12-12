@@ -1,5 +1,5 @@
 <div align="center">⚠️ Important Notice ⚠️<br/><br/>
-Please ensure that your Amazon S3 CORS configuration is updated to address issues with Multipart uploads. Refer Step 6 in AWS Config below.</div>
+Please ensure that your Amazon S3 CORS configuration is updated to address issues with Multipart uploads. Refer Step 5 in AWS Config below.</div>
 
 # TypingMind Cloud Backup Extension
 
@@ -66,7 +66,7 @@ WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXP
 ``
 Update AWS Account ID, IAM username and AWS bucket name in the policy with your specific values.
 
-6. Open Bucket > Permissions > CORS
+5. Open Bucket > Permissions > CORS
 ``
 [
     {
