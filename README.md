@@ -34,34 +34,34 @@ WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXP
 4. Open Bucket > Permissions > Bucket Policy
 ```yaml
 {
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Principal": {
-                "AWS": "arn:aws:iam::<AWS Account ID>:user/<IAM username>"
-            },
-            "Action": [
-                "s3:ListBucket",
-                "s3:GetObject",
-                "s3:PutObject",
-                "s3:DeleteObject"
-            ],
-            "Resource": [
-                "arn:aws:s3:::<AWS bucket name>",
-                "arn:aws:s3:::<AWS bucket name>/*"
-            ]
-        },
-    		{
-                "Sid": "PreventSpecificFileDeletion",
-                "Effect": "Deny",
-                "Principal": {
-                    "AWS": "arn:aws:iam::<AWS Account ID>:user/<IAM username>"
-                },
-                "Action": "s3:DeleteObject",
-                "Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json"
-       }
-    ]
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::<AWS Account ID>:user/<IAM username>"
+      },
+      "Action": [
+        "s3:ListBucket",
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::<AWS bucket name>",
+        "arn:aws:s3:::<AWS bucket name>/*"
+      ]
+    },
+    {
+      "Sid": "PreventSpecificFileDeletion",
+      "Effect": "Deny",
+      "Principal": {
+        "AWS": "arn:aws:iam::<AWS Account ID>:user/<IAM username>"
+      },
+      "Action": "s3:DeleteObject",
+      "Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json"
+    }
+  ]
 }
 ```
 Update AWS Account ID, IAM username and AWS bucket name in the policy with your specific values.
@@ -69,50 +69,25 @@ Update AWS Account ID, IAM username and AWS bucket name in the policy with your 
 5. Open Bucket > Permissions > CORS
 ```yaml
 [
-    {
-        "AllowedHeaders": [
-            "*"
-        ],
-        "AllowedMethods": [
-            "HEAD",
-            "GET",
-            "PUT",
-            "POST",
-            "DELETE"
-        ],
-        "AllowedOrigins": [
-            "https://*.hostname.com"
-        ],
-        "ExposeHeaders": [
-            "Access-Control-Allow-Origin"
-        ],
-        "MaxAgeSeconds": 3000
-    }
+  {
+    "AllowedHeaders": ["*"],
+    "AllowedMethods": ["HEAD", "GET", "PUT", "POST", "DELETE"],
+    "AllowedOrigins": ["https://*.hostname.com"],
+    "ExposeHeaders": ["Access-Control-Allow-Origin"],
+    "MaxAgeSeconds": 3000
+  }
 ]
 ```
 If you are using typingmind cloud, use the below
 ```yaml
 [
-    {
-        "AllowedHeaders": [
-            "*"
-        ],
-        "AllowedMethods": [
-            "HEAD",
-            "GET",
-            "PUT",
-            "POST",
-            "DELETE"
-        ],
-        "AllowedOrigins": [
-            "https://www.typingmind.com"
-        ],
-        "ExposeHeaders": [
-            "Access-Control-Allow-Origin",
-            "ETag"
-        ],
-        "MaxAgeSeconds": 3000
-    }
+  {
+    "AllowedHeaders": ["*"],
+    "AllowedMethods": ["HEAD", "GET", "PUT", "POST", "DELETE"],
+    "AllowedOrigins": ["https://www.typingmind.com"],
+    "ExposeHeaders": ["Access-Control-Allow-Origin", "ETag"],
+    "MaxAgeSeconds": 3000
+  }
 ]
 ```
 Update "https://*.hostname.com" with your specific hostname in case you are self hosting Typingmind (e.g. https://chat.yourhostname.com). If you are using Typingmind cloud, hostname should be https://www.typingmind.com. This restricts executing S3 commands from only the specified hostname providing better security.
