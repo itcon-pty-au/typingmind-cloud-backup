@@ -957,6 +957,9 @@ async function backupToS3() {
           const progress = Math.round((start + chunkSize) / dataSize * 100);
           console.log(`Upload progress: ${Math.min(progress, 100)}%`);
         }
+
+	const sortedParts = uploadedParts
+  		.sort((a, b) => a.PartNumber - b.PartNumber);
 	      
         // Complete the multipart upload
 	const completeParams = {
