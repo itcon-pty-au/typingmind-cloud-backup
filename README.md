@@ -32,7 +32,7 @@ WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXP
 2. Open the user. Create Access Key for the user. In Step 1, select "Other", you can skip Step 2 and directly create Access Key. Copy the Access key and Secret Key and store it securely. You will need this to configure the extension.
 3. Create a bucket with the default settings. Due to security reasons, it is recommended to create a new bucket for Typingmind backup and ensure that no other files are stored in it.
 4. Open Bucket > Permissions > Bucket Policy
-``
+```yaml
 {
     "Version": "2012-10-17",
     "Statement": [
@@ -63,11 +63,11 @@ WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXP
        }
     ]
 }
-``
+```
 Update AWS Account ID, IAM username and AWS bucket name in the policy with your specific values.
 
 5. Open Bucket > Permissions > CORS
-``
+```yaml
 [
     {
         "AllowedHeaders": [
@@ -89,9 +89,9 @@ Update AWS Account ID, IAM username and AWS bucket name in the policy with your 
         "MaxAgeSeconds": 3000
     }
 ]
-``
+```
 If you are using typingmind cloud, use the below
-``
+```yaml
 [
     {
         "AllowedHeaders": [
@@ -114,7 +114,7 @@ If you are using typingmind cloud, use the below
         "MaxAgeSeconds": 3000
     }
 ]
-``
+```
 Update "https://*.hostname.com" with your specific hostname in case you are self hosting Typingmind (e.g. https://chat.yourhostname.com). If you are using Typingmind cloud, hostname should be https://www.typingmind.com. This restricts executing S3 commands from only the specified hostname providing better security.
 
 ## About me
