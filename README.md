@@ -1,5 +1,5 @@
 <div align="center">⚠️ Important Notice ⚠️<br/><br/>
-Please ensure that your Amazon S3 CORS configuration is updated to address issues with Multipart uploads. Refer Step 5 in AWS Config below.</div>
+Please ensure that your Amazon S3 CORS configuration is updated to address issues with Multipart uploads. Refer Step 5 in AWS Config below. "ETag" needs to be added in ExposeHeaders section. </div>
 
 # TypingMind Cloud Backup Extension
 
