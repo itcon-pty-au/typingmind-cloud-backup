@@ -73,7 +73,7 @@ Update AWS Account ID, IAM username and AWS bucket name in the policy with your 
     "AllowedHeaders": ["*"],
     "AllowedMethods": ["HEAD", "GET", "PUT", "POST", "DELETE"],
     "AllowedOrigins": ["https://*.hostname.com"],
-    "ExposeHeaders": ["Access-Control-Allow-Origin"],
+    "ExposeHeaders": ["Access-Control-Allow-Origin", "ETag"],
     "MaxAgeSeconds": 3000
   }
 ]
