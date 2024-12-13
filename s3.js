@@ -887,7 +887,7 @@ async function backupToS3() {
 
     if (dataSize > chunkSize) {
       try {
-        console.log('Starting Multipart upload to S3');
+        //console.log('Starting Multipart upload to S3');
         const createMultipartParams = {
           Bucket: bucketName,
           Key: 'typingmind-backup.json',
@@ -929,7 +929,7 @@ async function backupToS3() {
                 ETag: uploadResult.ETag,
                 PartNumber: partNumber
               });
-              console.log(`Part ${partNumber} uploaded successfully with ETag: ${uploadResult.ETag}`);
+              //console.log(`Part ${partNumber} uploaded successfully with ETag: ${uploadResult.ETag}`);
               break; // Success, exit retry loop
             } catch (error) {
               console.error(`Error uploading part ${partNumber}:`, error);
@@ -955,7 +955,7 @@ async function backupToS3() {
           
           // Update progress
           const progress = Math.round((start + chunkSize) / dataSize * 100);
-          console.log(`Upload progress: ${Math.min(progress, 100)}%`);
+          //console.log(`Upload progress: ${Math.min(progress, 100)}%`);
         }
 
 	const sortedParts = uploadedParts
@@ -974,10 +974,10 @@ async function backupToS3() {
 	  }
 	};
 
-	console.log('Complete Multipart Upload Request:', JSON.stringify(completeParams, null, 2));
+	//console.log('Complete Multipart Upload Request:', JSON.stringify(completeParams, null, 2));
 
         await s3.completeMultipartUpload(completeParams).promise();
-        console.log('Multipart upload completed successfully');
+        //console.log('Multipart upload completed successfully');
       } catch (error) {
         console.error('Multipart upload failed:', error);
         // Fall back to regular upload if multipart fails
