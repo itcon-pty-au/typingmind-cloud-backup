@@ -4,44 +4,44 @@ const TIME_BACKUP_INTERVAL = 15;
 const TIME_BACKUP_FILE_PREFIX = `T-${TIME_BACKUP_INTERVAL}`;
 
 (async function checkDOMOrRunBackup() {
-	if (document.readyState === 'complete') {
-		await handleDOMReady();
-	} else {
-		window.addEventListener('load', handleDOMReady);
-	}
+  if (document.readyState === 'complete') {
+    await handleDOMReady();
+  } else {
+    window.addEventListener('load', handleDOMReady);
+  }
 })();
 
 async function handleDOMReady() {
-	window.removeEventListener('load', handleDOMReady);
-	var importSuccessful = await checkAndImportBackup();
-	const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
-	const today = new Date();
-	const currentDateSuffix = `${today.getFullYear()}${String(
-		today.getMonth() + 1
-	).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-	const currentTime = new Date().toLocaleString();
-	const lastSync = localStorage.getItem('last-cloud-sync');
-	var element = document.getElementById('last-sync-msg');
+  window.removeEventListener('load', handleDOMReady);
+  var importSuccessful = await checkAndImportBackup();
+  const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
+  const today = new Date();
+  const currentDateSuffix = `${today.getFullYear()}${String(
+    today.getMonth() + 1
+  ).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+  const currentTime = new Date().toLocaleString();
+  const lastSync = localStorage.getItem('last-cloud-sync');
+  var element = document.getElementById('last-sync-msg');
 
-	if (lastSync && importSuccessful) {
-		if (element !== null) {
-			element.innerText = `Last sync done at ${currentTime}`;
-			element = null;
-		}
-		if (!storedSuffix || currentDateSuffix > storedSuffix) {
-			await handleBackupFiles();
-		}
-		startBackupInterval();
-	} else if (!backupIntervalRunning) {
-		startBackupInterval();
-	}
+  if (lastSync && importSuccessful) {
+    if (element !== null) {
+      element.innerText = `Last sync done at ${currentTime}`;
+      element = null;
+    }
+    if (!storedSuffix || currentDateSuffix > storedSuffix) {
+      await handleBackupFiles();
+    }
+    startBackupInterval();
+  } else if (!backupIntervalRunning) {
+    startBackupInterval();
+  }
 }
 
 // Create a new button
 const cloudSyncBtn = document.createElement('button');
 cloudSyncBtn.setAttribute('data-element-id', 'cloud-sync-button');
 cloudSyncBtn.className =
-	'cursor-default group flex items-center justify-center p-1 text-sm font-medium flex-col group focus:outline-0 focus:text-white text-white/70';
+  'cursor-default group flex items-center justify-center p-1 text-sm font-medium flex-col group focus:outline-0 focus:text-white text-white/70';
 
 const cloudIconSVG = `
 <svg class="w-6 h-6 flex-shrink-0" width="24px" height="24px" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -56,47 +56,47 @@ textSpan.innerText = 'Backup';
 
 const iconSpan = document.createElement('span');
 iconSpan.className =
-	'block group-hover:bg-white/30 w-[35px] h-[35px] transition-all rounded-lg flex items-center justify-center group-hover:text-white/90';
+  'block group-hover:bg-white/30 w-[35px] h-[35px] transition-all rounded-lg flex items-center justify-center group-hover:text-white/90';
 iconSpan.innerHTML = cloudIconSVG;
 
 cloudSyncBtn.appendChild(iconSpan);
 cloudSyncBtn.appendChild(textSpan);
 
 function insertCloudSyncButton() {
-	const teamsButton = document.querySelector(
-		'[data-element-id="workspace-tab-teams"]'
-	);
+  const teamsButton = document.querySelector(
+    '[data-element-id="workspace-tab-teams"]'
+  );
 
-	if (teamsButton && teamsButton.parentNode) {
-		teamsButton.parentNode.insertBefore(cloudSyncBtn, teamsButton.nextSibling);
-		return true;
-	}
-	return false;
+  if (teamsButton && teamsButton.parentNode) {
+    teamsButton.parentNode.insertBefore(cloudSyncBtn, teamsButton.nextSibling);
+    return true;
+  }
+  return false;
 }
 
 const observer = new MutationObserver((mutations) => {
-	if (insertCloudSyncButton()) {
-		observer.disconnect();
-	}
+  if (insertCloudSyncButton()) {
+    observer.disconnect();
+  }
 });
 
 observer.observe(document.body, {
-	childList: true,
-	subtree: true,
+  childList: true,
+  subtree: true,
 });
 
 const maxAttempts = 10;
 let attempts = 0;
 const interval = setInterval(() => {
-	if (insertCloudSyncButton() || attempts >= maxAttempts) {
-		clearInterval(interval);
-	}
-	attempts++;
+  if (insertCloudSyncButton() || attempts >= maxAttempts) {
+    clearInterval(interval);
+  }
+  attempts++;
 }, 1000);
 
 // Attach modal to new button
 cloudSyncBtn.addEventListener('click', function () {
-	openSyncModal();
+  openSyncModal();
 });
 
 // New Popup
@@ -105,19 +105,19 @@ let isExportInProgress = false;
 let backupInterval;
 
 function openSyncModal() {
-	var existingModal = document.querySelector(
-		'div[data-element-id="sync-modal-dbbackup"]'
-	);
-	if (existingModal) {
-		return;
-	}
-	var modalPopup = document.createElement('div');
-	modalPopup.style.paddingLeft = '10px';
-	modalPopup.style.paddingRight = '10px';
-	modalPopup.setAttribute('data-element-id', 'sync-modal-dbbackup');
-	modalPopup.className =
-		'bg-opacity-75 fixed inset-0 bg-gray-800 transition-all flex items-center justify-center z-[60]';
-	modalPopup.innerHTML = `
+  var existingModal = document.querySelector(
+    'div[data-element-id="sync-modal-dbbackup"]'
+  );
+  if (existingModal) {
+    return;
+  }
+  var modalPopup = document.createElement('div');
+  modalPopup.style.paddingLeft = '10px';
+  modalPopup.style.paddingRight = '10px';
+  modalPopup.setAttribute('data-element-id', 'sync-modal-dbbackup');
+  modalPopup.className =
+    'bg-opacity-75 fixed inset-0 bg-gray-800 transition-all flex items-center justify-center z-[60]';
+  modalPopup.innerHTML = `
         <div class="inline-block w-full align-bottom bg-white dark:bg-zinc-950 rounded-lg px-4 pb-4 text-left shadow-xl transform transition-all sm:my-8 sm:p-6 sm:align-middle pt-4 overflow-hidden sm:max-w-lg">
             <div class="text-gray-800 dark:text-white text-left text-sm">
                 <div class="flex justify-center items-center mb-4">
@@ -152,6 +152,9 @@ function openSyncModal() {
             </button>
             <button id="restore-backup-btn" class="z-1 px-3 py-2 text-sm text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
                 Restore
+            </button>
+            <button id="delete-backup-btn" class="z-1 px-3 py-2 text-sm text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                Delete
             </button>
         </div>
     </div>
@@ -212,647 +215,661 @@ function openSyncModal() {
                 </div>
             </div>
         </div>`;
-	document.body.appendChild(modalPopup);
-	loadBackupFiles();
+  document.body.appendChild(modalPopup);
+  loadBackupFiles();
 
-	const awsBucketInput = document.getElementById('aws-bucket');
-	const awsRegionInput = document.getElementById('aws-region');
-	const awsAccessKeyInput = document.getElementById('aws-access-key');
-	const awsSecretKeyInput = document.getElementById('aws-secret-key');
-	const awsEndpointInput = document.getElementById('aws-endpoint');
-	const savedBucket = localStorage.getItem('aws-bucket');
-	const savedRegion = localStorage.getItem('aws-region');
-	const savedAccessKey = localStorage.getItem('aws-access-key');
-	const savedSecretKey = localStorage.getItem('aws-secret-key');
-	const savedEndpoint = localStorage.getItem('aws-endpoint');
-	const lastSync = localStorage.getItem('last-cloud-sync');
+  const awsBucketInput = document.getElementById('aws-bucket');
+  const awsRegionInput = document.getElementById('aws-region');
+  const awsAccessKeyInput = document.getElementById('aws-access-key');
+  const awsSecretKeyInput = document.getElementById('aws-secret-key');
+  const awsEndpointInput = document.getElementById('aws-endpoint');
+  const savedBucket = localStorage.getItem('aws-bucket');
+  const savedRegion = localStorage.getItem('aws-region');
+  const savedAccessKey = localStorage.getItem('aws-access-key');
+  const savedSecretKey = localStorage.getItem('aws-secret-key');
+  const savedEndpoint = localStorage.getItem('aws-endpoint');
+  const lastSync = localStorage.getItem('last-cloud-sync');
 
-	if (savedBucket) awsBucketInput.value = savedBucket;
-	if (savedRegion) awsRegionInput.value = savedRegion;
-	if (savedAccessKey) awsAccessKeyInput.value = savedAccessKey;
-	if (savedSecretKey) awsSecretKeyInput.value = savedSecretKey;
-	if (savedEndpoint) awsEndpointInput.value = savedEndpoint;
-	const currentTime = new Date().toLocaleString();
-	var element = document.getElementById('last-sync-msg');
-	if (lastSync) {
-		if (element !== null) {
-			element.innerText = `Last sync done at ${currentTime}`;
-			element = null;
-		}
-	}
+  if (savedBucket) awsBucketInput.value = savedBucket;
+  if (savedRegion) awsRegionInput.value = savedRegion;
+  if (savedAccessKey) awsAccessKeyInput.value = savedAccessKey;
+  if (savedSecretKey) awsSecretKeyInput.value = savedSecretKey;
+  if (savedEndpoint) awsEndpointInput.value = savedEndpoint;
+  const currentTime = new Date().toLocaleString();
+  var element = document.getElementById('last-sync-msg');
+  if (lastSync) {
+    if (element !== null) {
+      element.innerText = `Last sync done at ${currentTime}`;
+      element = null;
+    }
+  }
 
-	function updateButtonState() {
-		const isDisabled =
-			!awsBucketInput.value.trim() ||
-			!awsRegionInput.value.trim() ||
-			!awsAccessKeyInput.value.trim() ||
-			!awsSecretKeyInput.value.trim();
-		document.getElementById('export-to-s3-btn').disabled = isDisabled;
-		document.getElementById('import-from-s3-btn').disabled = isDisabled;
-		document.getElementById('save-aws-details-btn').disabled = isDisabled;
-		document.getElementById('snapshot-btn').disabled = isDisabled;
-	}
+  function updateButtonState() {
+    const isDisabled =
+      !awsBucketInput.value.trim() ||
+      !awsRegionInput.value.trim() ||
+      !awsAccessKeyInput.value.trim() ||
+      !awsSecretKeyInput.value.trim();
+    document.getElementById('export-to-s3-btn').disabled = isDisabled;
+    document.getElementById('import-from-s3-btn').disabled = isDisabled;
+    document.getElementById('save-aws-details-btn').disabled = isDisabled;
+    document.getElementById('snapshot-btn').disabled = isDisabled;
+  }
 
-	modalPopup.addEventListener('click', function (event) {
-		if (event.target === modalPopup) {
-			modalPopup.remove();
-		}
-	});
+  modalPopup.addEventListener('click', function (event) {
+    if (event.target === modalPopup) {
+      modalPopup.remove();
+    }
+  });
 
-	awsBucketInput.addEventListener('input', updateButtonState);
-	awsRegionInput.addEventListener('input', updateButtonState);
-	awsAccessKeyInput.addEventListener('input', updateButtonState);
-	awsSecretKeyInput.addEventListener('input', updateButtonState);
-	awsEndpointInput.addEventListener('input', updateButtonState);
+  awsBucketInput.addEventListener('input', updateButtonState);
+  awsRegionInput.addEventListener('input', updateButtonState);
+  awsAccessKeyInput.addEventListener('input', updateButtonState);
+  awsSecretKeyInput.addEventListener('input', updateButtonState);
+  awsEndpointInput.addEventListener('input', updateButtonState);
 
-	updateButtonState();
+  updateButtonState();
 
-	const infoIcon = document.getElementById('info-icon');
-	const tooltip = document.getElementById('tooltip');
+  const infoIcon = document.getElementById('info-icon');
+  const tooltip = document.getElementById('tooltip');
 
-	function showTooltip() {
-		tooltip.style.removeProperty('display');
-		tooltip.classList.add('opacity-100');
-		tooltip.classList.remove('z-1');
-		tooltip.classList.add('z-2');
-		tooltip.classList.remove('opacity-0');
-	}
+  function showTooltip() {
+    tooltip.style.removeProperty('display');
+    tooltip.classList.add('opacity-100');
+    tooltip.classList.remove('z-1');
+    tooltip.classList.add('z-2');
+    tooltip.classList.remove('opacity-0');
+  }
 
-	function hideTooltip() {
-		tooltip.style.display = 'none'
-		tooltip.classList.add('opacity-0');
-		tooltip.classList.remove('z-2');
-		tooltip.classList.add('z-1');
-		tooltip.classList.remove('opacity-100');
-	}
+  function hideTooltip() {
+    tooltip.style.display = 'none'
+    tooltip.classList.add('opacity-0');
+    tooltip.classList.remove('z-2');
+    tooltip.classList.add('z-1');
+    tooltip.classList.remove('opacity-100');
+  }
 
-	infoIcon.addEventListener('click', () => {
-		const isVisible = tooltip.classList.contains('opacity-100');
-		if (isVisible) {
-			hideTooltip();
-		} else {
-			showTooltip();
-		}
-	});
+  infoIcon.addEventListener('click', () => {
+    const isVisible = tooltip.classList.contains('opacity-100');
+    if (isVisible) {
+      hideTooltip();
+    } else {
+      showTooltip();
+    }
+  });
 
-	document
-		.getElementById('backup-files')
-		.addEventListener('change', updateBackupButtons);
-	document
-		.getElementById('download-backup-btn')
-		.addEventListener('click', downloadBackupFile);
-	document
-		.getElementById('restore-backup-btn')
-		.addEventListener('click', restoreBackupFile);
-	document
-		.getElementById('refresh-backups-btn')
-		.addEventListener('click', loadBackupFiles);
+  document
+    .getElementById('backup-files')
+    .addEventListener('change', updateBackupButtons);
+  document
+    .getElementById('download-backup-btn')
+    .addEventListener('click', downloadBackupFile);
+  document
+    .getElementById('restore-backup-btn')
+    .addEventListener('click', restoreBackupFile);
+  document
+    .getElementById('refresh-backups-btn')
+    .addEventListener('click', loadBackupFiles);
+  document
+    .getElementById('delete-backup-btn')
+    .addEventListener('click', deleteBackupFile);
 
-	// Save button click handler
-	document
-		.getElementById('save-aws-details-btn')
-		.addEventListener('click', async function () {
-			let extensionURLs = JSON.parse(
-				localStorage.getItem('TM_useExtensionURLs') || '[]'
-			);
-			if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
-				extensionURLs.push(
-					'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
-				);
-				localStorage.setItem(
-					'TM_useExtensionURLs',
-					JSON.stringify(extensionURLs)
-				);
-			}
-			const bucketName = awsBucketInput.value.trim();
-			const region = awsRegionInput.value.trim();
-			const accessKey = awsAccessKeyInput.value.trim();
-			const secretKey = awsSecretKeyInput.value.trim();
-			const endpoint = awsEndpointInput.value.trim();
+  // Save button click handler
+  document
+    .getElementById('save-aws-details-btn')
+    .addEventListener('click', async function () {
+      let extensionURLs = JSON.parse(
+        localStorage.getItem('TM_useExtensionURLs') || '[]'
+      );
+      if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
+        extensionURLs.push(
+          'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
+        );
+        localStorage.setItem(
+          'TM_useExtensionURLs',
+          JSON.stringify(extensionURLs)
+        );
+      }
+      const bucketName = awsBucketInput.value.trim();
+      const region = awsRegionInput.value.trim();
+      const accessKey = awsAccessKeyInput.value.trim();
+      const secretKey = awsSecretKeyInput.value.trim();
+      const endpoint = awsEndpointInput.value.trim();
 
-			localStorage.setItem('aws-region', region);
-			localStorage.setItem('aws-endpoint', endpoint);
+      localStorage.setItem('aws-region', region);
+      localStorage.setItem('aws-endpoint', endpoint);
 
-			try {
-				await validateAwsCredentials(bucketName, accessKey, secretKey);
-				localStorage.setItem('aws-bucket', bucketName);
-				localStorage.setItem('aws-access-key', accessKey);
-				localStorage.setItem('aws-secret-key', secretKey);
-				const actionMsgElement = document.getElementById('action-msg');
-				actionMsgElement.textContent = 'AWS details saved!';
-				actionMsgElement.style.color = 'white';
-				setTimeout(() => {
-					actionMsgElement.textContent = '';
-				}, 3000);
-				updateButtonState();
-				updateBackupButtons();
-				await loadBackupFiles();
-				var importSuccessful = await checkAndImportBackup();
-				const currentTime = new Date().toLocaleString();
-				const lastSync = localStorage.getItem('last-cloud-sync');
-				var element = document.getElementById('last-sync-msg');
-				if (lastSync && importSuccessful) {
-					if (element !== null) {
-						element.innerText = `Last sync done at ${currentTime}`;
-						element = null;
-					}
-				}
-				startBackupInterval();
-			} catch (err) {
-				const actionMsgElement = document.getElementById('action-msg');
-				actionMsgElement.textContent = `Invalid AWS details: ${err.message}`;
-				actionMsgElement.style.color = 'red';
-				localStorage.setItem('aws-bucket', '');
-				localStorage.setItem('aws-access-key', '');
-				localStorage.setItem('aws-secret-key', '');
-				clearInterval(backupInterval);
-			}
-		});
+      try {
+        await validateAwsCredentials(bucketName, accessKey, secretKey);
+        localStorage.setItem('aws-bucket', bucketName);
+        localStorage.setItem('aws-access-key', accessKey);
+        localStorage.setItem('aws-secret-key', secretKey);
+        const actionMsgElement = document.getElementById('action-msg');
+        actionMsgElement.textContent = 'AWS details saved!';
+        actionMsgElement.style.color = 'white';
+        setTimeout(() => {
+          actionMsgElement.textContent = '';
+        }, 3000);
+        updateButtonState();
+        updateBackupButtons();
+        await loadBackupFiles();
+        var importSuccessful = await checkAndImportBackup();
+        const currentTime = new Date().toLocaleString();
+        const lastSync = localStorage.getItem('last-cloud-sync');
+        var element = document.getElementById('last-sync-msg');
+        if (lastSync && importSuccessful) {
+          if (element !== null) {
+            element.innerText = `Last sync done at ${currentTime}`;
+            element = null;
+          }
+        }
+        startBackupInterval();
+      } catch (err) {
+        const actionMsgElement = document.getElementById('action-msg');
+        actionMsgElement.textContent = `Invalid AWS details: ${err.message}`;
+        actionMsgElement.style.color = 'red';
+        localStorage.setItem('aws-bucket', '');
+        localStorage.setItem('aws-access-key', '');
+        localStorage.setItem('aws-secret-key', '');
+        clearInterval(backupInterval);
+      }
+    });
 
-	// Export button click handler
-	document
-		.getElementById('export-to-s3-btn')
-		.addEventListener('click', async function () {
-			isExportInProgress = true;
-			await backupToS3();
-			isExportInProgress = false;
-		});
+  // Export button click handler
+  document
+    .getElementById('export-to-s3-btn')
+    .addEventListener('click', async function () {
+      isExportInProgress = true;
+      await backupToS3();
+      isExportInProgress = false;
+    });
 
-	// Import button click handler
-	document
-		.getElementById('import-from-s3-btn')
-		.addEventListener('click', async function () {
-			await importFromS3();
-			wasImportSuccessful = true;
-		});
+  // Import button click handler
+  document
+    .getElementById('import-from-s3-btn')
+    .addEventListener('click', async function () {
+      await importFromS3();
+      wasImportSuccessful = true;
+    });
 
-	// Snapshot button click handler
-	// Inside openSyncModal function
-	document
-		.getElementById('snapshot-btn')
-		.addEventListener('click', async function () {
-			const now = new Date();
-			const timestamp =
-				now.getFullYear() +
-				String(now.getMonth() + 1).padStart(2, '0') +
-				String(now.getDate()).padStart(2, '0') +
-				'T' +
-				String(now.getHours()).padStart(2, '0') +
-				String(now.getMinutes()).padStart(2, '0') +
-				String(now.getSeconds()).padStart(2, '0');
+  // Snapshot button click handler
+  // Inside openSyncModal function
+  document
+    .getElementById('snapshot-btn')
+    .addEventListener('click', async function () {
+      const now = new Date();
+      const timestamp =
+        now.getFullYear() +
+        String(now.getMonth() + 1).padStart(2, '0') +
+        String(now.getDate()).padStart(2, '0') +
+        'T' +
+        String(now.getHours()).padStart(2, '0') +
+        String(now.getMinutes()).padStart(2, '0') +
+        String(now.getSeconds()).padStart(2, '0');
 
-			const bucketName = localStorage.getItem('aws-bucket');
-			const data = await exportBackupData();
-			const dataStr = JSON.stringify(data);
+      const bucketName = localStorage.getItem('aws-bucket');
+      const data = await exportBackupData();
+      const dataStr = JSON.stringify(data);
 
-			try {
-				// Load JSZip
-				const jszip = await loadJSZip();
-				const zip = new jszip();
+      try {
+        // Load JSZip
+        const jszip = await loadJSZip();
+        const zip = new jszip();
 
-				// Add the JSON data to the zip file
-				zip.file(`Snapshot_${timestamp}.json`, dataStr, {
-					compression: 'DEFLATE',
-					compressionOptions: {
-						level: 9,
-					},
-				});
+        // Add the JSON data to the zip file
+        zip.file(`Snapshot_${timestamp}.json`, dataStr, {
+          compression: 'DEFLATE',
+          compressionOptions: {
+            level: 9,
+          },
+        });
 
-				// Generate the zip content
-				const compressedContent = await zip.generateAsync({ type: 'blob' });
+        // Generate the zip content
+        const compressedContent = await zip.generateAsync({ type: 'blob' });
 
-				const s3 = new AWS.S3();
-				const putParams = {
-					Bucket: bucketName,
-					Key: `Snapshot_${timestamp}.zip`,
-					Body: compressedContent,
-					ContentType: 'application/zip',
-				};
+        const s3 = new AWS.S3();
+        const putParams = {
+          Bucket: bucketName,
+          Key: `Snapshot_${timestamp}.zip`,
+          Body: compressedContent,
+          ContentType: 'application/zip',
+        };
 
-				await s3.putObject(putParams).promise();
+        await s3.putObject(putParams).promise();
 
-				// Update last sync message with snapshot status
-				const lastSyncElement = document.getElementById('last-sync-msg');
-				const currentTime = new Date().toLocaleString();
-				lastSyncElement.textContent = `Snapshot successfully saved to the cloud at ${currentTime}`;
+        // Update last sync message with snapshot status
+        const lastSyncElement = document.getElementById('last-sync-msg');
+        const currentTime = new Date().toLocaleString();
+        lastSyncElement.textContent = `Snapshot successfully saved to the cloud at ${currentTime}`;
 
-				// Revert back to regular sync status after 3 seconds
-				setTimeout(() => {
-					const lastSync = localStorage.getItem('last-cloud-sync');
-					if (lastSync) {
-						lastSyncElement.textContent = `Last sync done at ${lastSync}`;
-					}
-				}, 3000);
-			} catch (error) {
-				const lastSyncElement = document.getElementById('last-sync-msg');
-				lastSyncElement.textContent = `Error creating snapshot: ${error.message}`;
+        // Revert back to regular sync status after 3 seconds
+        setTimeout(() => {
+          const lastSync = localStorage.getItem('last-cloud-sync');
+          if (lastSync) {
+            lastSyncElement.textContent = `Last sync done at ${lastSync}`;
+          }
+        }, 3000);
+      } catch (error) {
+        const lastSyncElement = document.getElementById('last-sync-msg');
+        lastSyncElement.textContent = `Error creating snapshot: ${error.message}`;
 
-				// Revert back to regular sync status after 3 seconds
-				setTimeout(() => {
-					const lastSync = localStorage.getItem('last-cloud-sync');
-					if (lastSync) {
-						lastSyncElement.textContent = `Last sync done at ${lastSync}`;
-					}
-				}, 3000);
-			}
-		});
+        // Revert back to regular sync status after 3 seconds
+        setTimeout(() => {
+          const lastSync = localStorage.getItem('last-cloud-sync');
+          if (lastSync) {
+            lastSyncElement.textContent = `Last sync done at ${lastSync}`;
+          }
+        }, 3000);
+      }
+    });
 }
 
 // Visibility change event listener
 document.addEventListener('visibilitychange', async () => {
-	if (!document.hidden) {
-		var importSuccessful = await checkAndImportBackup();
-		const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
-		const today = new Date();
-		const currentDateSuffix = `${today.getFullYear()}${String(
-			today.getMonth() + 1
-		).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-		const currentTime = new Date().toLocaleString();
-		const lastSync = localStorage.getItem('last-cloud-sync');
-		var element = document.getElementById('last-sync-msg');
+  if (!document.hidden) {
+    var importSuccessful = await checkAndImportBackup();
+    const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
+    const today = new Date();
+    const currentDateSuffix = `${today.getFullYear()}${String(
+      today.getMonth() + 1
+    ).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+    const currentTime = new Date().toLocaleString();
+    const lastSync = localStorage.getItem('last-cloud-sync');
+    var element = document.getElementById('last-sync-msg');
 
-		if (lastSync && importSuccessful) {
-			if (element !== null) {
-				element.innerText = `Last sync done at ${currentTime}`;
-				element = null;
-			}
-			if (!storedSuffix || currentDateSuffix > storedSuffix) {
-				await handleBackupFiles();
-			}
-			if (
-				!backupIntervalRunning &&
-				localStorage.getItem('activeTabBackupRunning') !== 'true'
-			) {
-				startBackupInterval();
-			}
-		}
-	} else {
-		localStorage.setItem('activeTabBackupRunning', 'false');
-		clearInterval(backupInterval);
-		backupIntervalRunning = false;
-	}
+    if (lastSync && importSuccessful) {
+      if (element !== null) {
+        element.innerText = `Last sync done at ${currentTime}`;
+        element = null;
+      }
+      if (!storedSuffix || currentDateSuffix > storedSuffix) {
+        await handleBackupFiles();
+      }
+      if (
+        !backupIntervalRunning &&
+        localStorage.getItem('activeTabBackupRunning') !== 'true'
+      ) {
+        startBackupInterval();
+      }
+    }
+  } else {
+    localStorage.setItem('activeTabBackupRunning', 'false');
+    clearInterval(backupInterval);
+    backupIntervalRunning = false;
+  }
 });
 
 // Time based backup creates a rolling backup every X minutes. Default is 15 minutes
 // Update parameter 'TIME_BACKUP_INTERVAL' in the beginning of the code to customize this
 // This is to provide a secondary backup option in case of unintended corruption of the backup file
 async function handleTimeBasedBackup() {
-	const bucketName = localStorage.getItem('aws-bucket');
-	let lastTimeBackup = localStorage.getItem('last-time-based-no-touch-backup');
-	const currentTime = new Date().getTime();
+  const bucketName = localStorage.getItem('aws-bucket');
+  let lastTimeBackup = localStorage.getItem('last-time-based-no-touch-backup');
+  const currentTime = new Date().getTime();
 
-	if (!lastTimeBackup) {
-		localStorage.setItem(
-			'last-time-based-no-touch-backup',
-			new Date().toLocaleString()
-		);
-		lastTimeBackup = '0';
-	}
+  if (!lastTimeBackup) {
+    localStorage.setItem(
+      'last-time-based-no-touch-backup',
+      new Date().toLocaleString()
+    );
+    lastTimeBackup = '0';
+  }
 
-	if (
-		lastTimeBackup === '0' ||
-		currentTime - new Date(lastTimeBackup).getTime() >=
-			TIME_BACKUP_INTERVAL * 60 * 1000
-	) {
-		const s3 = new AWS.S3();
+  if (
+    lastTimeBackup === '0' ||
+    currentTime - new Date(lastTimeBackup).getTime() >=
+    TIME_BACKUP_INTERVAL * 60 * 1000
+  ) {
+    const s3 = new AWS.S3();
 
-		try {
-			const data = await exportBackupData();
-			const dataStr = JSON.stringify(data);
-			const jszip = await loadJSZip();
-			const zip = new jszip();
-			zip.file(`${TIME_BACKUP_FILE_PREFIX}.json`, dataStr, {
-				compression: 'DEFLATE',
-				compressionOptions: {
-					level: 9,
-				},
-			});
+    try {
+      const data = await exportBackupData();
+      const dataStr = JSON.stringify(data);
+      const jszip = await loadJSZip();
+      const zip = new jszip();
+      zip.file(`${TIME_BACKUP_FILE_PREFIX}.json`, dataStr, {
+        compression: 'DEFLATE',
+        compressionOptions: {
+          level: 9,
+        },
+      });
 
-			const compressedContent = await zip.generateAsync({ type: 'blob' });
-			const uploadParams = {
-				Bucket: bucketName,
-				Key: `${TIME_BACKUP_FILE_PREFIX}.zip`,
-				Body: compressedContent,
-				ContentType: 'application/zip',
-			};
+      const compressedContent = await zip.generateAsync({ type: 'blob' });
+      const uploadParams = {
+        Bucket: bucketName,
+        Key: `${TIME_BACKUP_FILE_PREFIX}.zip`,
+        Body: compressedContent,
+        ContentType: 'application/zip',
+      };
 
-			await s3.putObject(uploadParams).promise();
-			localStorage.setItem(
-				'last-time-based-no-touch-backup',
-				new Date(currentTime).toLocaleString()
-			);
-		} catch (error) {
-			console.error('Error creating time-based backup:', error);
-		}
-	}
+      await s3.putObject(uploadParams).promise();
+      localStorage.setItem(
+        'last-time-based-no-touch-backup',
+        new Date(currentTime).toLocaleString()
+      );
+    } catch (error) {
+      console.error('Error creating time-based backup:', error);
+    }
+  }
 }
 
 // Function to check for backup file and import it
 async function checkAndImportBackup() {
-	const bucketName = localStorage.getItem('aws-bucket');
-	const awsRegion = localStorage.getItem('aws-region');
-	const awsAccessKey = localStorage.getItem('aws-access-key');
-	const awsSecretKey = localStorage.getItem('aws-secret-key');
-	const awsEndpoint = localStorage.getItem('aws-endpoint');
+  const bucketName = localStorage.getItem('aws-bucket');
+  const awsRegion = localStorage.getItem('aws-region');
+  const awsAccessKey = localStorage.getItem('aws-access-key');
+  const awsSecretKey = localStorage.getItem('aws-secret-key');
+  const awsEndpoint = localStorage.getItem('aws-endpoint');
 
-	if (bucketName && awsAccessKey && awsSecretKey) {
-		if (typeof AWS === 'undefined') {
-			await loadAwsSdk();
-		}
+  if (bucketName && awsAccessKey && awsSecretKey) {
+    if (typeof AWS === 'undefined') {
+      await loadAwsSdk();
+    }
 
-		const awsConfig = {
-			accessKeyId: awsAccessKey,
-			secretAccessKey: awsSecretKey,
-			region: awsRegion,
-		};
+    const awsConfig = {
+      accessKeyId: awsAccessKey,
+      secretAccessKey: awsSecretKey,
+      region: awsRegion,
+    };
 
-		if (awsEndpoint) {
-			awsConfig.endpoint = awsEndpoint;
-		}
+    if (awsEndpoint) {
+      awsConfig.endpoint = awsEndpoint;
+    }
 
-		AWS.config.update(awsConfig);
+    AWS.config.update(awsConfig);
 
-		const s3 = new AWS.S3();
-		const params = {
-			Bucket: bucketName,
-			Key: 'typingmind-backup.json',
-		};
+    const s3 = new AWS.S3();
+    const params = {
+      Bucket: bucketName,
+      Key: 'typingmind-backup.json',
+    };
 
-		return new Promise((resolve) => {
-			s3.getObject(params, async function (err) {
-				if (!err) {
-					await importFromS3();
-					wasImportSuccessful = true;
-					resolve(true);
-				} else {
-					if (err.code === 'NoSuchKey') {
-						alert(
-							"Backup file not found in S3! Run an adhoc 'Export to S3' first."
-						);
-					} else {
-						localStorage.setItem('aws-bucket', '');
-						localStorage.setItem('aws-access-key', '');
-						localStorage.setItem('aws-secret-key', '');
-						alert('Failed to connect to AWS. Please check your credentials.');
-					}
-					resolve(false);
-				}
-			});
-		});
-	}
-	return false;
+    return new Promise((resolve) => {
+      s3.getObject(params, async function (err) {
+        if (!err) {
+          await importFromS3();
+          wasImportSuccessful = true;
+          resolve(true);
+        } else {
+          if (err.code === 'NoSuchKey') {
+            alert(
+              "Backup file not found in S3! Run an adhoc 'Export to S3' first."
+            );
+          } else {
+            localStorage.setItem('aws-bucket', '');
+            localStorage.setItem('aws-access-key', '');
+            localStorage.setItem('aws-secret-key', '');
+            alert('Failed to connect to AWS. Please check your credentials.');
+          }
+          resolve(false);
+        }
+      });
+    });
+  }
+  return false;
 }
 
 async function loadBackupFiles() {
-	const bucketName = localStorage.getItem('aws-bucket');
-	const awsAccessKey = localStorage.getItem('aws-access-key');
-	const awsSecretKey = localStorage.getItem('aws-secret-key');
+  const bucketName = localStorage.getItem('aws-bucket');
+  const awsAccessKey = localStorage.getItem('aws-access-key');
+  const awsSecretKey = localStorage.getItem('aws-secret-key');
 
-	const select = document.getElementById('backup-files');
+  const select = document.getElementById('backup-files');
 
-	// Check if credentials are available
-	if (!bucketName || !awsAccessKey || !awsSecretKey) {
-		select.innerHTML =
-			'<option value="">Please configure AWS credentials first</option>';
-		updateBackupButtons();
-		return;
-	}
+  // Check if credentials are available
+  if (!bucketName || !awsAccessKey || !awsSecretKey) {
+    select.innerHTML =
+      '<option value="">Please configure AWS credentials first</option>';
+    updateBackupButtons();
+    return;
+  }
 
-	const s3 = new AWS.S3();
+  const s3 = new AWS.S3();
 
-	try {
-		const data = await s3.listObjectsV2({ Bucket: bucketName }).promise();
-		select.innerHTML = '';
+  try {
+    const data = await s3.listObjectsV2({ Bucket: bucketName }).promise();
+    select.innerHTML = '';
 
-		if (data.Contents.length === 0) {
-			select.innerHTML = '<option value="">No backup files found</option>';
-		} else {
-			// Sort files by last modified (newest first)
-			const files = data.Contents.sort(
-				(a, b) => b.LastModified - a.LastModified
-			);
+    if (data.Contents.length === 0) {
+      select.innerHTML = '<option value="">No backup files found</option>';
+    } else {
+      // Sort files by last modified (newest first)
+      const files = data.Contents.sort(
+        (a, b) => b.LastModified - a.LastModified
+      );
 
-			files.forEach((file) => {
-				const option = document.createElement('option');
-				option.value = file.Key;
-				option.textContent = `${file.Key} (${new Date(file.LastModified).toLocaleString()})`;
-				select.appendChild(option);
-			});
-		}
+      files.forEach((file) => {
+        const option = document.createElement('option');
+        option.value = file.Key;
+        option.textContent = `${file.Key} (${new Date(file.LastModified).toLocaleString()})`;
+        select.appendChild(option);
+      });
+    }
 
-		updateBackupButtons();
-	} catch (error) {
-		console.error('Error loading backup files:', error);
-		select.innerHTML = '<option value="">Error loading backups</option>';
-		updateBackupButtons();
-	}
+    updateBackupButtons();
+  } catch (error) {
+    console.error('Error loading backup files:', error);
+    select.innerHTML = '<option value="">Error loading backups</option>';
+    updateBackupButtons();
+  }
 }
 
 function updateBackupButtons() {
-	const select = document.getElementById('backup-files');
-	const downloadBtn = document.getElementById('download-backup-btn');
-	const restoreBtn = document.getElementById('restore-backup-btn');
-	const refreshBtn = document.getElementById('refresh-backups-btn');
+  const select = document.getElementById('backup-files');
+  const downloadBtn = document.getElementById('download-backup-btn');
+  const restoreBtn = document.getElementById('restore-backup-btn');
+  const deleteBtn = document.getElementById('delete-backup-btn');
+  const refreshBtn = document.getElementById('refresh-backups-btn');
 
-	const bucketConfigured =
-		localStorage.getItem('aws-bucket') &&
-		localStorage.getItem('aws-access-key') &&
-		localStorage.getItem('aws-secret-key');
+  const bucketConfigured =
+    localStorage.getItem('aws-bucket') &&
+    localStorage.getItem('aws-access-key') &&
+    localStorage.getItem('aws-secret-key');
 
-	// Enable/disable refresh button based on credentials
-	if (refreshBtn) {
-		refreshBtn.disabled = !bucketConfigured;
-		refreshBtn.classList.toggle('opacity-50', !bucketConfigured);
-	}
+  // Enable/disable refresh button based on credentials
+  if (refreshBtn) {
+    refreshBtn.disabled = !bucketConfigured;
+    refreshBtn.classList.toggle('opacity-50', !bucketConfigured);
+  }
 
-	const selectedFile = select.value;
+  const selectedFile = select.value;
+  const isSnapshotFile = selectedFile.startsWith('Snapshot_');
 
-	// Enable download button if credentials exist and file is selected
-	if (downloadBtn) {
-		downloadBtn.disabled = !bucketConfigured || !selectedFile;
-		downloadBtn.classList.toggle(
-			'opacity-50',
-			!bucketConfigured || !selectedFile
-		);
-	}
+  // Enable download button if credentials exist and file is selected
+  if (downloadBtn) {
+    downloadBtn.disabled = !bucketConfigured || !selectedFile;
+    downloadBtn.classList.toggle(
+      'opacity-50',
+      !bucketConfigured || !selectedFile
+    );
+  }
 
-	// Enable restore button if credentials exist and valid file is selected
-	if (restoreBtn) {
-		restoreBtn.disabled =
-			!bucketConfigured ||
-			!selectedFile ||
-			selectedFile === 'typingmind-backup.json';
-		restoreBtn.classList.toggle(
-			'opacity-50',
-			!bucketConfigured || !selectedFile
-		);
-	}
+  // Enable restore button if credentials exist and valid file is selected
+  if (restoreBtn) {
+    restoreBtn.disabled =
+      !bucketConfigured ||
+      !selectedFile ||
+      selectedFile === 'typingmind-backup.json';
+    restoreBtn.classList.toggle(
+      'opacity-50',
+      !bucketConfigured || !selectedFile
+    );
+  }
+
+  // Enable delete button only for snapshot files
+  if (deleteBtn) {
+    deleteBtn.disabled = !bucketConfigured || !selectedFile || !isSnapshotFile;
+    deleteBtn.classList.toggle(
+      'opacity-50',
+      !bucketConfigured || !selectedFile || !isSnapshotFile
+    );
+  }
 }
 
 async function downloadBackupFile() {
-	const bucketName = localStorage.getItem('aws-bucket');
-	const s3 = new AWS.S3();
-	const selectedFile = document.getElementById('backup-files').value;
+  const bucketName = localStorage.getItem('aws-bucket');
+  const s3 = new AWS.S3();
+  const selectedFile = document.getElementById('backup-files').value;
 
-	try {
-		const data = await s3
-			.getObject({
-				Bucket: bucketName,
-				Key: selectedFile,
-			})
-			.promise();
+  try {
+    const data = await s3
+      .getObject({
+        Bucket: bucketName,
+        Key: selectedFile,
+      })
+      .promise();
 
-		const blob = new Blob([data.Body], { type: data.ContentType });
-		const url = window.URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = selectedFile;
-		document.body.appendChild(a);
-		a.click();
-		window.URL.revokeObjectURL(url);
-		document.body.removeChild(a);
-	} catch (error) {
-		console.error('Error downloading file:', error);
-	}
+    const blob = new Blob([data.Body], { type: data.ContentType });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = selectedFile;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  } catch (error) {
+    console.error('Error downloading file:', error);
+  }
 }
 
 async function restoreBackupFile() {
-	const bucketName = localStorage.getItem('aws-bucket');
-	const s3 = new AWS.S3();
-	const selectedFile = document.getElementById('backup-files').value;
+  const bucketName = localStorage.getItem('aws-bucket');
+  const s3 = new AWS.S3();
+  const selectedFile = document.getElementById('backup-files').value;
 
-	try {
-		const data = await s3
-			.getObject({
-				Bucket: bucketName,
-				Key: selectedFile,
-			})
-			.promise();
+  try {
+    const data = await s3
+      .getObject({
+        Bucket: bucketName,
+        Key: selectedFile,
+      })
+      .promise();
 
-		const jszip = await loadJSZip();
-		const zip = await jszip.loadAsync(data.Body);
-		const jsonFile = Object.keys(zip.files)[0];
-		const content = await zip.file(jsonFile).async('string');
-		const importedData = JSON.parse(content);
+    const jszip = await loadJSZip();
+    const zip = await jszip.loadAsync(data.Body);
+    const jsonFile = Object.keys(zip.files)[0];
+    const content = await zip.file(jsonFile).async('string');
+    const importedData = JSON.parse(content);
 
-		importDataToStorage(importedData);
+    importDataToStorage(importedData);
 
-		const currentTime = new Date().toLocaleString();
-		localStorage.setItem('last-cloud-sync', currentTime);
+    const currentTime = new Date().toLocaleString();
+    localStorage.setItem('last-cloud-sync', currentTime);
 
-		const element = document.getElementById('last-sync-msg');
-		if (element) {
-			element.innerText = `Last sync done at ${currentTime}`;
-		}
+    const element = document.getElementById('last-sync-msg');
+    if (element) {
+      element.innerText = `Last sync done at ${currentTime}`;
+    }
 
-		alert('Backup restored successfully!');
-	} catch (error) {
-		console.error('Error restoring backup:', error);
-		alert('Error restoring backup: ' + error.message);
-	}
+    alert('Backup restored successfully!');
+  } catch (error) {
+    console.error('Error restoring backup:', error);
+    alert('Error restoring backup: ' + error.message);
+  }
 }
 
 // Function to start the backup interval
 function startBackupInterval() {
-	if (backupIntervalRunning) return;
-	// Check if another tab is already running the backup
-	if (localStorage.getItem('activeTabBackupRunning') === 'true') {
-		return;
-	}
-	backupIntervalRunning = true;
-	localStorage.setItem('activeTabBackupRunning', 'true');
-	backupInterval = setInterval(async () => {
-		if (wasImportSuccessful && !isExportInProgress) {
-			isExportInProgress = true;
-			await backupToS3();
-			isExportInProgress = false;
-		}
-	}, 60000);
+  if (backupIntervalRunning) return;
+  // Check if another tab is already running the backup
+  if (localStorage.getItem('activeTabBackupRunning') === 'true') {
+    return;
+  }
+  backupIntervalRunning = true;
+  localStorage.setItem('activeTabBackupRunning', 'true');
+  backupInterval = setInterval(async () => {
+    if (wasImportSuccessful && !isExportInProgress) {
+      isExportInProgress = true;
+      await backupToS3();
+      isExportInProgress = false;
+    }
+  }, 60000);
 }
 
 // Function to load AWS SDK asynchronously
 async function loadAwsSdk() {
-	return new Promise((resolve, reject) => {
-		const script = document.createElement('script');
-		script.src = 'https://sdk.amazonaws.com/js/aws-sdk-2.804.0.min.js';
-		script.onload = resolve;
-		script.onerror = reject;
-		document.head.appendChild(script);
-	});
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://sdk.amazonaws.com/js/aws-sdk-2.804.0.min.js';
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
 }
 
 // Function to dynamically load the JSZip library
 async function loadJSZip() {
-	return new Promise((resolve, reject) => {
-		const script = document.createElement('script');
-		script.src =
-			'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.5.0/jszip.min.js';
-		script.onload = () => {
-			resolve(window.JSZip); // Pass JSZip to resolve
-		};
-		script.onerror = reject;
-		document.head.appendChild(script);
-	});
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src =
+      'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.5.0/jszip.min.js';
+    script.onload = () => {
+      resolve(window.JSZip); // Pass JSZip to resolve
+    };
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
 }
 
 // Function to import data from S3 to localStorage and IndexedDB
 function importDataToStorage(data) {
-	Object.keys(data.localStorage).forEach((key) => {
-		localStorage.setItem(key, data.localStorage[key]);
-	});
+  Object.keys(data.localStorage).forEach((key) => {
+    localStorage.setItem(key, data.localStorage[key]);
+  });
 
-	const request = indexedDB.open('keyval-store');
-	request.onsuccess = function (event) {
-		const db = event.target.result;
-		const transaction = db.transaction(['keyval'], 'readwrite');
-		const objectStore = transaction.objectStore('keyval');
-		const deleteRequest = objectStore.clear();
-		deleteRequest.onsuccess = function () {
-			data = data.indexedDB;
-			Object.keys(data).forEach((key) => {
-				objectStore.put(data[key], key);
-			});
-		};
-	};
-	// Handle disappearing extension issue
-	let extensionURLs = JSON.parse(
-		localStorage.getItem('TM_useExtensionURLs') || '[]'
-	);
-	if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
-		extensionURLs.push(
-			'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
-		);
-		localStorage.setItem('TM_useExtensionURLs', JSON.stringify(extensionURLs));
-	}
+  const request = indexedDB.open('keyval-store');
+  request.onsuccess = function (event) {
+    const db = event.target.result;
+    const transaction = db.transaction(['keyval'], 'readwrite');
+    const objectStore = transaction.objectStore('keyval');
+    const deleteRequest = objectStore.clear();
+    deleteRequest.onsuccess = function () {
+      data = data.indexedDB;
+      Object.keys(data).forEach((key) => {
+        objectStore.put(data[key], key);
+      });
+    };
+  };
+  // Handle disappearing extension issue
+  let extensionURLs = JSON.parse(
+    localStorage.getItem('TM_useExtensionURLs') || '[]'
+  );
+  if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
+    extensionURLs.push(
+      'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
+    );
+    localStorage.setItem('TM_useExtensionURLs', JSON.stringify(extensionURLs));
+  }
 }
 
 // Function to export data from localStorage and IndexedDB
 function exportBackupData() {
-	return new Promise((resolve, reject) => {
-		var exportData = {
-			localStorage: { ...localStorage },
-			indexedDB: {},
-		};
-		var request = indexedDB.open('keyval-store', 1);
-		request.onsuccess = function (event) {
-			var db = event.target.result;
-			var transaction = db.transaction(['keyval'], 'readonly');
-			var store = transaction.objectStore('keyval');
-			store.getAllKeys().onsuccess = function (keyEvent) {
-				var keys = keyEvent.target.result;
-				store.getAll().onsuccess = function (valueEvent) {
-					var values = valueEvent.target.result;
-					keys.forEach((key, i) => {
-						exportData.indexedDB[key] = values[i];
-					});
-					resolve(exportData);
-				};
-			};
-		};
-		request.onerror = function (error) {
-			reject(error);
-		};
-	});
+  return new Promise((resolve, reject) => {
+    var exportData = {
+      localStorage: { ...localStorage },
+      indexedDB: {},
+    };
+    var request = indexedDB.open('keyval-store', 1);
+    request.onsuccess = function (event) {
+      var db = event.target.result;
+      var transaction = db.transaction(['keyval'], 'readonly');
+      var store = transaction.objectStore('keyval');
+      store.getAllKeys().onsuccess = function (keyEvent) {
+        var keys = keyEvent.target.result;
+        store.getAll().onsuccess = function (valueEvent) {
+          var values = valueEvent.target.result;
+          keys.forEach((key, i) => {
+            exportData.indexedDB[key] = values[i];
+          });
+          resolve(exportData);
+        };
+      };
+    };
+    request.onerror = function (error) {
+      reject(error);
+    };
+  });
 }
 
 // Function to handle backup to S3 with chunked multipart upload using Blob
@@ -900,11 +917,11 @@ async function backupToS3() {
         const multipart = await s3.createMultipartUpload(createMultipartParams).promise();
         const uploadedParts = [];
         let partNumber = 1;
-        
-        for(let start = 0; start < dataSize; start += chunkSize) {
+
+        for (let start = 0; start < dataSize; start += chunkSize) {
           const end = Math.min(start + chunkSize, dataSize);
           const chunk = blob.slice(start, end);
-          
+
           // Convert chunk to ArrayBuffer using FileReader
           const arrayBuffer = await new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -912,7 +929,7 @@ async function backupToS3() {
             reader.onerror = () => reject(reader.error);
             reader.readAsArrayBuffer(chunk);
           });
-          
+
           const partParams = {
             Body: arrayBuffer,
             Bucket: bucketName,
@@ -923,11 +940,11 @@ async function backupToS3() {
 
           let retryCount = 0;
           const maxRetries = 3;
-          
+
           while (retryCount < maxRetries) {
             try {
               const uploadResult = await s3.uploadPart(partParams).promise();
-	      //console.log('Upload result:', uploadResult); 
+              //console.log('Upload result:', uploadResult); 
               uploadedParts.push({
                 ETag: uploadResult.ETag,
                 PartNumber: partNumber
@@ -949,35 +966,35 @@ async function backupToS3() {
               }
               // Wait before retry (exponential backoff)
               const waitTime = Math.pow(2, retryCount) * 1000;
-              console.log(`Retrying part ${partNumber} in ${waitTime/1000} seconds...`);
+              console.log(`Retrying part ${partNumber} in ${waitTime / 1000} seconds...`);
               await new Promise(resolve => setTimeout(resolve, waitTime));
             }
           }
-          
+
           partNumber++;
-          
+
           // Update progress
           const progress = Math.round((start + chunkSize) / dataSize * 100);
           //console.log(`Upload progress: ${Math.min(progress, 100)}%`);
         }
 
-	const sortedParts = uploadedParts
-  		.sort((a, b) => a.PartNumber - b.PartNumber);
-	      
-        // Complete the multipart upload
-	const completeParams = {
-	  Bucket: bucketName,
-	  Key: 'typingmind-backup.json',
-	  UploadId: multipart.UploadId,
-	  MultipartUpload: {
-	    Parts: sortedParts.map(part => ({
-	      ETag: part.ETag,
-	      PartNumber: part.PartNumber
-	    }))
-	  }
-	};
+        const sortedParts = uploadedParts
+          .sort((a, b) => a.PartNumber - b.PartNumber);
 
-	//console.log('Complete Multipart Upload Request:', JSON.stringify(completeParams, null, 2));
+        // Complete the multipart upload
+        const completeParams = {
+          Bucket: bucketName,
+          Key: 'typingmind-backup.json',
+          UploadId: multipart.UploadId,
+          MultipartUpload: {
+            Parts: sortedParts.map(part => ({
+              ETag: part.ETag,
+              PartNumber: part.PartNumber
+            }))
+          }
+        };
+
+        //console.log('Complete Multipart Upload Request:', JSON.stringify(completeParams, null, 2));
 
         await s3.completeMultipartUpload(completeParams).promise();
         //console.log('Multipart upload completed successfully');
@@ -1026,186 +1043,233 @@ async function backupToS3() {
 
 // Function to handle import from S3
 async function importFromS3() {
-	const bucketName = localStorage.getItem('aws-bucket');
-	const awsRegion = localStorage.getItem('aws-region');
-	const awsAccessKey = localStorage.getItem('aws-access-key');
-	const awsSecretKey = localStorage.getItem('aws-secret-key');
-	const awsEndpoint = localStorage.getItem('aws-endpoint');
+  const bucketName = localStorage.getItem('aws-bucket');
+  const awsRegion = localStorage.getItem('aws-region');
+  const awsAccessKey = localStorage.getItem('aws-access-key');
+  const awsSecretKey = localStorage.getItem('aws-secret-key');
+  const awsEndpoint = localStorage.getItem('aws-endpoint');
 
-	if (typeof AWS === 'undefined') {
-		await loadAwsSdk();
-	}
+  if (typeof AWS === 'undefined') {
+    await loadAwsSdk();
+  }
 
-	const awsConfig = {
-		accessKeyId: awsAccessKey,
-		secretAccessKey: awsSecretKey,
-		region: awsRegion,
-	};
+  const awsConfig = {
+    accessKeyId: awsAccessKey,
+    secretAccessKey: awsSecretKey,
+    region: awsRegion,
+  };
 
-	if (awsEndpoint) {
-		awsConfig.endpoint = awsEndpoint;
-	}
+  if (awsEndpoint) {
+    awsConfig.endpoint = awsEndpoint;
+  }
 
-	AWS.config.update(awsConfig);
+  AWS.config.update(awsConfig);
 
-	const s3 = new AWS.S3();
-	const params = {
-		Bucket: bucketName,
-		Key: 'typingmind-backup.json',
-	};
+  const s3 = new AWS.S3();
+  const params = {
+    Bucket: bucketName,
+    Key: 'typingmind-backup.json',
+  };
 
-	s3.getObject(params, function (err, data) {
-		const actionMsgElement = document.getElementById('action-msg');
-		if (err) {
-			actionMsgElement.textContent = `Error fetching data: ${err.message}`;
-			actionMsgElement.style.color = 'white';
-			return;
-		}
+  s3.getObject(params, function (err, data) {
+    const actionMsgElement = document.getElementById('action-msg');
+    if (err) {
+      actionMsgElement.textContent = `Error fetching data: ${err.message}`;
+      actionMsgElement.style.color = 'white';
+      return;
+    }
 
-		const importedData = JSON.parse(data.Body.toString('utf-8'));
-		importDataToStorage(importedData);
-		const currentTime = new Date().toLocaleString();
-		localStorage.setItem('last-cloud-sync', currentTime);
-		var element = document.getElementById('last-sync-msg');
-		if (element !== null) {
-			element.innerText = `Last sync done at ${currentTime}`;
-		}
-		wasImportSuccessful = true;
-	});
+    const importedData = JSON.parse(data.Body.toString('utf-8'));
+    importDataToStorage(importedData);
+    const currentTime = new Date().toLocaleString();
+    localStorage.setItem('last-cloud-sync', currentTime);
+    var element = document.getElementById('last-sync-msg');
+    if (element !== null) {
+      element.innerText = `Last sync done at ${currentTime}`;
+    }
+    wasImportSuccessful = true;
+  });
+}
+
+//Delete file from S3
+async function deleteBackupFile() {
+  const selectedFile = document.getElementById('backup-files').value;
+
+  // Check if it's a snapshot file
+  if (!selectedFile.startsWith('Snapshot_')) {
+    return;
+  }
+
+  // Ask for confirmation
+  const isConfirmed = confirm(`Are you sure you want to delete ${selectedFile}? This action cannot be undone.`);
+
+  if (!isConfirmed) {
+    return;
+  }
+
+  const bucketName = localStorage.getItem('aws-bucket');
+  const s3 = new AWS.S3();
+
+  try {
+    await s3.deleteObject({
+      Bucket: bucketName,
+      Key: selectedFile
+    }).promise();
+
+    // Refresh the backup files list
+    await loadBackupFiles();
+
+    // Show success message
+    const actionMsgElement = document.getElementById('action-msg');
+    if (actionMsgElement) {
+      actionMsgElement.textContent = 'Backup file deleted successfully';
+      actionMsgElement.style.color = 'white';
+      setTimeout(() => {
+        actionMsgElement.textContent = '';
+      }, 3000);
+    }
+  } catch (error) {
+    console.error('Error deleting file:', error);
+    const actionMsgElement = document.getElementById('action-msg');
+    if (actionMsgElement) {
+      actionMsgElement.textContent = `Error deleting file: ${error.message}`;
+      actionMsgElement.style.color = 'red';
+    }
+  }
 }
 
 // Validate the AWS connection
 async function validateAwsCredentials(bucketName, accessKey, secretKey) {
-	const awsRegion = localStorage.getItem('aws-region');
-	const awsEndpoint = localStorage.getItem('aws-endpoint');
+  const awsRegion = localStorage.getItem('aws-region');
+  const awsEndpoint = localStorage.getItem('aws-endpoint');
 
-	if (typeof AWS === 'undefined') {
-		await loadAwsSdk();
-	}
+  if (typeof AWS === 'undefined') {
+    await loadAwsSdk();
+  }
 
-	const awsConfig = {
-		accessKeyId: accessKey,
-		secretAccessKey: secretKey,
-		region: awsRegion,
-	};
+  const awsConfig = {
+    accessKeyId: accessKey,
+    secretAccessKey: secretKey,
+    region: awsRegion,
+  };
 
-	if (awsEndpoint) {
-		awsConfig.endpoint = awsEndpoint;
-	}
+  if (awsEndpoint) {
+    awsConfig.endpoint = awsEndpoint;
+  }
 
-	AWS.config.update(awsConfig);
+  AWS.config.update(awsConfig);
 
-	const s3 = new AWS.S3();
-	const params = {
-		Bucket: bucketName,
-		MaxKeys: 1,
-	};
+  const s3 = new AWS.S3();
+  const params = {
+    Bucket: bucketName,
+    MaxKeys: 1,
+  };
 
-	return new Promise((resolve, reject) => {
-		s3.listObjectsV2(params, function (err, data) {
-			if (err) {
-				reject(err);
-			} else {
-				resolve(data);
-			}
-		});
-	});
+  return new Promise((resolve, reject) => {
+    s3.listObjectsV2(params, function (err, data) {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(data);
+      }
+    });
+  });
 }
 
 // Function to create a dated backup copy, zip it, and purge old backups
 async function handleBackupFiles() {
-	//console.log('Inside handleBackupFiles');
+  //console.log('Inside handleBackupFiles');
 
-	const bucketName = localStorage.getItem('aws-bucket');
-	const awsRegion = localStorage.getItem('aws-region');
-	const awsAccessKey = localStorage.getItem('aws-access-key');
-	const awsSecretKey = localStorage.getItem('aws-secret-key');
-	const awsEndpoint = localStorage.getItem('aws-endpoint');
+  const bucketName = localStorage.getItem('aws-bucket');
+  const awsRegion = localStorage.getItem('aws-region');
+  const awsAccessKey = localStorage.getItem('aws-access-key');
+  const awsSecretKey = localStorage.getItem('aws-secret-key');
+  const awsEndpoint = localStorage.getItem('aws-endpoint');
 
-	if (typeof AWS === 'undefined') {
-		await loadAwsSdk();
-	}
+  if (typeof AWS === 'undefined') {
+    await loadAwsSdk();
+  }
 
-	const awsConfig = {
-		accessKeyId: awsAccessKey,
-		secretAccessKey: awsSecretKey,
-		region: awsRegion,
-	};
+  const awsConfig = {
+    accessKeyId: awsAccessKey,
+    secretAccessKey: awsSecretKey,
+    region: awsRegion,
+  };
 
-	if (awsEndpoint) {
-		awsConfig.endpoint = awsEndpoint;
-	}
+  if (awsEndpoint) {
+    awsConfig.endpoint = awsEndpoint;
+  }
 
-	AWS.config.update(awsConfig);
+  AWS.config.update(awsConfig);
 
-	const s3 = new AWS.S3();
-	const params = {
-		Bucket: bucketName,
-		Prefix: 'typingmind-backup',
-	};
+  const s3 = new AWS.S3();
+  const params = {
+    Bucket: bucketName,
+    Prefix: 'typingmind-backup',
+  };
 
-	const today = new Date();
-	const currentDateSuffix = `${today.getFullYear()}${String(
-		today.getMonth() + 1
-	).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+  const today = new Date();
+  const currentDateSuffix = `${today.getFullYear()}${String(
+    today.getMonth() + 1
+  ).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
 
-	s3.listObjectsV2(params, async (err, data) => {
-		if (err) {
-			console.error('Error listing S3 objects:', err);
-			return;
-		}
-		//console.log('object Count:' + data.Contents.length);
-		if (data.Contents.length > 0) {
-			//console.log('Listobject API call: Object count is' + data.Contents.length);
-			const lastModified = data.Contents[0].LastModified;
-			const lastModifiedDate = new Date(lastModified);
-			if (lastModifiedDate.setHours(0, 0, 0, 0) < today.setHours(0, 0, 0, 0)) {
-				const getObjectParams = {
-					Bucket: bucketName,
-					Key: 'typingmind-backup.json',
-				};
-				const backupFile = await s3.getObject(getObjectParams).promise();
-				const backupContent = backupFile.Body;
-				const jszip = await loadJSZip();
-				const zip = new jszip();
-				zip.file(`typingmind-backup-${currentDateSuffix}.json`, backupContent, {
-					compression: 'DEFLATE',
-					compressionOptions: {
-						level: 9,
-					},
-				});
+  s3.listObjectsV2(params, async (err, data) => {
+    if (err) {
+      console.error('Error listing S3 objects:', err);
+      return;
+    }
+    //console.log('object Count:' + data.Contents.length);
+    if (data.Contents.length > 0) {
+      //console.log('Listobject API call: Object count is' + data.Contents.length);
+      const lastModified = data.Contents[0].LastModified;
+      const lastModifiedDate = new Date(lastModified);
+      if (lastModifiedDate.setHours(0, 0, 0, 0) < today.setHours(0, 0, 0, 0)) {
+        const getObjectParams = {
+          Bucket: bucketName,
+          Key: 'typingmind-backup.json',
+        };
+        const backupFile = await s3.getObject(getObjectParams).promise();
+        const backupContent = backupFile.Body;
+        const jszip = await loadJSZip();
+        const zip = new jszip();
+        zip.file(`typingmind-backup-${currentDateSuffix}.json`, backupContent, {
+          compression: 'DEFLATE',
+          compressionOptions: {
+            level: 9,
+          },
+        });
 
-				const compressedContent = await zip.generateAsync({ type: 'blob' });
+        const compressedContent = await zip.generateAsync({ type: 'blob' });
 
-				const zipKey = `typingmind-backup-${currentDateSuffix}.zip`;
-				const uploadParams = {
-					Bucket: bucketName,
-					Key: zipKey,
-					Body: compressedContent,
-					ContentType: 'application/zip',
-				};
-				await s3.putObject(uploadParams).promise();
-				localStorage.setItem('last-daily-backup-in-s3', currentDateSuffix);
-			}
+        const zipKey = `typingmind-backup-${currentDateSuffix}.zip`;
+        const uploadParams = {
+          Bucket: bucketName,
+          Key: zipKey,
+          Body: compressedContent,
+          ContentType: 'application/zip',
+        };
+        await s3.putObject(uploadParams).promise();
+        localStorage.setItem('last-daily-backup-in-s3', currentDateSuffix);
+      }
 
-			// Purge backups older than 30 days
-			const thirtyDaysAgo = new Date();
-			thirtyDaysAgo.setDate(today.getDate() - 30);
-			for (const file of data.Contents) {
-				if (
-					file.Key.endsWith('.zip') &&
-					file.Key !== 'typingmind-backup.json'
-				) {
-					const fileDate = new Date(file.LastModified);
-					if (fileDate < thirtyDaysAgo) {
-						const deleteParams = {
-							Bucket: bucketName,
-							Key: file.Key,
-						};
-						await s3.deleteObject(deleteParams).promise();
-					}
-				}
-			}
-		}
-	});
+      // Purge backups older than 30 days
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(today.getDate() - 30);
+      for (const file of data.Contents) {
+        if (
+          file.Key.endsWith('.zip') &&
+          file.Key !== 'typingmind-backup.json'
+        ) {
+          const fileDate = new Date(file.LastModified);
+          if (fileDate < thirtyDaysAgo) {
+            const deleteParams = {
+              Bucket: bucketName,
+              Key: file.Key,
+            };
+            await s3.deleteObject(deleteParams).promise();
+          }
+        }
+      }
+    }
+  });
 }
