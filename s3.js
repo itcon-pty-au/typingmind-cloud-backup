@@ -740,7 +740,7 @@ function updateBackupButtons() {
       selectedFile === 'typingmind-backup.json';
     restoreBtn.classList.toggle(
       'opacity-50',
-      !bucketConfigured || !selectedFile
+      !bucketConfigured || !selectedFile || selectedFile === 'typingmind-backup.json'
     );
   }
 
