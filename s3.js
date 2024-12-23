@@ -44,11 +44,14 @@ cloudSyncBtn.className =
 	'cursor-default group flex items-center justify-center p-1 text-sm font-medium flex-col group focus:outline-0 focus:text-white text-white/70';
 
 const cloudIconSVG = `
-<svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 6400 5120" class="h-6 w-6 flex-shrink-0" aria-hidden="true" height="10em" width="10em" xmlns="http://www.w3.org/2000/svg"><path d="M5120 2240c0 -707 -573 -1280 -1280 -1280 -112 0 -220 15 -325 40C3380 622 3020 360 2620 360c-625 0 -1340 715 -1340 1560 0 123 15 242 43 355C745 2343 0 3035 0 3840c0 707 573 1280 1280 1280h3840c707 0 1280 -573 1280 -1280s-573 -1280 -1280 -1280zm0 1920"/></svg>
+<svg class="w-6 h-6 flex-shrink-0" width="24px" height="24px" fill="none" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <path fill-rule="evenodd" clip-rule="evenodd" d="M19 9.76c-.12-3.13-2.68-5.64-5.83-5.64-2.59 0-4.77 1.68-5.53 4.01-.19-.03-.39-.04-.57-.04-2.45 0-4.44 1.99-4.44 4.44 0 2.45 1.99 4.44 4.44 4.44h11.93c2.03 0 3.67-1.64 3.67-3.67 0-1.95-1.52-3.55-3.44-3.65zm-5.83-3.64c2.15 0 3.93 1.6 4.21 3.68l.12.88.88.08c1.12.11 1.99 1.05 1.99 2.19 0 1.21-.99 2.2-2.2 2.2H7.07c-1.64 0-2.97-1.33-2.97-2.97 0-1.64 1.33-2.97 2.97-2.97.36 0 .72.07 1.05.2l.8.32.33-.8c.59-1.39 1.95-2.28 3.45-2.28z" fill="currentColor"></path>
+    <path fill-rule="evenodd" clip-rule="evenodd" d="M12 15.33v-5.33M9.67 12.33L12 14.67l2.33-2.34" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
 `;
 
 const textSpan = document.createElement('span');
-textSpan.className = 'text-[11px]';
+textSpan.className = 'font-normal self-stretch text-center text-xs leading-4 md:leading-none';
 textSpan.innerText = 'Backup';
 
 const iconSpan = document.createElement('span');
