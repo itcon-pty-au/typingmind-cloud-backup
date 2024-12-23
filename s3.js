@@ -1,5 +1,8 @@
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
+let isExportInProgress = false;
+let isImportInProgress = false;
+let isSnapshotInProgress = false;
 const TIME_BACKUP_INTERVAL = 15;
 const TIME_BACKUP_FILE_PREFIX = `T-${TIME_BACKUP_INTERVAL}`;
 
@@ -101,7 +104,6 @@ cloudSyncBtn.addEventListener('click', function () {
 
 // New Popup
 let lastBackupTime = 0;
-let isExportInProgress = false;
 let backupInterval;
 
 function openSyncModal() {
@@ -379,39 +381,74 @@ function openSyncModal() {
   document
     .getElementById('export-to-s3-btn')
     .addEventListener('click', async function () {
+      if (isExportInProgress) return;
+      const exportBtn = document.getElementById('export-to-s3-btn');
+      exportBtn.disabled = true;
+      exportBtn.style.cursor = 'not-allowed';
+      exportBtn.textContent = 'Export in progress';
       isExportInProgress = true;
-      await backupToS3();
-      isExportInProgress = false;
+
+      try {
+        await backupToS3();
+      } finally {
+        isExportInProgress = false;
+        exportBtn.disabled = false;
+        exportBtn.style.cursor = 'pointer';
+        exportBtn.innerHTML = '<svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024" fill-rule="evenodd" class="w-4 h-4 mr-2" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M880 112H144c-17.7 0-32 14.3-32 32v736c0 17.7 14.3 32 32 32h360c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H184V184h656v320c0 4.4-3.6 8 8 8h56c4.4 0 8-3.6 8-8V144c0-17.7-14.3-32-32-32ZM770.87 824.869l-52.2 52.2c-4.7 4.7-1.9 12.8 4.7 13.6l179.4 21c5.1.6 9.5-3.7 8.9-8.9l-21-179.4c-.8-6.6-8.9-9.4-13.6-4.7l-52.4 52.4-256.2-256.2c-3.1-3.1-8.2-3.1-11.3 0l-42.4 42.4c-3.1 3.1-3.1 8.2 0 11.3l256.1 256.3Z"></path></svg><span>Export to S3</span>';
+      }
     });
 
   // Import button click handler
-  document
-    .getElementById('import-from-s3-btn')
-    .addEventListener('click', async function () {
+document
+  .getElementById('import-from-s3-btn')
+  .addEventListener('click', async function () {
+    if (isImportInProgress) return;
+    const importBtn = document.getElementById('import-from-s3-btn');
+    importBtn.disabled = true;
+    importBtn.style.cursor = 'not-allowed';
+    importBtn.textContent = 'Importing...';
+    isImportInProgress = true;
+
+    try {
       await importFromS3();
-      wasImportSuccessful = true;
-    });
+    } finally {
+      isImportInProgress = false;
+      importBtn.disabled = false;
+      importBtn.style.cursor = 'pointer';
+      importBtn.innerHTML = '<svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024" fill-rule="evenodd" class="w-4 h-4 mr-2" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="M880 112H144c-17.7 0-32 14.3-32 32v736c0 17.7 14.3 32 32 32h360c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H184V184h656v320c0 4.4-3.6 8 8 8h56c4.4 0 8-3.6 8-8V144c0-17.7-14.3-32-32-32ZM653.3 599.4l52.2-52.2c4.7-4.7 1.9-12.8-4.7-13.6l-179.4-21c-5.1-.6-9.5 3.7-8.9 8.9l21 179.4c.8 6.6 8.9 9.4 13.6 4.7l52.4-52.4 256.2 256.2c3.1 3.1 8.2 3.1 11.3 0l42.4-42.4c3.1-3.1 3.1-8.2 0-11.3L653.3 599.4Z"></path></svg><span>Import from S3</span>';
+    }
+  });
 
   // Snapshot button click handler
-  // Inside openSyncModal function
   document
     .getElementById('snapshot-btn')
     .addEventListener('click', async function () {
-      const now = new Date();
-      const timestamp =
-        now.getFullYear() +
-        String(now.getMonth() + 1).padStart(2, '0') +
-        String(now.getDate()).padStart(2, '0') +
-        'T' +
-        String(now.getHours()).padStart(2, '0') +
-        String(now.getMinutes()).padStart(2, '0') +
-        String(now.getSeconds()).padStart(2, '0');
+      const snapshotBtn = document.getElementById('snapshot-btn');
 
-      const bucketName = localStorage.getItem('aws-bucket');
-      const data = await exportBackupData();
-      const dataStr = JSON.stringify(data);
+      // If button is disabled, return early
+      if (snapshotBtn.disabled) return;
+
+      // Disable button and update UI
+      snapshotBtn.disabled = true;
+      snapshotBtn.style.cursor = 'not-allowed';
+      const originalButtonContent = snapshotBtn.innerHTML;
+      snapshotBtn.innerHTML = '<span>Snapshot in progress</span>';
 
       try {
+        const now = new Date();
+        const timestamp =
+          now.getFullYear() +
+          String(now.getMonth() + 1).padStart(2, '0') +
+          String(now.getDate()).padStart(2, '0') +
+          'T' +
+          String(now.getHours()).padStart(2, '0') +
+          String(now.getMinutes()).padStart(2, '0') +
+          String(now.getSeconds()).padStart(2, '0');
+
+        const bucketName = localStorage.getItem('aws-bucket');
+        const data = await exportBackupData();
+        const dataStr = JSON.stringify(data);
+
         // Load JSZip
         const jszip = await loadJSZip();
         const zip = new jszip();
@@ -449,6 +486,10 @@ function openSyncModal() {
             lastSyncElement.textContent = `Last sync done at ${lastSync}`;
           }
         }, 3000);
+
+        // Refresh the backup files list after successful snapshot
+        await loadBackupFiles();
+
       } catch (error) {
         const lastSyncElement = document.getElementById('last-sync-msg');
         lastSyncElement.textContent = `Error creating snapshot: ${error.message}`;
@@ -460,6 +501,11 @@ function openSyncModal() {
             lastSyncElement.textContent = `Last sync done at ${lastSync}`;
           }
         }, 3000);
+      } finally {
+        // Re-enable button and restore original content
+        snapshotBtn.disabled = false;
+        snapshotBtn.style.cursor = 'pointer';
+        snapshotBtn.innerHTML = originalButtonContent;
       }
     });
 }
