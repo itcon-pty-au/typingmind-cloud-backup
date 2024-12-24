@@ -281,14 +281,14 @@ function openSyncModal() {
     tooltip.style.removeProperty('display');
     tooltip.classList.add('opacity-100');
     tooltip.classList.remove('z-1');
-    tooltip.classList.add('z-2');
+    tooltip.classList.add('z-10');
     tooltip.classList.remove('opacity-0');
   }
 
   function hideTooltip() {
     tooltip.style.display = 'none'
     tooltip.classList.add('opacity-0');
-    tooltip.classList.remove('z-2');
+    tooltip.classList.remove('z-10');
     tooltip.classList.add('z-1');
     tooltip.classList.remove('opacity-100');
   }
