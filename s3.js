@@ -325,9 +325,9 @@ function openSyncModal() {
       let extensionURLs = JSON.parse(
         localStorage.getItem('TM_useExtensionURLs') || '[]'
       );
-      if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
+      if (!extensionURLs.some((url) => url.endsWith('cloud-backup.js'))) {
         extensionURLs.push(
-          'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
+          'https://mvfolino68.github.io/tm-cloud-backup/cloud-backup.js'
         );
         localStorage.setItem(
           'TM_useExtensionURLs',
@@ -1007,9 +1007,9 @@ function importDataToStorage(data) {
   let extensionURLs = JSON.parse(
     localStorage.getItem('TM_useExtensionURLs') || '[]'
   );
-  if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
+  if (!extensionURLs.some((url) => url.endsWith('cloud-backup.js'))) {
     extensionURLs.push(
-      'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
+      'https://mvfolino68.github.io/tm-cloud-backup/cloud-backup.js'
     );
     localStorage.setItem('TM_useExtensionURLs', JSON.stringify(extensionURLs));
   }
