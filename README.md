@@ -1,5 +1,4 @@
-<div align="center">[If you found this useful, please consider buying me a coffee](https://buymeacoffee.com/itcon):heart:!<br/><br/>
-Please ensure that your Amazon S3 CORS configuration is updated to address issues with Multipart uploads. Refer Step 5 in AWS Config below. "ETag" needs to be added in ExposeHeaders section. </div>
+<div align="center">💗 <a href="https://buymeacoffee.com/itcon">If you found this useful, please consider buying me a coffee</a> 💗<br/><br/></div>
 
 # TypingMind Cloud Backup Extension
 
