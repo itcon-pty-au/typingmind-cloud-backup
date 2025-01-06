@@ -3,7 +3,7 @@ let wasImportSuccessful = false;
 let isExportInProgress = false;
 let isImportInProgress = false;
 let isSnapshotInProgress = false;
-const TIME_BACKUP_INTERVAL = 15; //minutes
+const TIME_BACKUP_INTERVAL = 15;
 const TIME_BACKUP_FILE_PREFIX = `T-${TIME_BACKUP_INTERVAL}`;
 
 (async function checkDOMOrRunBackup() {
@@ -35,10 +35,8 @@ async function handleDOMReady() {
       await handleBackupFiles();
     }
     startBackupInterval();
-    setupStorageMonitoring();
   } else if (!backupIntervalRunning) {
     startBackupInterval();
-    setupStorageMonitoring();
   }
 }
 
@@ -860,131 +858,6 @@ async function loadJSZip() {
   });
 }
 
-// Load Dexie library
-async function loadDexie() {
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = 'https://unpkg.com/dexie@latest/dist/dexie.js';
-    script.onload = () => resolve(window.Dexie);
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
-}
-
-// Debounce function to prevent frequent backups
-function debounce(func, wait) {
-  let timeout;
-  return function (...args) {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func.apply(this, args), wait);
-  };
-}
-
-// Setup storage monitoring using Dexie
-async function setupStorageMonitoring() {
-  try {
-    const Dexie = await loadDexie();
-
-    // Create Dexie instance for existing database
-    const db = new Dexie('keyval-store');
-    db.version(1).stores({
-      keyval: '' // Define store without schema to work with existing data
-    });
-
-    // Excluded keys that shouldn't trigger backup
-    const excludedKeys = [
-      'last-cloud-sync',
-      'last-daily-backup-in-s3',
-      'last-time-based-no-touch-backup',
-      'activeTabBackupRunning'
-    ];
-
-    // Debounced backup function
-    const debouncedBackup = debounce(async () => {
-      if (!isExportInProgress && wasImportSuccessful) {
-        try {
-          isExportInProgress = true;
-	  console.log('Initiating S3 sync');
-          await backupToS3();
-          
-          const currentTime = new Date().toLocaleString();
-          const element = document.getElementById('last-sync-msg');
-          if (element) {
-            element.innerText = `Last sync done at ${currentTime}`;
-          }
-        } catch (error) {
-          console.error('Backup failed:', error);
-          const element = document.getElementById('last-sync-msg');
-          if (element) {
-            element.innerText = `Backup failed: ${error.message}`;
-          }
-        } finally {
-          isExportInProgress = false;
-        }
-      }
-    }, 2000); // 2 second debounce
-
-    // Monitor IndexedDB changes using Dexie hooks
-    db.keyval.hook('creating').subscribe(() => {
-      console.log('IndexedDB: New item created');
-      debouncedBackup();
-    });
-
-    db.keyval.hook('updating').subscribe(() => {
-      console.log('IndexedDB: Item updated');
-      debouncedBackup();
-    });
-
-    db.keyval.hook('deleting').subscribe(() => {
-      console.log('IndexedDB: Item deleted');
-      debouncedBackup();
-    });
-
-    // Monitor LocalStorage using Dexie.Observable
-    const originalSetItem = localStorage.setItem;
-    localStorage.setItem = function(key, value) {
-      if (!excludedKeys.includes(key)) {
-        console.log('LocalStorage: Item changed', key);
-        debouncedBackup();
-      }
-      originalSetItem.apply(this, arguments);
-    };
-
-    // Monitor localStorage removal
-    const originalRemoveItem = localStorage.removeItem;
-    localStorage.removeItem = function(key) {
-      if (!excludedKeys.includes(key)) {
-        console.log('LocalStorage: Item removed', key);
-        debouncedBackup();
-      }
-      originalRemoveItem.apply(this, arguments);
-    };
-
-    // Monitor localStorage clear
-    const originalClear = localStorage.clear;
-    localStorage.clear = function() {
-      console.log('LocalStorage: Cleared');
-      debouncedBackup();
-      originalClear.apply(this);
-    };
-
-    // Return cleanup function
-    return () => {
-      // Restore original localStorage methods
-      localStorage.setItem = originalSetItem;
-      localStorage.removeItem = originalRemoveItem;
-      localStorage.clear = originalClear;
-      
-      // Close Dexie connection
-      db.close();
-    };
-
-  } catch (error) {
-    console.error('Error setting up storage monitoring:', error);
-    return () => {}; // Return empty cleanup function
-  }
-}
-
 // Function to import data from S3 to localStorage and IndexedDB
 function importDataToStorage(data) {
   Object.keys(data.localStorage).forEach((key) => {
@@ -1080,7 +953,7 @@ async function backupToS3() {
 
     if (dataSize > chunkSize) {
       try {
-        console.log('Starting Multipart upload to S3');
+        //console.log('Starting Multipart upload to S3');
         const createMultipartParams = {
           Bucket: bucketName,
           Key: 'typingmind-backup.json',
@@ -1122,7 +995,7 @@ async function backupToS3() {
                 ETag: uploadResult.ETag,
                 PartNumber: partNumber
               });
-              console.log(`Part ${partNumber} uploaded successfully with ETag: ${uploadResult.ETag}`);
+              //console.log(`Part ${partNumber} uploaded successfully with ETag: ${uploadResult.ETag}`);
               break; // Success, exit retry loop
             } catch (error) {
               console.error(`Error uploading part ${partNumber}:`, error);
@@ -1170,7 +1043,7 @@ async function backupToS3() {
         //console.log('Complete Multipart Upload Request:', JSON.stringify(completeParams, null, 2));
 
         await s3.completeMultipartUpload(completeParams).promise();
-        console.log('Multipart upload completed successfully');
+        //console.log('Multipart upload completed successfully');
       } catch (error) {
         console.error('Multipart upload failed:', error);
         // Fall back to regular upload if multipart fails
