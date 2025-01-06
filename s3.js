@@ -904,6 +904,7 @@ async function setupStorageMonitoring() {
       if (!isExportInProgress && wasImportSuccessful) {
         try {
           isExportInProgress = true;
+	  console.log('Initiating S3 sync');
           await backupToS3();
           
           const currentTime = new Date().toLocaleString();
@@ -925,17 +926,17 @@ async function setupStorageMonitoring() {
 
     // Monitor IndexedDB changes using Dexie hooks
     db.keyval.hook('creating').subscribe(() => {
-      //console.log('IndexedDB: New item created');
+      console.log('IndexedDB: New item created');
       debouncedBackup();
     });
 
     db.keyval.hook('updating').subscribe(() => {
-      //console.log('IndexedDB: Item updated');
+      console.log('IndexedDB: Item updated');
       debouncedBackup();
     });
 
     db.keyval.hook('deleting').subscribe(() => {
-      //console.log('IndexedDB: Item deleted');
+      console.log('IndexedDB: Item deleted');
       debouncedBackup();
     });
 
@@ -943,7 +944,7 @@ async function setupStorageMonitoring() {
     const originalSetItem = localStorage.setItem;
     localStorage.setItem = function(key, value) {
       if (!excludedKeys.includes(key)) {
-        //console.log('LocalStorage: Item changed', key);
+        console.log('LocalStorage: Item changed', key);
         debouncedBackup();
       }
       originalSetItem.apply(this, arguments);
@@ -953,7 +954,7 @@ async function setupStorageMonitoring() {
     const originalRemoveItem = localStorage.removeItem;
     localStorage.removeItem = function(key) {
       if (!excludedKeys.includes(key)) {
-        //console.log('LocalStorage: Item removed', key);
+        console.log('LocalStorage: Item removed', key);
         debouncedBackup();
       }
       originalRemoveItem.apply(this, arguments);
@@ -962,7 +963,7 @@ async function setupStorageMonitoring() {
     // Monitor localStorage clear
     const originalClear = localStorage.clear;
     localStorage.clear = function() {
-      //console.log('LocalStorage: Cleared');
+      console.log('LocalStorage: Cleared');
       debouncedBackup();
       originalClear.apply(this);
     };
@@ -1079,7 +1080,7 @@ async function backupToS3() {
 
     if (dataSize > chunkSize) {
       try {
-        //console.log('Starting Multipart upload to S3');
+        console.log('Starting Multipart upload to S3');
         const createMultipartParams = {
           Bucket: bucketName,
           Key: 'typingmind-backup.json',
@@ -1121,7 +1122,7 @@ async function backupToS3() {
                 ETag: uploadResult.ETag,
                 PartNumber: partNumber
               });
-              //console.log(`Part ${partNumber} uploaded successfully with ETag: ${uploadResult.ETag}`);
+              console.log(`Part ${partNumber} uploaded successfully with ETag: ${uploadResult.ETag}`);
               break; // Success, exit retry loop
             } catch (error) {
               console.error(`Error uploading part ${partNumber}:`, error);
@@ -1169,7 +1170,7 @@ async function backupToS3() {
         //console.log('Complete Multipart Upload Request:', JSON.stringify(completeParams, null, 2));
 
         await s3.completeMultipartUpload(completeParams).promise();
-        //console.log('Multipart upload completed successfully');
+        console.log('Multipart upload completed successfully');
       } catch (error) {
         console.error('Multipart upload failed:', error);
         // Fall back to regular upload if multipart fails
