@@ -91,6 +91,7 @@ If you are using typingmind cloud, use the below
 Update "https://*.hostname.com" with your specific hostname in case you are self hosting Typingmind (e.g. https://chat.yourhostname.com). If you are using Typingmind cloud, hostname should be https://www.typingmind.com. This restricts executing S3 commands from only the specified hostname providing better security.
 
 ## Cloudflare R2/S3 compatible setup
+!! Please ensure proper access policy is setup. The extension stores the credentials in the browser storage (like the original typingmind app) and this is not a secure method. The only option you have is to minimize damage cause if someone gets access to the credentials. !!
 Cloudflare R2 provides S3 compatible API with a generous 10GB free storage per month. Refer [How to setup Cloudflare R2 and use with this extension](https://github.com/itcon-pty-au/typingmind-cloud-backup/blob/main/Cloudflare_R2_HowTo.docx)
 
 ## About me
