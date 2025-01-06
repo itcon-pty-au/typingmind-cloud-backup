@@ -357,11 +357,12 @@ function openSyncModal() {
 				return;
 			}
 
+			localStorage.setItem('aws-region', region);
+			localStorage.setItem('aws-endpoint', endpoint);
+
 			try {
 				await validateAwsCredentials(bucketName, accessKey, secretKey);
 				localStorage.setItem('backup-interval', backupInterval);
-				localStorage.setItem('aws-region', region);
-				localStorage.setItem('aws-endpoint', endpoint);
 				localStorage.setItem('aws-bucket', bucketName);
 				localStorage.setItem('aws-access-key', accessKey);
 				localStorage.setItem('aws-secret-key', secretKey);
