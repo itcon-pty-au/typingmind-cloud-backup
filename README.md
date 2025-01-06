@@ -1,9 +1,7 @@
-<div align="center">⚠️ Important Notice ⚠️<br/><br/>
+<div align="center">[If you found this useful, please consider buying me a coffee](https://buymeacoffee.com/itcon):heart:!<br/><br/>
 Please ensure that your Amazon S3 CORS configuration is updated to address issues with Multipart uploads. Refer Step 5 in AWS Config below. "ETag" needs to be added in ExposeHeaders section. </div>
 
 # TypingMind Cloud Backup Extension
-
-[If you found this useful, please consider buying me a coffee](https://buymeacoffee.com/itcon):heart:!
 
 ## Features
 - Extension to enable automatic backup & restore of app data to AWS S3/S3 compatible cloud services. (Full backup, not incremental)
