@@ -333,18 +333,18 @@ function openSyncModal() {
 	document
 		.getElementById('save-aws-details-btn')
 		.addEventListener('click', async function () {
-			// let extensionURLs = JSON.parse(
-			//   localStorage.getItem('TM_useExtensionURLs') || '[]'
-			// );
-			// if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
-			//   extensionURLs.push(
-			//     'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
-			//   );
-			//   localStorage.setItem(
-			//     'TM_useExtensionURLs',
-			//     JSON.stringify(extensionURLs)
-			//   );
-			// }
+			 let extensionURLs = JSON.parse(
+			   localStorage.getItem('TM_useExtensionURLs') || '[]'
+			 );
+			 if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
+			   extensionURLs.push(
+			     'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
+			   );
+			   localStorage.setItem(
+			     'TM_useExtensionURLs',
+			     JSON.stringify(extensionURLs)
+			   );
+			 }
 			const bucketName = awsBucketInput.value.trim();
 			const region = awsRegionInput.value.trim();
 			const accessKey = awsAccessKeyInput.value.trim();
@@ -906,15 +906,15 @@ function importDataToStorage(data) {
 		};
 	};
 	// Handle disappearing extension issue
-	//   let extensionURLs = JSON.parse(
-	//     localStorage.getItem('TM_useExtensionURLs') || '[]'
-	//   );
-	//   if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
-	//     extensionURLs.push(
-	//       'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
-	//     );
-	//     localStorage.setItem('TM_useExtensionURLs', JSON.stringify(extensionURLs));
-	//   }
+	   let extensionURLs = JSON.parse(
+	     localStorage.getItem('TM_useExtensionURLs') || '[]'
+	   );
+	   if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
+	     extensionURLs.push(
+	       'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
+	     );
+	     localStorage.setItem('TM_useExtensionURLs', JSON.stringify(extensionURLs));
+	   }
 }
 
 // Function to export data from localStorage and IndexedDB
