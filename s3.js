@@ -267,7 +267,7 @@ function openSyncModal() {
 			!awsAccessKeyInput.value.trim() ||
 			!awsSecretKeyInput.value.trim() ||
 			!backupIntervalInput.value ||
-			backupIntervalInput.value < 30;
+			backupIntervalInput.value < 15;
 		document.getElementById('export-to-s3-btn').disabled = isDisabled;
 		document.getElementById('import-from-s3-btn').disabled = isDisabled;
 		document.getElementById('save-aws-details-btn').disabled = isDisabled;
@@ -356,8 +356,8 @@ function openSyncModal() {
 			const endpoint = awsEndpointInput.value.trim();
 			const backupInterval = document.getElementById('backup-interval').value;
 
-			if (backupInterval < 30) {
-				alert('Backup interval must be at least 30 seconds');
+			if (backupInterval < 15) {
+				alert('Backup interval must be at least 15 seconds');
 				return;
 			}
 
