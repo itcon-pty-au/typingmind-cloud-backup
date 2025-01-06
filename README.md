@@ -14,6 +14,7 @@ Please ensure that your Amazon S3 CORS configuration is updated to address issue
 - Snapshot lets you backup the current typingmind data to the cloud when you need it. This is a 'no-touch' zipped backup that will permanently exist in the cloud till you chose to manually delete it.
 - A 'T-15 rolling snapshot' keeps a zipped snapshot of the typingmind instance from 15 minutes ago. This gives you a recent version of the backup that you can manually revert to in case of an unintended corruption of the main backup file. However, note that this is a rolling backup that gets overwritten every 15 minutes.
 - Allows you to view all the backups in S3 and lets you download it or restore from the UI itself. The snapshot backups can be deleted from the UI as well.
+- ✨ The backup interval is now configurable.
   
 ## Using this extension
 WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXPORT" before setting up the extension.
