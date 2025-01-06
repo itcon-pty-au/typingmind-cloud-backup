@@ -434,7 +434,7 @@ function openSyncModal() {
 			const importBtn = document.getElementById('import-from-s3-btn');
 			importBtn.disabled = true;
 			importBtn.style.cursor = 'not-allowed';
-			importBtn.textContent = 'Importing...';
+			importBtn.textContent = 'Importing';
 			isImportInProgress = true;
 
 			try {
