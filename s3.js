@@ -115,7 +115,7 @@ function openSyncModal() {
 		return;
 	}
 	var modalPopup = document.createElement('div');
-	modalPopup.style.cssText = 'padding-left: 10px; padding-right: 10px; overflow-y: auto; max-height: 90vh;';
+	modalPopup.style.cssText = 'padding-left: 10px; padding-right: 10px; overflow-y: auto;';
 	modalPopup.setAttribute('data-element-id', 'sync-modal-dbbackup');
 	modalPopup.className =
 		'bg-opacity-75 fixed inset-0 bg-gray-800 transition-all flex items-center justify-center z-[60]';
