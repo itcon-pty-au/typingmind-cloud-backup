@@ -583,12 +583,12 @@ document.addEventListener('visibilitychange', async () => {
 // This is to provide a secondary backup option in case of unintended corruption of the backup file
 async function handleTimeBasedBackup() {
 	const bucketName = localStorage.getItem('aws-bucket');
-	let lastTimeBackup = localStorage.getItem('last-time-based-no-touch-backup');
+	let lastTimeBackup = localStorage.getItem('last-time-based-backup');
 	const currentTime = new Date().getTime();
 
 	if (!lastTimeBackup) {
 		localStorage.setItem(
-			'last-time-based-no-touch-backup',
+			'last-time-based-backup',
 			new Date().toLocaleString()
 		);
 		lastTimeBackup = '0';
@@ -623,7 +623,7 @@ async function handleTimeBasedBackup() {
 
 			await s3.putObject(uploadParams).promise();
 			localStorage.setItem(
-				'last-time-based-no-touch-backup',
+				'last-time-based-backup',
 				new Date(currentTime).toLocaleString()
 			);
 		} catch (error) {
