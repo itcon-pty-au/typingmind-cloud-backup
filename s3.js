@@ -17,6 +17,7 @@ const TIME_BACKUP_FILE_PREFIX = `T-${TIME_BACKUP_INTERVAL}`;
 async function handleDOMReady() {
 	window.removeEventListener('load', handleDOMReady);
 	var importSuccessful = await checkAndImportBackup();
+	
 	const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
 	const today = new Date();
 	const currentDateSuffix = `${today.getFullYear()}${String(
@@ -34,6 +35,7 @@ async function handleDOMReady() {
 		if (!storedSuffix || currentDateSuffix > storedSuffix) {
 			await handleBackupFiles();
 		}
+		localStorage.setItem('activeTabBackupRunning', 'false');  // Reset flag
 		startBackupInterval();
 	} else if (!backupIntervalRunning) {
 		startBackupInterval();
