@@ -253,11 +253,11 @@ function openSyncModal() {
 	if (savedEndpoint) awsEndpointInput.value = savedEndpoint;
 	if (backupIntervalInput) backupIntervalInput.value = savedInterval;
 
-	const currentTime = new Date().toLocaleString();
+	//const currentTime = new Date().toLocaleString();
 	var element = document.getElementById('last-sync-msg');
 	if (lastSync) {
 		if (element !== null) {
-			element.innerText = `Last sync done at ${currentTime}`;
+			element.innerText = `Last sync done at ${lastSync}`;
 			element = null;
 		}
 	}
