@@ -790,12 +790,11 @@ function updateBackupButtons() {
 }
 
 async function downloadBackupFile() {
-	let s3 = null;
 	let data = null;
 	let blob = null;
 	let url = null;
 	const bucketName = localStorage.getItem('aws-bucket');
-	s3 = new AWS.S3();
+	const s3 = new AWS.S3();
 	const selectedFile = document.getElementById('backup-files').value;
 
 	try {
@@ -985,7 +984,6 @@ async function backupToS3() {
 	let data = null;
 	let dataStr = null;
 	let blob = null;
-	let s3 = null;
 	const bucketName = localStorage.getItem('aws-bucket');
 	const awsRegion = localStorage.getItem('aws-region');
 	const awsAccessKey = localStorage.getItem('aws-access-key');
@@ -1168,7 +1166,6 @@ async function backupToS3() {
 
 // Function to handle import from S3
 async function importFromS3() {
-	let s3 = null;
 	let importedData = null;
 	const bucketName = localStorage.getItem('aws-bucket');
 	const awsRegion = localStorage.getItem('aws-region');
@@ -1192,7 +1189,7 @@ async function importFromS3() {
 
 	AWS.config.update(awsConfig);
 
-	s3 = new AWS.S3();
+	const s3 = new AWS.S3();
 	const params = {
 		Bucket: bucketName,
 		Key: 'typingmind-backup.json',
@@ -1312,7 +1309,6 @@ async function validateAwsCredentials(bucketName, accessKey, secretKey) {
 
 // Function to create a dated backup copy, zip it, and purge old backups
 async function handleBackupFiles() {
-	let s3 = null;
 	let backupFile = null;
 	let backupContent = null;
 	let zip = null;
@@ -1340,7 +1336,7 @@ async function handleBackupFiles() {
 
 	AWS.config.update(awsConfig);
 
-	s3 = new AWS.S3();
+	const s3 = new AWS.S3();
 	const params = {
 		Bucket: bucketName,
 		Prefix: 'typingmind-backup',
