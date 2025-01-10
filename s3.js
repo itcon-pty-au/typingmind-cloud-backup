@@ -818,7 +818,6 @@ async function downloadBackupFile() {
 		console.error('Error downloading file:', error);
 	} finally {
 		// Clean up variables
-		s3 = null;
 		data = null;
 		blob = null;
 		if (url) {
@@ -1160,7 +1159,6 @@ async function backupToS3() {
 		data = null;
 		dataStr = null;
 		blob = null;
-		s3 = null;
 	}
 }
 
@@ -1214,7 +1212,6 @@ async function importFromS3() {
 		wasImportSuccessful = true;
 	});
 	// Clean up variables
-	s3 = null;
 	importedData = null;
 }
 
@@ -1407,7 +1404,6 @@ async function handleBackupFiles() {
 		}
 	});
 	// Clean up variables
-	s3 = null;
 	backupFile = null;
 	backupContent = null;
 	zip = null;
