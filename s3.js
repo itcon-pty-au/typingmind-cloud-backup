@@ -794,19 +794,19 @@ async function downloadBackupFile() {
 	let blob = null;
 	let url = null;
 	const bucketName = localStorage.getItem('aws-bucket');
-	const s3 = new AWS.S3();
+	let s3 = new AWS.S3();
 	const selectedFile = document.getElementById('backup-files').value;
 
 	try {
-		const data = await s3
+		data = await s3
 			.getObject({
 				Bucket: bucketName,
 				Key: selectedFile,
 			})
 			.promise();
 
-		const blob = new Blob([data.Body], { type: data.ContentType });
-		const url = window.URL.createObjectURL(blob);
+		blob = new Blob([data.Body], { type: data.ContentType });
+		url = window.URL.createObjectURL(blob);
 		const a = document.createElement('a');
 		a.href = url;
 		a.download = selectedFile;
@@ -954,9 +954,9 @@ function exportBackupData() {
 		};
 		var request = indexedDB.open('keyval-store', 1);
 		request.onsuccess = function (event) {
-			var db = event.target.result;
-			var transaction = db.transaction(['keyval'], 'readonly');
-			var store = transaction.objectStore('keyval');
+			db = event.target.result;
+			transaction = db.transaction(['keyval'], 'readonly');
+			store = transaction.objectStore('keyval');
 			store.getAllKeys().onsuccess = function (keyEvent) {
 				var keys = keyEvent.target.result;
 				store.getAll().onsuccess = function (valueEvent) {
@@ -1008,13 +1008,13 @@ async function backupToS3() {
 
 	try {
 		//console.log('Starting sync to S3 at ' + new Date().toLocaleString());
-		const data = await exportBackupData();
-		const dataStr = JSON.stringify(data);
-		const blob = new Blob([dataStr], { type: 'application/json' });
+		data = await exportBackupData();
+		dataStr = JSON.stringify(data);
+		blob = new Blob([dataStr], { type: 'application/json' });
 		const dataSize = blob.size;
 		const chunkSize = 5 * 1024 * 1024; // 5MB chunks
 
-		const s3 = new AWS.S3();
+		let s3 = new AWS.S3();
 
 		if (dataSize > chunkSize) {
 			try {
@@ -1189,7 +1189,7 @@ async function importFromS3() {
 
 	AWS.config.update(awsConfig);
 
-	const s3 = new AWS.S3();
+	let s3 = new AWS.S3();
 	const params = {
 		Bucket: bucketName,
 		Key: 'typingmind-backup.json',
@@ -1203,7 +1203,7 @@ async function importFromS3() {
 			return;
 		}
 
-		const importedData = JSON.parse(data.Body.toString('utf-8'));
+		importedData = JSON.parse(data.Body.toString('utf-8'));
 		importDataToStorage(importedData);
 		const currentTime = new Date().toLocaleString();
 		localStorage.setItem('last-cloud-sync', currentTime);
@@ -1336,7 +1336,7 @@ async function handleBackupFiles() {
 
 	AWS.config.update(awsConfig);
 
-	const s3 = new AWS.S3();
+	let s3 = new AWS.S3();
 	const params = {
 		Bucket: bucketName,
 		Prefix: 'typingmind-backup',
@@ -1362,10 +1362,10 @@ async function handleBackupFiles() {
 					Bucket: bucketName,
 					Key: 'typingmind-backup.json',
 				};
-				const backupFile = await s3.getObject(getObjectParams).promise();
-				const backupContent = backupFile.Body;
+				backupFile = await s3.getObject(getObjectParams).promise();
+				backupContent = backupFile.Body;
 				const jszip = await loadJSZip();
-				const zip = new jszip();
+				zip = new jszip();
 				zip.file(`typingmind-backup-${currentDateSuffix}.json`, backupContent, {
 					compression: 'DEFLATE',
 					compressionOptions: {
@@ -1373,7 +1373,7 @@ async function handleBackupFiles() {
 					},
 				});
 
-				const compressedContent = await zip.generateAsync({ type: 'blob' });
+				compressedContent = await zip.generateAsync({ type: 'blob' });
 
 				const zipKey = `typingmind-backup-${currentDateSuffix}.zip`;
 				const uploadParams = {
