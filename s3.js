@@ -17,7 +17,7 @@ const TIME_BACKUP_FILE_PREFIX = `T-${TIME_BACKUP_INTERVAL}`;
 async function handleDOMReady() {
 	window.removeEventListener('load', handleDOMReady);
 	var importSuccessful = await checkAndImportBackup();
-	
+
 	const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
 	const today = new Date();
 	const currentDateSuffix = `${today.getFullYear()}${String(
@@ -339,18 +339,18 @@ function openSyncModal() {
 	document
 		.getElementById('save-aws-details-btn')
 		.addEventListener('click', async function () {
-			 let extensionURLs = JSON.parse(
-			   localStorage.getItem('TM_useExtensionURLs') || '[]'
-			 );
-			 if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
-			   extensionURLs.push(
-			     'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
-			   );
-			   localStorage.setItem(
-			     'TM_useExtensionURLs',
-			     JSON.stringify(extensionURLs)
-			   );
-			 }
+			let extensionURLs = JSON.parse(
+				localStorage.getItem('TM_useExtensionURLs') || '[]'
+			);
+			if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
+				extensionURLs.push(
+					'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
+				);
+				localStorage.setItem(
+					'TM_useExtensionURLs',
+					JSON.stringify(extensionURLs)
+				);
+			}
 			const bucketName = awsBucketInput.value.trim();
 			const region = awsRegionInput.value.trim();
 			const accessKey = awsAccessKeyInput.value.trim();
@@ -451,8 +451,8 @@ function openSyncModal() {
 		});
 
 	// Close button click handler
-	closeButton.addEventListener('click', function() {
-	    modalPopup.remove();
+	closeButton.addEventListener('click', function () {
+		modalPopup.remove();
 	});
 
 	// Snapshot button click handler
@@ -599,7 +599,7 @@ async function handleTimeBasedBackup() {
 	if (
 		lastTimeBackup === '0' ||
 		currentTime - new Date(lastTimeBackup).getTime() >=
-			TIME_BACKUP_INTERVAL * 60 * 1000
+		TIME_BACKUP_INTERVAL * 60 * 1000
 	) {
 		const s3 = new AWS.S3();
 
@@ -774,8 +774,8 @@ function updateBackupButtons() {
 		restoreBtn.classList.toggle(
 			'opacity-50',
 			!bucketConfigured ||
-				!selectedFile ||
-				selectedFile === 'typingmind-backup.json'
+			!selectedFile ||
+			selectedFile === 'typingmind-backup.json'
 		);
 	}
 
@@ -790,8 +790,12 @@ function updateBackupButtons() {
 }
 
 async function downloadBackupFile() {
+	let s3 = null;
+	let data = null;
+	let blob = null;
+	let url = null;
 	const bucketName = localStorage.getItem('aws-bucket');
-	const s3 = new AWS.S3();
+	s3 = new AWS.S3();
 	const selectedFile = document.getElementById('backup-files').value;
 
 	try {
@@ -813,6 +817,15 @@ async function downloadBackupFile() {
 		document.body.removeChild(a);
 	} catch (error) {
 		console.error('Error downloading file:', error);
+	} finally {
+		// Clean up variables
+		s3 = null;
+		data = null;
+		blob = null;
+		if (url) {
+			window.URL.revokeObjectURL(url);
+			url = null;
+		}
 	}
 }
 
@@ -918,21 +931,25 @@ function importDataToStorage(data) {
 		};
 	};
 	// Handle disappearing extension issue
-	   let extensionURLs = JSON.parse(
-	     localStorage.getItem('TM_useExtensionURLs') || '[]'
-	   );
-	   if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
-	     extensionURLs.push(
-	       'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
-	     );
-	     localStorage.setItem('TM_useExtensionURLs', JSON.stringify(extensionURLs));
-	   }
+	let extensionURLs = JSON.parse(
+		localStorage.getItem('TM_useExtensionURLs') || '[]'
+	);
+	if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
+		extensionURLs.push(
+			'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
+		);
+		localStorage.setItem('TM_useExtensionURLs', JSON.stringify(extensionURLs));
+	}
 }
 
 // Function to export data from localStorage and IndexedDB
 function exportBackupData() {
 	return new Promise((resolve, reject) => {
-		var exportData = {
+		let exportData = null;
+		let db = null;
+		let transaction = null;
+		let store = null;
+		exportData = {
 			localStorage: { ...localStorage },
 			indexedDB: {},
 		};
@@ -956,10 +973,19 @@ function exportBackupData() {
 			reject(error);
 		};
 	});
+	// Clean up variables
+	exportData = null;
+	db = null;
+	transaction = null;
+	store = null;
 }
 
 // Function to handle backup to S3 with chunked multipart upload using Blob
 async function backupToS3() {
+	let data = null;
+	let dataStr = null;
+	let blob = null;
+	let s3 = null;
 	const bucketName = localStorage.getItem('aws-bucket');
 	const awsRegion = localStorage.getItem('aws-region');
 	const awsAccessKey = localStorage.getItem('aws-access-key');
@@ -1131,11 +1157,19 @@ async function backupToS3() {
 			element.innerText = `Backup failed: ${error.message}`;
 		}
 		throw error;
+	} finally {
+		// Clean up variables
+		data = null;
+		dataStr = null;
+		blob = null;
+		s3 = null;
 	}
 }
 
 // Function to handle import from S3
 async function importFromS3() {
+	let s3 = null;
+	let importedData = null;
 	const bucketName = localStorage.getItem('aws-bucket');
 	const awsRegion = localStorage.getItem('aws-region');
 	const awsAccessKey = localStorage.getItem('aws-access-key');
@@ -1158,7 +1192,7 @@ async function importFromS3() {
 
 	AWS.config.update(awsConfig);
 
-	const s3 = new AWS.S3();
+	s3 = new AWS.S3();
 	const params = {
 		Bucket: bucketName,
 		Key: 'typingmind-backup.json',
@@ -1182,6 +1216,9 @@ async function importFromS3() {
 		}
 		wasImportSuccessful = true;
 	});
+	// Clean up variables
+	s3 = null;
+	importedData = null;
 }
 
 //Delete file from S3
@@ -1275,7 +1312,11 @@ async function validateAwsCredentials(bucketName, accessKey, secretKey) {
 
 // Function to create a dated backup copy, zip it, and purge old backups
 async function handleBackupFiles() {
-	//console.log('Inside handleBackupFiles');
+	let s3 = null;
+	let backupFile = null;
+	let backupContent = null;
+	let zip = null;
+	let compressedContent = null;
 
 	const bucketName = localStorage.getItem('aws-bucket');
 	const awsRegion = localStorage.getItem('aws-region');
@@ -1299,7 +1340,7 @@ async function handleBackupFiles() {
 
 	AWS.config.update(awsConfig);
 
-	const s3 = new AWS.S3();
+	s3 = new AWS.S3();
 	const params = {
 		Bucket: bucketName,
 		Prefix: 'typingmind-backup',
@@ -1369,4 +1410,10 @@ async function handleBackupFiles() {
 			}
 		}
 	});
+	// Clean up variables
+	s3 = null;
+	backupFile = null;
+	backupContent = null;
+	zip = null;
+	compressedContent = null;
 }
