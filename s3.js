@@ -669,10 +669,10 @@ async function checkAndImportBackup() {
 				if (!err) {
 					await importFromS3();
 					wasImportSuccessful = true;
-					console.log('Import from S3 successful);
+					console.log('Import from S3 successful');
 					resolve(true);
 				} else {
-					console.log('Import from S3 not successful);
+					console.log('Import from S3 not successful');
 					if (err.code === 'NoSuchKey') {
 						alert(
 							"Backup file not found in S3! Run an adhoc 'Export' first."
