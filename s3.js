@@ -17,6 +17,7 @@ const TIME_BACKUP_FILE_PREFIX = `T-${TIME_BACKUP_INTERVAL}`;
 async function handleDOMReady() {
 	window.removeEventListener('load', handleDOMReady);
 	var importSuccessful = await checkAndImportBackup();
+
 	const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
 	const today = new Date();
 	const currentDateSuffix = `${today.getFullYear()}${String(
@@ -34,6 +35,7 @@ async function handleDOMReady() {
 		if (!storedSuffix || currentDateSuffix > storedSuffix) {
 			await handleBackupFiles();
 		}
+		localStorage.setItem('activeTabBackupRunning', 'false');  // Reset flag
 		startBackupInterval();
 	} else if (!backupIntervalRunning) {
 		startBackupInterval();
@@ -251,11 +253,11 @@ function openSyncModal() {
 	if (savedEndpoint) awsEndpointInput.value = savedEndpoint;
 	if (backupIntervalInput) backupIntervalInput.value = savedInterval;
 
-	const currentTime = new Date().toLocaleString();
+	//const currentTime = new Date().toLocaleString();
 	var element = document.getElementById('last-sync-msg');
 	if (lastSync) {
 		if (element !== null) {
-			element.innerText = `Last sync done at ${currentTime}`;
+			element.innerText = `Last sync done at ${lastSync}`;
 			element = null;
 		}
 	}
@@ -337,18 +339,18 @@ function openSyncModal() {
 	document
 		.getElementById('save-aws-details-btn')
 		.addEventListener('click', async function () {
-			 let extensionURLs = JSON.parse(
-			   localStorage.getItem('TM_useExtensionURLs') || '[]'
-			 );
-			 if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
-			   extensionURLs.push(
-			     'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
-			   );
-			   localStorage.setItem(
-			     'TM_useExtensionURLs',
-			     JSON.stringify(extensionURLs)
-			   );
-			 }
+			let extensionURLs = JSON.parse(
+				localStorage.getItem('TM_useExtensionURLs') || '[]'
+			);
+			if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
+				extensionURLs.push(
+					'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
+				);
+				localStorage.setItem(
+					'TM_useExtensionURLs',
+					JSON.stringify(extensionURLs)
+				);
+			}
 			const bucketName = awsBucketInput.value.trim();
 			const region = awsRegionInput.value.trim();
 			const accessKey = awsAccessKeyInput.value.trim();
@@ -449,8 +451,8 @@ function openSyncModal() {
 		});
 
 	// Close button click handler
-	closeButton.addEventListener('click', function() {
-	    modalPopup.remove();
+	closeButton.addEventListener('click', function () {
+		modalPopup.remove();
 	});
 
 	// Snapshot button click handler
@@ -597,7 +599,7 @@ async function handleTimeBasedBackup() {
 	if (
 		lastTimeBackup === '0' ||
 		currentTime - new Date(lastTimeBackup).getTime() >=
-			TIME_BACKUP_INTERVAL * 60 * 1000
+		TIME_BACKUP_INTERVAL * 60 * 1000
 	) {
 		const s3 = new AWS.S3();
 
@@ -772,8 +774,8 @@ function updateBackupButtons() {
 		restoreBtn.classList.toggle(
 			'opacity-50',
 			!bucketConfigured ||
-				!selectedFile ||
-				selectedFile === 'typingmind-backup.json'
+			!selectedFile ||
+			selectedFile === 'typingmind-backup.json'
 		);
 	}
 
@@ -788,20 +790,23 @@ function updateBackupButtons() {
 }
 
 async function downloadBackupFile() {
+	let data = null;
+	let blob = null;
+	let url = null;
 	const bucketName = localStorage.getItem('aws-bucket');
-	const s3 = new AWS.S3();
+	let s3 = new AWS.S3();
 	const selectedFile = document.getElementById('backup-files').value;
 
 	try {
-		const data = await s3
+		data = await s3
 			.getObject({
 				Bucket: bucketName,
 				Key: selectedFile,
 			})
 			.promise();
 
-		const blob = new Blob([data.Body], { type: data.ContentType });
-		const url = window.URL.createObjectURL(blob);
+		blob = new Blob([data.Body], { type: data.ContentType });
+		url = window.URL.createObjectURL(blob);
 		const a = document.createElement('a');
 		a.href = url;
 		a.download = selectedFile;
@@ -811,6 +816,14 @@ async function downloadBackupFile() {
 		document.body.removeChild(a);
 	} catch (error) {
 		console.error('Error downloading file:', error);
+	} finally {
+		// Clean up variables
+		data = null;
+		blob = null;
+		if (url) {
+			window.URL.revokeObjectURL(url);
+			url = null;
+		}
 	}
 }
 
@@ -916,29 +929,33 @@ function importDataToStorage(data) {
 		};
 	};
 	// Handle disappearing extension issue
-	   let extensionURLs = JSON.parse(
-	     localStorage.getItem('TM_useExtensionURLs') || '[]'
-	   );
-	   if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
-	     extensionURLs.push(
-	       'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
-	     );
-	     localStorage.setItem('TM_useExtensionURLs', JSON.stringify(extensionURLs));
-	   }
+	let extensionURLs = JSON.parse(
+		localStorage.getItem('TM_useExtensionURLs') || '[]'
+	);
+	if (!extensionURLs.some((url) => url.endsWith('s3.js'))) {
+		extensionURLs.push(
+			'https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js'
+		);
+		localStorage.setItem('TM_useExtensionURLs', JSON.stringify(extensionURLs));
+	}
 }
 
 // Function to export data from localStorage and IndexedDB
 function exportBackupData() {
 	return new Promise((resolve, reject) => {
-		var exportData = {
+		let exportData = null;
+		let db = null;
+		let transaction = null;
+		let store = null;
+		exportData = {
 			localStorage: { ...localStorage },
 			indexedDB: {},
 		};
 		var request = indexedDB.open('keyval-store', 1);
 		request.onsuccess = function (event) {
-			var db = event.target.result;
-			var transaction = db.transaction(['keyval'], 'readonly');
-			var store = transaction.objectStore('keyval');
+			db = event.target.result;
+			transaction = db.transaction(['keyval'], 'readonly');
+			store = transaction.objectStore('keyval');
 			store.getAllKeys().onsuccess = function (keyEvent) {
 				var keys = keyEvent.target.result;
 				store.getAll().onsuccess = function (valueEvent) {
@@ -954,10 +971,18 @@ function exportBackupData() {
 			reject(error);
 		};
 	});
+	// Clean up variables
+	exportData = null;
+	db = null;
+	transaction = null;
+	store = null;
 }
 
 // Function to handle backup to S3 with chunked multipart upload using Blob
 async function backupToS3() {
+	let data = null;
+	let dataStr = null;
+	let blob = null;
 	const bucketName = localStorage.getItem('aws-bucket');
 	const awsRegion = localStorage.getItem('aws-region');
 	const awsAccessKey = localStorage.getItem('aws-access-key');
@@ -982,13 +1007,13 @@ async function backupToS3() {
 
 	try {
 		//console.log('Starting sync to S3 at ' + new Date().toLocaleString());
-		const data = await exportBackupData();
-		const dataStr = JSON.stringify(data);
-		const blob = new Blob([dataStr], { type: 'application/json' });
+		data = await exportBackupData();
+		dataStr = JSON.stringify(data);
+		blob = new Blob([dataStr], { type: 'application/json' });
 		const dataSize = blob.size;
 		const chunkSize = 5 * 1024 * 1024; // 5MB chunks
 
-		const s3 = new AWS.S3();
+		let s3 = new AWS.S3();
 
 		if (dataSize > chunkSize) {
 			try {
@@ -1129,11 +1154,17 @@ async function backupToS3() {
 			element.innerText = `Backup failed: ${error.message}`;
 		}
 		throw error;
+	} finally {
+		// Clean up variables
+		data = null;
+		dataStr = null;
+		blob = null;
 	}
 }
 
 // Function to handle import from S3
 async function importFromS3() {
+	let importedData = null;
 	const bucketName = localStorage.getItem('aws-bucket');
 	const awsRegion = localStorage.getItem('aws-region');
 	const awsAccessKey = localStorage.getItem('aws-access-key');
@@ -1156,7 +1187,7 @@ async function importFromS3() {
 
 	AWS.config.update(awsConfig);
 
-	const s3 = new AWS.S3();
+	let s3 = new AWS.S3();
 	const params = {
 		Bucket: bucketName,
 		Key: 'typingmind-backup.json',
@@ -1170,7 +1201,7 @@ async function importFromS3() {
 			return;
 		}
 
-		const importedData = JSON.parse(data.Body.toString('utf-8'));
+		importedData = JSON.parse(data.Body.toString('utf-8'));
 		importDataToStorage(importedData);
 		const currentTime = new Date().toLocaleString();
 		localStorage.setItem('last-cloud-sync', currentTime);
@@ -1180,6 +1211,8 @@ async function importFromS3() {
 		}
 		wasImportSuccessful = true;
 	});
+	// Clean up variables
+	importedData = null;
 }
 
 //Delete file from S3
@@ -1273,7 +1306,10 @@ async function validateAwsCredentials(bucketName, accessKey, secretKey) {
 
 // Function to create a dated backup copy, zip it, and purge old backups
 async function handleBackupFiles() {
-	//console.log('Inside handleBackupFiles');
+	let backupFile = null;
+	let backupContent = null;
+	let zip = null;
+	let compressedContent = null;
 
 	const bucketName = localStorage.getItem('aws-bucket');
 	const awsRegion = localStorage.getItem('aws-region');
@@ -1297,7 +1333,7 @@ async function handleBackupFiles() {
 
 	AWS.config.update(awsConfig);
 
-	const s3 = new AWS.S3();
+	let s3 = new AWS.S3();
 	const params = {
 		Bucket: bucketName,
 		Prefix: 'typingmind-backup',
@@ -1323,10 +1359,10 @@ async function handleBackupFiles() {
 					Bucket: bucketName,
 					Key: 'typingmind-backup.json',
 				};
-				const backupFile = await s3.getObject(getObjectParams).promise();
-				const backupContent = backupFile.Body;
+				backupFile = await s3.getObject(getObjectParams).promise();
+				backupContent = backupFile.Body;
 				const jszip = await loadJSZip();
-				const zip = new jszip();
+				zip = new jszip();
 				zip.file(`typingmind-backup-${currentDateSuffix}.json`, backupContent, {
 					compression: 'DEFLATE',
 					compressionOptions: {
@@ -1334,7 +1370,7 @@ async function handleBackupFiles() {
 					},
 				});
 
-				const compressedContent = await zip.generateAsync({ type: 'blob' });
+				compressedContent = await zip.generateAsync({ type: 'blob' });
 
 				const zipKey = `typingmind-backup-${currentDateSuffix}.zip`;
 				const uploadParams = {
@@ -1367,4 +1403,9 @@ async function handleBackupFiles() {
 			}
 		}
 	});
+	// Clean up variables
+	backupFile = null;
+	backupContent = null;
+	zip = null;
+	compressedContent = null;
 }
