@@ -35,6 +35,7 @@ async function handleDOMReady() {
 		if (!storedSuffix || currentDateSuffix > storedSuffix) {
 			await handleBackupFiles();
 		}
+		localStorage.setItem('activeTabBackupRunning', 'false');  // Reset flag
 		startBackupInterval();
 	} else if (!backupIntervalRunning) {
 		startBackupInterval();
@@ -669,10 +670,8 @@ async function checkAndImportBackup() {
 				if (!err) {
 					await importFromS3();
 					wasImportSuccessful = true;
-					console.log('Import from S3 successful');
 					resolve(true);
 				} else {
-					console.log('Import from S3 not successful');
 					if (err.code === 'NoSuchKey') {
 						alert(
 							"Backup file not found in S3! Run an adhoc 'Export' first."
@@ -1007,7 +1006,7 @@ async function backupToS3() {
 	AWS.config.update(awsConfig);
 
 	try {
-		console.log('Starting sync to S3 at ' + new Date().toLocaleString());
+		//console.log('Starting sync to S3 at ' + new Date().toLocaleString());
 		data = await exportBackupData();
 		dataStr = JSON.stringify(data);
 		blob = new Blob([dataStr], { type: 'application/json' });
@@ -1018,7 +1017,7 @@ async function backupToS3() {
 
 		if (dataSize > chunkSize) {
 			try {
-				console.log('Starting Multipart upload to S3');
+				//console.log('Starting Multipart upload to S3');
 				const createMultipartParams = {
 					Bucket: bucketName,
 					Key: 'typingmind-backup.json',
@@ -1062,7 +1061,7 @@ async function backupToS3() {
 								ETag: uploadResult.ETag,
 								PartNumber: partNumber,
 							});
-							console.log(`Part ${partNumber} uploaded successfully with ETag: ${uploadResult.ETag}`);
+							//console.log(`Part ${partNumber} uploaded successfully with ETag: ${uploadResult.ETag}`);
 							break; // Success, exit retry loop
 						} catch (error) {
 							console.error(`Error uploading part ${partNumber}:`, error);
@@ -1112,14 +1111,14 @@ async function backupToS3() {
 					},
 				};
 
-				console.log('Complete Multipart Upload Request:', JSON.stringify(completeParams, null, 2));
+				//console.log('Complete Multipart Upload Request:', JSON.stringify(completeParams, null, 2));
 
 				await s3.completeMultipartUpload(completeParams).promise();
-				console.log('Multipart upload completed successfully');
+				//console.log('Multipart upload completed successfully');
 			} catch (error) {
 				console.error('Multipart upload failed:', error);
 				// Fall back to regular upload if multipart fails
-				console.log('Falling back to regular upload');
+				//console.log('Falling back to regular upload');
 				const putParams = {
 					Bucket: bucketName,
 					Key: 'typingmind-backup.json',
@@ -1129,7 +1128,7 @@ async function backupToS3() {
 				await s3.putObject(putParams).promise();
 			}
 		} else {
-			console.log('Starting standard upload to S3');
+			//console.log('Starting standard upload to S3');
 			const putParams = {
 				Bucket: bucketName,
 				Key: 'typingmind-backup.json',
