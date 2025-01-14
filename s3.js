@@ -35,7 +35,6 @@ async function handleDOMReady() {
 		if (!storedSuffix || currentDateSuffix > storedSuffix) {
 			await handleBackupFiles();
 		}
-		localStorage.setItem('activeTabBackupRunning', 'false');  // Reset flag
 		startBackupInterval();
 	} else if (!backupIntervalRunning) {
 		startBackupInterval();
