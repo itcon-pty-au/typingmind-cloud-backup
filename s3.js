@@ -1352,36 +1352,40 @@ async function handleBackupFiles() {
 		//console.log('object Count:' + data.Contents.length);
 		if (data.Contents.length > 0) {
 			//console.log('Listobject API call: Object count is' + data.Contents.length);
-			const lastModified = data.Contents[0].LastModified;
-			const lastModifiedDate = new Date(lastModified);
-			if (lastModifiedDate.setHours(0, 0, 0, 0) < today.setHours(0, 0, 0, 0)) {
-				const getObjectParams = {
-					Bucket: bucketName,
-					Key: 'typingmind-backup.json',
-				};
-				backupFile = await s3.getObject(getObjectParams).promise();
-				backupContent = backupFile.Body;
-				const jszip = await loadJSZip();
-				zip = new jszip();
-				zip.file(`typingmind-backup-${currentDateSuffix}.json`, backupContent, {
-					compression: 'DEFLATE',
-					compressionOptions: {
-						level: 9,
-					},
-				});
-
-				compressedContent = await zip.generateAsync({ type: 'blob' });
-
-				const zipKey = `typingmind-backup-${currentDateSuffix}.zip`;
-				const uploadParams = {
-					Bucket: bucketName,
-					Key: zipKey,
-					Body: compressedContent,
-					ContentType: 'application/zip',
-				};
-				await s3.putObject(uploadParams).promise();
-				localStorage.setItem('last-daily-backup-in-s3', currentDateSuffix);
-			}
+			  const todaysBackupFile = data.Contents.find(
+			    file => file.Key === `typingmind-backup-${currentDateSuffix}.json` || 
+			            file.Key === `typingmind-backup-${currentDateSuffix}.zip`
+			  );
+			  
+			  // If no backup exists for today, create one
+			  if (!todaysBackupFile) {
+			    const getObjectParams = {
+			      Bucket: bucketName,
+			      Key: 'typingmind-backup.json',
+			    };
+			    backupFile = await s3.getObject(getObjectParams).promise();
+			    backupContent = backupFile.Body;
+			    const jszip = await loadJSZip();
+			    zip = new jszip();
+			    zip.file(`typingmind-backup-${currentDateSuffix}.json`, backupContent, {
+			      compression: 'DEFLATE',
+			      compressionOptions: {
+			        level: 9,
+			      },
+			    });
+			
+			    compressedContent = await zip.generateAsync({ type: 'blob' });
+			
+			    const zipKey = `typingmind-backup-${currentDateSuffix}.zip`;
+			    const uploadParams = {
+			      Bucket: bucketName,
+			      Key: zipKey,
+			      Body: compressedContent,
+			      ContentType: 'application/zip',
+			    };
+			    await s3.putObject(uploadParams).promise();
+			    localStorage.setItem('last-daily-backup-in-s3', currentDateSuffix);
+			  }
 
 			// Purge backups older than 30 days
 			const thirtyDaysAgo = new Date();
