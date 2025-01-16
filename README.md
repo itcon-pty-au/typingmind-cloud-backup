@@ -91,7 +91,7 @@ If you are using typingmind cloud, use the below
 ```
 Update "https://*.hostname.com" with your specific hostname in case you are self hosting Typingmind (e.g. https://chat.yourhostname.com). If you are using Typingmind cloud, hostname should be https://www.typingmind.com. This restricts executing S3 commands from only the specified hostname providing better security.
 
-## Cloudflare R2/S3 compatible setup
+## S3 compatible storage services setup
 Cloudflare R2 provides S3 compatible API with a generous 10GB free storage per month. Refer [How to setup Cloudflare R2 and use with this extension](https://github.com/itcon-pty-au/typingmind-cloud-backup/blob/main/Cloudflare_R2_HowTo.docx)
 
 iDrive E2 provides S3 compatible API with a generous 10GB free storage per month. Refer [How to setup iDrive E2 and use with this extension](https://github.com/itcon-pty-au/typingmind-cloud-backup/blob/main/iDrive_E2_HowTo.docx)
