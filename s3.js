@@ -506,6 +506,7 @@ function openSyncModal() {
 					Key: `Snapshot_${timestamp}.zip`,
 					Body: compressedContent,
 					ContentType: 'application/zip',
+					ServerSideEncryption: 'AES256'
 				};
 
 				await s3.putObject(putParams).promise();
@@ -621,6 +622,7 @@ async function handleTimeBasedBackup() {
 				Key: `${TIME_BACKUP_FILE_PREFIX}.zip`,
 				Body: compressedContent,
 				ContentType: 'application/zip',
+				ServerSideEncryption: 'AES256'
 			};
 
 			await s3.putObject(uploadParams).promise();
@@ -1022,6 +1024,7 @@ async function backupToS3() {
 					Bucket: bucketName,
 					Key: 'typingmind-backup.json',
 					ContentType: 'application/json',
+					ServerSideEncryption: 'AES256'
 				};
 
 				const multipart = await s3
@@ -1124,6 +1127,7 @@ async function backupToS3() {
 					Key: 'typingmind-backup.json',
 					Body: dataStr,
 					ContentType: 'application/json',
+					ServerSideEncryption: 'AES256'
 				};
 				await s3.putObject(putParams).promise();
 			}
@@ -1134,6 +1138,7 @@ async function backupToS3() {
 				Key: 'typingmind-backup.json',
 				Body: dataStr,
 				ContentType: 'application/json',
+				ServerSideEncryption: 'AES256'
 			};
 
 			await s3.putObject(putParams).promise();
@@ -1382,6 +1387,7 @@ async function handleBackupFiles() {
 			      Key: zipKey,
 			      Body: compressedContent,
 			      ContentType: 'application/zip',
+			      ServerSideEncryption: 'AES256'
 			    };
 			    await s3.putObject(uploadParams).promise();
 			    localStorage.setItem('last-daily-backup-in-s3', currentDateSuffix);
