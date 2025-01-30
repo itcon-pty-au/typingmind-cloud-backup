@@ -550,38 +550,53 @@ function openSyncModal() {
 		});
 }
 
-// Visibility change event listener
+// Update the visibility change handler
 document.addEventListener('visibilitychange', async () => {
 	console.log(`👁️ [${new Date().toLocaleString()}] Visibility changed: ${document.hidden ? 'hidden' : 'visible'}`);
 	
 	if (!document.hidden) {
 		// Tab became visible
 		console.log(`📱 [${new Date().toLocaleString()}] Tab became active`);
-		var importSuccessful = await checkAndImportBackup();
-		const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
-		const today = new Date();
-		const currentDateSuffix = `${today.getFullYear()}${String(
-			today.getMonth() + 1
-		).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-		const currentTime = new Date().toLocaleString();
-		const lastSync = localStorage.getItem('last-cloud-sync');
-		var element = document.getElementById('last-sync-msg');
-
-		if (lastSync && importSuccessful) {
-			if (element !== null) {
-				element.innerText = `Last sync done at ${currentTime}`;
-				element = null;
-			}
-			if (!storedSuffix || currentDateSuffix > storedSuffix) {
-				await handleBackupFiles();
-			}
-		}
 		
-		// Reset the flag and restart backup interval when tab becomes active
+		// Clear any existing interval first
 		localStorage.setItem('activeTabBackupRunning', 'false');
 		clearInterval(backupInterval);
 		backupIntervalRunning = false;
-		startBackupInterval();
+		
+		try {
+			// Perform import first
+			console.log(`📥 [${new Date().toLocaleString()}] Checking for updates from S3...`);
+			const importSuccessful = await checkAndImportBackup();
+			
+			if (importSuccessful) {
+				// Update UI and check daily backup
+				const currentTime = new Date().toLocaleString();
+				const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
+				const today = new Date();
+				const currentDateSuffix = `${today.getFullYear()}${String(
+					today.getMonth() + 1
+				).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+				
+				var element = document.getElementById('last-sync-msg');
+				if (element !== null) {
+					element.innerText = `Last sync done at ${currentTime}`;
+					element = null;
+				}
+				
+				// Check if daily backup is needed
+				if (!storedSuffix || currentDateSuffix > storedSuffix) {
+					await handleBackupFiles();
+				}
+				
+				// Only start backup interval after successful import
+				console.log(`✅ [${new Date().toLocaleString()}] Import successful, starting backup interval`);
+				startBackupInterval();
+			} else {
+				console.log(`⚠️ [${new Date().toLocaleString()}] Import was not successful, not starting backup interval`);
+			}
+		} catch (error) {
+			console.error(`❌ [${new Date().toLocaleString()}] Error during tab activation:`, error);
+		}
 	} else {
 		// Tab became hidden
 		console.log(`💤 [${new Date().toLocaleString()}] Tab became inactive`);
@@ -1273,7 +1288,7 @@ async function importFromS3() {
 			const k = 1024;
 			const sizes = ['Bytes', 'KB', 'MB', 'GB'];
 			const i = Math.floor(Math.log(bytes) / Math.log(k));
-			return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+			return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]);
 		};
 
 		// Calculate size difference percentage
