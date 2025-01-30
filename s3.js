@@ -1,4 +1,4 @@
-// v20250130
+// v20250131
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -7,38 +7,57 @@ let isSnapshotInProgress = false;
 const TIME_BACKUP_INTERVAL = 15;
 const TIME_BACKUP_FILE_PREFIX = `T-${TIME_BACKUP_INTERVAL}`;
 
+// Pre-load AWS SDK as soon as possible
+const awsSdkPromise = loadAwsSdk();
+
 (async function checkDOMOrRunBackup() {
-	if (document.readyState === 'complete') {
+	// Start loading AWS SDK immediately
+	await awsSdkPromise;
+	
+	// Use 'interactive' instead of 'complete' to start sooner
+	if (document.readyState !== 'loading') {
 		await handleDOMReady();
 	} else {
-		window.addEventListener('load', handleDOMReady);
+		// Use DOMContentLoaded instead of load
+		window.addEventListener('DOMContentLoaded', handleDOMReady);
 	}
 })();
 
 async function handleDOMReady() {
-	window.removeEventListener('load', handleDOMReady);
-	var importSuccessful = await checkAndImportBackup();
+	window.removeEventListener('DOMContentLoaded', handleDOMReady);
+	
+	// Start the import process immediately if credentials exist
+	const bucketName = localStorage.getItem('aws-bucket');
+	const awsAccessKey = localStorage.getItem('aws-access-key');
+	const awsSecretKey = localStorage.getItem('aws-secret-key');
+	
+	if (bucketName && awsAccessKey && awsSecretKey) {
+		var importSuccessful = await checkAndImportBackup();
 
-	const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
-	const today = new Date();
-	const currentDateSuffix = `${today.getFullYear()}${String(
-		today.getMonth() + 1
-	).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-	const currentTime = new Date().toLocaleString();
-	const lastSync = localStorage.getItem('last-cloud-sync');
-	var element = document.getElementById('last-sync-msg');
+		const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
+		const today = new Date();
+		const currentDateSuffix = `${today.getFullYear()}${String(
+			today.getMonth() + 1
+		).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+		const currentTime = new Date().toLocaleString();
+		const lastSync = localStorage.getItem('last-cloud-sync');
+		var element = document.getElementById('last-sync-msg');
 
-	if (lastSync && importSuccessful) {
-		if (element !== null) {
-			element.innerText = `Last sync done at ${currentTime}`;
-			element = null;
+		if (lastSync && importSuccessful) {
+			if (element !== null) {
+				element.innerText = `Last sync done at ${currentTime}`;
+				element = null;
+			}
+			if (!storedSuffix || currentDateSuffix > storedSuffix) {
+				await handleBackupFiles();
+			}
+			localStorage.setItem('activeTabBackupRunning', 'false');  // Reset flag
+			startBackupInterval();
+		} else if (!backupIntervalRunning) {
+			startBackupInterval();
 		}
-		if (!storedSuffix || currentDateSuffix > storedSuffix) {
-			await handleBackupFiles();
-		}
-		localStorage.setItem('activeTabBackupRunning', 'false');  // Reset flag
-		startBackupInterval();
-	} else if (!backupIntervalRunning) {
+	} else {
+		// No credentials, skip import
 		startBackupInterval();
 	}
 }
@@ -967,13 +986,22 @@ async function performBackup() {
 
 // Function to load AWS SDK asynchronously
 async function loadAwsSdk() {
-	return new Promise((resolve, reject) => {
+	if (awsSdkLoadPromise) return awsSdkLoadPromise;
+	
+	awsSdkLoadPromise = new Promise((resolve, reject) => {
+		if (typeof AWS !== 'undefined') {
+			resolve();
+			return;
+		}
+		
 		const script = document.createElement('script');
 		script.src = 'https://sdk.amazonaws.com/js/aws-sdk-2.804.0.min.js';
 		script.onload = resolve;
 		script.onerror = reject;
 		document.head.appendChild(script);
 	});
+	
+	return awsSdkLoadPromise;
 }
 
 // Function to dynamically load the JSZip library
