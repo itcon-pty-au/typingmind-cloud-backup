@@ -1370,7 +1370,8 @@ async function importFromS3() {
 			message += '\nDo you want to proceed with importing the cloud backup? This will overwrite your local data.';
 
 			if (!confirm(message)) {
-				throw new Error('Import cancelled by user');
+				console.log(`ℹ️ [${new Date().toLocaleString()}] Import cancelled by user`);
+				return false; // Return false instead of throwing error
 			}
 		}
 
@@ -1390,7 +1391,7 @@ async function importFromS3() {
 		return true;
 	} catch (error) {
 		console.error(`❌ [${new Date().toLocaleString()}] Import failed:`, error);
-		throw error;
+		return false; // Return false for any error
 	}
 }
 
