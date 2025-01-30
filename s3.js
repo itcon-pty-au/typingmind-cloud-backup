@@ -1328,6 +1328,13 @@ async function importFromS3() {
 		
 		// Check if size difference is within tolerance (±2 bytes)
 		const isWithinSizeTolerance = Math.abs(cloudFileSize - localFileSize) <= 2;
+		
+		// Log size comparison details
+		console.log(`📊 [${new Date().toLocaleString()}] Size comparison:
+    Cloud size: ${cloudFileSize} bytes
+    Local size: ${localFileSize} bytes
+    Difference: ${cloudFileSize - localFileSize} bytes (${sizeDiffPercentage.toFixed(2)}%)
+    Within tolerance: ${isWithinSizeTolerance ? 'Yes' : 'No'}`);
 
 		// Check time difference
 		const isTimeDifferenceSignificant = () => {
