@@ -1186,14 +1186,14 @@ async function backupToS3() {
 	try {
 		//console.log('Starting sync to S3 at ' + new Date().toLocaleString());
 		data = await exportBackupData();
-		console.log(`📤 [${new Date().toLocaleString()}] Starting backup encryption:`);
+		console.log(`📤 [${new Date().toLocaleString()}] Starting backup encryption`);
 		
 		const encryptedData = await encryptData(data);
-		console.log(`📦 [${new Date().toLocaleString()}] After encryption:`);
+		console.log(`📦 [${new Date().toLocaleString()}] After encryption`);
 		
 		// Create blob directly from encrypted data
 		blob = new Blob([encryptedData], { type: 'application/octet-stream' });
-		console.log(`💾 [${new Date().toLocaleString()}] Blob created:`);
+		console.log(`💾 [${new Date().toLocaleString()}] Blob created`);
 		const dataSize = blob.size;
 		localStorage.setItem('backup-size', dataSize.toString());
 		const chunkSize = 5 * 1024 * 1024; // 5MB chunks
@@ -1718,12 +1718,7 @@ async function deriveKey(password) {
 async function encryptData(data) {
     const encryptionKey = localStorage.getItem('encryption-key');
     console.log(`🔐 [${new Date().toLocaleString()}] Encryption attempt:`, {
-        hasKey: !!encryptionKey,
-        keyLength: encryptionKey?.length,
-        dataType: typeof data,
-        isArray: Array.isArray(data),
-        dataSize: JSON.stringify(data).length,
-        sampleData: JSON.stringify(data).substring(0, 100) + '...'
+        hasKey: !!encryptionKey
     });
 
     if (!encryptionKey) {
@@ -1739,11 +1734,7 @@ async function encryptData(data) {
         const iv = window.crypto.getRandomValues(new Uint8Array(12));
         const encodedData = enc.encode(JSON.stringify(data));
         
-        console.log(`📝 [${new Date().toLocaleString()}] Data prepared for encryption:`, {
-            encodedDataSize: encodedData.length,
-            ivSize: iv.length,
-            sampleEncodedData: encodedData.slice(0, 50)
-        });
+        console.log(`📝 [${new Date().toLocaleString()}] Data prepared for encryption:`);
 
         const encryptedContent = await window.crypto.subtle.encrypt(
             {
