@@ -1183,7 +1183,7 @@ async function importFromS3() {
 
 	const awsConfig = {
 		accessKeyId: awsAccessKey,
-		secretAccessKey: secretKey,
+		secretAccessKey: awsSecretKey,
 		region: awsRegion,
 	};
 
