@@ -1335,64 +1335,69 @@ async function handleBackupFiles() {
 
 	AWS.config.update(awsConfig);
 
-	try {
-		let s3 = new AWS.S3();
-		const params = {
-			Bucket: bucketName,
-			Prefix: 'typingmind-backup',
-		};
+	let s3 = new AWS.S3();
+	const params = {
+		Bucket: bucketName,
+		Prefix: 'typingmind-backup',
+	};
 
-		const today = new Date();
-		const currentDateSuffix = `${today.getFullYear()}${String(
-			today.getMonth() + 1
-		).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+	const today = new Date();
+	const currentDateSuffix = `${today.getFullYear()}${String(
+		today.getMonth() + 1
+	).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
 
-		const data = await s3.listObjectsV2(params).promise();
-		
+	s3.listObjectsV2(params, async (err, data) => {
+		if (err) {
+			console.error('Error listing S3 objects:', err);
+			return;
+		}
+		//console.log('object Count:' + data.Contents.length);
 		if (data.Contents.length > 0) {
-			const todaysBackupFile = data.Contents.find(
-				file => file.Key === `typingmind-backup-${currentDateSuffix}.json` || 
-						file.Key === `typingmind-backup-${currentDateSuffix}.zip`
-			);
+			//console.log('Listobject API call: Object count is' + data.Contents.length);
+			  const todaysBackupFile = data.Contents.find(
+			    file => file.Key === `typingmind-backup-${currentDateSuffix}.json` || 
+			            file.Key === `typingmind-backup-${currentDateSuffix}.zip`
+			  );
+			  
+			  // If no backup exists for today, create one
+			  if (!todaysBackupFile) {
+			    const getObjectParams = {
+			      Bucket: bucketName,
+			      Key: 'typingmind-backup.json',
+			    };
+			    backupFile = await s3.getObject(getObjectParams).promise();
+			    backupContent = backupFile.Body;
+			    const jszip = await loadJSZip();
+			    zip = new jszip();
+			    zip.file(`typingmind-backup-${currentDateSuffix}.json`, backupContent, {
+			      compression: 'DEFLATE',
+			      compressionOptions: {
+			        level: 9,
+			      },
+			    });
 			
-			// If no backup exists for today, create one
-			if (!todaysBackupFile) {
-				const getObjectParams = {
-					Bucket: bucketName,
-					Key: 'typingmind-backup.json',
-				};
-				backupFile = await s3.getObject(getObjectParams).promise();
-				backupContent = backupFile.Body;
-				const jszip = await loadJSZip();
-				zip = new jszip();
-				zip.file(`typingmind-backup-${currentDateSuffix}.json`, backupContent, {
-					compression: 'DEFLATE',
-					compressionOptions: {
-						level: 9,
-					},
-				});
-
-				compressedContent = await zip.generateAsync({ type: 'blob' });
-
-				const zipKey = `typingmind-backup-${currentDateSuffix}.zip`;
-				const uploadParams = {
-					Bucket: bucketName,
-					Key: zipKey,
-					Body: compressedContent,
-					ContentType: 'application/zip',
-					ServerSideEncryption: 'AES256'
-				};
-				await s3.putObject(uploadParams).promise();
-				
-				// Update localStorage after successful backup creation
-				localStorage.setItem('last-daily-backup-in-s3', currentDateSuffix);
-			}
+			    compressedContent = await zip.generateAsync({ type: 'blob' });
+			
+			    const zipKey = `typingmind-backup-${currentDateSuffix}.zip`;
+			    const uploadParams = {
+			      Bucket: bucketName,
+			      Key: zipKey,
+			      Body: compressedContent,
+			      ContentType: 'application/zip',
+			      ServerSideEncryption: 'AES256'
+			    };
+			    await s3.putObject(uploadParams).promise();
+			    localStorage.setItem('last-daily-backup-in-s3', currentDateSuffix);
+			  }
 
 			// Purge backups older than 30 days
 			const thirtyDaysAgo = new Date();
 			thirtyDaysAgo.setDate(today.getDate() - 30);
 			for (const file of data.Contents) {
-				if (file.Key.endsWith('.zip') && file.Key !== 'typingmind-backup.json') {
+				if (
+					file.Key.endsWith('.zip') &&
+					file.Key !== 'typingmind-backup.json'
+				) {
 					const fileDate = new Date(file.LastModified);
 					if (fileDate < thirtyDaysAgo) {
 						const deleteParams = {
@@ -1404,13 +1409,10 @@ async function handleBackupFiles() {
 				}
 			}
 		}
-	} catch (error) {
-		console.error('Error handling backup files:', error);
-	} finally {
-		// Clean up variables
-		backupFile = null;
-		backupContent = null;
-		zip = null;
-		compressedContent = null;
-	}
+	});
+	// Clean up variables
+	backupFile = null;
+	backupContent = null;
+	zip = null;
+	compressedContent = null;
 }
