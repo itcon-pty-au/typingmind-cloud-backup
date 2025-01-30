@@ -1316,6 +1316,7 @@ async function importFromS3() {
 		const headData = await s3.headObject(params).promise();
 		const cloudFileSize = headData.ContentLength;
 		const cloudLastModified = headData.LastModified;
+		const lastSync = localStorage.getItem('last-cloud-sync');
 
 		// Calculate current local data size
 		const currentData = await exportBackupData();
