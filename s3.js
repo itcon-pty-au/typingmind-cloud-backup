@@ -1198,15 +1198,10 @@ async function importFromS3() {
 		Key: 'typingmind-backup.json',
 	};
 
-	s3.getObject(params, function (err, data) {
-		const actionMsgElement = document.getElementById('action-msg');
-		if (err) {
-			actionMsgElement.textContent = `Error fetching data: ${err.message}`;
-			actionMsgElement.style.color = 'white';
-			return;
-		}
-
-		importedData = JSON.parse(data.Body.toString('utf-8'));
+	try {
+		const data = await s3.getObject(params).promise();
+		const importedData = JSON.parse(data.Body.toString('utf-8'));
+		console.log('Importing data from S3:', importedData);
 		importDataToStorage(importedData);
 		const currentTime = new Date().toLocaleString();
 		localStorage.setItem('last-cloud-sync', currentTime);
@@ -1215,9 +1210,11 @@ async function importFromS3() {
 			element.innerText = `Last sync done at ${currentTime}`;
 		}
 		wasImportSuccessful = true;
-	});
-	// Clean up variables
-	importedData = null;
+		return true;
+	} catch (error) {
+		console.error('Error importing from S3:', error);
+		throw error;
+	}
 }
 
 //Delete file from S3
