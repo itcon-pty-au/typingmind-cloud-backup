@@ -272,6 +272,7 @@ function openSyncModal() {
 	const savedEndpoint = localStorage.getItem('aws-endpoint');
 	const lastSync = localStorage.getItem('last-cloud-sync');
 	const savedInterval = localStorage.getItem('backup-interval') || '60';
+	const savedEncryptionKey = localStorage.getItem('encryption-key');
 
 	if (savedBucket) awsBucketInput.value = savedBucket;
 	if (savedRegion) awsRegionInput.value = savedRegion;
@@ -279,6 +280,7 @@ function openSyncModal() {
 	if (savedSecretKey) awsSecretKeyInput.value = savedSecretKey;
 	if (savedEndpoint) awsEndpointInput.value = savedEndpoint;
 	if (backupIntervalInput) backupIntervalInput.value = savedInterval;
+	if (savedEncryptionKey) document.getElementById('encryption-key').value = savedEncryptionKey;
 
 	//const currentTime = new Date().toLocaleString();
 	var element = document.getElementById('last-sync-msg');
@@ -1634,8 +1636,6 @@ async function handleBackupFiles() {
 		compressedContent = null;
 	}
 }
-
-// Add these functions after the loadJSZip function
 
 // Function to derive encryption key from password
 async function deriveKey(password) {
