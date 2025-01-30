@@ -528,18 +528,19 @@ function openSyncModal() {
 
 				const bucketName = localStorage.getItem('aws-bucket');
 				const data = await exportBackupData();
-				const dataStr = JSON.stringify(data);
+				const encryptedData = await encryptData(data);  // Ensure data is encrypted
 
 				// Load JSZip
 				const jszip = await loadJSZip();
 				const zip = new jszip();
 
-				// Add the JSON data to the zip file
-				zip.file(`Snapshot_${timestamp}.json`, dataStr, {
+				// Add the encrypted data to the zip file
+				zip.file(`Snapshot_${timestamp}.json`, encryptedData, {
 					compression: 'DEFLATE',
 					compressionOptions: {
 						level: 9,
 					},
+					binary: true
 				});
 
 				// Generate the zip content
@@ -707,58 +708,99 @@ async function handleTimeBasedBackup() {
 
 // Function to check for backup file and import it
 async function checkAndImportBackup() {
-	const bucketName = localStorage.getItem('aws-bucket');
-	const awsRegion = localStorage.getItem('aws-region');
-	const awsAccessKey = localStorage.getItem('aws-access-key');
-	const awsSecretKey = localStorage.getItem('aws-secret-key');
-	const awsEndpoint = localStorage.getItem('aws-endpoint');
+    const bucketName = localStorage.getItem('aws-bucket');
+    const awsRegion = localStorage.getItem('aws-region');
+    const awsAccessKey = localStorage.getItem('aws-access-key');
+    const awsSecretKey = localStorage.getItem('aws-secret-key');
+    const awsEndpoint = localStorage.getItem('aws-endpoint');
 
-	if (bucketName && awsAccessKey && awsSecretKey) {
-		if (typeof AWS === 'undefined') {
-			await loadAwsSdk();
-		}
+    if (bucketName && awsAccessKey && awsSecretKey) {
+        if (typeof AWS === 'undefined') {
+            await loadAwsSdk();
+        }
 
-		const awsConfig = {
-			accessKeyId: awsAccessKey,
-			secretAccessKey: awsSecretKey,
-			region: awsRegion,
-		};
+        const awsConfig = {
+            accessKeyId: awsAccessKey,
+            secretAccessKey: awsSecretKey,
+            region: awsRegion,
+        };
 
-		if (awsEndpoint) {
-			awsConfig.endpoint = awsEndpoint;
-		}
+        if (awsEndpoint) {
+            awsConfig.endpoint = awsEndpoint;
+        }
 
-		AWS.config.update(awsConfig);
+        AWS.config.update(awsConfig);
 
-		const s3 = new AWS.S3();
-		const params = {
-			Bucket: bucketName,
-			Key: 'typingmind-backup.json',
-		};
+        const s3 = new AWS.S3();
+        const params = {
+            Bucket: bucketName,
+            Key: 'typingmind-backup.json',
+        };
 
-		return new Promise((resolve) => {
-			s3.getObject(params, async function (err) {
-				if (!err) {
-					await importFromS3();
-					wasImportSuccessful = true;
-					resolve(true);
-				} else {
-					if (err.code === 'NoSuchKey') {
-						alert(
-							"Backup file not found in S3! Run an adhoc 'Export' first."
-						);
-					} else {
-						localStorage.setItem('aws-bucket', '');
-						localStorage.setItem('aws-access-key', '');
-						localStorage.setItem('aws-secret-key', '');
-						alert('Failed to connect to AWS. Please check your credentials.');
-					}
-					resolve(false);
-				}
-			});
-		});
-	}
-	return false;
+        try {
+            // Get object metadata first to check size and last modified
+            const headData = await s3.headObject(params).promise();
+            const cloudFileSize = headData.ContentLength;
+            const cloudLastModified = headData.LastModified;
+            const lastSync = localStorage.getItem('last-cloud-sync');
+
+            // Calculate current local data size
+            const currentData = await exportBackupData();
+            const currentDataStr = JSON.stringify(currentData);
+            const localFileSize = new Blob([currentDataStr]).size;
+            
+            // Calculate size difference percentage
+            const sizeDiffPercentage = Math.abs((cloudFileSize - localFileSize) / localFileSize * 100);
+            const isWithinSizeTolerance = Math.abs(cloudFileSize - localFileSize) <= 2;
+
+            // Check if we need to prompt user
+            const shouldPrompt = localFileSize > 0 && (
+                (cloudFileSize < localFileSize && !isWithinSizeTolerance) ||
+                (sizeDiffPercentage > 10) ||
+                (lastSync && Math.abs(new Date(cloudLastModified) - new Date(lastSync)) / (1000 * 60) > 2)
+            );
+
+            if (shouldPrompt) {
+                let message = `Warning: Potential data mismatch detected!\n\n`;
+                message += `Cloud backup size: ${cloudFileSize} bytes\n`;
+                message += `Local data size: ${localFileSize} bytes\n`;
+                message += `Size difference: ${sizeDiffPercentage.toFixed(2)}%\n\n`;
+                message += `Local last sync: ${lastSync || 'Never'}\n`;
+                message += `Cloud last modified: ${cloudLastModified.toLocaleString()}\n\n`;
+                
+                if (cloudFileSize < localFileSize && !isWithinSizeTolerance) {
+                    message += '⚠️ Cloud backup is smaller than local data\n';
+                }
+                if (sizeDiffPercentage > 10) {
+                    message += '⚠️ Significant size difference detected\n';
+                }
+                if (lastSync) {
+                    message += '⚠️ Timestamp mismatch detected\n';
+                }
+                
+                message += '\nDo you want to proceed with importing the cloud backup? This will overwrite your local data.';
+
+                if (!confirm(message)) {
+                    return false;
+                }
+            }
+
+            await importFromS3();
+            wasImportSuccessful = true;
+            return true;
+        } catch (err) {
+            if (err.code === 'NoSuchKey') {
+                alert("Backup file not found in S3! Run an adhoc 'Export' first.");
+            } else {
+                localStorage.setItem('aws-bucket', '');
+                localStorage.setItem('aws-access-key', '');
+                localStorage.setItem('aws-secret-key', '');
+                alert('Failed to connect to AWS. Please check your credentials.');
+            }
+            return false;
+        }
+    }
+    return false;
 }
 
 async function loadBackupFiles() {
@@ -1599,16 +1641,19 @@ async function handleBackupFiles() {
 					Key: 'typingmind-backup.json',
 				};
 				backupFile = await s3.getObject(getObjectParams).promise();
-				backupContent = backupFile.Body;
+				
+				// Decrypt if it's encrypted, then re-encrypt with current key
+				const decryptedData = await decryptData(new Uint8Array(backupFile.Body));
+				backupContent = await encryptData(decryptedData);
+				
 				const jszip = await loadJSZip();
 				zip = new jszip();
-				backupContent = await encryptData(backupContent);
 				zip.file(`typingmind-backup-${currentDateSuffix}.json`, backupContent, {
 					compression: 'DEFLATE',
-					compressionOptions: {
-						level: 9,
-					},
-					binary: true
+						compressionOptions: {
+							level: 9,
+						},
+						binary: true
 				});
 
 				compressedContent = await zip.generateAsync({ type: 'blob' });
