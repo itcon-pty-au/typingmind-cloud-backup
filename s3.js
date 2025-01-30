@@ -664,7 +664,7 @@ async function handleTimeBasedBackup() {
 			const dataStr = JSON.stringify(encryptedData);
 			const jszip = await loadJSZip();
 			const zip = new jszip();
-			zip.file(`${TIME_BACKUP_FILE_PREFIX}.json`, dataStr, {
+			zip.file(`${TIME_BACKUP_FILE_PREFIX}.json`, encryptedData, {
 				compression: 'DEFLATE',
 				compressionOptions: {
 					level: 9,
@@ -1133,7 +1133,7 @@ async function backupToS3() {
 		data = await exportBackupData();
 		const encryptedData = await encryptData(data);
 		dataStr = JSON.stringify(encryptedData);
-		blob = new Blob([dataStr], { type: 'application/octet-stream' });
+		blob = new Blob([encryptedData], { type: 'application/octet-stream' });
 		const dataSize = blob.size;
 		localStorage.setItem('backup-size', dataSize.toString());
 		const chunkSize = 5 * 1024 * 1024; // 5MB chunks
