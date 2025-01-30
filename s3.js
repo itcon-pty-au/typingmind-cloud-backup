@@ -1325,6 +1325,9 @@ async function importFromS3() {
 		
 		// Calculate size difference percentage
 		const sizeDiffPercentage = Math.abs((cloudFileSize - localFileSize) / localFileSize * 100);
+		
+		// Check if size difference is within tolerance (±2 bytes)
+		const isWithinSizeTolerance = Math.abs(cloudFileSize - localFileSize) <= 2;
 
 		// Check time difference
 		const isTimeDifferenceSignificant = () => {
@@ -1343,8 +1346,8 @@ async function importFromS3() {
 
 		// Check if we need to prompt user
 		const shouldPrompt = localFileSize > 0 && (
-			cloudFileSize < localFileSize || // Cloud backup is smaller
-			sizeDiffPercentage > 10 || // Size varies by more than 10%
+			(cloudFileSize < localFileSize && !isWithinSizeTolerance) || // Cloud backup is smaller (beyond tolerance)
+			(sizeDiffPercentage > 10 && !isWithinSizeTolerance) || // Size varies by more than 10% (beyond tolerance)
 			isTimeDifferenceSignificant() // Time difference > 2 minutes
 		);
 
