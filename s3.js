@@ -1132,19 +1132,26 @@ async function backupToS3() {
 	try {
 		//console.log('Starting sync to S3 at ' + new Date().toLocaleString());
 		data = await exportBackupData();
-		console.log(`📤 [${new Date().toLocaleString()}] Starting backup encryption`);
-		const encryptedData = await encryptData(data);
-		console.log(`📦 [${new Date().toLocaleString()}] Creating blob:`, {
-			encryptedDataType: typeof encryptedData,
-			isUint8Array: encryptedData instanceof Uint8Array,
-			size: encryptedData.length
+		console.log(`📤 [${new Date().toLocaleString()}] Starting backup encryption:`, {
+			hasData: !!data,
+			dataSize: JSON.stringify(data).length,
+			dataType: typeof data
 		});
 		
-		// Remove the JSON.stringify step
+		const encryptedData = await encryptData(data);
+		console.log(`📦 [${new Date().toLocaleString()}] After encryption:`, {
+			hasEncryptedData: !!encryptedData,
+			encryptedDataType: typeof encryptedData,
+			isUint8Array: encryptedData instanceof Uint8Array,
+			size: encryptedData.length || 0
+		});
+		
+		// Create blob directly from encrypted data
 		blob = new Blob([encryptedData], { type: 'application/octet-stream' });
 		console.log(`💾 [${new Date().toLocaleString()}] Blob created:`, {
 			type: blob.type,
-			size: blob.size
+			size: blob.size,
+			blobContent: blob.size < 1000 ? await blob.text() : 'too large to log'
 		});
 		const dataSize = blob.size;
 		localStorage.setItem('backup-size', dataSize.toString());
@@ -1668,14 +1675,18 @@ async function encryptData(data) {
     const encryptionKey = localStorage.getItem('encryption-key');
     console.log(`🔐 [${new Date().toLocaleString()}] Encryption attempt:`, {
         hasKey: !!encryptionKey,
+        keyLength: encryptionKey?.length,
         dataType: typeof data,
         isArray: Array.isArray(data),
-        dataSize: JSON.stringify(data).length
+        dataSize: JSON.stringify(data).length,
+        sampleData: JSON.stringify(data).substring(0, 100) + '...'
     });
 
     if (!encryptionKey) {
         console.log(`⚠️ [${new Date().toLocaleString()}] No encryption key found, returning unencrypted data`);
-        return data;
+        // Convert data to proper format if unencrypted
+        const jsonStr = JSON.stringify(data);
+        return new TextEncoder().encode(jsonStr);
     }
 
     try {
@@ -1686,7 +1697,8 @@ async function encryptData(data) {
         
         console.log(`📝 [${new Date().toLocaleString()}] Data prepared for encryption:`, {
             encodedDataSize: encodedData.length,
-            ivSize: iv.length
+            ivSize: iv.length,
+            sampleEncodedData: encodedData.slice(0, 50)
         });
 
         const encryptedContent = await window.crypto.subtle.encrypt(
@@ -1698,7 +1710,6 @@ async function encryptData(data) {
             encodedData
         );
 
-        // Add a marker to identify encrypted data
         const marker = new TextEncoder().encode('ENCRYPTED:');
         const combinedData = new Uint8Array(marker.length + iv.length + encryptedContent.byteLength);
         combinedData.set(marker);
@@ -1708,7 +1719,8 @@ async function encryptData(data) {
         console.log(`✅ [${new Date().toLocaleString()}] Encryption successful:`, {
             markerSize: marker.length,
             finalSize: combinedData.length,
-            hasMarker: new TextDecoder().decode(combinedData.slice(0, marker.length)) === 'ENCRYPTED:'
+            hasMarker: new TextDecoder().decode(combinedData.slice(0, marker.length)) === 'ENCRYPTED:',
+            sampleFinalData: combinedData.slice(0, 50)
         });
         
         return combinedData;
