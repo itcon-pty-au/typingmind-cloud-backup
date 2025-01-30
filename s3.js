@@ -1751,7 +1751,7 @@ async function encryptData(data) {
         combinedData.set(iv, marker.length);
         combinedData.set(new Uint8Array(encryptedContent), marker.length + iv.length);
         
-        console.log(`✅ [${new Date().toLocaleString()}] Encryption successful:`);
+        console.log(`✅ [${new Date().toLocaleString()}] Encryption successful`);
         
         return combinedData;
     } catch (error) {
@@ -1790,10 +1790,7 @@ async function decryptData(data) {
         const iv = data.slice(marker.length, marker.length + 12);
         const content = data.slice(marker.length + 12);
 
-        console.log(`🔓 [${new Date().toLocaleString()}] Attempting decryption:`, {
-            ivSize: iv.length,
-            contentSize: content.length
-        });
+        console.log(`🔓 [${new Date().toLocaleString()}] Attempting decryption`);
 
         const decryptedContent = await window.crypto.subtle.decrypt(
             {
