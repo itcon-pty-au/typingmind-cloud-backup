@@ -1808,10 +1808,7 @@ async function decryptData(data) {
         const decryptedString = dec.decode(decryptedContent);
         const parsedData = JSON.parse(decryptedString);
 
-        console.log(`✅ [${new Date().toLocaleString()}] Decryption successful:`, {
-            decryptedSize: decryptedString.length,
-            dataType: typeof parsedData
-        });
+        console.log(`✅ [${new Date().toLocaleString()}] Decryption successful`);
 
         return parsedData;
     } catch (error) {
