@@ -1322,15 +1322,6 @@ async function importFromS3() {
 		const currentDataStr = JSON.stringify(currentData);
 		const localFileSize = new Blob([currentDataStr]).size;
 		
-		// Format sizes for display
-		const formatSize = (bytes) => {
-			if (bytes === 0) return '0 Bytes';
-			const k = 1024;
-			const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-			const i = Math.floor(Math.log(bytes) / Math.log(k));
-			return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-		};
-
 		// Calculate size difference percentage
 		const sizeDiffPercentage = Math.abs((cloudFileSize - localFileSize) / localFileSize * 100);
 
@@ -1358,8 +1349,8 @@ async function importFromS3() {
 
 		if (shouldPrompt) {
 			let message = `Warning: Potential data mismatch detected!\n\n`;
-			message += `Cloud backup size: ${formatSize(cloudFileSize)}\n`;
-			message += `Local data size: ${formatSize(localFileSize)}\n`;
+			message += `Cloud backup size: ${cloudFileSize} bytes\n`;
+			message += `Local data size: ${localFileSize} bytes\n`;
 			message += `Size difference: ${sizeDiffPercentage.toFixed(2)}%\n\n`;
 			message += `Local last sync: ${lastSync || 'Never'}\n`;
 			message += `Cloud last modified: ${cloudLastModified.toLocaleString()}\n\n`;
