@@ -1,4 +1,4 @@
-// v20250130
+// v20250131
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1131,9 +1131,20 @@ async function backupToS3() {
 	try {
 		//console.log('Starting sync to S3 at ' + new Date().toLocaleString());
 		data = await exportBackupData();
+		console.log(`📤 [${new Date().toLocaleString()}] Starting backup encryption`);
 		const encryptedData = await encryptData(data);
-		dataStr = JSON.stringify(encryptedData);
+		console.log(`📦 [${new Date().toLocaleString()}] Creating blob:`, {
+			encryptedDataType: typeof encryptedData,
+			isUint8Array: encryptedData instanceof Uint8Array,
+			size: encryptedData.length
+		});
+		
+		// Remove the JSON.stringify step
 		blob = new Blob([encryptedData], { type: 'application/octet-stream' });
+		console.log(`💾 [${new Date().toLocaleString()}] Blob created:`, {
+			type: blob.type,
+			size: blob.size
+		});
 		const dataSize = blob.size;
 		localStorage.setItem('backup-size', dataSize.toString());
 		const chunkSize = 5 * 1024 * 1024; // 5MB chunks
@@ -1656,58 +1667,97 @@ async function deriveKey(password) {
 // Function to encrypt data
 async function encryptData(data) {
     const encryptionKey = localStorage.getItem('encryption-key');
+    console.log(`🔐 [${new Date().toLocaleString()}] Encryption attempt:`, {
+        hasKey: !!encryptionKey,
+        dataType: typeof data,
+        isArray: Array.isArray(data),
+        dataSize: JSON.stringify(data).length
+    });
+
     if (!encryptionKey) {
-        // If no encryption key, return data as is
+        console.log(`⚠️ [${new Date().toLocaleString()}] No encryption key found, returning unencrypted data`);
         return data;
     }
 
-    const key = await deriveKey(encryptionKey);
-    const enc = new TextEncoder();
-    const iv = window.crypto.getRandomValues(new Uint8Array(12));
-    const encodedData = enc.encode(JSON.stringify(data));
+    try {
+        const key = await deriveKey(encryptionKey);
+        const enc = new TextEncoder();
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+        const encodedData = enc.encode(JSON.stringify(data));
+        
+        console.log(`📝 [${new Date().toLocaleString()}] Data prepared for encryption:`, {
+            encodedDataSize: encodedData.length,
+            ivSize: iv.length
+        });
 
-    const encryptedContent = await window.crypto.subtle.encrypt(
-        {
-            name: "AES-GCM",
-            iv: iv
-        },
-        key,
-        encodedData
-    );
+        const encryptedContent = await window.crypto.subtle.encrypt(
+            {
+                name: "AES-GCM",
+                iv: iv
+            },
+            key,
+            encodedData
+        );
 
-    // Add a marker to identify encrypted data
-    const marker = new TextEncoder().encode('ENCRYPTED:');
-    const combinedData = new Uint8Array(marker.length + iv.length + encryptedContent.byteLength);
-    combinedData.set(marker);
-    combinedData.set(iv, marker.length);
-    combinedData.set(new Uint8Array(encryptedContent), marker.length + iv.length);
-    
-    return combinedData;
+        // Add a marker to identify encrypted data
+        const marker = new TextEncoder().encode('ENCRYPTED:');
+        const combinedData = new Uint8Array(marker.length + iv.length + encryptedContent.byteLength);
+        combinedData.set(marker);
+        combinedData.set(iv, marker.length);
+        combinedData.set(new Uint8Array(encryptedContent), marker.length + iv.length);
+        
+        console.log(`✅ [${new Date().toLocaleString()}] Encryption successful:`, {
+            markerSize: marker.length,
+            finalSize: combinedData.length,
+            hasMarker: new TextDecoder().decode(combinedData.slice(0, marker.length)) === 'ENCRYPTED:'
+        });
+        
+        return combinedData;
+    } catch (error) {
+        console.error(`❌ [${new Date().toLocaleString()}] Encryption failed:`, error);
+        throw error;
+    }
 }
 
 // Function to decrypt data
 async function decryptData(data) {
+    console.log(`🔍 [${new Date().toLocaleString()}] Decryption attempt:`, {
+        dataType: typeof data,
+        isUint8Array: data instanceof Uint8Array,
+        dataSize: data.length
+    });
+
     // Check if data is encrypted by looking for the marker
     const marker = 'ENCRYPTED:';
     const dataString = new TextDecoder().decode(data.slice(0, marker.length));
     
+    console.log(`🏷️ [${new Date().toLocaleString()}] Checking encryption marker:`, {
+        expectedMarker: marker,
+        foundMarker: dataString,
+        isEncrypted: dataString === marker
+    });
+    
     if (dataString !== marker) {
-        // Data is not encrypted, return as is
+        console.log(`ℹ️ [${new Date().toLocaleString()}] Data is not encrypted, returning as-is`);
         return JSON.parse(new TextDecoder().decode(data));
     }
 
     const encryptionKey = localStorage.getItem('encryption-key');
     if (!encryptionKey) {
+        console.error(`❌ [${new Date().toLocaleString()}] Encrypted data found but no key provided`);
         throw new Error('Encrypted backup found but no encryption key provided');
     }
 
-    const key = await deriveKey(encryptionKey);
-    
-    // Extract IV and encrypted content (after the marker)
-    const iv = data.slice(marker.length, marker.length + 12);
-    const content = data.slice(marker.length + 12);
-
     try {
+        const key = await deriveKey(encryptionKey);
+        const iv = data.slice(marker.length, marker.length + 12);
+        const content = data.slice(marker.length + 12);
+
+        console.log(`🔓 [${new Date().toLocaleString()}] Attempting decryption:`, {
+            ivSize: iv.length,
+            contentSize: content.length
+        });
+
         const decryptedContent = await window.crypto.subtle.decrypt(
             {
                 name: "AES-GCM",
@@ -1718,8 +1768,17 @@ async function decryptData(data) {
         );
 
         const dec = new TextDecoder();
-        return JSON.parse(dec.decode(decryptedContent));
+        const decryptedString = dec.decode(decryptedContent);
+        const parsedData = JSON.parse(decryptedString);
+
+        console.log(`✅ [${new Date().toLocaleString()}] Decryption successful:`, {
+            decryptedSize: decryptedString.length,
+            dataType: typeof parsedData
+        });
+
+        return parsedData;
     } catch (error) {
+        console.error(`❌ [${new Date().toLocaleString()}] Decryption failed:`, error);
         throw new Error('Failed to decrypt backup. Please check your encryption key.');
     }
 }
