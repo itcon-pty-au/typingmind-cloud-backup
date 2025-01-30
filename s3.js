@@ -1,4 +1,4 @@
-// v20250131
+// v20250130
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -212,10 +212,6 @@ function openSyncModal() {
 				    <label for="backup-interval" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Backup Interval (sec)</label>
 				    <input id="backup-interval" name="backup-interval" type="number" min="30" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
 				</div>
-                                <div>
-                                    <label for="encryption-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Encryption Key</label>
-                                    <input id="encryption-key" name="encryption-key" type="password" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
-                                </div>
                                 <div class="flex justify-between space-x-2">
                                     <button id="save-aws-details-btn" type="button" class="z-1 inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors" disabled>
                                         Save
@@ -263,7 +259,6 @@ function openSyncModal() {
 	const awsSecretKeyInput = document.getElementById('aws-secret-key');
 	const awsEndpointInput = document.getElementById('aws-endpoint');
 	const backupIntervalInput = document.getElementById('backup-interval');
-	const encryptionKeyInput = document.getElementById('encryption-key');
 	const closeButton = document.getElementById('close-modal-btn');
 
 	const savedBucket = localStorage.getItem('aws-bucket');
@@ -280,8 +275,6 @@ function openSyncModal() {
 	if (savedSecretKey) awsSecretKeyInput.value = savedSecretKey;
 	if (savedEndpoint) awsEndpointInput.value = savedEndpoint;
 	if (backupIntervalInput) backupIntervalInput.value = savedInterval;
-	const savedEncryptionKey = localStorage.getItem('encryption-key');
-	if (savedEncryptionKey) encryptionKeyInput.value = savedEncryptionKey;
 
 	//const currentTime = new Date().toLocaleString();
 	var element = document.getElementById('last-sync-msg');
@@ -299,8 +292,7 @@ function openSyncModal() {
 			!awsAccessKeyInput.value.trim() ||
 			!awsSecretKeyInput.value.trim() ||
 			!backupIntervalInput.value ||
-			backupIntervalInput.value < 15 ||
-			!encryptionKeyInput.value.trim(); // Add this line to check encryption key
+			backupIntervalInput.value < 15;
 		document.getElementById('export-to-s3-btn').disabled = isDisabled;
 		document.getElementById('import-from-s3-btn').disabled = isDisabled;
 		document.getElementById('save-aws-details-btn').disabled = isDisabled;
@@ -319,7 +311,6 @@ function openSyncModal() {
 	awsSecretKeyInput.addEventListener('input', updateButtonState);
 	awsEndpointInput.addEventListener('input', updateButtonState);
 	backupIntervalInput.addEventListener('input', updateButtonState);
-	encryptionKeyInput.addEventListener('input', updateButtonState);
 
 	updateButtonState();
 
@@ -1613,191 +1604,4 @@ async function handleBackupFiles() {
 		zip = null;
 		compressedContent = null;
 	}
-}
-
-// Add these functions after the loadJSZip function
-
-// Function to derive encryption key from password
-async function deriveKey(password) {
-    const enc = new TextEncoder();
-    const keyMaterial = await window.crypto.subtle.importKey(
-        "raw",
-        enc.encode(password),
-        "PBKDF2",
-        false,
-        ["deriveBits", "deriveKey"]
-    );
-
-    const salt = enc.encode("typingmind-backup-salt");
-    return window.crypto.subtle.deriveKey(
-        {
-            name: "PBKDF2",
-            salt: salt,
-            iterations: 100000,
-            hash: "SHA-256"
-        },
-        keyMaterial,
-        { name: "AES-GCM", length: 256 },
-        false,
-        ["encrypt", "decrypt"]
-    );
-}
-
-// Function to encrypt data
-async function encryptData(data) {
-    const encryptionKey = localStorage.getItem('encryption-key');
-    if (!encryptionKey) {
-        throw new Error('Encryption key not found');
-    }
-
-    const key = await deriveKey(encryptionKey);
-    const iv = window.crypto.getRandomValues(new Uint8Array(12));
-    const enc = new TextEncoder();
-    const encodedData = enc.encode(JSON.stringify(data));
-
-    const encryptedContent = await window.crypto.subtle.encrypt(
-        {
-            name: "AES-GCM",
-            iv: iv
-        },
-        key,
-        encodedData
-    );
-
-    // Combine IV and encrypted content
-    const resultArray = new Uint8Array(iv.length + encryptedContent.byteLength);
-    resultArray.set(iv);
-    resultArray.set(new Uint8Array(encryptedContent), iv.length);
-
-    return resultArray;
-}
-
-// Function to decrypt data
-async function decryptData(encryptedData) {
-    const encryptionKey = localStorage.getItem('encryption-key');
-    if (!encryptionKey) {
-        throw new Error('Encryption key not found');
-    }
-
-    const key = await deriveKey(encryptionKey);
-    const iv = encryptedData.slice(0, 12);
-    const data = encryptedData.slice(12);
-
-    try {
-        const decryptedContent = await window.crypto.subtle.decrypt(
-            {
-                name: "AES-GCM",
-                iv: iv
-            },
-            key,
-            data
-        );
-
-        const dec = new TextDecoder();
-        return JSON.parse(dec.decode(decryptedContent));
-    } catch (error) {
-        throw new Error('Decryption failed. Invalid encryption key or corrupted data.');
-    }
-}
-
-// Update the save button handler to include encryption key
-document.getElementById('save-aws-details-btn').addEventListener('click', async function () {
-    // ... existing code ...
-    const encryptionKey = document.getElementById('encryption-key').value.trim();
-    
-    if (!encryptionKey) {
-        alert('Encryption key is required');
-        return;
-    }
-
-    try {
-        await validateAwsCredentials(bucketName, accessKey, secretKey);
-        localStorage.setItem('backup-interval', backupInterval);
-        localStorage.setItem('aws-bucket', bucketName);
-        localStorage.setItem('aws-access-key', accessKey);
-        localStorage.setItem('aws-secret-key', secretKey);
-        localStorage.setItem('encryption-key', encryptionKey);
-        // ... rest of existing code ...
-    } catch (err) {
-        // ... existing error handling ...
-    }
-});
-
-// Update backupToS3 function to include encryption
-async function backupToS3() {
-    // ... existing initial code ...
-    try {
-        data = await exportBackupData();
-        // Encrypt the data before converting to string
-        const encryptedData = await encryptData(data);
-        blob = new Blob([encryptedData], { type: 'application/octet-stream' });
-        // ... rest of existing code ...
-    } catch (error) {
-        // ... existing error handling ...
-    }
-}
-
-// Update importFromS3 function to include decryption
-async function importFromS3() {
-    // ... existing initial code ...
-    try {
-        const data = await s3.getObject(params).promise();
-        const encryptedData = new Uint8Array(data.Body);
-        try {
-            importedData = await decryptData(encryptedData);
-            importDataToStorage(importedData);
-            // ... rest of existing code ...
-        } catch (decryptError) {
-            console.error('Decryption failed:', decryptError);
-            alert('Failed to decrypt backup. Please check your encryption key.');
-            return false;
-        }
-    } catch (error) {
-        // ... existing error handling ...
-    }
-}
-
-// Update handleTimeBasedBackup function to include encryption
-async function handleTimeBasedBackup() {
-    // ... existing initial code ...
-    try {
-        const data = await exportBackupData();
-        const encryptedData = await encryptData(data);
-        const jszip = await loadJSZip();
-        const zip = new jszip();
-        zip.file(`${TIME_BACKUP_FILE_PREFIX}.json`, encryptedData, {
-            compression: 'DEFLATE',
-            compressionOptions: {
-                level: 9,
-            },
-            binary: true
-        });
-        // ... rest of existing code ...
-    } catch (error) {
-        // ... existing error handling ...
-    }
-}
-
-// Update handleBackupFiles function to include encryption
-async function handleBackupFiles() {
-    // ... existing initial code ...
-    try {
-        // ... existing code ...
-        if (!todaysBackupFile) {
-            const data = await exportBackupData();
-            const encryptedData = await encryptData(data);
-            const jszip = await loadJSZip();
-            const zip = new jszip();
-            zip.file(`typingmind-backup-${currentDateSuffix}.json`, encryptedData, {
-                compression: 'DEFLATE',
-                compressionOptions: {
-                    level: 9,
-                },
-                binary: true
-            });
-            // ... rest of existing code ...
-        }
-    } catch (error) {
-        // ... existing error handling ...
-    }
 }
