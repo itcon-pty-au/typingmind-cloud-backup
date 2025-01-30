@@ -1332,7 +1332,7 @@ async function importFromS3() {
 		importedData = JSON.parse(data.Body.toString('utf-8'));
 		importDataToStorage(importedData);
 		
-		//const currentTime = new Date().toLocaleString();
+		const currentTime = new Date().toLocaleString();
 		//localStorage.setItem('last-cloud-sync', currentTime);
 		var element = document.getElementById('last-sync-msg');
 		if (element !== null) {
