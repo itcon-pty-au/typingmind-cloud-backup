@@ -389,10 +389,22 @@ function openSyncModal() {
 			const secretKey = awsSecretKeyInput.value.trim();
 			const endpoint = awsEndpointInput.value.trim();
 			const backupInterval = document.getElementById('backup-interval').value;
+			const encryptionKey = document.getElementById('encryption-key').value.trim();  // Add this line
 
 			if (backupInterval < 15) {
 				alert('Backup interval must be at least 15 seconds');
 				return;
+			}
+
+			// Add encryption key validation
+			if (encryptionKey !== '') {
+				if (encryptionKey.length < 8) {
+					alert('Encryption key must be at least 8 characters long');
+					return;
+				}
+				localStorage.setItem('encryption-key', encryptionKey);
+			} else {
+				localStorage.removeItem('encryption-key');
 			}
 
 			localStorage.setItem('aws-region', region);
