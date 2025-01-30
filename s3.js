@@ -886,36 +886,38 @@ function startBackupInterval() {
 		backupIntervalRunning = false;
 	}
 	
-	// Check if another tab is already running the backup
-	if (localStorage.getItem('activeTabBackupRunning') === 'true') {
-		console.log(`⚠️ [${new Date().toLocaleString()}] Another tab is already running backups`);
-		return;
-	}
+	// Reset the active tab flag before checking
+	localStorage.setItem('activeTabBackupRunning', 'false');
 	
-	const configuredInterval = parseInt(localStorage.getItem('backup-interval')) || 60;
-	const intervalInMilliseconds = Math.max(configuredInterval * 1000, 15000); // Minimum 15 seconds
-	
-	console.log(`ℹ️ [${new Date().toLocaleString()}] Setting backup interval to ${intervalInMilliseconds/1000} seconds`);
-	
-	backupIntervalRunning = true;
-	localStorage.setItem('activeTabBackupRunning', 'true');
-	
-	// Initial backup
-	performBackup();
-	
-	// Start a new interval and store the interval ID
-	backupInterval = setInterval(() => {
-		console.log(`⏰ [${new Date().toLocaleString()}] Interval triggered`);
-		performBackup();
-	}, intervalInMilliseconds);
-	
-	// Add a check to ensure interval is running
+	// Small delay to ensure flag is reset across all tabs
 	setTimeout(() => {
-		if (!backupIntervalRunning) {
-			console.log(`🔄 [${new Date().toLocaleString()}] Backup interval stopped, restarting...`);
-			startBackupInterval();
-		}
-	}, intervalInMilliseconds + 1000);
+		// Set flag for this tab
+		localStorage.setItem('activeTabBackupRunning', 'true');
+		
+		const configuredInterval = parseInt(localStorage.getItem('backup-interval')) || 60;
+		const intervalInMilliseconds = Math.max(configuredInterval * 1000, 15000); // Minimum 15 seconds
+		
+		console.log(`ℹ️ [${new Date().toLocaleString()}] Setting backup interval to ${intervalInMilliseconds/1000} seconds`);
+		
+		backupIntervalRunning = true;
+		
+		// Initial backup
+		performBackup();
+		
+		// Start a new interval and store the interval ID
+		backupInterval = setInterval(() => {
+			console.log(`⏰ [${new Date().toLocaleString()}] Interval triggered`);
+			performBackup();
+		}, intervalInMilliseconds);
+		
+		// Add a check to ensure interval is running
+		setTimeout(() => {
+			if (!backupIntervalRunning) {
+				console.log(`🔄 [${new Date().toLocaleString()}] Backup interval stopped, restarting...`);
+				startBackupInterval();
+			}
+		}, intervalInMilliseconds + 1000);
+	}, 100); // Small delay to ensure clean state
 }
 
 // Separate function to handle the backup process
@@ -1210,7 +1212,6 @@ async function backupToS3() {
 		if (element !== null) {
 			element.innerText = `Last sync done at ${currentTime}`;
 		}
-		startBackupInterval();
 	} catch (error) {
 		console.error(`❌ [${new Date().toLocaleString()}] Export failed:`, error);
 		var element = document.getElementById('last-sync-msg');
