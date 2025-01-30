@@ -887,17 +887,34 @@ function startBackupInterval() {
 	backupIntervalRunning = true;
 	localStorage.setItem('activeTabBackupRunning', 'true');
 	
+	// Initial backup
+	performBackup();
+	
 	// Start a new interval
-	backupInterval = setInterval(async () => {
-		if (wasImportSuccessful && !isExportInProgress) {
-			isExportInProgress = true;
-			try {
-				await backupToS3();
-			} finally {
-				isExportInProgress = false;
-			}
-		}
-	}, intervalInMilliseconds);
+	backupInterval = setInterval(performBackup, intervalInMilliseconds);
+}
+
+// Separate function to handle the backup process
+async function performBackup() {
+	// If a backup is already in progress, schedule the next one
+	if (isExportInProgress) {
+		console.log(`⏳ [${new Date().toLocaleString()}] Previous backup still in progress, skipping this iteration`);
+		return;
+	}
+
+	if (!wasImportSuccessful) {
+		console.log(`⚠️ [${new Date().toLocaleString()}] Import not yet successful, skipping backup`);
+		return;
+	}
+
+	isExportInProgress = true;
+	try {
+		await backupToS3();
+	} catch (error) {
+		console.error(`❌ [${new Date().toLocaleString()}] Backup failed:`, error);
+	} finally {
+		isExportInProgress = false;
+	}
 }
 
 // Function to load AWS SDK asynchronously
