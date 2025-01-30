@@ -1013,6 +1013,7 @@ async function backupToS3() {
 		dataStr = JSON.stringify(data);
 		blob = new Blob([dataStr], { type: 'application/json' });
 		const dataSize = blob.size;
+		localStorage.setItem('backup-size', dataSize.toString());
 		const chunkSize = 5 * 1024 * 1024; // 5MB chunks
 
 		let s3 = new AWS.S3();
