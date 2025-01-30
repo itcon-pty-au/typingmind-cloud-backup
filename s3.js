@@ -1,4 +1,4 @@
-// v20250130
+// v20250131
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -212,6 +212,10 @@ function openSyncModal() {
 				    <label for="backup-interval" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Backup Interval (sec)</label>
 				    <input id="backup-interval" name="backup-interval" type="number" min="30" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
 				</div>
+                                <div>
+                                    <label for="encryption-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Encryption Key</label>
+                                    <input id="encryption-key" name="encryption-key" type="password" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                                </div>
                                 <div class="flex justify-between space-x-2">
                                     <button id="save-aws-details-btn" type="button" class="z-1 inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors" disabled>
                                         Save
@@ -292,7 +296,9 @@ function openSyncModal() {
 			!awsAccessKeyInput.value.trim() ||
 			!awsSecretKeyInput.value.trim() ||
 			!backupIntervalInput.value ||
-			backupIntervalInput.value < 15;
+			backupIntervalInput.value < 15 ||
+			!document.getElementById('encryption-key').value.trim() ||
+			document.getElementById('encryption-key').value.trim().length < 8;
 		document.getElementById('export-to-s3-btn').disabled = isDisabled;
 		document.getElementById('import-from-s3-btn').disabled = isDisabled;
 		document.getElementById('save-aws-details-btn').disabled = isDisabled;
@@ -653,7 +659,8 @@ async function handleTimeBasedBackup() {
 
 		try {
 			const data = await exportBackupData();
-			const dataStr = JSON.stringify(data);
+			const encryptedData = await encryptData(data);
+			const dataStr = JSON.stringify(encryptedData);
 			const jszip = await loadJSZip();
 			const zip = new jszip();
 			zip.file(`${TIME_BACKUP_FILE_PREFIX}.json`, dataStr, {
@@ -661,6 +668,7 @@ async function handleTimeBasedBackup() {
 				compressionOptions: {
 					level: 9,
 				},
+				binary: true
 			});
 
 			const compressedContent = await zip.generateAsync({ type: 'blob' });
@@ -889,23 +897,24 @@ async function restoreBackupFile() {
 			})
 			.promise();
 
-		const jszip = await loadJSZip();
-		const zip = await jszip.loadAsync(data.Body);
-		const jsonFile = Object.keys(zip.files)[0];
-		const content = await zip.file(jsonFile).async('string');
-		const importedData = JSON.parse(content);
-
-		importDataToStorage(importedData);
-
-		const currentTime = new Date().toLocaleString();
-		localStorage.setItem('last-cloud-sync', currentTime);
-
-		const element = document.getElementById('last-sync-msg');
-		if (element) {
-			element.innerText = `Last sync done at ${currentTime}`;
+		try {
+			const jszip = await loadJSZip();
+			const zip = await jszip.loadAsync(data.Body);
+			const jsonFile = Object.keys(zip.files)[0];
+			const encryptedContent = await zip.file(jsonFile).async('uint8array');
+			const importedData = await decryptData(encryptedContent);
+			importDataToStorage(importedData);
+			const currentTime = new Date().toLocaleString();
+			localStorage.setItem('last-cloud-sync', currentTime);
+			const element = document.getElementById('last-sync-msg');
+			if (element) {
+				element.innerText = `Last sync done at ${currentTime}`;
+			}
+			alert('Backup restored successfully!');
+		} catch (error) {
+			console.error('Error restoring backup:', error);
+			alert('Error restoring backup: ' + (error.message || 'Failed to decrypt backup. Please check your encryption key.'));
 		}
-
-		alert('Backup restored successfully!');
 	} catch (error) {
 		console.error('Error restoring backup:', error);
 		alert('Error restoring backup: ' + error.message);
@@ -1121,8 +1130,9 @@ async function backupToS3() {
 	try {
 		//console.log('Starting sync to S3 at ' + new Date().toLocaleString());
 		data = await exportBackupData();
-		dataStr = JSON.stringify(data);
-		blob = new Blob([dataStr], { type: 'application/json' });
+		const encryptedData = await encryptData(data);
+		dataStr = JSON.stringify(encryptedData);
+		blob = new Blob([dataStr], { type: 'application/octet-stream' });
 		const dataSize = blob.size;
 		localStorage.setItem('backup-size', dataSize.toString());
 		const chunkSize = 5 * 1024 * 1024; // 5MB chunks
@@ -1387,7 +1397,13 @@ async function importFromS3() {
 
 		// Proceed with import if confirmed or if no confirmation needed
 		const data = await s3.getObject(params).promise();
-		importedData = JSON.parse(data.Body.toString('utf-8'));
+		const encryptedContent = new Uint8Array(data.Body);
+		try {
+			importedData = await decryptData(encryptedContent);
+		} catch (error) {
+			console.error('Failed to decrypt backup:', error);
+			throw new Error('Failed to decrypt backup. Please check your encryption key.');
+		}
 		importDataToStorage(importedData);
 		
 		const currentTime = new Date().toLocaleString();
@@ -1554,11 +1570,13 @@ async function handleBackupFiles() {
 				backupContent = backupFile.Body;
 				const jszip = await loadJSZip();
 				zip = new jszip();
+				backupContent = await encryptData(JSON.parse(backupContent.toString()));
 				zip.file(`typingmind-backup-${currentDateSuffix}.json`, backupContent, {
 					compression: 'DEFLATE',
 					compressionOptions: {
 						level: 9,
 					},
+					binary: true
 				});
 
 				compressedContent = await zip.generateAsync({ type: 'blob' });
@@ -1604,4 +1622,87 @@ async function handleBackupFiles() {
 		zip = null;
 		compressedContent = null;
 	}
+}
+
+// Add these functions after the loadJSZip function
+
+// Function to derive encryption key from password
+async function deriveKey(password) {
+    const enc = new TextEncoder();
+    const keyMaterial = await window.crypto.subtle.importKey(
+        "raw",
+        enc.encode(password),
+        "PBKDF2",
+        false,
+        ["deriveBits", "deriveKey"]
+    );
+    
+    const salt = enc.encode("typingmind-backup-salt");
+    return window.crypto.subtle.deriveKey(
+        {
+            name: "PBKDF2",
+            salt: salt,
+            iterations: 100000,
+            hash: "SHA-256"
+        },
+        keyMaterial,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["encrypt", "decrypt"]
+    );
+}
+
+// Function to encrypt data
+async function encryptData(data) {
+    const encryptionKey = localStorage.getItem('encryption-key');
+    if (!encryptionKey) {
+        throw new Error('Encryption key not found');
+    }
+
+    const key = await deriveKey(encryptionKey);
+    const enc = new TextEncoder();
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const encodedData = enc.encode(JSON.stringify(data));
+
+    const encryptedContent = await window.crypto.subtle.encrypt(
+        {
+            name: "AES-GCM",
+            iv: iv
+        },
+        key,
+        encodedData
+    );
+
+    // Combine IV and encrypted content
+    const combinedData = new Uint8Array(iv.length + encryptedContent.byteLength);
+    combinedData.set(iv);
+    combinedData.set(new Uint8Array(encryptedContent), iv.length);
+    
+    return combinedData;
+}
+
+// Function to decrypt data
+async function decryptData(encryptedData) {
+    const encryptionKey = localStorage.getItem('encryption-key');
+    if (!encryptionKey) {
+        throw new Error('Encryption key not found');
+    }
+
+    const key = await deriveKey(encryptionKey);
+    
+    // Extract IV and encrypted content
+    const iv = encryptedData.slice(0, 12);
+    const content = encryptedData.slice(12);
+
+    const decryptedContent = await window.crypto.subtle.decrypt(
+        {
+            name: "AES-GCM",
+            iv: iv
+        },
+        key,
+        content
+    );
+
+    const dec = new TextDecoder();
+    return JSON.parse(dec.decode(decryptedContent));
 }
