@@ -472,7 +472,7 @@ function openSyncModal() {
 			snapshotBtn.innerHTML = '<span>Snapshot</span>';
 
 			try {
-				console.log('📸 Starting snapshot creation...');
+				console.log(`📸 [${new Date().toISOString()}] Starting snapshot creation...`);
 				const now = new Date();
 				const timestamp =
 					now.getFullYear() +
@@ -528,9 +528,9 @@ function openSyncModal() {
 
 				// Refresh the backup files list after successful snapshot
 				await loadBackupFiles();
-				console.log('✅ Snapshot created successfully:', `Snapshot_${timestamp}.zip`);
+				console.log(`✅ [${new Date().toISOString()}] Snapshot created successfully: Snapshot_${timestamp}.zip`);
 			} catch (error) {
-				console.error('❌ Snapshot creation failed:', error);
+				console.error(`❌ [${new Date().toISOString()}] Snapshot creation failed:`, error);
 				const lastSyncElement = document.getElementById('last-sync-msg');
 				lastSyncElement.textContent = `Error creating snapshot: ${error.message}`;
 
@@ -986,7 +986,7 @@ function exportBackupData() {
 
 // Function to handle backup to S3 with chunked multipart upload using Blob
 async function backupToS3() {
-	console.log('🔄 Starting export to S3...');
+	console.log(`🔄 [${new Date().toISOString()}] Starting export to S3...`);
 	let data = null;
 	let dataStr = null;
 	let blob = null;
@@ -1153,14 +1153,14 @@ async function backupToS3() {
 		await handleTimeBasedBackup();
 		const currentTime = new Date().toLocaleString();
 		localStorage.setItem('last-cloud-sync', currentTime);
-		console.log('✅ Export completed successfully at', currentTime);
+		console.log(`✅ [${new Date().toISOString()}] Export completed successfully`);
 		var element = document.getElementById('last-sync-msg');
 		if (element !== null) {
 			element.innerText = `Last sync done at ${currentTime}`;
 		}
 		startBackupInterval();
 	} catch (error) {
-		console.error('❌ Export failed:', error);
+		console.error(`❌ [${new Date().toISOString()}] Export failed:`, error);
 		var element = document.getElementById('last-sync-msg');
 		if (element !== null) {
 			element.innerText = `Backup failed: ${error.message}`;
@@ -1176,7 +1176,7 @@ async function backupToS3() {
 
 // Function to handle import from S3
 async function importFromS3() {
-	console.log('📥 Starting import from S3...');
+	console.log(`📥 [${new Date().toISOString()}] Starting import from S3...`);
 	let importedData = null;
 	const bucketName = localStorage.getItem('aws-bucket');
 	const awsRegion = localStorage.getItem('aws-region');
@@ -1285,11 +1285,11 @@ async function importFromS3() {
 		if (element !== null) {
 			element.innerText = `Last sync done at ${currentTime}`;
 		}
-		console.log('✅ Import completed successfully');
+		console.log(`✅ [${new Date().toISOString()}] Import completed successfully`);
 		wasImportSuccessful = true;
 		return true;
 	} catch (error) {
-		console.error('❌ Import failed:', error);
+		console.error(`❌ [${new Date().toISOString()}] Import failed:`, error);
 		throw error;
 	}
 }
@@ -1385,7 +1385,7 @@ async function validateAwsCredentials(bucketName, accessKey, secretKey) {
 
 // Function to create a dated backup copy, zip it, and purge old backups
 async function handleBackupFiles() {
-	console.log('📅 Starting daily backup process...');
+	console.log(`📅 [${new Date().toISOString()}] Starting daily backup process...`);
 	let backupFile = null;
 	let backupContent = null;
 	let zip = null;
@@ -1461,7 +1461,7 @@ async function handleBackupFiles() {
 					ServerSideEncryption: 'AES256'
 				};
 				await s3.putObject(uploadParams).promise();
-				console.log('✅ Daily backup created:', zipKey);
+				console.log(`✅ [${new Date().toISOString()}] Daily backup created: ${zipKey}`);
 				
 				// Update localStorage after successful backup creation
 				localStorage.setItem('last-daily-backup-in-s3', currentDateSuffix);
@@ -1485,7 +1485,7 @@ async function handleBackupFiles() {
 			}
 		}
 	} catch (error) {
-		console.error('❌ Daily backup process failed:', error);
+		console.error(`❌ [${new Date().toISOString()}] Daily backup process failed:`, error);
 	} finally {
 		// Clean up variables
 		backupFile = null;
