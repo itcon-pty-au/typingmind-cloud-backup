@@ -7,6 +7,9 @@ let isSnapshotInProgress = false;
 const TIME_BACKUP_INTERVAL = 15;
 const TIME_BACKUP_FILE_PREFIX = `T-${TIME_BACKUP_INTERVAL}`;
 
+// Move this variable declaration to the top
+let awsSdkLoadPromise = null;
+
 // Pre-load AWS SDK as soon as possible
 const awsSdkPromise = loadAwsSdk();
 
