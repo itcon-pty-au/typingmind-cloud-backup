@@ -1186,27 +1186,14 @@ async function backupToS3() {
 	try {
 		//console.log('Starting sync to S3 at ' + new Date().toLocaleString());
 		data = await exportBackupData();
-		console.log(`📤 [${new Date().toLocaleString()}] Starting backup encryption:`, {
-			hasData: !!data,
-			dataSize: JSON.stringify(data).length,
-			dataType: typeof data
-		});
+		console.log(`📤 [${new Date().toLocaleString()}] Starting backup encryption:`);
 		
 		const encryptedData = await encryptData(data);
-		console.log(`📦 [${new Date().toLocaleString()}] After encryption:`, {
-			hasEncryptedData: !!encryptedData,
-			encryptedDataType: typeof encryptedData,
-			isUint8Array: encryptedData instanceof Uint8Array,
-			size: encryptedData.length || 0
-		});
+		console.log(`📦 [${new Date().toLocaleString()}] After encryption:`);
 		
 		// Create blob directly from encrypted data
 		blob = new Blob([encryptedData], { type: 'application/octet-stream' });
-		console.log(`💾 [${new Date().toLocaleString()}] Blob created:`, {
-			type: blob.type,
-			size: blob.size,
-			blobContent: blob.size < 1000 ? await blob.text() : 'too large to log'
-		});
+		console.log(`💾 [${new Date().toLocaleString()}] Blob created:`);
 		const dataSize = blob.size;
 		localStorage.setItem('backup-size', dataSize.toString());
 		const chunkSize = 5 * 1024 * 1024; // 5MB chunks
@@ -1773,12 +1760,7 @@ async function encryptData(data) {
         combinedData.set(iv, marker.length);
         combinedData.set(new Uint8Array(encryptedContent), marker.length + iv.length);
         
-        console.log(`✅ [${new Date().toLocaleString()}] Encryption successful:`, {
-            markerSize: marker.length,
-            finalSize: combinedData.length,
-            hasMarker: new TextDecoder().decode(combinedData.slice(0, marker.length)) === 'ENCRYPTED:',
-            sampleFinalData: combinedData.slice(0, 50)
-        });
+        console.log(`✅ [${new Date().toLocaleString()}] Encryption successful:`);
         
         return combinedData;
     } catch (error) {
@@ -1789,11 +1771,7 @@ async function encryptData(data) {
 
 // Function to decrypt data
 async function decryptData(data) {
-    console.log(`🔍 [${new Date().toLocaleString()}] Decryption attempt:`, {
-        dataType: typeof data,
-        isUint8Array: data instanceof Uint8Array,
-        dataSize: data.length
-    });
+    console.log(`🔍 [${new Date().toLocaleString()}] Decryption attempt:`);
 
     // Check if data is encrypted by looking for the marker
     const marker = 'ENCRYPTED:';
