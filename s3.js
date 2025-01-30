@@ -937,6 +937,12 @@ function startBackupInterval() {
 
 // Separate function to handle the backup process
 async function performBackup() {
+	// Check if tab is hidden - exit early if it is
+	if (document.hidden) {
+		console.log(`🛑 [${new Date().toLocaleString()}] Tab is hidden, skipping backup`);
+		return;
+	}
+
 	// If a backup is already in progress, schedule the next one
 	if (isExportInProgress) {
 		console.log(`⏳ [${new Date().toLocaleString()}] Previous backup still in progress, skipping this iteration`);
