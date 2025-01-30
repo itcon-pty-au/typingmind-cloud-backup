@@ -1,4 +1,4 @@
-// v20250131
+// v20250130
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -661,7 +661,6 @@ async function handleTimeBasedBackup() {
 		try {
 			const data = await exportBackupData();
 			const encryptedData = await encryptData(data);
-			const dataStr = JSON.stringify(encryptedData);
 			const jszip = await loadJSZip();
 			const zip = new jszip();
 			zip.file(`${TIME_BACKUP_FILE_PREFIX}.json`, encryptedData, {
@@ -1582,7 +1581,7 @@ async function handleBackupFiles() {
 				backupContent = backupFile.Body;
 				const jszip = await loadJSZip();
 				zip = new jszip();
-				backupContent = await encryptData(JSON.parse(backupContent.toString()));
+				backupContent = await encryptData(backupContent);
 				zip.file(`typingmind-backup-${currentDateSuffix}.json`, backupContent, {
 					compression: 'DEFLATE',
 					compressionOptions: {
