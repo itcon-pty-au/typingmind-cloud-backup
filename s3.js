@@ -1354,7 +1354,7 @@ async function importFromS3() {
 		// Check if we need to prompt user
 		const shouldPrompt = localFileSize > 0 && (
 			(cloudFileSize < localFileSize && !isWithinSizeTolerance) || // Cloud backup is smaller (beyond tolerance)
-			(sizeDiffPercentage > 10 && !isWithinSizeTolerance) || // Size varies by more than 10% (beyond tolerance)
+			(sizeDiffPercentage > 10) || // Size varies by more than 10% (beyond tolerance)
 			isTimeDifferenceSignificant() // Time difference > 2 minutes
 		);
 
@@ -1367,7 +1367,7 @@ async function importFromS3() {
 			message += `Cloud last modified: ${cloudLastModified.toLocaleString()}\n\n`;
 			
 			// Add specific warnings based on what triggered the prompt
-			if (cloudFileSize < localFileSize) {
+			if (cloudFileSize < localFileSize && !isWithinSizeTolerance) {
 				message += '⚠️ Cloud backup is smaller than local data\n';
 			}
 			if (sizeDiffPercentage > 10) {
