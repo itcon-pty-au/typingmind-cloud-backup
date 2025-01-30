@@ -552,7 +552,11 @@ function openSyncModal() {
 
 // Visibility change event listener
 document.addEventListener('visibilitychange', async () => {
+	console.log(`👁️ [${new Date().toLocaleString()}] Visibility changed: ${document.hidden ? 'hidden' : 'visible'}`);
+	
 	if (!document.hidden) {
+		// Tab became visible
+		console.log(`📱 [${new Date().toLocaleString()}] Tab became active`);
 		var importSuccessful = await checkAndImportBackup();
 		const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
 		const today = new Date();
@@ -572,13 +576,15 @@ document.addEventListener('visibilitychange', async () => {
 				await handleBackupFiles();
 			}
 		}
+		
 		// Reset the flag and restart backup interval when tab becomes active
 		localStorage.setItem('activeTabBackupRunning', 'false');
 		clearInterval(backupInterval);
 		backupIntervalRunning = false;
 		startBackupInterval();
 	} else {
-		// When tab becomes inactive, clear interval and reset flag
+		// Tab became hidden
+		console.log(`💤 [${new Date().toLocaleString()}] Tab became inactive`);
 		localStorage.setItem('activeTabBackupRunning', 'false');
 		clearInterval(backupInterval);
 		backupIntervalRunning = false;
@@ -871,18 +877,25 @@ async function restoreBackupFile() {
 
 // Function to start the backup interval
 function startBackupInterval() {
+	console.log(`🕒 [${new Date().toLocaleString()}] Starting backup interval...`);
+	
 	// Clear any existing interval first
 	if (backupIntervalRunning) {
+		console.log(`🔄 [${new Date().toLocaleString()}] Clearing existing interval`);
 		clearInterval(backupInterval);
+		backupIntervalRunning = false;
 	}
 	
 	// Check if another tab is already running the backup
 	if (localStorage.getItem('activeTabBackupRunning') === 'true') {
+		console.log(`⚠️ [${new Date().toLocaleString()}] Another tab is already running backups`);
 		return;
 	}
 	
 	const configuredInterval = parseInt(localStorage.getItem('backup-interval')) || 60;
 	const intervalInMilliseconds = Math.max(configuredInterval * 1000, 15000); // Minimum 15 seconds
+	
+	console.log(`ℹ️ [${new Date().toLocaleString()}] Setting backup interval to ${intervalInMilliseconds/1000} seconds`);
 	
 	backupIntervalRunning = true;
 	localStorage.setItem('activeTabBackupRunning', 'true');
@@ -890,8 +903,19 @@ function startBackupInterval() {
 	// Initial backup
 	performBackup();
 	
-	// Start a new interval
-	backupInterval = setInterval(performBackup, intervalInMilliseconds);
+	// Start a new interval and store the interval ID
+	backupInterval = setInterval(() => {
+		console.log(`⏰ [${new Date().toLocaleString()}] Interval triggered`);
+		performBackup();
+	}, intervalInMilliseconds);
+	
+	// Add a check to ensure interval is running
+	setTimeout(() => {
+		if (!backupIntervalRunning) {
+			console.log(`🔄 [${new Date().toLocaleString()}] Backup interval stopped, restarting...`);
+			startBackupInterval();
+		}
+	}, intervalInMilliseconds + 1000);
 }
 
 // Separate function to handle the backup process
@@ -910,6 +934,7 @@ async function performBackup() {
 	isExportInProgress = true;
 	try {
 		await backupToS3();
+		console.log(`✅ [${new Date().toLocaleString()}] Backup completed, next backup in ${parseInt(localStorage.getItem('backup-interval')) || 60} seconds`);
 	} catch (error) {
 		console.error(`❌ [${new Date().toLocaleString()}] Backup failed:`, error);
 	} finally {
