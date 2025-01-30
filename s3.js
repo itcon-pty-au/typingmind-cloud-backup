@@ -1,4 +1,4 @@
-// v20250131
+// v20250130
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -571,14 +571,14 @@ document.addEventListener('visibilitychange', async () => {
 			if (!storedSuffix || currentDateSuffix > storedSuffix) {
 				await handleBackupFiles();
 			}
-			if (
-				!backupIntervalRunning &&
-				localStorage.getItem('activeTabBackupRunning') !== 'true'
-			) {
-				startBackupInterval();
-			}
 		}
+		// Reset the flag and restart backup interval when tab becomes active
+		localStorage.setItem('activeTabBackupRunning', 'false');
+		clearInterval(backupInterval);
+		backupIntervalRunning = false;
+		startBackupInterval();
 	} else {
+		// When tab becomes inactive, clear interval and reset flag
 		localStorage.setItem('activeTabBackupRunning', 'false');
 		clearInterval(backupInterval);
 		backupIntervalRunning = false;
@@ -871,21 +871,31 @@ async function restoreBackupFile() {
 
 // Function to start the backup interval
 function startBackupInterval() {
-	if (backupIntervalRunning) return;
+	// Clear any existing interval first
+	if (backupIntervalRunning) {
+		clearInterval(backupInterval);
+	}
+	
 	// Check if another tab is already running the backup
 	if (localStorage.getItem('activeTabBackupRunning') === 'true') {
 		return;
 	}
-	const configuredInterval =
-		parseInt(localStorage.getItem('backup-interval')) || 60;
-	const intervalInMilliseconds = configuredInterval * 1000;
+	
+	const configuredInterval = parseInt(localStorage.getItem('backup-interval')) || 60;
+	const intervalInMilliseconds = Math.max(configuredInterval * 1000, 15000); // Minimum 15 seconds
+	
 	backupIntervalRunning = true;
 	localStorage.setItem('activeTabBackupRunning', 'true');
+	
+	// Start a new interval
 	backupInterval = setInterval(async () => {
 		if (wasImportSuccessful && !isExportInProgress) {
 			isExportInProgress = true;
-			await backupToS3();
-			isExportInProgress = false;
+			try {
+				await backupToS3();
+			} finally {
+				isExportInProgress = false;
+			}
 		}
 	}, intervalInMilliseconds);
 }
@@ -1465,7 +1475,7 @@ async function handleBackupFiles() {
 				
 				// Update localStorage after successful backup creation
 				localStorage.setItem('last-daily-backup-in-s3', currentDateSuffix);
-			}
+			} else {console.log(`📅 [${new Date().toLocaleString()}] Daily backup file already exists for today`);}
 
 			// Purge backups older than 30 days
 			const thirtyDaysAgo = new Date();
