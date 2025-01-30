@@ -1,4 +1,4 @@
-// v20250131
+// v20250130
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -289,6 +289,7 @@ function openSyncModal() {
 		}
 	}
 
+	// Update updateButtonState to make encryption key optional
 	function updateButtonState() {
 		const isDisabled =
 			!awsBucketInput.value.trim() ||
@@ -297,8 +298,8 @@ function openSyncModal() {
 			!awsSecretKeyInput.value.trim() ||
 			!backupIntervalInput.value ||
 			backupIntervalInput.value < 15 ||
-			!document.getElementById('encryption-key').value.trim() ||
-			document.getElementById('encryption-key').value.trim().length < 8;
+			(document.getElementById('encryption-key').value.trim() !== '' && 
+			 document.getElementById('encryption-key').value.trim().length < 8);
 		document.getElementById('export-to-s3-btn').disabled = isDisabled;
 		document.getElementById('import-from-s3-btn').disabled = isDisabled;
 		document.getElementById('save-aws-details-btn').disabled = isDisabled;
@@ -1656,7 +1657,8 @@ async function deriveKey(password) {
 async function encryptData(data) {
     const encryptionKey = localStorage.getItem('encryption-key');
     if (!encryptionKey) {
-        throw new Error('Encryption key not found');
+        // If no encryption key, return data as is
+        return data;
     }
 
     const key = await deriveKey(encryptionKey);
@@ -1673,36 +1675,51 @@ async function encryptData(data) {
         encodedData
     );
 
-    // Combine IV and encrypted content
-    const combinedData = new Uint8Array(iv.length + encryptedContent.byteLength);
-    combinedData.set(iv);
-    combinedData.set(new Uint8Array(encryptedContent), iv.length);
+    // Add a marker to identify encrypted data
+    const marker = new TextEncoder().encode('ENCRYPTED:');
+    const combinedData = new Uint8Array(marker.length + iv.length + encryptedContent.byteLength);
+    combinedData.set(marker);
+    combinedData.set(iv, marker.length);
+    combinedData.set(new Uint8Array(encryptedContent), marker.length + iv.length);
     
     return combinedData;
 }
 
 // Function to decrypt data
-async function decryptData(encryptedData) {
+async function decryptData(data) {
+    // Check if data is encrypted by looking for the marker
+    const marker = 'ENCRYPTED:';
+    const dataString = new TextDecoder().decode(data.slice(0, marker.length));
+    
+    if (dataString !== marker) {
+        // Data is not encrypted, return as is
+        return JSON.parse(new TextDecoder().decode(data));
+    }
+
     const encryptionKey = localStorage.getItem('encryption-key');
     if (!encryptionKey) {
-        throw new Error('Encryption key not found');
+        throw new Error('Encrypted backup found but no encryption key provided');
     }
 
     const key = await deriveKey(encryptionKey);
     
-    // Extract IV and encrypted content
-    const iv = encryptedData.slice(0, 12);
-    const content = encryptedData.slice(12);
+    // Extract IV and encrypted content (after the marker)
+    const iv = data.slice(marker.length, marker.length + 12);
+    const content = data.slice(marker.length + 12);
 
-    const decryptedContent = await window.crypto.subtle.decrypt(
-        {
-            name: "AES-GCM",
-            iv: iv
-        },
-        key,
-        content
-    );
+    try {
+        const decryptedContent = await window.crypto.subtle.decrypt(
+            {
+                name: "AES-GCM",
+                iv: iv
+            },
+            key,
+            content
+        );
 
-    const dec = new TextDecoder();
-    return JSON.parse(dec.decode(decryptedContent));
+        const dec = new TextDecoder();
+        return JSON.parse(dec.decode(decryptedContent));
+    } catch (error) {
+        throw new Error('Failed to decrypt backup. Please check your encryption key.');
+    }
 }
