@@ -1183,7 +1183,7 @@ async function importFromS3() {
 
 	const awsConfig = {
 		accessKeyId: awsAccessKey,
-		secretAccessKey: awsSecretKey,
+		secretAccessKey: secretKey,
 		region: awsRegion,
 	};
 
@@ -1200,10 +1200,78 @@ async function importFromS3() {
 	};
 
 	try {
+		// Get object metadata first to check size and last modified
+		const headData = await s3.headObject(params).promise();
+		const cloudFileSize = headData.ContentLength;
+		const cloudLastModified = headData.LastModified;
+		const localFileSize = parseInt(localStorage.getItem('backup-size')) || 0;
+		const lastSync = localStorage.getItem('last-cloud-sync');
+
+		// Format sizes for display
+		const formatSize = (bytes) => {
+			if (bytes === 0) return '0 Bytes';
+			const k = 1024;
+			const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+			const i = Math.floor(Math.log(bytes) / Math.log(k));
+			return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+		};
+
+		// Calculate size difference percentage
+		const sizeDiffPercentage = Math.abs((cloudFileSize - localFileSize) / localFileSize * 100);
+
+		// Check time difference
+		const isTimeDifferenceSignificant = () => {
+			if (!lastSync) return false;
+			
+			// Parse lastSync date (format: "1/30/2025, 11:01:18 PM")
+			const lastSyncDate = new Date(lastSync);
+			const cloudDate = new Date(cloudLastModified);
+			
+			// Get difference in minutes
+			const diffInMinutes = Math.abs(cloudDate - lastSyncDate) / (1000 * 60);
+			
+			// Return true if difference is more than 2 minutes
+			return diffInMinutes > 2;
+		};
+
+		// Check if we need to prompt user
+		const shouldPrompt = localFileSize > 0 && (
+			cloudFileSize < localFileSize || // Cloud backup is smaller
+			sizeDiffPercentage > 10 || // Size varies by more than 10%
+			isTimeDifferenceSignificant() // Time difference > 2 minutes
+		);
+
+		if (shouldPrompt) {
+			let message = `Warning: Potential data mismatch detected!\n\n`;
+			message += `Cloud backup size: ${formatSize(cloudFileSize)}\n`;
+			message += `Local data size: ${formatSize(localFileSize)}\n`;
+			message += `Size difference: ${sizeDiffPercentage.toFixed(2)}%\n\n`;
+			message += `Local last sync: ${lastSync || 'Never'}\n`;
+			message += `Cloud last modified: ${cloudLastModified.toLocaleString()}\n\n`;
+			
+			// Add specific warnings based on what triggered the prompt
+			if (cloudFileSize < localFileSize) {
+				message += '⚠️ Cloud backup is smaller than local data\n';
+			}
+			if (sizeDiffPercentage > 10) {
+				message += '⚠️ Significant size difference detected\n';
+			}
+			if (isTimeDifferenceSignificant()) {
+				message += '⚠️ Timestamp mismatch detected\n';
+			}
+			
+			message += '\nDo you want to proceed with importing the cloud backup? This will overwrite your local data.';
+
+			if (!confirm(message)) {
+				throw new Error('Import cancelled by user');
+			}
+		}
+
+		// Proceed with import if confirmed or if no confirmation needed
 		const data = await s3.getObject(params).promise();
-		const importedData = JSON.parse(data.Body.toString('utf-8'));
-		console.log('Importing data from S3:', importedData);
+		importedData = JSON.parse(data.Body.toString('utf-8'));
 		importDataToStorage(importedData);
+		
 		const currentTime = new Date().toLocaleString();
 		localStorage.setItem('last-cloud-sync', currentTime);
 		var element = document.getElementById('last-sync-msg');
@@ -1336,69 +1404,64 @@ async function handleBackupFiles() {
 
 	AWS.config.update(awsConfig);
 
-	let s3 = new AWS.S3();
-	const params = {
-		Bucket: bucketName,
-		Prefix: 'typingmind-backup',
-	};
+	try {
+		let s3 = new AWS.S3();
+		const params = {
+			Bucket: bucketName,
+			Prefix: 'typingmind-backup',
+		};
 
-	const today = new Date();
-	const currentDateSuffix = `${today.getFullYear()}${String(
-		today.getMonth() + 1
-	).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+		const today = new Date();
+		const currentDateSuffix = `${today.getFullYear()}${String(
+			today.getMonth() + 1
+		).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
 
-	s3.listObjectsV2(params, async (err, data) => {
-		if (err) {
-			console.error('Error listing S3 objects:', err);
-			return;
-		}
-		//console.log('object Count:' + data.Contents.length);
+		const data = await s3.listObjectsV2(params).promise();
+		
 		if (data.Contents.length > 0) {
-			//console.log('Listobject API call: Object count is' + data.Contents.length);
-			  const todaysBackupFile = data.Contents.find(
-			    file => file.Key === `typingmind-backup-${currentDateSuffix}.json` || 
-			            file.Key === `typingmind-backup-${currentDateSuffix}.zip`
-			  );
-			  
-			  // If no backup exists for today, create one
-			  if (!todaysBackupFile) {
-			    const getObjectParams = {
-			      Bucket: bucketName,
-			      Key: 'typingmind-backup.json',
-			    };
-			    backupFile = await s3.getObject(getObjectParams).promise();
-			    backupContent = backupFile.Body;
-			    const jszip = await loadJSZip();
-			    zip = new jszip();
-			    zip.file(`typingmind-backup-${currentDateSuffix}.json`, backupContent, {
-			      compression: 'DEFLATE',
-			      compressionOptions: {
-			        level: 9,
-			      },
-			    });
+			const todaysBackupFile = data.Contents.find(
+				file => file.Key === `typingmind-backup-${currentDateSuffix}.json` || 
+						file.Key === `typingmind-backup-${currentDateSuffix}.zip`
+			);
 			
-			    compressedContent = await zip.generateAsync({ type: 'blob' });
-			
-			    const zipKey = `typingmind-backup-${currentDateSuffix}.zip`;
-			    const uploadParams = {
-			      Bucket: bucketName,
-			      Key: zipKey,
-			      Body: compressedContent,
-			      ContentType: 'application/zip',
-			      ServerSideEncryption: 'AES256'
-			    };
-			    await s3.putObject(uploadParams).promise();
-			    localStorage.setItem('last-daily-backup-in-s3', currentDateSuffix);
-			  }
+			// If no backup exists for today, create one
+			if (!todaysBackupFile) {
+				const getObjectParams = {
+					Bucket: bucketName,
+					Key: 'typingmind-backup.json',
+				};
+				backupFile = await s3.getObject(getObjectParams).promise();
+				backupContent = backupFile.Body;
+				const jszip = await loadJSZip();
+				zip = new jszip();
+				zip.file(`typingmind-backup-${currentDateSuffix}.json`, backupContent, {
+					compression: 'DEFLATE',
+					compressionOptions: {
+						level: 9,
+					},
+				});
+
+				compressedContent = await zip.generateAsync({ type: 'blob' });
+
+				const zipKey = `typingmind-backup-${currentDateSuffix}.zip`;
+				const uploadParams = {
+					Bucket: bucketName,
+					Key: zipKey,
+					Body: compressedContent,
+					ContentType: 'application/zip',
+					ServerSideEncryption: 'AES256'
+				};
+				await s3.putObject(uploadParams).promise();
+				
+				// Update localStorage after successful backup creation
+				localStorage.setItem('last-daily-backup-in-s3', currentDateSuffix);
+			}
 
 			// Purge backups older than 30 days
 			const thirtyDaysAgo = new Date();
 			thirtyDaysAgo.setDate(today.getDate() - 30);
 			for (const file of data.Contents) {
-				if (
-					file.Key.endsWith('.zip') &&
-					file.Key !== 'typingmind-backup.json'
-				) {
+				if (file.Key.endsWith('.zip') && file.Key !== 'typingmind-backup.json') {
 					const fileDate = new Date(file.LastModified);
 					if (fileDate < thirtyDaysAgo) {
 						const deleteParams = {
@@ -1410,10 +1473,13 @@ async function handleBackupFiles() {
 				}
 			}
 		}
-	});
-	// Clean up variables
-	backupFile = null;
-	backupContent = null;
-	zip = null;
-	compressedContent = null;
+	} catch (error) {
+		console.error('Error handling backup files:', error);
+	} finally {
+		// Clean up variables
+		backupFile = null;
+		backupContent = null;
+		zip = null;
+		compressedContent = null;
+	}
 }
