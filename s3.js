@@ -1,4 +1,4 @@
-// v20250131
+// v20250130
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1316,9 +1316,12 @@ async function importFromS3() {
 		const headData = await s3.headObject(params).promise();
 		const cloudFileSize = headData.ContentLength;
 		const cloudLastModified = headData.LastModified;
-		const localFileSize = parseInt(localStorage.getItem('backup-size')) || 0;
-		const lastSync = localStorage.getItem('last-cloud-sync');
 
+		// Calculate current local data size
+		const currentData = await exportBackupData();
+		const currentDataStr = JSON.stringify(currentData);
+		const localFileSize = new Blob([currentDataStr]).size;
+		
 		// Format sizes for display
 		const formatSize = (bytes) => {
 			if (bytes === 0) return '0 Bytes';
