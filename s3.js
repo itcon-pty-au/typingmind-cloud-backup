@@ -1,4 +1,4 @@
-console.log(`v20250201-07:17`);
+console.log(`v20250201-07:12`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1159,13 +1159,40 @@ function importDataToStorage(data) {
 
 // Function to export data from localStorage and IndexedDB
 function exportBackupData() {
-    return new Promise((resolve, reject) => {
-        let exportData = {
-            localStorage: { ...localStorage },
-            indexedDB: {},
-        };
-        // ... IndexedDB code ...
-    });
+	return new Promise((resolve, reject) => {
+		let exportData = null;
+		let db = null;
+		let transaction = null;
+		let store = null;
+		exportData = {
+			localStorage: { ...localStorage },
+			indexedDB: {},
+		};
+		var request = indexedDB.open('keyval-store', 1);
+		request.onsuccess = function (event) {
+			db = event.target.result;
+			transaction = db.transaction(['keyval'], 'readonly');
+			store = transaction.objectStore('keyval');
+			store.getAllKeys().onsuccess = function (keyEvent) {
+				var keys = keyEvent.target.result;
+				store.getAll().onsuccess = function (valueEvent) {
+					var values = valueEvent.target.result;
+					keys.forEach((key, i) => {
+						exportData.indexedDB[key] = values[i];
+					});
+					resolve(exportData);
+				};
+			};
+		};
+		request.onerror = function (error) {
+			reject(error);
+		};
+	});
+	// Clean up variables
+	exportData = null;
+	db = null;
+	transaction = null;
+	store = null;
 }
 
 // Function to handle backup to S3 with chunked multipart upload using Blob
@@ -1332,7 +1359,7 @@ async function backupToS3() {
 			const putParams = {
 				Bucket: bucketName,
 				Key: 'typingmind-backup.json',
-				Body: blob,  // <-- Fix: Use blob instead of undefined dataStr
+				Body: dataStr,
 				ContentType: 'application/json',
 				ServerSideEncryption: 'AES256'
 			};
