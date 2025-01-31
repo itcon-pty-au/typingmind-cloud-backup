@@ -1,4 +1,4 @@
-console.log(`v20250201-10:05`);
+console.log(`v20250201-10:08`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -601,6 +601,11 @@ function openSyncModal() {
 
 				// Generate the zip content
 				const compressedContent = await zip.generateAsync({ type: 'blob' });
+
+				// Add size validation
+				if (compressedContent.size < 100) { // 100 bytes minimum threshold
+					throw new Error('Snapshot file is too small or empty. Upload cancelled.');
+				}
 
 				const s3 = new AWS.S3();
 				const putParams = {
@@ -1834,6 +1839,11 @@ async function handleBackupFiles() {
 				});
 
 				compressedContent = await zip.generateAsync({ type: 'blob' });
+
+				// Add size validation
+				if (compressedContent.size < 100) { // 100 bytes minimum threshold
+					throw new Error('Daily backup file is too small or empty. Upload cancelled.');
+				}
 
 				const zipKey = `typingmind-backup-${currentDateSuffix}.zip`;
 				const uploadParams = {
