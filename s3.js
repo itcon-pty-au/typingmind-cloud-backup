@@ -1,4 +1,4 @@
-// v20250130
+// v20250131
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -720,60 +720,69 @@ async function checkAndImportBackup() {
     const awsRegion = localStorage.getItem('aws-region');
     const awsAccessKey = localStorage.getItem('aws-access-key');
     const awsSecretKey = localStorage.getItem('aws-secret-key');
+    const encryptionKey = localStorage.getItem('encryption-key');
     const awsEndpoint = localStorage.getItem('aws-endpoint');
 
-    if (bucketName && awsAccessKey && awsSecretKey) {
-        if (typeof AWS === 'undefined') {
-            await loadAwsSdk();
+    // Check all required credentials upfront
+    if (!bucketName || !awsAccessKey || !awsSecretKey || !encryptionKey) {
+        wasImportSuccessful = false;
+        if (!encryptionKey) {
+            alert('Please configure your encryption key in the backup settings before proceeding.');
+        } else {
+            alert('Please configure all AWS credentials in the backup settings before proceeding.');
         }
+        return false;
+    }
 
-        const awsConfig = {
-            accessKeyId: awsAccessKey,
-            secretAccessKey: awsSecretKey,
-            region: awsRegion,
-        };
+    if (typeof AWS === 'undefined') {
+        await loadAwsSdk();
+    }
 
-        if (awsEndpoint) {
-            awsConfig.endpoint = awsEndpoint;
-        }
+    const awsConfig = {
+        accessKeyId: awsAccessKey,
+        secretAccessKey: awsSecretKey,
+        region: awsRegion,
+    };
 
-        AWS.config.update(awsConfig);
+    if (awsEndpoint) {
+        awsConfig.endpoint = awsEndpoint;
+    }
 
-        try {
-            // Directly try to import - all checks will happen in importFromS3()
-            await importFromS3();
+    AWS.config.update(awsConfig);
+
+    try {
+        // Directly try to import - all checks will happen in importFromS3()
+        await importFromS3();
+        wasImportSuccessful = true;
+        return true;
+    } catch (err) {
+        if (err.code === 'NoSuchKey') {
+            alert("Backup file not found in S3! Run an adhoc 'Export' first.");
+            // Set wasImportSuccessful to true when no backup exists
+            // This allows initial backups to work
             wasImportSuccessful = true;
             return true;
-        } catch (err) {
-            if (err.code === 'NoSuchKey') {
-                alert("Backup file not found in S3! Run an adhoc 'Export' first.");
-                // Set wasImportSuccessful to true when no backup exists
-                // This allows initial backups to work
-                wasImportSuccessful = true;
-                return true;
-            } else if (err.message === 'Encryption key not configured' || err.message === 'Failed to decrypt backup. Please check your encryption key.') {
-                // Handle both encryption-related errors
-                alert('Please configure your encryption key in the backup settings to decrypt this backup.');
-                wasImportSuccessful = false;
-                return false;
-            } else if (err.code === 'CredentialsError' || err.code === 'InvalidAccessKeyId') {
-                // Handle AWS credentials errors
-                localStorage.setItem('aws-bucket', '');
-                localStorage.setItem('aws-access-key', '');
-                localStorage.setItem('aws-secret-key', '');
-                alert('Failed to connect to AWS. Please check your credentials.');
-                wasImportSuccessful = false;
-                return false;
-            } else {
-                // Handle any other errors
-                console.error('Import error:', err);
-                alert('Error during import: ' + err.message);
-                wasImportSuccessful = false;
-                return false;
-            }
+        } else if (err.message === 'Encryption key not configured' || err.message === 'Failed to decrypt backup. Please check your encryption key.') {
+            // Handle both encryption-related errors
+            alert('Please configure your encryption key in the backup settings to decrypt this backup.');
+            wasImportSuccessful = false;
+            return false;
+        } else if (err.code === 'CredentialsError' || err.code === 'InvalidAccessKeyId') {
+            // Handle AWS credentials errors
+            localStorage.setItem('aws-bucket', '');
+            localStorage.setItem('aws-access-key', '');
+            localStorage.setItem('aws-secret-key', '');
+            alert('Failed to connect to AWS. Please check your credentials.');
+            wasImportSuccessful = false;
+            return false;
+        } else {
+            // Handle any other errors
+            console.error('Import error:', err);
+            alert('Error during import: ' + err.message);
+            wasImportSuccessful = false;
+            return false;
         }
     }
-    return false;
 }
 
 async function loadBackupFiles() {
