@@ -1,4 +1,4 @@
-// v20250130
+// v20250131
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -750,17 +750,21 @@ async function checkAndImportBackup() {
                 // Set wasImportSuccessful to true when no backup exists
                 // This allows initial backups to work
                 wasImportSuccessful = true;
+                return true;
             } else if (err.message === 'Encryption key not configured') {
                 // Don't set wasImportSuccessful to true - we need encryption key
                 alert('Please configure your encryption key in the backup settings to decrypt this backup.');
+                wasImportSuccessful = false;
+                return false;
             } else {
                 localStorage.setItem('aws-bucket', '');
                 localStorage.setItem('aws-access-key', '');
                 localStorage.setItem('aws-secret-key', '');
                 alert('Failed to connect to AWS. Please check your credentials.');
                 // Don't set wasImportSuccessful to true here as credentials are invalid
+                wasImportSuccessful = false;
+                return false;
             }
-            return false;
         }
     }
     return false;
@@ -1315,138 +1319,146 @@ async function backupToS3() {
 
 // Function to handle import from S3
 async function importFromS3() {
-	console.log(`📥 [${new Date().toLocaleString()}] Starting import from S3...`);
-	let importedData = null;
-	const bucketName = localStorage.getItem('aws-bucket');
-	const awsRegion = localStorage.getItem('aws-region');
-	const awsAccessKey = localStorage.getItem('aws-access-key');
-	const awsSecretKey = localStorage.getItem('aws-secret-key');
-	const awsEndpoint = localStorage.getItem('aws-endpoint');
+    console.log(`📥 [${new Date().toLocaleString()}] Starting import from S3...`);
+    try {
+        const bucketName = localStorage.getItem('aws-bucket');
+        const awsRegion = localStorage.getItem('aws-region');
+        const awsAccessKey = localStorage.getItem('aws-access-key');
+        const awsSecretKey = localStorage.getItem('aws-secret-key');
+        const awsEndpoint = localStorage.getItem('aws-endpoint');
 
-	if (typeof AWS === 'undefined') {
-		await loadAwsSdk();
-	}
+        if (typeof AWS === 'undefined') {
+            await loadAwsSdk();
+        }
 
-	const awsConfig = {
-		accessKeyId: awsAccessKey,
-		secretAccessKey: awsSecretKey,
-		region: awsRegion,
-	};
+        const awsConfig = {
+            accessKeyId: awsAccessKey,
+            secretAccessKey: awsSecretKey,
+            region: awsRegion,
+        };
 
-	if (awsEndpoint) {
-		awsConfig.endpoint = awsEndpoint;
-	}
+        if (awsEndpoint) {
+            awsConfig.endpoint = awsEndpoint;
+        }
 
-	AWS.config.update(awsConfig);
+        AWS.config.update(awsConfig);
 
-	let s3 = new AWS.S3();
-	const params = {
-		Bucket: bucketName,
-		Key: 'typingmind-backup.json',
-	};
+        let s3 = new AWS.S3();
+        const params = {
+            Bucket: bucketName,
+            Key: 'typingmind-backup.json',
+        };
 
-	try {
-		// Get object metadata first to check size and last modified
-		const headData = await s3.headObject(params).promise();
-		const cloudFileSize = headData.ContentLength || 0;  // Add fallback to 0
-		const cloudLastModified = headData.LastModified;
-		const lastSync = localStorage.getItem('last-cloud-sync');
+        // Get object metadata first to check size and last modified
+        const headData = await s3.headObject(params).promise();
+        const cloudFileSize = headData.ContentLength || 0;  // Add fallback to 0
+        const cloudLastModified = headData.LastModified;
+        const lastSync = localStorage.getItem('last-cloud-sync');
 
-		// Calculate current local data size
-		const currentData = await exportBackupData();
-		const currentDataStr = JSON.stringify(currentData);
-		const localFileSize = new Blob([currentDataStr]).size;
-		
-		// Only calculate percentage if we have valid sizes
-		const sizeDiffPercentage = cloudFileSize && localFileSize ? 
-			Math.abs((cloudFileSize - localFileSize) / localFileSize * 100) : 0;
-		
-		// Check if size difference is within tolerance (±2 bytes)
-		const isWithinSizeTolerance = !cloudFileSize || 
-			Math.abs(cloudFileSize - localFileSize) <= 2;
-		
-		// Log size comparison details
-		console.log(`📊 [${new Date().toLocaleString()}] Size comparison:
+        // Calculate current local data size
+        const currentData = await exportBackupData();
+        const currentDataStr = JSON.stringify(currentData);
+        const localFileSize = new Blob([currentDataStr]).size;
+        
+        // Only calculate percentage if we have valid sizes
+        const sizeDiffPercentage = cloudFileSize && localFileSize ? 
+            Math.abs((cloudFileSize - localFileSize) / localFileSize * 100) : 0;
+        
+        // Check if size difference is within tolerance (0.1% for files > 1MB, or ±2 bytes for smaller files)
+        const isWithinSizeTolerance = !cloudFileSize || 
+            (localFileSize > 1024 * 1024 ? 
+                sizeDiffPercentage <= 0.1 : // 0.1% tolerance for files > 1MB
+                Math.abs(cloudFileSize - localFileSize) <= 2); // 2 byte tolerance for smaller files
+
+        // Log size comparison details
+        console.log(`📊 [${new Date().toLocaleString()}] Size comparison:
     Cloud size: ${cloudFileSize || 'Unknown'} bytes
     Local size: ${localFileSize} bytes
-    Difference: ${cloudFileSize ? (cloudFileSize - localFileSize) : 'Unknown'} bytes ${cloudFileSize ? `(${sizeDiffPercentage.toFixed(2)}%)` : ''}
+    Difference: ${cloudFileSize ? (cloudFileSize - localFileSize) : 'Unknown'} bytes ${cloudFileSize ? `(${sizeDiffPercentage.toFixed(4)}%)` : ''}
     Within tolerance: ${isWithinSizeTolerance ? 'Yes' : 'No'}`);
 
-		// Check time difference
-		const isTimeDifferenceSignificant = () => {
-			if (!lastSync) return false;
-			
-			// Parse lastSync date (format: "1/30/2025, 11:01:18 PM")
-			const lastSyncDate = new Date(lastSync);
-			const cloudDate = new Date(cloudLastModified);
-			
-			// Get difference in minutes
-			const diffInMinutes = Math.abs(cloudDate - lastSyncDate) / (1000 * 60);
-			
-			// Return true if difference is more than 2 minutes
-			return diffInMinutes > 2;
-		};
+        console.log(`⏱️ [${new Date().toLocaleString()}] Checking time difference...`);
+        const isTimeDifferenceSignificant = () => {
+            if (!lastSync) {
+                console.log(`ℹ️ No last sync found`);
+                return false;
+            }
+            
+            const lastSyncDate = new Date(lastSync);
+            const cloudDate = new Date(cloudLastModified);
+            const diffInMinutes = Math.abs(cloudDate - lastSyncDate) / (1000 * 60);
+            
+            console.log(`ℹ️ Time difference: ${diffInMinutes.toFixed(2)} minutes`);
+            return diffInMinutes > 2;
+        };
 
-		// Check if we need to prompt user
-		const shouldPrompt = localFileSize > 0 && (
-			(cloudFileSize < localFileSize && !isWithinSizeTolerance) || // Cloud backup is smaller (beyond tolerance)
-			(sizeDiffPercentage > 10) || // Size varies by more than 10% (beyond tolerance)
-			isTimeDifferenceSignificant() // Time difference > 2 minutes
-		);
+        console.log(`🔍 [${new Date().toLocaleString()}] Checking if prompt needed...`);
+        const shouldPrompt = localFileSize > 0 && (
+            (cloudFileSize < localFileSize && !isWithinSizeTolerance) || 
+            (sizeDiffPercentage > 1) || 
+            isTimeDifferenceSignificant()
+        );
+        console.log(`📢 Should prompt user: ${shouldPrompt}`);
 
-		if (shouldPrompt) {
-			let message = `Warning: Potential data mismatch detected!\n\n`;
-			message += `Cloud backup size: ${cloudFileSize || 'Unknown'} bytes\n`;
-			message += `Local data size: ${localFileSize} bytes\n`;
-			if (cloudFileSize) {
-				message += `Size difference: ${sizeDiffPercentage.toFixed(2)}%\n\n`;
-			}
-			message += `Local last sync: ${lastSync || 'Never'}\n`;
-			message += `Cloud last modified: ${cloudLastModified.toLocaleString()}\n\n`;
-			
-			// Add specific warnings based on what triggered the prompt
-			if (cloudFileSize && cloudFileSize < localFileSize && !isWithinSizeTolerance) {
-				message += '⚠️ Cloud backup is smaller than local data\n';
-			}
-			if (cloudFileSize && sizeDiffPercentage > 10) {
-				message += '⚠️ Significant size difference detected\n';
-			}
-			if (isTimeDifferenceSignificant()) {
-					message += '⚠️ Timestamp mismatch detected\n';
-			}
-			
-			message += '\nDo you want to proceed with importing the cloud backup? This will overwrite your local data.';
+        if (shouldPrompt) {
+            console.log(`⚠️ [${new Date().toLocaleString()}] Showing prompt to user...`);
+            let message = `Warning: Potential data mismatch detected!\n\n`;
+            message += `Cloud backup size: ${cloudFileSize || 'Unknown'} bytes\n`;
+            message += `Local data size: ${localFileSize} bytes\n`;
+            if (cloudFileSize) {
+                message += `Size difference: ${sizeDiffPercentage.toFixed(2)}%\n\n`;
+            }
+            message += `Local last sync: ${lastSync || 'Never'}\n`;
+            message += `Cloud last modified: ${cloudLastModified.toLocaleString()}\n\n`;
+            
+            // Add specific warnings based on what triggered the prompt
+            if (cloudFileSize && cloudFileSize < localFileSize && !isWithinSizeTolerance) {
+                message += '⚠️ Cloud backup is smaller than local data\n';
+            }
+            if (cloudFileSize && sizeDiffPercentage > 10) {
+                message += '⚠️ Significant size difference detected\n';
+            }
+            if (isTimeDifferenceSignificant()) {
+                    message += '⚠️ Timestamp mismatch detected\n';
+            }
+            
+            message += '\nDo you want to proceed with importing the cloud backup? This will overwrite your local data.';
 
-			if (!confirm(message)) {
-				console.log(`ℹ️ [${new Date().toLocaleString()}] Import cancelled by user`);
-				return false;
-			}
-		}
+            if (!confirm(message)) {
+                console.log(`ℹ️ [${new Date().toLocaleString()}] Import cancelled by user`);
+                return false;
+            }
+        }
 
-		// Proceed with import if confirmed or if no confirmation needed
-		const data = await s3.getObject(params).promise();
-		const encryptedContent = new Uint8Array(data.Body);
-		try {
-			importedData = await decryptData(encryptedContent);
-		} catch (error) {
-			console.error('Failed to decrypt backup:', error);
-			throw new Error('Failed to decrypt backup. Please check your encryption key.');
-		}
-		importDataToStorage(importedData);
-		
-		const currentTime = new Date().toLocaleString();
-		//localStorage.setItem('last-cloud-sync', currentTime);
-		var element = document.getElementById('last-sync-msg');
-		if (element !== null) {
-			element.innerText = `Last sync done at ${currentTime}`;
-		}
-		console.log(`✅ [${new Date().toLocaleString()}] Import completed successfully`);
-		wasImportSuccessful = true;
-		return true;
-	} catch (error) {
-		console.error(`❌ [${new Date().toLocaleString()}] Import failed:`, error);
-		return false; // Return false for any error
-	}
+        console.log(`📥 [${new Date().toLocaleString()}] Fetching data from S3...`);
+        const data = await s3.getObject(params).promise();
+        console.log(`🔐 [${new Date().toLocaleString()}] Decrypting data...`);
+        const encryptedContent = new Uint8Array(data.Body);
+        
+        try {
+            console.log(`🔓 [${new Date().toLocaleString()}] Starting decryption...`);
+            importedData = await decryptData(encryptedContent);
+            console.log(`✅ [${new Date().toLocaleString()}] Decryption successful`);
+        } catch (error) {
+            console.error(`❌ [${new Date().toLocaleString()}] Decryption failed:`, error);
+            throw new Error('Failed to decrypt backup. Please check your encryption key.');
+        }
+
+        importDataToStorage(importedData);
+        
+        const currentTime = new Date().toLocaleString();
+        //localStorage.setItem('last-cloud-sync', currentTime);
+        var element = document.getElementById('last-sync-msg');
+        if (element !== null) {
+            element.innerText = `Last sync done at ${currentTime}`;
+        }
+        console.log(`✅ [${new Date().toLocaleString()}] Import completed successfully`);
+        wasImportSuccessful = true;
+        return true;
+    } catch (error) {
+        console.error(`❌ [${new Date().toLocaleString()}] Import failed with error:`, error);
+        throw error; // Re-throw to maintain existing error handling
+    }
 }
 
 //Delete file from S3
