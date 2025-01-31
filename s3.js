@@ -1,4 +1,4 @@
-// v20250131
+// v20250130
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -751,17 +751,23 @@ async function checkAndImportBackup() {
                 // This allows initial backups to work
                 wasImportSuccessful = true;
                 return true;
-            } else if (err.message === 'Encryption key not configured') {
-                // Don't set wasImportSuccessful to true - we need encryption key
+            } else if (err.message === 'Encryption key not configured' || err.message === 'Failed to decrypt backup. Please check your encryption key.') {
+                // Handle both encryption-related errors
                 alert('Please configure your encryption key in the backup settings to decrypt this backup.');
                 wasImportSuccessful = false;
                 return false;
-            } else {
+            } else if (err.code === 'CredentialsError' || err.code === 'InvalidAccessKeyId') {
+                // Handle AWS credentials errors
                 localStorage.setItem('aws-bucket', '');
                 localStorage.setItem('aws-access-key', '');
                 localStorage.setItem('aws-secret-key', '');
                 alert('Failed to connect to AWS. Please check your credentials.');
-                // Don't set wasImportSuccessful to true here as credentials are invalid
+                wasImportSuccessful = false;
+                return false;
+            } else {
+                // Handle any other errors
+                console.error('Import error:', err);
+                alert('Error during import: ' + err.message);
                 wasImportSuccessful = false;
                 return false;
             }
