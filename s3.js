@@ -1,4 +1,4 @@
-console.log(`v20250201-07:48`);
+console.log(`v20250201-08:02`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -31,6 +31,9 @@ let isPageFullyLoaded = false;
 
 async function handleDOMReady() {
 	window.removeEventListener('DOMContentLoaded', handleDOMReady);
+	
+	// Set page loaded flag immediately
+	isPageFullyLoaded = true;
 	
 	// Check all required credentials upfront
 	const bucketName = localStorage.getItem('aws-bucket');
@@ -331,6 +334,13 @@ function openSyncModal() {
 
 	// Update updateButtonState to make encryption key optional
 	function updateButtonState() {
+		const awsBucketInput = document.getElementById('aws-bucket');
+		const awsRegionInput = document.getElementById('aws-region');
+		const awsAccessKeyInput = document.getElementById('aws-access-key');
+		const awsSecretKeyInput = document.getElementById('aws-secret-key');
+		const backupIntervalInput = document.getElementById('backup-interval');
+		const encryptionKeyInput = document.getElementById('encryption-key');
+
 		const isDisabled =
 			!awsBucketInput.value.trim() ||
 			!awsRegionInput.value.trim() ||
@@ -338,8 +348,10 @@ function openSyncModal() {
 			!awsSecretKeyInput.value.trim() ||
 			!backupIntervalInput.value ||
 			backupIntervalInput.value < 15 ||
-			(document.getElementById('encryption-key').value.trim() !== '' && 
-			 document.getElementById('encryption-key').value.trim().length < 8);
+			!encryptionKeyInput.value.trim() ||  // Make encryption key required
+			(encryptionKeyInput.value.trim() !== '' && 
+			 encryptionKeyInput.value.trim().length < 8);
+
 		document.getElementById('export-to-s3-btn').disabled = isDisabled;
 		document.getElementById('import-from-s3-btn').disabled = isDisabled;
 		document.getElementById('save-aws-details-btn').disabled = isDisabled;
