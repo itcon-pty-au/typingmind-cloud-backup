@@ -1,4 +1,4 @@
-console.log(`v20250201-08:16`);
+console.log(`v20250201-08:20`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -344,19 +344,24 @@ function openSyncModal() {
 
 		// Check if all required fields have values
 		const hasRequiredFields = 
-			awsBucketInput.value.trim() &&
-			awsRegionInput.value.trim() &&
-			awsAccessKeyInput.value.trim() &&
-			awsSecretKeyInput.value.trim() &&
-			backupIntervalInput.value &&
-			backupIntervalInput.value >= 15 &&
-			encryptionKeyInput.value.trim().length >= 8;  // Changed this condition
+			awsBucketInput?.value?.trim() &&
+			awsRegionInput?.value?.trim() &&
+			awsAccessKeyInput?.value?.trim() &&
+			awsSecretKeyInput?.value?.trim() &&
+			backupIntervalInput?.value &&
+			parseInt(backupIntervalInput.value) >= 15 &&
+			encryptionKeyInput?.value?.trim().length >= 8;
 
 		// Update button states
-		document.getElementById('export-to-s3-btn').disabled = !hasRequiredFields;
-		document.getElementById('import-from-s3-btn').disabled = !hasRequiredFields;
-		document.getElementById('save-aws-details-btn').disabled = !hasRequiredFields;
-		document.getElementById('snapshot-btn').disabled = !hasRequiredFields;
+		const saveButton = document.getElementById('save-aws-details-btn');
+		const exportButton = document.getElementById('export-to-s3-btn');
+		const importButton = document.getElementById('import-from-s3-btn');
+		const snapshotButton = document.getElementById('snapshot-btn');
+
+		if (saveButton) saveButton.disabled = !hasRequiredFields;
+		if (exportButton) exportButton.disabled = !hasRequiredFields;
+		if (importButton) importButton.disabled = !hasRequiredFields;
+		if (snapshotButton) snapshotButton.disabled = !hasRequiredFields;
 	}
 
 	modalPopup.addEventListener('click', function (event) {
@@ -371,6 +376,7 @@ function openSyncModal() {
 	awsSecretKeyInput.addEventListener('input', updateButtonState);
 	awsEndpointInput.addEventListener('input', updateButtonState);
 	backupIntervalInput.addEventListener('input', updateButtonState);
+	encryptionKeyInput.addEventListener('input', updateButtonState);
 
 	updateButtonState();
 
