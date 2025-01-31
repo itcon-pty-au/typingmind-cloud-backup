@@ -1,4 +1,4 @@
-// v20250130
+// v20250131
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -740,9 +740,16 @@ async function checkAndImportBackup() {
         try {
             // Get object metadata first to check size and last modified
             const headData = await s3.headObject(params).promise();
-            const cloudFileSize = headData.ContentLength;
+            let cloudFileSize = headData.ContentLength;  // Try metadata first
             const cloudLastModified = headData.LastModified;
             const lastSync = localStorage.getItem('last-cloud-sync');
+
+            // If ContentLength is not available, get the actual file size
+            if (!cloudFileSize) {
+                const data = await s3.getObject(params).promise();
+                cloudFileSize = new Uint8Array(data.Body).length;
+                console.log(`📏 [${new Date().toLocaleString()}] Calculated cloud file size from data: ${cloudFileSize} bytes`);
+            }
 
             // Calculate current local data size
             const currentData = await exportBackupData();
@@ -751,7 +758,16 @@ async function checkAndImportBackup() {
             
             // Calculate size difference percentage
             const sizeDiffPercentage = Math.abs((cloudFileSize - localFileSize) / localFileSize * 100);
+            
+            // Check if size difference is within tolerance (±2 bytes)
             const isWithinSizeTolerance = Math.abs(cloudFileSize - localFileSize) <= 2;
+            
+            // Log size comparison details
+            console.log(`📊 [${new Date().toLocaleString()}] Size comparison:
+    Cloud size: ${cloudFileSize} bytes
+    Local size: ${localFileSize} bytes
+    Difference: ${cloudFileSize - localFileSize} bytes (${sizeDiffPercentage.toFixed(2)}%)
+    Within tolerance: ${isWithinSizeTolerance ? 'Yes' : 'No'}`);
 
             // Check if we need to prompt user
             const shouldPrompt = localFileSize > 0 && (
@@ -1385,7 +1401,7 @@ async function importFromS3() {
 	try {
 		// Get object metadata first to check size and last modified
 		const headData = await s3.headObject(params).promise();
-		const cloudFileSize = headData.ContentLength;
+		const cloudFileSize = headData.ContentLength || 0;  // Add fallback to 0
 		const cloudLastModified = headData.LastModified;
 		const lastSync = localStorage.getItem('last-cloud-sync');
 
@@ -1394,17 +1410,19 @@ async function importFromS3() {
 		const currentDataStr = JSON.stringify(currentData);
 		const localFileSize = new Blob([currentDataStr]).size;
 		
-		// Calculate size difference percentage
-		const sizeDiffPercentage = Math.abs((cloudFileSize - localFileSize) / localFileSize * 100);
+		// Only calculate percentage if we have valid sizes
+		const sizeDiffPercentage = cloudFileSize && localFileSize ? 
+			Math.abs((cloudFileSize - localFileSize) / localFileSize * 100) : 0;
 		
 		// Check if size difference is within tolerance (±2 bytes)
-		const isWithinSizeTolerance = Math.abs(cloudFileSize - localFileSize) <= 2;
+		const isWithinSizeTolerance = !cloudFileSize || 
+			Math.abs(cloudFileSize - localFileSize) <= 2;
 		
 		// Log size comparison details
 		console.log(`📊 [${new Date().toLocaleString()}] Size comparison:
-    Cloud size: ${cloudFileSize} bytes
+    Cloud size: ${cloudFileSize || 'Unknown'} bytes
     Local size: ${localFileSize} bytes
-    Difference: ${cloudFileSize - localFileSize} bytes (${sizeDiffPercentage.toFixed(2)}%)
+    Difference: ${cloudFileSize ? (cloudFileSize - localFileSize) : 'Unknown'} bytes ${cloudFileSize ? `(${sizeDiffPercentage.toFixed(2)}%)` : ''}
     Within tolerance: ${isWithinSizeTolerance ? 'Yes' : 'No'}`);
 
 		// Check time difference
@@ -1431,28 +1449,30 @@ async function importFromS3() {
 
 		if (shouldPrompt) {
 			let message = `Warning: Potential data mismatch detected!\n\n`;
-			message += `Cloud backup size: ${cloudFileSize} bytes\n`;
+			message += `Cloud backup size: ${cloudFileSize || 'Unknown'} bytes\n`;
 			message += `Local data size: ${localFileSize} bytes\n`;
-			message += `Size difference: ${sizeDiffPercentage.toFixed(2)}%\n\n`;
+			if (cloudFileSize) {
+				message += `Size difference: ${sizeDiffPercentage.toFixed(2)}%\n\n`;
+			}
 			message += `Local last sync: ${lastSync || 'Never'}\n`;
 			message += `Cloud last modified: ${cloudLastModified.toLocaleString()}\n\n`;
 			
 			// Add specific warnings based on what triggered the prompt
-			if (cloudFileSize < localFileSize && !isWithinSizeTolerance) {
+			if (cloudFileSize && cloudFileSize < localFileSize && !isWithinSizeTolerance) {
 				message += '⚠️ Cloud backup is smaller than local data\n';
 			}
-			if (sizeDiffPercentage > 10) {
+			if (cloudFileSize && sizeDiffPercentage > 10) {
 				message += '⚠️ Significant size difference detected\n';
 			}
 			if (isTimeDifferenceSignificant()) {
-				message += '⚠️ Timestamp mismatch detected\n';
+					message += '⚠️ Timestamp mismatch detected\n';
 			}
 			
 			message += '\nDo you want to proceed with importing the cloud backup? This will overwrite your local data.';
 
 			if (!confirm(message)) {
 				console.log(`ℹ️ [${new Date().toLocaleString()}] Import cancelled by user`);
-				return false; // Return false instead of throwing error
+				return false;
 			}
 		}
 
