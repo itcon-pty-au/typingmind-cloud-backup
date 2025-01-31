@@ -1,4 +1,4 @@
-console.log(`v20250201-07:12`);
+console.log(`v20250201-08:16`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -2030,6 +2030,3 @@ async function decryptData(data) {
         throw error;
     }
 }
-
-// Add encryption key input event listener here
-encryptionKeyInput.addEventListener('input', updateButtonState);
