@@ -1,4 +1,4 @@
-console.log(`v20250131-06:52`);
+console.log(`v20250201-05:42`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1434,6 +1434,11 @@ async function importFromS3() {
             const headData = await s3.headObject(params).promise();
             cloudFileSize = headData.ContentLength;
             cloudLastModified = headData.LastModified;
+            console.log('Head request LastModified:', {
+                raw: headData.LastModified,
+                iso: new Date(headData.LastModified).toISOString(),
+                local: new Date(headData.LastModified).toLocaleString()
+            });
         } catch (headError) {
             console.log(`ℹ️ [${new Date().toLocaleString()}] Unable to get head metadata:`, headError);
             // Continue execution - we'll get size from the actual data
@@ -1443,6 +1448,11 @@ async function importFromS3() {
         let s3Data;  // Changed from 'data' to 's3Data'
         try {
             s3Data = await s3.getObject(params).promise();
+            console.log('GetObject LastModified:', {
+                raw: s3Data.LastModified,
+                iso: new Date(s3Data.LastModified).toISOString(),
+                local: new Date(s3Data.LastModified).toLocaleString()
+            });
             // If we couldn't get size from head request, get it from the actual data
             if (!cloudFileSize && s3Data.Body) {
                 cloudFileSize = s3Data.Body.length;
