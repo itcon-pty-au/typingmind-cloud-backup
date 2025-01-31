@@ -1,4 +1,4 @@
-console.log(`v20250131`);
+// v20250130
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -470,6 +470,8 @@ function openSyncModal() {
 
 			try {
 				await backupToS3();
+				// Add this line to refresh backup list after successful export
+				await loadBackupFiles();
 			} finally {
 				isExportInProgress = false;
 				exportBtn.disabled = false;
@@ -578,7 +580,11 @@ function openSyncModal() {
 				}, 3000);
 
 				// Refresh the backup files list after successful snapshot
-				await loadBackupFiles();
+				// Remove the existing loadBackupFiles call and replace with this conditional one
+				if (document.querySelector('[data-element-id="sync-modal-dbbackup"]')) {
+					await loadBackupFiles();
+				}
+				
 				console.log(`✅ [${new Date().toLocaleString()}] Snapshot created successfully: Snapshot_${timestamp}.zip`);
 			} catch (error) {
 				console.error(`❌ [${new Date().toLocaleString()}] Snapshot creation failed:`, error);
@@ -1316,6 +1322,12 @@ async function backupToS3() {
 		if (element !== null) {
 			element.innerText = `Last sync done at ${currentTime}`;
 		}
+
+		// Add this line to refresh backup list after successful backup
+		if (document.querySelector('[data-element-id="sync-modal-dbbackup"]')) {
+			await loadBackupFiles();
+		}
+
 	} catch (error) {
 		console.error(`❌ [${new Date().toLocaleString()}] Export failed:`, error);
 		var element = document.getElementById('last-sync-msg');
@@ -1677,6 +1689,11 @@ async function handleBackupFiles() {
 				
 				// Update localStorage after successful backup creation
 				localStorage.setItem('last-daily-backup-in-s3', currentDateSuffix);
+
+				// Add refresh of backup list if modal is open
+				if (document.querySelector('[data-element-id="sync-modal-dbbackup"]')) {
+					await loadBackupFiles();
+				}
 			} else {console.log(`📅 [${new Date().toLocaleString()}] Daily backup file already exists for today`);}
 
 			// Purge backups older than 30 days
@@ -1704,6 +1721,11 @@ async function handleBackupFiles() {
 		backupContent = null;
 		zip = null;
 		compressedContent = null;
+	}
+
+	// Add refresh after purging old backups if any were deleted
+	if (document.querySelector('[data-element-id="sync-modal-dbbackup"]')) {
+		await loadBackupFiles();
 	}
 }
 
