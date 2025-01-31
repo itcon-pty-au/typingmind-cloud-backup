@@ -1,4 +1,4 @@
-console.log(`v20250201-08:20`);
+console.log(`v20250201-10:05`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -64,13 +64,10 @@ async function handleDOMReady() {
 				startBackupInterval();
 			} else {
 				// Handle case where user cancelled import
-				// Only start backup if there was no cloud data or it was a NoSuchKey error
-				if (localStorage.getItem('no-cloud-backup') === 'true') {
-					wasImportSuccessful = true;
-					startBackupInterval();
-				} else {
-					console.log('Import was not successful, skipping backup start');
-				}
+				// User chose to keep local data, so we should start backing it up
+				wasImportSuccessful = true;  // Set to true to allow backups
+				console.log('Import was cancelled by user - starting backup of local data');
+				startBackupInterval();
 			}
 
 		} catch (error) {
@@ -80,8 +77,8 @@ async function handleDOMReady() {
 			// Only allow backups for specific error cases
 			if (error.code === 'NoSuchKey') {
 				// No backup exists in cloud yet, safe to start backing up
-				localStorage.setItem('no-cloud-backup', 'true');
 				wasImportSuccessful = true;
+				console.log('No existing backup found in S3 - starting fresh backup');
 				startBackupInterval();
 			} else if (error.code === 'CredentialsError' || error.code === 'InvalidAccessKeyId') {
 				// Credential errors - don't start backup
