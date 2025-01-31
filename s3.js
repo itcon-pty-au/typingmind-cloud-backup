@@ -1,4 +1,4 @@
-// v20250130
+// v20250131
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1751,6 +1751,12 @@ async function encryptData(data) {
 
     if (!encryptionKey) {
         console.log(`⚠️ [${new Date().toLocaleString()}] No encryption key found`);
+        // Stop all backup intervals
+        clearInterval(backupInterval);
+        backupIntervalRunning = false;
+        localStorage.setItem('activeTabBackupRunning', 'false');
+        wasImportSuccessful = false;  // Prevent new backup attempts
+        
         alert('Please configure an encryption key in the backup settings before proceeding.');
         throw new Error('Encryption key not configured');
     }
@@ -1782,6 +1788,12 @@ async function encryptData(data) {
         
         return combinedData;
     } catch (error) {
+        // Stop intervals on encryption failure too
+        clearInterval(backupInterval);
+        backupIntervalRunning = false;
+        localStorage.setItem('activeTabBackupRunning', 'false');
+        wasImportSuccessful = false;
+        
         console.error(`❌ [${new Date().toLocaleString()}] Encryption failed:`, error);
         throw error;
     }
@@ -1809,6 +1821,12 @@ async function decryptData(data) {
     const encryptionKey = localStorage.getItem('encryption-key');
     if (!encryptionKey) {
         console.error(`❌ [${new Date().toLocaleString()}] Encrypted data found but no key provided`);
+        // Stop all backup intervals
+        clearInterval(backupInterval);
+        backupIntervalRunning = false;
+        localStorage.setItem('activeTabBackupRunning', 'false');
+        wasImportSuccessful = false;
+        
         alert('Please configure your encryption key in the backup settings to decrypt this backup.');
         throw new Error('Encryption key not configured');
     }
@@ -1837,6 +1855,12 @@ async function decryptData(data) {
 
         return parsedData;
     } catch (error) {
+        // Stop intervals on decryption failure
+        clearInterval(backupInterval);
+        backupIntervalRunning = false;
+        localStorage.setItem('activeTabBackupRunning', 'false');
+        wasImportSuccessful = false;
+        
         console.error(`❌ [${new Date().toLocaleString()}] Decryption failed:`, error);
         alert('Failed to decrypt backup. Please check your encryption key.');
         throw error;
