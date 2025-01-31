@@ -1,4 +1,4 @@
-// v20250131
+// v20250130
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -29,12 +29,13 @@ const awsSdkPromise = loadAwsSdk();
 async function handleDOMReady() {
 	window.removeEventListener('DOMContentLoaded', handleDOMReady);
 	
-	// Start the import process immediately if credentials exist
+	// Check all required credentials upfront
 	const bucketName = localStorage.getItem('aws-bucket');
 	const awsAccessKey = localStorage.getItem('aws-access-key');
 	const awsSecretKey = localStorage.getItem('aws-secret-key');
+	const encryptionKey = localStorage.getItem('encryption-key');
 	
-	if (bucketName && awsAccessKey && awsSecretKey) {
+	if (bucketName && awsAccessKey && awsSecretKey && encryptionKey) {
 		try {
 			var importSuccessful = await checkAndImportBackup();
 
@@ -67,10 +68,8 @@ async function handleDOMReady() {
 			// Don't start backup interval on error
 			return;
 		}
-	} else {
-		// No credentials, skip import
-		startBackupInterval();
 	}
+	// Remove the else block that was starting backup interval without credentials
 }
 
 // Create a new button
