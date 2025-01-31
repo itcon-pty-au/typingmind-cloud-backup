@@ -1,4 +1,4 @@
-console.log(`v20250131`);
+console.log(`v20250131-06:21`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -676,12 +676,12 @@ document.addEventListener('visibilitychange', async () => {
 // This is to provide a secondary backup option in case of unintended corruption of the backup file
 async function handleTimeBasedBackup() {
     const bucketName = localStorage.getItem('aws-bucket');
-    let lastTimeBackup = localStorage.getItem('last-time-based-backup');
+    const lastTimeBackup = parseInt(localStorage.getItem('last-time-based-backup')); // Parse as integer
     const currentTime = new Date().getTime();
 
     // Check if backup is needed
-    if (!lastTimeBackup || 
-        currentTime - new Date(lastTimeBackup).getTime() >= TIME_BACKUP_INTERVAL * 60 * 1000) {
+    if (!lastTimeBackup || isNaN(lastTimeBackup) || 
+        currentTime - lastTimeBackup >= TIME_BACKUP_INTERVAL * 60 * 1000) {
         
         console.log(`⏰ [${new Date().toLocaleString()}] Starting time-based backup (T-${TIME_BACKUP_INTERVAL})`);
         const s3 = new AWS.S3();
@@ -712,17 +712,17 @@ async function handleTimeBasedBackup() {
 
             await s3.putObject(uploadParams).promise();
             
-            // Update the last backup time only after successful upload
-            localStorage.setItem('last-time-based-backup', new Date().toLocaleString());
+            // Store timestamp as milliseconds instead of string
+            localStorage.setItem('last-time-based-backup', currentTime.toString());
             console.log(`✅ [${new Date().toLocaleString()}] Time-based backup completed`);
         } catch (error) {
             console.error(`❌ [${new Date().toLocaleString()}] Time-based backup failed:`, error);
             throw error;
         }
     } else {
-        console.log(`⏳ [${new Date().toLocaleString()}] Time-based backup not yet due. Next backup in ${
-            Math.round((TIME_BACKUP_INTERVAL * 60 * 1000 - (currentTime - new Date(lastTimeBackup).getTime())) / 1000 / 60)
-        } minutes`);
+        const timeUntilNextBackup = TIME_BACKUP_INTERVAL * 60 * 1000 - (currentTime - lastTimeBackup);
+        const minutesUntilNext = Math.round(timeUntilNextBackup / 1000 / 60);
+        console.log(`⏳ [${new Date().toLocaleString()}] Time-based backup not yet due. Next backup in ${minutesUntilNext} minutes`);
     }
 }
 
