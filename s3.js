@@ -1,4 +1,4 @@
-// v20250131
+// v20250130
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -9,6 +9,26 @@ const TIME_BACKUP_FILE_PREFIX = `T-${TIME_BACKUP_INTERVAL}`;
 
 // Move this variable declaration to the top
 let awsSdkLoadPromise = null;
+
+// Function to load AWS SDK asynchronously
+async function loadAwsSdk() {
+	if (awsSdkLoadPromise) return awsSdkLoadPromise;
+	
+	awsSdkLoadPromise = new Promise((resolve, reject) => {
+		if (typeof AWS !== 'undefined') {
+			resolve();
+			return;
+		}
+		
+		const script = document.createElement('script');
+		script.src = 'https://sdk.amazonaws.com/js/aws-sdk-2.804.0.min.js';
+		script.onload = resolve;
+		script.onerror = reject;
+		document.head.appendChild(script);
+	});
+	
+	return awsSdkLoadPromise;
+}
 
 // Pre-load AWS SDK as soon as possible
 const awsSdkPromise = loadAwsSdk();
