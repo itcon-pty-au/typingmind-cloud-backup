@@ -1,4 +1,4 @@
-// v20250131
+console.log(`v20250131`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1453,9 +1453,27 @@ async function importFromS3() {
         }
 
         console.log(`📥 [${new Date().toLocaleString()}] Fetching data from S3...`);
-        const data = await s3.getObject(params).promise();
+        // Use the existing params object instead of redeclaring it
+        console.log(`🔍 [${new Date().toLocaleString()}] S3 getObject params:`, {
+            bucket: bucketName,
+            key: params.Key
+        });
+
+        let data;
+        try {
+            data = await s3.getObject(params).promise();
+            console.log(`✅ [${new Date().toLocaleString()}] S3 data fetched successfully:`, {
+                contentLength: data.Body?.length || 0,
+                contentType: data.ContentType
+            });
+        } catch (fetchError) {
+            console.error(`❌ [${new Date().toLocaleString()}] Failed to fetch from S3:`, fetchError);
+            throw fetchError;
+        }
+
         console.log(`🔐 [${new Date().toLocaleString()}] Decrypting data...`);
         const encryptedContent = new Uint8Array(data.Body);
+        console.log(`📊 [${new Date().toLocaleString()}] Encrypted content size:`, encryptedContent.length);
         
         try {
             console.log(`🔓 [${new Date().toLocaleString()}] Starting decryption...`);
