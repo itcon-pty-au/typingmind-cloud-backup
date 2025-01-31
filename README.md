@@ -15,11 +15,11 @@
 - The backup interval is now configurable (Minimum of 15 seconds).
 - ✨ All backups are now encrypted! The backup system uses AES-GCM encryption with a 256-bit key derived using PBKDF2. All data is encrypted client-side before being uploaded to S3. The encryption key is derived from a user-provided password using 100,000 PBKDF2 iterations with SHA-256, providing strong protection for sensitive data.
 - ✨ The system includes several safeguards to prevent unintended data loss:
-      * Size comparison with 0.1% tolerance for files >1MB and 2-byte tolerance for smaller files
-      * Timestamp comparison to detect potential conflicts
-      * Cloud-vs-local size verification to prevent smaller backups overwriting larger datasets
-      * User prompts with detailed information when significant differences are detected
-      * Backup size, modification time, and percentage difference displayed before risky operations
+      - Size comparison with 0.1% tolerance for files >1MB and 2-byte tolerance for smaller files
+      - Timestamp comparison to detect potential conflicts
+      - Cloud-vs-local size verification to prevent smaller backups overwriting larger datasets
+      - User prompts with detailed information when significant differences are detected
+      - Backup size, modification time, and percentage difference displayed before risky operations
   
 ## Using this extension
 WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXPORT" before setting up the extension.
