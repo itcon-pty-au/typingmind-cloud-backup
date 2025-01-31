@@ -1,4 +1,4 @@
-console.log(`v20250102-05:47`);
+console.log(`v20250201-05:59`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1536,7 +1536,7 @@ async function importFromS3() {
                 message += `Size difference: ${sizeDiffPercentage.toFixed(2)}%\n\n`;
             }
             message += `Local last sync: ${lastSync || 'Never'}\n`;
-            message += `Cloud last modified: ${cloudLastModified.toLocaleString()}\n\n`;
+            message += `Cloud last modified: ${cloudDate.toLocaleString()}\n\n`;
             
             // Add specific warnings based on what triggered the prompt
             if (cloudFileSize && cloudFileSize < localFileSize && !isWithinSizeTolerance) {
