@@ -1,4 +1,4 @@
-console.log(`v20250201-07:40`);
+console.log(`v20250201-07:48`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -12,6 +12,9 @@ let awsSdkLoadPromise = null;
 
 // Pre-load AWS SDK as soon as possible
 const awsSdkPromise = loadAwsSdk();
+
+// Add this at the top of the file with other flags
+let isPageFullyLoaded = false;
 
 (async function checkDOMOrRunBackup() {
 	// Start loading AWS SDK immediately
@@ -38,38 +41,58 @@ async function handleDOMReady() {
 	if (bucketName && awsAccessKey && awsSecretKey && encryptionKey) {
 		try {
 			var importSuccessful = await checkAndImportBackup();
+			
+			// Set page loaded flag regardless of import result
+			isPageFullyLoaded = true;
 
-			const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
-			const today = new Date();
-			const currentDateSuffix = `${today.getFullYear()}${String(
-				today.getMonth() + 1
-			).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-			const currentTime = new Date().toLocaleString();
-			const lastSync = localStorage.getItem('last-cloud-sync');
-			var element = document.getElementById('last-sync-msg');
-
-			if (lastSync && importSuccessful) {
-				if (element !== null) {
-					element.innerText = `Last sync done at ${currentTime}`;
-					element = null;
-				}
+			if (importSuccessful) {
+				const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
+				const today = new Date();
+				const currentDateSuffix = `${today.getFullYear()}${String(
+					today.getMonth() + 1
+				).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+				
 				if (!storedSuffix || currentDateSuffix > storedSuffix) {
 					await handleBackupFiles();
 				}
-			}
-			
-			// Only start backup interval if import was successful
-			if (importSuccessful) {
-				localStorage.setItem('activeTabBackupRunning', 'false');  // Reset flag
+				
+				// Only start backup if import was successful
+				wasImportSuccessful = true;
 				startBackupInterval();
+			} else {
+				// Handle case where user cancelled import
+				// Only start backup if there was no cloud data or it was a NoSuchKey error
+				if (localStorage.getItem('no-cloud-backup') === 'true') {
+					wasImportSuccessful = true;
+					startBackupInterval();
+				} else {
+					console.log('Import was not successful, skipping backup start');
+				}
 			}
+
 		} catch (error) {
 			console.error('Failed to initialize backup:', error);
-			// Don't start backup interval on error
+			isPageFullyLoaded = true;
+
+			// Only allow backups for specific error cases
+			if (error.code === 'NoSuchKey') {
+				// No backup exists in cloud yet, safe to start backing up
+				localStorage.setItem('no-cloud-backup', 'true');
+				wasImportSuccessful = true;
+				startBackupInterval();
+			} else if (error.code === 'CredentialsError' || error.code === 'InvalidAccessKeyId') {
+				// Credential errors - don't start backup
+				console.log('AWS credential error, not starting backup');
+			} else if (error.message === 'Encryption key not configured') {
+				// Encryption key missing - don't start backup
+				console.log('Encryption key missing, not starting backup');
+			} else {
+				// For other errors (network etc), don't start backup to be safe
+				console.log('Unknown error during import, not starting backup');
+			}
 			return;
 		}
 	}
-	// Remove the else block that was starting backup interval without credentials
 }
 
 // Create a new button
@@ -1059,18 +1082,16 @@ function startBackupInterval() {
 
 // Function to perform backup
 async function performBackup() {
-    // Check if tab is hidden - exit early if it is
-    if (document.hidden) {
-        console.log(`🛑 [${new Date().toLocaleString()}] Tab is hidden, skipping backup`);
-        // Remove these lines - don't clear interval just because tab is hidden
-        // clearInterval(backupInterval);
-        // backupIntervalRunning = false;
-        // localStorage.setItem('activeTabBackupRunning', 'false');
-        // console.log(`⚠️ [${new Date().toLocaleString()}] Backup interval stopped as app is no longer active`);
+    if (!isPageFullyLoaded) {
+        console.log(`⏳ [${new Date().toLocaleString()}] Page not fully loaded, skipping backup`);
         return;
     }
 
-    // If a backup is already in progress, schedule the next one
+    if (document.hidden) {
+        console.log(`🛑 [${new Date().toLocaleString()}] Tab is hidden, skipping backup`);
+        return;
+    }
+
     if (isExportInProgress) {
         console.log(`⏳ [${new Date().toLocaleString()}] Previous backup still in progress, skipping this iteration`);
         return;
@@ -1084,7 +1105,7 @@ async function performBackup() {
     isExportInProgress = true;
     try {
         await backupToS3();
-        console.log(`✅ [${new Date().toLocaleString()}] Backup completed, next backup in ${parseInt(localStorage.getItem('backup-interval')) || 60} seconds`);
+        console.log(`✅ [${new Date().toLocaleString()}] Backup completed...`);
     } catch (error) {
         console.error(`❌ [${new Date().toLocaleString()}] Backup failed:`, error);
     } finally {
