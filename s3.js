@@ -1,4 +1,4 @@
-console.log(`v20250201-08:11`);
+console.log(`v20250201-07:12`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -304,6 +304,7 @@ function openSyncModal() {
 	const awsSecretKeyInput = document.getElementById('aws-secret-key');
 	const awsEndpointInput = document.getElementById('aws-endpoint');
 	const backupIntervalInput = document.getElementById('backup-interval');
+	const encryptionKeyInput = document.getElementById('encryption-key');
 	const closeButton = document.getElementById('close-modal-btn');
 
 	const savedBucket = localStorage.getItem('aws-bucket');
@@ -2030,5 +2031,5 @@ async function decryptData(data) {
     }
 }
 
-// Add event listener for encryption key input
-document.getElementById('encryption-key').addEventListener('input', updateButtonState);
+// Add encryption key input event listener here
+encryptionKeyInput.addEventListener('input', updateButtonState);
