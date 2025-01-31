@@ -1,4 +1,4 @@
-console.log(`v20250201-05:42`);
+console.log(`v20250102-05:47`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1457,7 +1457,10 @@ async function importFromS3() {
             if (!cloudFileSize && s3Data.Body) {
                 cloudFileSize = s3Data.Body.length;
             }
-            cloudLastModified = cloudLastModified || s3Data.LastModified;
+            // Only use getObject timestamp if headObject failed
+            if (!cloudLastModified) {
+                cloudLastModified = s3Data.LastModified;
+            }
             
             console.log(`✅ [${new Date().toLocaleString()}] S3 data fetched successfully:`, {
                 contentLength: cloudFileSize,
