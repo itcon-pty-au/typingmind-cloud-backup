@@ -1,4 +1,4 @@
-console.log(`v20250201-10:21`);
+console.log(`v20250201-10:23`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1323,8 +1323,6 @@ async function backupToS3() {
         
         localStorage.setItem('backup-size', dataSize.toString());
         const chunkSize = 5 * 1024 * 1024; // 5MB chunks
-
-        let s3 = new AWS.S3();
 
         if (dataSize > chunkSize) {
             try {
