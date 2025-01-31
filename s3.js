@@ -1,4 +1,4 @@
-console.log(`v20250201-08:07`);
+console.log(`v20250201-08:11`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -341,21 +341,21 @@ function openSyncModal() {
 		const backupIntervalInput = document.getElementById('backup-interval');
 		const encryptionKeyInput = document.getElementById('encryption-key');
 
-		const isDisabled =
-			!awsBucketInput.value.trim() ||
-			!awsRegionInput.value.trim() ||
-			!awsAccessKeyInput.value.trim() ||
-			!awsSecretKeyInput.value.trim() ||
-			!backupIntervalInput.value ||
-			backupIntervalInput.value < 15 ||
-			!encryptionKeyInput.value.trim() ||  // Make encryption key required
-			(encryptionKeyInput.value.trim() !== '' && 
-			 encryptionKeyInput.value.trim().length < 8);
+		// Check if all required fields have values
+		const hasRequiredFields = 
+			awsBucketInput.value.trim() &&
+			awsRegionInput.value.trim() &&
+			awsAccessKeyInput.value.trim() &&
+			awsSecretKeyInput.value.trim() &&
+			backupIntervalInput.value &&
+			backupIntervalInput.value >= 15 &&
+			encryptionKeyInput.value.trim().length >= 8;  // Changed this condition
 
-		document.getElementById('export-to-s3-btn').disabled = isDisabled;
-		document.getElementById('import-from-s3-btn').disabled = isDisabled;
-		document.getElementById('save-aws-details-btn').disabled = isDisabled;
-		document.getElementById('snapshot-btn').disabled = isDisabled;
+		// Update button states
+		document.getElementById('export-to-s3-btn').disabled = !hasRequiredFields;
+		document.getElementById('import-from-s3-btn').disabled = !hasRequiredFields;
+		document.getElementById('save-aws-details-btn').disabled = !hasRequiredFields;
+		document.getElementById('snapshot-btn').disabled = !hasRequiredFields;
 	}
 
 	modalPopup.addEventListener('click', function (event) {
@@ -2029,3 +2029,6 @@ async function decryptData(data) {
         throw error;
     }
 }
+
+// Add event listener for encryption key input
+document.getElementById('encryption-key').addEventListener('input', updateButtonState);
