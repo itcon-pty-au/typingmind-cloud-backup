@@ -1,4 +1,4 @@
-console.log(`v20250201-06:11`);
+console.log(`v20250201-06:21`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1426,26 +1426,8 @@ async function importFromS3() {
             Key: 'typingmind-backup.json',
         };
 
-        // Get object metadata first to check size and last modified
-        let cloudFileSize = 0;
-        let cloudLastModified;
-        
-        try {
-            const headData = await s3.headObject(params).promise();
-            cloudFileSize = headData.ContentLength;
-            cloudLastModified = headData.LastModified;
-            console.log('Head request LastModified:', {
-                raw: headData.LastModified,
-                iso: new Date(headData.LastModified).toISOString(),
-                local: new Date(headData.LastModified).toLocaleString()
-            });
-        } catch (headError) {
-            console.log(`ℹ️ [${new Date().toLocaleString()}] Unable to get head metadata:`, headError);
-            // Continue execution - we'll get size from the actual data
-        }
-
-        // Fetch the actual data
-        let s3Data;  // Changed from 'data' to 's3Data'
+        // Get object data first since it has the most accurate LastModified
+        let s3Data;
         try {
             s3Data = await s3.getObject(params).promise();
             console.log('GetObject LastModified:', {
@@ -1453,14 +1435,8 @@ async function importFromS3() {
                 iso: new Date(s3Data.LastModified).toISOString(),
                 local: new Date(s3Data.LastModified).toLocaleString()
             });
-            // If we couldn't get size from head request, get it from the actual data
-            if (!cloudFileSize && s3Data.Body) {
-                cloudFileSize = s3Data.Body.length;
-            }
-            // Only use getObject timestamp if headObject failed
-            // if (!cloudLastModified) {
-            //     cloudLastModified = s3Data.LastModified;
-            // }
+            cloudFileSize = s3Data.Body.length;
+            cloudLastModified = s3Data.LastModified;  // Use this as the source of truth
             
             console.log(`✅ [${new Date().toLocaleString()}] S3 data fetched successfully:`, {
                 contentLength: cloudFileSize,
@@ -1473,7 +1449,7 @@ async function importFromS3() {
         }
 
         const lastSync = localStorage.getItem('last-cloud-sync');
-
+        
         // Calculate current local data size
         const currentData = await exportBackupData();
         const currentDataStr = JSON.stringify(currentData);
@@ -1511,7 +1487,7 @@ async function importFromS3() {
             }
             
             const lastSyncDate = new Date(lastSync);
-            const cloudDate = new Date(cloudLastModified);
+            const cloudDate = new Date(cloudLastModified);  // Use the timestamp from getObject
             const diffInMinutes = Math.abs(cloudDate - lastSyncDate) / (1000 * 60);
             
             console.log(`ℹ️ Time difference: ${diffInMinutes.toFixed(2)} minutes`);
