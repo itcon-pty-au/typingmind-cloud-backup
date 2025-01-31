@@ -1,4 +1,4 @@
-console.log(`v20250201-06:57`);
+console.log(`v20250201-07:12`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1874,12 +1874,10 @@ async function encryptData(data) {
         
         return combinedData;
     } catch (error) {
-        // Stop intervals on encryption failure too
+        // Clear the key so user knows they need to re-enter it
+        localStorage.removeItem('encryption-key');
         clearInterval(backupInterval);
-        backupIntervalRunning = false;
-        localStorage.setItem('activeTabBackupRunning', 'false');
-        wasImportSuccessful = false;
-        
+        // ... rest of error handling
         console.error(`❌ [${new Date().toLocaleString()}] Encryption failed:`, error);
         throw error;
     }
@@ -1941,14 +1939,11 @@ async function decryptData(data) {
 
         return parsedData;
     } catch (error) {
-        // Stop intervals on decryption failure
+        // Clear the key so user knows they need to re-enter it
+        localStorage.removeItem('encryption-key');
         clearInterval(backupInterval);
-        backupIntervalRunning = false;
-        localStorage.setItem('activeTabBackupRunning', 'false');
-        wasImportSuccessful = false;
-        
         console.error(`❌ [${new Date().toLocaleString()}] Decryption failed:`, error);
-        alert('Failed to decrypt backup. Please check your encryption key.');
+        alert('Failed to decrypt backup. Please re-enter encryption key.');
         throw error;
     }
 }
