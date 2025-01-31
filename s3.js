@@ -1,4 +1,4 @@
-console.log(`v20250201-10:08`);
+console.log(`v20250201-10:21`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1301,6 +1301,10 @@ async function backupToS3() {
     AWS.config.update(awsConfig);
 
     try {
+        // Add cleanup call at the start
+        const s3 = new AWS.S3();
+        await cleanupIncompleteMultipartUploads(s3, bucketName);
+
         data = await exportBackupData();
         console.log(`📤 [${new Date().toLocaleString()}] Starting backup encryption`);
         
@@ -1425,16 +1429,9 @@ async function backupToS3() {
                 //console.log('Multipart upload completed successfully');
             } catch (error) {
                 console.error('Multipart upload failed:', error);
-                // Fall back to regular upload if multipart fails
-                //console.log('Falling back to regular upload');
-                const putParams = {
-                    Bucket: bucketName,
-                    Key: 'typingmind-backup.json',
-                    Body: dataStr,
-                    ContentType: 'application/json',
-                    ServerSideEncryption: 'AES256'
-                };
-                await s3.putObject(putParams).promise();
+                // Run cleanup again after failure
+                await cleanupIncompleteMultipartUploads(s3, bucketName);
+                throw error;
             }
         } else {
             //console.log('Starting standard upload to S3');
@@ -2041,5 +2038,44 @@ async function decryptData(data) {
         console.error(`❌ [${new Date().toLocaleString()}] Decryption failed:`, error);
         alert('Failed to decrypt backup. Please re-enter encryption key.');
         throw error;
+    }
+}
+
+// Add this new function after validateAwsCredentials
+async function cleanupIncompleteMultipartUploads(s3, bucketName) {
+    console.log(`🧹 [${new Date().toLocaleString()}] Checking for incomplete multipart uploads...`);
+    try {
+        const multipartUploads = await s3.listMultipartUploads({
+            Bucket: bucketName
+        }).promise();
+
+        if (multipartUploads.Uploads && multipartUploads.Uploads.length > 0) {
+            console.log(`Found ${multipartUploads.Uploads.length} incomplete multipart uploads`);
+            
+            for (const upload of multipartUploads.Uploads) {
+                // Only abort uploads that are older than 5 minutes
+                const uploadAge = Date.now() - new Date(upload.Initiated).getTime();
+                const fiveMinutes = 5 * 60 * 1000;
+                
+                if (uploadAge > fiveMinutes) {
+                    try {
+                        await s3.abortMultipartUpload({
+                            Bucket: bucketName,
+                            Key: upload.Key,
+                            UploadId: upload.UploadId
+                        }).promise();
+                        console.log(`✅ Aborted incomplete upload for ${upload.Key} (${Math.round(uploadAge/1000/60)}min old)`);
+                    } catch (error) {
+                        console.error(`Failed to abort upload for ${upload.Key}:`, error);
+                    }
+                } else {
+                    console.log(`Skipping recent upload for ${upload.Key} (${Math.round(uploadAge/1000)}s old)`);
+                }
+            }
+        } else {
+            console.log('No incomplete multipart uploads found');
+        }
+    } catch (error) {
+        console.error('Error cleaning up multipart uploads:', error);
     }
 }
