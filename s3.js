@@ -739,80 +739,8 @@ async function checkAndImportBackup() {
 
         AWS.config.update(awsConfig);
 
-        const s3 = new AWS.S3();
-        const params = {
-            Bucket: bucketName,
-            Key: 'typingmind-backup.json',
-        };
-
         try {
-            // Get object metadata first to check size and last modified
-            const headData = await s3.headObject(params).promise();
-            const cloudFileSize = headData.ContentLength;
-            const cloudLastModified = headData.LastModified;
-            const lastSync = localStorage.getItem('last-cloud-sync');
-
-            // If ContentLength is not available, get the actual file size
-            if (!cloudFileSize) {
-                const data = await s3.getObject(params).promise();
-                cloudFileSize = new Uint8Array(data.Body).length;
-                console.log(`📏 [${new Date().toLocaleString()}] Calculated cloud file size from data: ${cloudFileSize} bytes`);
-            }
-
-            // Calculate current local data size
-            const currentData = await exportBackupData();
-            const currentDataStr = JSON.stringify(currentData);
-            const localFileSize = new Blob([currentDataStr]).size;
-            
-            // Calculate size difference percentage
-            const sizeDiffPercentage = Math.abs((cloudFileSize - localFileSize) / localFileSize * 100);
-            
-            // Check if size difference is within tolerance (±2 bytes)
-            const isWithinSizeTolerance = Math.abs(cloudFileSize - localFileSize) <= 2;
-            
-            // Log size comparison details
-            console.log(`📊 [${new Date().toLocaleString()}] Size comparison:
-    Cloud size: ${cloudFileSize} bytes
-    Local size: ${localFileSize} bytes
-    Difference: ${cloudFileSize - localFileSize} bytes (${sizeDiffPercentage.toFixed(2)}%)
-    Within tolerance: ${isWithinSizeTolerance ? 'Yes' : 'No'}`);
-
-            // Check if we need to prompt user
-            const shouldPrompt = localFileSize > 0 && (
-                (cloudFileSize < localFileSize && !isWithinSizeTolerance) ||
-                (sizeDiffPercentage > 10) ||
-                (lastSync && Math.abs(new Date(cloudLastModified) - new Date(lastSync)) / (1000 * 60) > 2)
-            );
-
-            if (shouldPrompt) {
-                let message = `Warning: Potential data mismatch detected!\n\n`;
-                message += `Cloud backup size: ${cloudFileSize} bytes\n`;
-                message += `Local data size: ${localFileSize} bytes\n`;
-                message += `Size difference: ${sizeDiffPercentage.toFixed(2)}%\n\n`;
-                message += `Local last sync: ${lastSync || 'Never'}\n`;
-                message += `Cloud last modified: ${cloudLastModified.toLocaleString()}\n\n`;
-                
-                if (cloudFileSize < localFileSize && !isWithinSizeTolerance) {
-                    message += '⚠️ Cloud backup is smaller than local data\n';
-                }
-                if (sizeDiffPercentage > 10) {
-                    message += '⚠️ Significant size difference detected\n';
-                }
-                if (lastSync) {
-                    message += '⚠️ Timestamp mismatch detected\n';
-                }
-                
-                message += '\nDo you want to proceed with importing the cloud backup? This will overwrite your local data.';
-
-                if (!confirm(message)) {
-                    console.log(`ℹ️ [${new Date().toLocaleString()}] Import cancelled by user`);
-                    // Set wasImportSuccessful to true even when user cancels
-                    // This allows backups to continue with local data
-                    wasImportSuccessful = true;
-                    return false;
-                }
-            }
-
+            // Directly try to import - all checks will happen in importFromS3()
             await importFromS3();
             wasImportSuccessful = true;
             return true;
@@ -822,6 +750,9 @@ async function checkAndImportBackup() {
                 // Set wasImportSuccessful to true when no backup exists
                 // This allows initial backups to work
                 wasImportSuccessful = true;
+            } else if (err.message === 'Encryption key not configured') {
+                // Don't set wasImportSuccessful to true - we need encryption key
+                alert('Please configure your encryption key in the backup settings to decrypt this backup.');
             } else {
                 localStorage.setItem('aws-bucket', '');
                 localStorage.setItem('aws-access-key', '');
