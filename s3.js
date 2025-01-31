@@ -1,4 +1,4 @@
-console.log(`v20250201-05:59`);
+console.log(`v20250201-06:05`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1536,6 +1536,8 @@ async function importFromS3() {
                 message += `Size difference: ${sizeDiffPercentage.toFixed(2)}%\n\n`;
             }
             message += `Local last sync: ${lastSync || 'Never'}\n`;
+            // Create cloudDate from cloudLastModified
+            const cloudDate = new Date(cloudLastModified);
             message += `Cloud last modified: ${cloudDate.toLocaleString()}\n\n`;
             
             // Add specific warnings based on what triggered the prompt
