@@ -1,4 +1,4 @@
-console.log(`v20250201-10:23`);
+console.log(`v20250201-10:52`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1432,11 +1432,11 @@ async function backupToS3() {
                 throw error;
             }
         } else {
-            //console.log('Starting standard upload to S3');
+            console.log('Starting standard upload to S3');
             const putParams = {
                 Bucket: bucketName,
                 Key: 'typingmind-backup.json',
-                Body: dataStr,
+                Body: encryptedData, // Use encryptedData instead of dataStr
                 ContentType: 'application/json',
                 ServerSideEncryption: 'AES256'
             };
