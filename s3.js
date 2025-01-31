@@ -231,19 +231,6 @@ function openSyncModal() {
                                     </label>
                                     <input id="encryption-key" name="encryption-key" type="password" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                 </div>
-                                <!-- Add new exclude keys input -->
-                                <div>
-                                    <label for="exclude-keys" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
-                                        Exclude Keys from Backup
-                                        <span class="ml-1 relative group cursor-pointer">
-                                            <span class="text-xs">ℹ</span>
-                                            <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 w-64 bg-black text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
-                                                Enter comma-separated list of keys to exclude from backup (e.g. key1,key2,key3). These items will not be included in the backup file.
-                                            </div>
-                                        </span>
-                                    </label>
-                                    <input id="exclude-keys" name="exclude-keys" type="text" placeholder="e.g. key1,key2,key3" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off">
-                                </div>
                                 <div class="flex justify-between space-x-2">
                                     <button id="save-aws-details-btn" type="button" class="z-1 inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors" disabled>
                                         Save
@@ -418,7 +405,6 @@ function openSyncModal() {
 			const endpoint = awsEndpointInput.value.trim();
 			const backupInterval = document.getElementById('backup-interval').value;
 			const encryptionKey = document.getElementById('encryption-key').value.trim();  // Add this line
-			const excludeKeys = document.getElementById('exclude-keys').value.trim();  // Add this line
 
 			if (backupInterval < 15) {
 				alert('Backup interval must be at least 15 seconds');
@@ -445,7 +431,6 @@ function openSyncModal() {
 				localStorage.setItem('aws-bucket', bucketName);
 				localStorage.setItem('aws-access-key', accessKey);
 				localStorage.setItem('aws-secret-key', secretKey);
-				localStorage.setItem('backup-exclude-keys', excludeKeys);  // Add this line
 				const actionMsgElement = document.getElementById('action-msg');
 				actionMsgElement.textContent = 'AWS details saved!';
 				actionMsgElement.style.color = 'white';
@@ -1172,49 +1157,40 @@ function importDataToStorage(data) {
 
 // Function to export data from localStorage and IndexedDB
 function exportBackupData() {
-    return new Promise((resolve, reject) => {
-        // Get exclusion list
-        const excludeKeysStr = localStorage.getItem('backup-exclude-keys') || '';
-        const excludeKeys = excludeKeysStr.split(',').map(k => k.trim()).filter(k => k);
-        
-        console.log(`🔍 [${new Date().toLocaleString()}] Excluding keys from backup:`, excludeKeys);
-
-        let exportData = {
-            localStorage: {},
-            indexedDB: {},
-        };
-
-        // Filter localStorage
-        Object.keys(localStorage).forEach((key) => {
-            if (!excludeKeys.includes(key)) {
-                exportData.localStorage[key] = localStorage[key];
-            }
-        });
-
-        // Handle IndexedDB with exclusions
-        var request = indexedDB.open('keyval-store', 1);
-        request.onsuccess = function (event) {
-            const db = event.target.result;
-            const transaction = db.transaction(['keyval'], 'readonly');
-            const store = transaction.objectStore('keyval');
-            
-            store.getAllKeys().onsuccess = function (keyEvent) {
-                var keys = keyEvent.target.result;
-                store.getAll().onsuccess = function (valueEvent) {
-                    var values = valueEvent.target.result;
-                    keys.forEach((key, i) => {
-                        if (!excludeKeys.includes(key.toString())) {
-                            exportData.indexedDB[key] = values[i];
-                        }
-                    });
-                    resolve(exportData);
-                };
-            };
-        };
-        request.onerror = function (error) {
-            reject(error);
-        };
-    });
+	return new Promise((resolve, reject) => {
+		let exportData = null;
+		let db = null;
+		let transaction = null;
+		let store = null;
+		exportData = {
+			localStorage: { ...localStorage },
+			indexedDB: {},
+		};
+		var request = indexedDB.open('keyval-store', 1);
+		request.onsuccess = function (event) {
+			db = event.target.result;
+			transaction = db.transaction(['keyval'], 'readonly');
+			store = transaction.objectStore('keyval');
+			store.getAllKeys().onsuccess = function (keyEvent) {
+				var keys = keyEvent.target.result;
+				store.getAll().onsuccess = function (valueEvent) {
+					var values = valueEvent.target.result;
+					keys.forEach((key, i) => {
+						exportData.indexedDB[key] = values[i];
+					});
+					resolve(exportData);
+				};
+			};
+		};
+		request.onerror = function (error) {
+			reject(error);
+		};
+	});
+	// Clean up variables
+	exportData = null;
+	db = null;
+	transaction = null;
+	store = null;
 }
 
 // Function to handle backup to S3 with chunked multipart upload using Blob
@@ -1982,21 +1958,4 @@ async function decryptData(data) {
         alert('Failed to decrypt backup. Please check your encryption key.');
         throw error;
     }
-}
-
-// Add this to the save button click handler in openSyncModal
-document.getElementById('save-aws-details-btn').addEventListener('click', async function () {
-    // ... existing save logic ...
-    
-    // Save exclude keys
-    const excludeKeys = document.getElementById('exclude-keys').value.trim();
-    localStorage.setItem('backup-exclude-keys', excludeKeys);
-    
-    // ... rest of save logic ...
-});
-
-// Add this to load the saved exclude keys when opening modal
-const savedExcludeKeys = localStorage.getItem('backup-exclude-keys');
-if (savedExcludeKeys) {
-    document.getElementById('exclude-keys').value = savedExcludeKeys;
 }
