@@ -1,4 +1,4 @@
-// v20250130
+console.log(`v20250131`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -675,56 +675,55 @@ document.addEventListener('visibilitychange', async () => {
 // Update parameter 'TIME_BACKUP_INTERVAL' in the beginning of the code to customize this
 // This is to provide a secondary backup option in case of unintended corruption of the backup file
 async function handleTimeBasedBackup() {
-	const bucketName = localStorage.getItem('aws-bucket');
-	let lastTimeBackup = localStorage.getItem('last-time-based-backup');
-	const currentTime = new Date().getTime();
+    const bucketName = localStorage.getItem('aws-bucket');
+    let lastTimeBackup = localStorage.getItem('last-time-based-backup');
+    const currentTime = new Date().getTime();
 
-	if (!lastTimeBackup) {
-		localStorage.setItem(
-			'last-time-based-backup',
-			new Date().toLocaleString()
-		);
-		lastTimeBackup = '0';
-	}
+    // Check if backup is needed
+    if (!lastTimeBackup || 
+        currentTime - new Date(lastTimeBackup).getTime() >= TIME_BACKUP_INTERVAL * 60 * 1000) {
+        
+        console.log(`⏰ [${new Date().toLocaleString()}] Starting time-based backup (T-${TIME_BACKUP_INTERVAL})`);
+        const s3 = new AWS.S3();
 
-	if (
-		lastTimeBackup === '0' ||
-		currentTime - new Date(lastTimeBackup).getTime() >=
-		TIME_BACKUP_INTERVAL * 60 * 1000
-	) {
-		const s3 = new AWS.S3();
+        try {
+            const data = await exportBackupData();
+            const encryptedData = await encryptData(data);
+            const jszip = await loadJSZip();
+            const zip = new jszip();
+            
+            // Use the TIME_BACKUP_FILE_PREFIX constant
+            zip.file(`${TIME_BACKUP_FILE_PREFIX}.json`, encryptedData, {
+                compression: 'DEFLATE',
+                compressionOptions: {
+                    level: 9,
+                },
+                binary: true
+            });
 
-		try {
-			const data = await exportBackupData();
-			const encryptedData = await encryptData(data);
-			const jszip = await loadJSZip();
-			const zip = new jszip();
-			zip.file(`${TIME_BACKUP_FILE_PREFIX}.json`, encryptedData, {
-				compression: 'DEFLATE',
-				compressionOptions: {
-					level: 9,
-				},
-				binary: true
-			});
+            const compressedContent = await zip.generateAsync({ type: 'blob' });
+            const uploadParams = {
+                Bucket: bucketName,
+                Key: `${TIME_BACKUP_FILE_PREFIX}.zip`,
+                Body: compressedContent,
+                ContentType: 'application/zip',
+                ServerSideEncryption: 'AES256'
+            };
 
-			const compressedContent = await zip.generateAsync({ type: 'blob' });
-			const uploadParams = {
-				Bucket: bucketName,
-				Key: `${TIME_BACKUP_FILE_PREFIX}.zip`,
-				Body: compressedContent,
-				ContentType: 'application/zip',
-				ServerSideEncryption: 'AES256'
-			};
-
-			await s3.putObject(uploadParams).promise();
-			localStorage.setItem(
-				'last-time-based-backup',
-				new Date(currentTime).toLocaleString()
-			);
-		} catch (error) {
-			console.error('Error creating time-based backup:', error);
-		}
-	}
+            await s3.putObject(uploadParams).promise();
+            
+            // Update the last backup time only after successful upload
+            localStorage.setItem('last-time-based-backup', new Date().toLocaleString());
+            console.log(`✅ [${new Date().toLocaleString()}] Time-based backup completed`);
+        } catch (error) {
+            console.error(`❌ [${new Date().toLocaleString()}] Time-based backup failed:`, error);
+            throw error;
+        }
+    } else {
+        console.log(`⏳ [${new Date().toLocaleString()}] Time-based backup not yet due. Next backup in ${
+            Math.round((TIME_BACKUP_INTERVAL * 60 * 1000 - (currentTime - new Date(lastTimeBackup).getTime())) / 1000 / 60)
+        } minutes`);
+    }
 }
 
 // Function to check for backup file and import it
