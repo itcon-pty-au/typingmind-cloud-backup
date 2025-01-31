@@ -1,4 +1,4 @@
-console.log(`v20250131-06:21`);
+console.log(`v20250131-06:49`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1427,9 +1427,38 @@ async function importFromS3() {
         };
 
         // Get object metadata first to check size and last modified
-        const headData = await s3.headObject(params).promise();
-        const cloudFileSize = headData.ContentLength || 0;  // Add fallback to 0
-        const cloudLastModified = headData.LastModified;
+        let cloudFileSize = 0;
+        let cloudLastModified;
+        
+        try {
+            const headData = await s3.headObject(params).promise();
+            cloudFileSize = headData.ContentLength;
+            cloudLastModified = headData.LastModified;
+        } catch (headError) {
+            console.log(`ℹ️ [${new Date().toLocaleString()}] Unable to get head metadata:`, headError);
+            // Continue execution - we'll get size from the actual data
+        }
+
+        // Fetch the actual data
+        let data;
+        try {
+            data = await s3.getObject(params).promise();
+            // If we couldn't get size from head request, get it from the actual data
+            if (!cloudFileSize && data.Body) {
+                cloudFileSize = data.Body.length;
+            }
+            cloudLastModified = cloudLastModified || data.LastModified;
+            
+            console.log(`✅ [${new Date().toLocaleString()}] S3 data fetched successfully:`, {
+                contentLength: cloudFileSize,
+                contentType: data.ContentType,
+                lastModified: cloudLastModified
+            });
+        } catch (fetchError) {
+            console.error(`❌ [${new Date().toLocaleString()}] Failed to fetch from S3:`, fetchError);
+            throw fetchError;
+        }
+
         const lastSync = localStorage.getItem('last-cloud-sync');
 
         // Calculate current local data size
@@ -1454,11 +1483,11 @@ async function importFromS3() {
                     Math.abs(cloudFileSize - localFileSize) <= 2 // 2 byte tolerance for smaller files
             ));
 
-        // Log size comparison details
+        // Log size comparison details with more precise information
         console.log(`📊 [${new Date().toLocaleString()}] Size comparison:
-    Cloud size: ${cloudFileSize || 'Unknown'} bytes
+    Cloud size: ${cloudFileSize} bytes
     Local size: ${localFileSize} bytes
-    Difference: ${cloudFileSize ? (cloudFileSize - localFileSize) : 'Unknown'} bytes ${cloudFileSize ? `(${sizeDiffPercentage.toFixed(4)}%)` : ''}
+    Difference: ${cloudFileSize - localFileSize} bytes ${sizeDiffPercentage ? `(${sizeDiffPercentage.toFixed(4)}%)` : ''}
     Within tolerance: ${isWithinSizeTolerance ? 'Yes' : 'No'}`);
 
         console.log(`⏱️ [${new Date().toLocaleString()}] Checking time difference...`);
