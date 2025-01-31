@@ -1,4 +1,4 @@
-console.log(`v20250131-06:49`);
+console.log(`v20250131-06:52`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1440,18 +1440,18 @@ async function importFromS3() {
         }
 
         // Fetch the actual data
-        let data;
+        let s3Data;  // Changed from 'data' to 's3Data'
         try {
-            data = await s3.getObject(params).promise();
+            s3Data = await s3.getObject(params).promise();
             // If we couldn't get size from head request, get it from the actual data
-            if (!cloudFileSize && data.Body) {
-                cloudFileSize = data.Body.length;
+            if (!cloudFileSize && s3Data.Body) {
+                cloudFileSize = s3Data.Body.length;
             }
-            cloudLastModified = cloudLastModified || data.LastModified;
+            cloudLastModified = cloudLastModified || s3Data.LastModified;
             
             console.log(`✅ [${new Date().toLocaleString()}] S3 data fetched successfully:`, {
                 contentLength: cloudFileSize,
-                contentType: data.ContentType,
+                contentType: s3Data.ContentType,
                 lastModified: cloudLastModified
             });
         } catch (fetchError) {
