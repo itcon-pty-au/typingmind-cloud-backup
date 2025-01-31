@@ -1,4 +1,4 @@
-console.log(`v20250131-07:23`);
+console.log(`v20250131-06:52`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -418,6 +418,7 @@ function openSyncModal() {
 			const endpoint = awsEndpointInput.value.trim();
 			const backupInterval = document.getElementById('backup-interval').value;
 			const encryptionKey = document.getElementById('encryption-key').value.trim();  // Add this line
+			const excludeKeys = document.getElementById('exclude-keys').value.trim();  // Add this line
 
 			if (backupInterval < 15) {
 				alert('Backup interval must be at least 15 seconds');
@@ -444,6 +445,7 @@ function openSyncModal() {
 				localStorage.setItem('aws-bucket', bucketName);
 				localStorage.setItem('aws-access-key', accessKey);
 				localStorage.setItem('aws-secret-key', secretKey);
+				localStorage.setItem('backup-exclude-keys', excludeKeys);  // Add this line
 				const actionMsgElement = document.getElementById('action-msg');
 				actionMsgElement.textContent = 'AWS details saved!';
 				actionMsgElement.style.color = 'white';
