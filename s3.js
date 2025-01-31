@@ -898,41 +898,85 @@ function updateBackupButtons() {
 }
 
 async function downloadBackupFile() {
-	let data = null;
-	let blob = null;
-	let url = null;
-	const bucketName = localStorage.getItem('aws-bucket');
-	let s3 = new AWS.S3();
-	const selectedFile = document.getElementById('backup-files').value;
+    const bucketName = localStorage.getItem('aws-bucket');
+    const selectedFile = document.getElementById('backup-files').value;
+    const s3 = new AWS.S3();
 
-	try {
-		data = await s3
-			.getObject({
-				Bucket: bucketName,
-				Key: selectedFile,
-			})
-			.promise();
+    try {
+        console.log(`📥 [${new Date().toLocaleString()}] Starting download of ${selectedFile}`);
+        
+        // Get the file from S3
+        const data = await s3.getObject({
+            Bucket: bucketName,
+            Key: selectedFile,
+        }).promise();
 
-		blob = new Blob([data.Body], { type: data.ContentType });
-		url = window.URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = selectedFile;
-		document.body.appendChild(a);
-		a.click();
-		window.URL.revokeObjectURL(url);
-		document.body.removeChild(a);
-	} catch (error) {
-		console.error('Error downloading file:', error);
-	} finally {
-		// Clean up variables
-		data = null;
-		blob = null;
-		if (url) {
-			window.URL.revokeObjectURL(url);
-			url = null;
-		}
-	}
+        // If it's a zip file, handle it differently
+        if (selectedFile.endsWith('.zip')) {
+            const jszip = await loadJSZip();
+            const zip = await jszip.loadAsync(data.Body);
+            const jsonFile = Object.keys(zip.files)[0];
+            const encryptedContent = await zip.file(jsonFile).async('uint8array');
+            
+            try {
+                // Decrypt the content
+                const decryptedData = await decryptData(encryptedContent);
+                
+                // Create a new blob with the decrypted data
+                const decryptedBlob = new Blob([JSON.stringify(decryptedData, null, 2)], {
+                    type: 'application/json'
+                });
+                
+                // Create download link
+                const url = window.URL.createObjectURL(decryptedBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                // Remove .zip extension if present and add .json
+                const downloadName = selectedFile.replace('.zip', '.json');
+                a.download = downloadName;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                console.log(`✅ [${new Date().toLocaleString()}] File downloaded and decrypted successfully`);
+            } catch (decryptError) {
+                console.error(`❌ [${new Date().toLocaleString()}] Decryption failed:`, decryptError);
+                alert('Failed to decrypt the backup file. Please check your encryption key.');
+                return;
+            }
+        } else {
+            // Handle direct file download (for non-zip files)
+            try {
+                const encryptedContent = new Uint8Array(data.Body);
+                const decryptedData = await decryptData(encryptedContent);
+                
+                // Create a new blob with the decrypted data
+                const decryptedBlob = new Blob([JSON.stringify(decryptedData, null, 2)], {
+                    type: 'application/json'
+                });
+                
+                // Create download link
+                const url = window.URL.createObjectURL(decryptedBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = selectedFile;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                console.log(`✅ [${new Date().toLocaleString()}] File downloaded and decrypted successfully`);
+            } catch (decryptError) {
+                console.error(`❌ [${new Date().toLocaleString()}] Decryption failed:`, decryptError);
+                alert('Failed to decrypt the backup file. Please check your encryption key.');
+                return;
+            }
+        }
+    } catch (error) {
+        console.error(`❌ [${new Date().toLocaleString()}] Download failed:`, error);
+        alert('Error downloading file: ' + error.message);
+    }
 }
 
 async function restoreBackupFile() {
