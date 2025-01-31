@@ -1,4 +1,4 @@
-// v20250130
+// v20250131
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1378,11 +1378,18 @@ async function importFromS3() {
         const sizeDiffPercentage = cloudFileSize && localFileSize ? 
             Math.abs((cloudFileSize - localFileSize) / localFileSize * 100) : 0;
         
-        // Check if size difference is within tolerance (0.1% for files > 1MB, or ±2 bytes for smaller files)
+        // First check if cloud is smaller than local (beyond 2-byte tolerance)
+        const isCloudSmallerThanLocal = cloudFileSize && 
+            cloudFileSize < localFileSize && 
+            (localFileSize - cloudFileSize) > 2;
+
+        // Then check general size tolerance for other cases
         const isWithinSizeTolerance = !cloudFileSize || 
-            (localFileSize > 1024 * 1024 ? 
-                sizeDiffPercentage <= 0.1 : // 0.1% tolerance for files > 1MB
-                Math.abs(cloudFileSize - localFileSize) <= 2); // 2 byte tolerance for smaller files
+            (!isCloudSmallerThanLocal && (
+                localFileSize > 1024 * 1024 ? 
+                    sizeDiffPercentage <= 0.1 : // 0.1% tolerance for files > 1MB
+                    Math.abs(cloudFileSize - localFileSize) <= 2 // 2 byte tolerance for smaller files
+            ));
 
         // Log size comparison details
         console.log(`📊 [${new Date().toLocaleString()}] Size comparison:
@@ -1408,8 +1415,9 @@ async function importFromS3() {
 
         console.log(`🔍 [${new Date().toLocaleString()}] Checking if prompt needed...`);
         const shouldPrompt = localFileSize > 0 && (
-            (cloudFileSize < localFileSize && !isWithinSizeTolerance) || 
-            (sizeDiffPercentage > 1) || 
+            isCloudSmallerThanLocal || 
+            !isWithinSizeTolerance || 
+            sizeDiffPercentage > 1 || 
             isTimeDifferenceSignificant()
         );
         console.log(`📢 Should prompt user: ${shouldPrompt}`);
