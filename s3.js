@@ -1,4 +1,4 @@
-console.log(`v20250201-05:59`);
+console.log(`v20250201-06:57`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -623,10 +623,12 @@ document.addEventListener('visibilitychange', async () => {
 		// Tab became visible
 		console.log(`📱 [${new Date().toLocaleString()}] Tab became active`);
 		
-		// Clear any existing interval first
-		localStorage.setItem('activeTabBackupRunning', 'false');
-		clearInterval(backupInterval);
-		backupIntervalRunning = false;
+		// Only clear interval if it's already running
+		if (backupIntervalRunning) {
+			localStorage.setItem('activeTabBackupRunning', 'false');
+			clearInterval(backupInterval);
+			backupIntervalRunning = false;
+		}
 		
 		try {
 			// Perform import first
@@ -662,13 +664,8 @@ document.addEventListener('visibilitychange', async () => {
 		} catch (error) {
 			console.error(`❌ [${new Date().toLocaleString()}] Error during tab activation:`, error);
 		}
-	} else {
-		// Tab became hidden
-		console.log(`💤 [${new Date().toLocaleString()}] Tab became inactive`);
-		localStorage.setItem('activeTabBackupRunning', 'false');
-		clearInterval(backupInterval);
-		backupIntervalRunning = false;
 	}
+	// Remove the else block entirely - don't stop interval when tab becomes hidden
 });
 
 // Time based backup creates a rolling backup every X minutes. Default is 15 minutes
@@ -1065,11 +1062,11 @@ async function performBackup() {
     // Check if tab is hidden - exit early if it is
     if (document.hidden) {
         console.log(`🛑 [${new Date().toLocaleString()}] Tab is hidden, skipping backup`);
-        // Clear interval and update flags when tab is hidden
-        clearInterval(backupInterval);
-        backupIntervalRunning = false;
-        localStorage.setItem('activeTabBackupRunning', 'false');
-		console.log(`⚠️ [${new Date().toLocaleString()}] Backup interval stopped as app is no longer active`);
+        // Remove these lines - don't clear interval just because tab is hidden
+        // clearInterval(backupInterval);
+        // backupIntervalRunning = false;
+        // localStorage.setItem('activeTabBackupRunning', 'false');
+        // console.log(`⚠️ [${new Date().toLocaleString()}] Backup interval stopped as app is no longer active`);
         return;
     }
 
