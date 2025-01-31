@@ -4,14 +4,22 @@
 
 ## Features
 - Extension to enable automatic backup & restore of app data to AWS S3/S3 compatible cloud services. (Full backup, not incremental)
+- Manual export/import of data to and from cloud.
 - The entire typingmind data will be stored in S3 as a single JSON file. This file is overwritten each time a backup is written to S3.
-- Automatically restores the latest backup version from S3 to your TypingMind instance when you load the app (provided a backup exists).
+- Automatically (subject to data loss prevention rules) restores the latest backup version from S3 to your TypingMind instance when you load the app (provided a backup exists).
 - Enables automatic backing up of your TypingMind data to S3 throughout the session as per the configured backup interval.
 - Last 30 days 'backup of backup' for a stress free experience. Apart from the single backup file, the extension now creates a daily 'no-touch' zipped backup of the main backup file. In case the main backup file gets corrupted, you can restore it using the previous day's backup.
 - Snapshot lets you backup the current typingmind data to the cloud when you need it. This is a 'no-touch' zipped backup that will permanently exist in the cloud till you choose to delete it.
 - A 'T-15 rolling snapshot' keeps a zipped snapshot of the typingmind instance from 15 minutes ago. This gives you a recent version of the backup that you can manually revert to in case of an unintended corruption of the main backup file. However, note that this is a rolling backup that gets overwritten every 15 minutes.
 - Allows you to view all the backups in the cloud and lets you download it or restore from the UI itself. The snapshot backups can be deleted from the UI as well.
-- The backup interval is now configurable.
+- The backup interval is now configurable (Minimum of 15 seconds).
+- ✨ All backups are now encrypted! The backup system uses AES-GCM encryption with a 256-bit key derived using PBKDF2. All data is encrypted client-side before being uploaded to S3. The encryption key is derived from a user-provided password using 100,000 PBKDF2 iterations with SHA-256, providing strong protection for sensitive data.
+- ✨ The system includes several safeguards to prevent unintended data loss:
+      * Size comparison with 0.1% tolerance for files >1MB and 2-byte tolerance for smaller files
+      * Timestamp comparison to detect potential conflicts
+      * Cloud-vs-local size verification to prevent smaller backups overwriting larger datasets
+      * User prompts with detailed information when significant differences are detected
+      * Backup size, modification time, and percentage difference displayed before risky operations
   
 ## Using this extension
 WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXPORT" before setting up the extension.
