@@ -1,4 +1,4 @@
-// v20250131
+// v20250130
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -54,11 +54,11 @@ async function handleDOMReady() {
 			if (!storedSuffix || currentDateSuffix > storedSuffix) {
 				await handleBackupFiles();
 			}
-			localStorage.setItem('activeTabBackupRunning', 'false');  // Reset flag
-			startBackupInterval();
-		} else if (!backupIntervalRunning) {
-			startBackupInterval();
 		}
+		
+		// Always start backup interval, regardless of import success
+		localStorage.setItem('activeTabBackupRunning', 'false');  // Reset flag
+		startBackupInterval();
 	} else {
 		// No credentials, skip import
 		startBackupInterval();
@@ -797,6 +797,10 @@ async function checkAndImportBackup() {
                 message += '\nDo you want to proceed with importing the cloud backup? This will overwrite your local data.';
 
                 if (!confirm(message)) {
+                    console.log(`ℹ️ [${new Date().toLocaleString()}] Import cancelled by user`);
+                    // Set wasImportSuccessful to true even when user cancels
+                    // This allows backups to continue with local data
+                    wasImportSuccessful = true;
                     return false;
                 }
             }
@@ -807,11 +811,15 @@ async function checkAndImportBackup() {
         } catch (err) {
             if (err.code === 'NoSuchKey') {
                 alert("Backup file not found in S3! Run an adhoc 'Export' first.");
+                // Set wasImportSuccessful to true when no backup exists
+                // This allows initial backups to work
+                wasImportSuccessful = true;
             } else {
                 localStorage.setItem('aws-bucket', '');
                 localStorage.setItem('aws-access-key', '');
                 localStorage.setItem('aws-secret-key', '');
                 alert('Failed to connect to AWS. Please check your credentials.');
+                // Don't set wasImportSuccessful to true here as credentials are invalid
             }
             return false;
         }
@@ -1742,10 +1750,9 @@ async function encryptData(data) {
     });
 
     if (!encryptionKey) {
-        console.log(`⚠️ [${new Date().toLocaleString()}] No encryption key found, returning unencrypted data`);
-        // Convert data to proper format if unencrypted
-        const jsonStr = JSON.stringify(data);
-        return new TextEncoder().encode(jsonStr);
+        console.log(`⚠️ [${new Date().toLocaleString()}] No encryption key found`);
+        alert('Please configure an encryption key in the backup settings before proceeding.');
+        throw new Error('Encryption key not configured');
     }
 
     try {
@@ -1802,7 +1809,8 @@ async function decryptData(data) {
     const encryptionKey = localStorage.getItem('encryption-key');
     if (!encryptionKey) {
         console.error(`❌ [${new Date().toLocaleString()}] Encrypted data found but no key provided`);
-        throw new Error('Encrypted backup found but no encryption key provided');
+        alert('Please configure your encryption key in the backup settings to decrypt this backup.');
+        throw new Error('Encryption key not configured');
     }
 
     try {
@@ -1830,6 +1838,7 @@ async function decryptData(data) {
         return parsedData;
     } catch (error) {
         console.error(`❌ [${new Date().toLocaleString()}] Decryption failed:`, error);
-        throw new Error('Failed to decrypt backup. Please check your encryption key.');
+        alert('Failed to decrypt backup. Please check your encryption key.');
+        throw error;
     }
 }
