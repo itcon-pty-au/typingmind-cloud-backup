@@ -1,4 +1,4 @@
-console.log(`v20250201-06:21`);
+console.log(`v20250201-05:59`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1060,34 +1060,39 @@ function startBackupInterval() {
 	}, 100); // Small delay to ensure clean state
 }
 
-// Separate function to handle the backup process
+// Function to perform backup
 async function performBackup() {
-	// Check if tab is hidden - exit early if it is
-	if (document.hidden) {
-		console.log(`🛑 [${new Date().toLocaleString()}] Tab is hidden, skipping backup`);
-		return;
-	}
+    // Check if tab is hidden - exit early if it is
+    if (document.hidden) {
+        console.log(`🛑 [${new Date().toLocaleString()}] Tab is hidden, skipping backup`);
+        // Clear interval and update flags when tab is hidden
+        clearInterval(backupInterval);
+        backupIntervalRunning = false;
+        localStorage.setItem('activeTabBackupRunning', 'false');
+		console.log(`⚠️ [${new Date().toLocaleString()}] Backup interval stopped as app is no longer active`);
+        return;
+    }
 
-	// If a backup is already in progress, schedule the next one
-	if (isExportInProgress) {
-		console.log(`⏳ [${new Date().toLocaleString()}] Previous backup still in progress, skipping this iteration`);
-		return;
-	}
+    // If a backup is already in progress, schedule the next one
+    if (isExportInProgress) {
+        console.log(`⏳ [${new Date().toLocaleString()}] Previous backup still in progress, skipping this iteration`);
+        return;
+    }
 
-	if (!wasImportSuccessful) {
-		console.log(`⚠️ [${new Date().toLocaleString()}] Import not yet successful, skipping backup`);
-		return;
-	}
+    if (!wasImportSuccessful) {
+        console.log(`⚠️ [${new Date().toLocaleString()}] Import not yet successful, skipping backup`);
+        return;
+    }
 
-	isExportInProgress = true;
-	try {
-		await backupToS3();
-		console.log(`✅ [${new Date().toLocaleString()}] Backup completed, next backup in ${parseInt(localStorage.getItem('backup-interval')) || 60} seconds`);
-	} catch (error) {
-		console.error(`❌ [${new Date().toLocaleString()}] Backup failed:`, error);
-	} finally {
-		isExportInProgress = false;
-	}
+    isExportInProgress = true;
+    try {
+        await backupToS3();
+        console.log(`✅ [${new Date().toLocaleString()}] Backup completed, next backup in ${parseInt(localStorage.getItem('backup-interval')) || 60} seconds`);
+    } catch (error) {
+        console.error(`❌ [${new Date().toLocaleString()}] Backup failed:`, error);
+    } finally {
+        isExportInProgress = false;
+    }
 }
 
 // Function to load AWS SDK asynchronously
@@ -1227,7 +1232,7 @@ async function backupToS3() {
 		console.log(`📤 [${new Date().toLocaleString()}] Starting backup encryption`);
 		
 		const encryptedData = await encryptData(data);
-		console.log(`📦 [${new Date().toLocaleString()}] After encryption`);
+		//console.log(`📦 [${new Date().toLocaleString()}] After encryption`);
 		
 		// Create blob directly from encrypted data
 		blob = new Blob([encryptedData], { type: 'application/octet-stream' });
@@ -1430,17 +1435,17 @@ async function importFromS3() {
         let s3Data;
         try {
             s3Data = await s3.getObject(params).promise();
-            console.log('GetObject LastModified:', {
-                raw: s3Data.LastModified,
-                iso: new Date(s3Data.LastModified).toISOString(),
-                local: new Date(s3Data.LastModified).toLocaleString()
-            });
+            // console.log('GetObject LastModified:', {
+            //     raw: s3Data.LastModified,
+            //     iso: new Date(s3Data.LastModified).toISOString(),
+            //     local: new Date(s3Data.LastModified).toLocaleString()
+            // });
             cloudFileSize = s3Data.Body.length;
             cloudLastModified = s3Data.LastModified;  // Use this as the source of truth
             
             console.log(`✅ [${new Date().toLocaleString()}] S3 data fetched successfully:`, {
                 contentLength: cloudFileSize,
-                contentType: s3Data.ContentType,
+                //contentType: s3Data.ContentType,
                 lastModified: cloudLastModified
             });
         } catch (fetchError) {
@@ -1479,7 +1484,7 @@ async function importFromS3() {
     Difference: ${cloudFileSize - localFileSize} bytes ${sizeDiffPercentage ? `(${sizeDiffPercentage.toFixed(4)}%)` : ''}
     Within tolerance: ${isWithinSizeTolerance ? 'Yes' : 'No'}`);
 
-        console.log(`⏱️ [${new Date().toLocaleString()}] Checking time difference...`);
+        //console.log(`⏱️ [${new Date().toLocaleString()}] Checking time difference...`);
         const isTimeDifferenceSignificant = () => {
             if (!lastSync) {
                 console.log(`ℹ️ No last sync found`);
@@ -1494,7 +1499,7 @@ async function importFromS3() {
             return diffInMinutes > 2;
         };
 
-        console.log(`🔍 [${new Date().toLocaleString()}] Checking if prompt needed...`);
+        //console.log(`🔍 [${new Date().toLocaleString()}] Checking if prompt needed...`);
         const shouldPrompt = localFileSize > 0 && (
             isCloudSmallerThanLocal || 
             !isWithinSizeTolerance || 
@@ -1546,17 +1551,17 @@ async function importFromS3() {
         try {
             data = await s3.getObject(params).promise();
             console.log(`✅ [${new Date().toLocaleString()}] S3 data fetched successfully:`, {
-                contentLength: data.Body?.length || 0,
-                contentType: data.ContentType
+                contentLength: data.Body?.length || 0
+                //contentType: data.ContentType
             });
         } catch (fetchError) {
             console.error(`❌ [${new Date().toLocaleString()}] Failed to fetch from S3:`, fetchError);
             throw fetchError;
         }
 
-        console.log(`🔐 [${new Date().toLocaleString()}] Decrypting data...`);
+        //console.log(`🔐 [${new Date().toLocaleString()}] Decrypting data...`);
         const encryptedContent = new Uint8Array(data.Body);
-        console.log(`📊 [${new Date().toLocaleString()}] Encrypted content size:`, encryptedContent.length);
+        //console.log(`📊 [${new Date().toLocaleString()}] Encrypted content size:`, encryptedContent.length);
         
         try {
             console.log(`🔓 [${new Date().toLocaleString()}] Starting decryption...`);
@@ -1851,7 +1856,7 @@ async function encryptData(data) {
         const iv = window.crypto.getRandomValues(new Uint8Array(12));
         const encodedData = enc.encode(JSON.stringify(data));
         
-        console.log(`📝 [${new Date().toLocaleString()}] Data prepared for encryption:`);
+        //console.log(`📝 [${new Date().toLocaleString()}] Data prepared for encryption:`);
 
         const encryptedContent = await window.crypto.subtle.encrypt(
             {
@@ -1885,7 +1890,7 @@ async function encryptData(data) {
 
 // Function to decrypt data
 async function decryptData(data) {
-    console.log(`🔍 [${new Date().toLocaleString()}] Decryption attempt:`);
+    //console.log(`🔍 [${new Date().toLocaleString()}] Decryption attempt:`);
 
     // Check if data is encrypted by looking for the marker
     const marker = 'ENCRYPTED:';
@@ -1920,7 +1925,7 @@ async function decryptData(data) {
         const iv = data.slice(marker.length, marker.length + 12);
         const content = data.slice(marker.length + 12);
 
-        console.log(`🔓 [${new Date().toLocaleString()}] Attempting decryption`);
+        //console.log(`🔓 [${new Date().toLocaleString()}] Attempting decryption`);
 
         const decryptedContent = await window.crypto.subtle.decrypt(
             {
@@ -1935,7 +1940,7 @@ async function decryptData(data) {
         const decryptedString = dec.decode(decryptedContent);
         const parsedData = JSON.parse(decryptedString);
 
-        console.log(`✅ [${new Date().toLocaleString()}] Decryption successful`);
+        //console.log(`✅ [${new Date().toLocaleString()}] Decryption successful`);
 
         return parsedData;
     } catch (error) {
