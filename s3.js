@@ -1,4 +1,4 @@
-console.log(`v20250201-08:02`);
+console.log(`v20250201-08:07`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -830,48 +830,66 @@ async function checkAndImportBackup() {
 }
 
 async function loadBackupFiles() {
-	const bucketName = localStorage.getItem('aws-bucket');
-	const awsAccessKey = localStorage.getItem('aws-access-key');
-	const awsSecretKey = localStorage.getItem('aws-secret-key');
+    const bucketName = localStorage.getItem('aws-bucket');
+    const awsRegion = localStorage.getItem('aws-region');
+    const awsAccessKey = localStorage.getItem('aws-access-key');
+    const awsSecretKey = localStorage.getItem('aws-secret-key');
+    const awsEndpoint = localStorage.getItem('aws-endpoint');
+    
+    const select = document.getElementById('backup-files');
 
-	const select = document.getElementById('backup-files');
+    // Check if credentials are available
+    if (!bucketName || !awsAccessKey || !awsSecretKey) {
+        select.innerHTML = '<option value="">Please configure AWS credentials first</option>';
+        updateBackupButtons();
+        return;
+    }
 
-	// Check if credentials are available
-	if (!bucketName || !awsAccessKey || !awsSecretKey) {
-		select.innerHTML =
-			'<option value="">Please configure AWS credentials first</option>';
-		updateBackupButtons();
-		return;
-	}
+    try {
+        // Load AWS SDK if not already loaded
+        if (typeof AWS === 'undefined') {
+            await loadAwsSdk();
+        }
 
-	const s3 = new AWS.S3();
+        // Configure AWS with credentials
+        const awsConfig = {
+            accessKeyId: awsAccessKey,
+            secretAccessKey: awsSecretKey,
+            region: awsRegion
+        };
 
-	try {
-		const data = await s3.listObjectsV2({ Bucket: bucketName }).promise();
-		select.innerHTML = '';
+        if (awsEndpoint) {
+            awsConfig.endpoint = awsEndpoint;
+        }
 
-		if (data.Contents.length === 0) {
-			select.innerHTML = '<option value="">No backup files found</option>';
-		} else {
-			// Sort files by last modified (newest first)
-			const files = data.Contents.sort(
-				(a, b) => b.LastModified - a.LastModified
-			);
+        AWS.config.update(awsConfig);
 
-			files.forEach((file) => {
-				const option = document.createElement('option');
-				option.value = file.Key;
-				option.textContent = `${file.Key} (${new Date(file.LastModified).toLocaleString()})`;
-				select.appendChild(option);
-			});
-		}
+        const s3 = new AWS.S3();
+        const data = await s3.listObjectsV2({ Bucket: bucketName }).promise();
+        select.innerHTML = '';
 
-		updateBackupButtons();
-	} catch (error) {
-		console.error('Error loading backup files:', error);
-		select.innerHTML = '<option value="">Error loading backups</option>';
-		updateBackupButtons();
-	}
+        if (data.Contents.length === 0) {
+            select.innerHTML = '<option value="">No backup files found</option>';
+        } else {
+            // Sort files by last modified (newest first)
+            const files = data.Contents.sort(
+                (a, b) => b.LastModified - a.LastModified
+            );
+
+            files.forEach((file) => {
+                const option = document.createElement('option');
+                option.value = file.Key;
+                option.textContent = `${file.Key} (${new Date(file.LastModified).toLocaleString()})`;
+                select.appendChild(option);
+            });
+        }
+
+        updateBackupButtons();
+    } catch (error) {
+        console.error('Error loading backup files:', error);
+        select.innerHTML = '<option value="">Error loading backups</option>';
+        updateBackupButtons();
+    }
 }
 
 function updateBackupButtons() {
