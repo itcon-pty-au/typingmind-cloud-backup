@@ -1,4 +1,4 @@
-// v20250131
+// v20250130
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -35,30 +35,38 @@ async function handleDOMReady() {
 	const awsSecretKey = localStorage.getItem('aws-secret-key');
 	
 	if (bucketName && awsAccessKey && awsSecretKey) {
-		var importSuccessful = await checkAndImportBackup();
+		try {
+			var importSuccessful = await checkAndImportBackup();
 
-		const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
-		const today = new Date();
-		const currentDateSuffix = `${today.getFullYear()}${String(
-			today.getMonth() + 1
-		).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-		const currentTime = new Date().toLocaleString();
-		const lastSync = localStorage.getItem('last-cloud-sync');
-		var element = document.getElementById('last-sync-msg');
+			const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
+			const today = new Date();
+			const currentDateSuffix = `${today.getFullYear()}${String(
+				today.getMonth() + 1
+			).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+			const currentTime = new Date().toLocaleString();
+			const lastSync = localStorage.getItem('last-cloud-sync');
+			var element = document.getElementById('last-sync-msg');
 
-		if (lastSync && importSuccessful) {
-			if (element !== null) {
-				element.innerText = `Last sync done at ${currentTime}`;
-				element = null;
+			if (lastSync && importSuccessful) {
+				if (element !== null) {
+					element.innerText = `Last sync done at ${currentTime}`;
+					element = null;
+				}
+				if (!storedSuffix || currentDateSuffix > storedSuffix) {
+					await handleBackupFiles();
+				}
 			}
-			if (!storedSuffix || currentDateSuffix > storedSuffix) {
-				await handleBackupFiles();
+			
+			// Only start backup interval if import was successful
+			if (importSuccessful) {
+				localStorage.setItem('activeTabBackupRunning', 'false');  // Reset flag
+				startBackupInterval();
 			}
+		} catch (error) {
+			console.error('Failed to initialize backup:', error);
+			// Don't start backup interval on error
+			return;
 		}
-		
-		// Always start backup interval, regardless of import success
-		localStorage.setItem('activeTabBackupRunning', 'false');  // Reset flag
-		startBackupInterval();
 	} else {
 		// No credentials, skip import
 		startBackupInterval();
@@ -740,7 +748,7 @@ async function checkAndImportBackup() {
         try {
             // Get object metadata first to check size and last modified
             const headData = await s3.headObject(params).promise();
-            let cloudFileSize = headData.ContentLength;  // Try metadata first
+            const cloudFileSize = headData.ContentLength;
             const cloudLastModified = headData.LastModified;
             const lastSync = localStorage.getItem('last-cloud-sync');
 
@@ -1825,9 +1833,9 @@ async function decryptData(data) {
         clearInterval(backupInterval);
         backupIntervalRunning = false;
         localStorage.setItem('activeTabBackupRunning', 'false');
-        wasImportSuccessful = false;
+        wasImportSuccessful = false;  // Prevent new backup attempts
         
-        alert('Please configure your encryption key in the backup settings to decrypt this backup.');
+        // Throw error immediately and stop processing
         throw new Error('Encryption key not configured');
     }
 
