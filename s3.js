@@ -1,4 +1,4 @@
-console.log(`v20250201-11:09`);
+console.log(`v20250201-11:24`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1576,10 +1576,31 @@ async function importFromS3() {
             
             const lastSyncDate = new Date(lastSync);
             const cloudDate = new Date(cloudLastModified);
-            const diffInHours = Math.abs(cloudDate - lastSyncDate) / (1000 * 60 * 60);
+            
+            // Add debug logging
+            console.log(`🕒 Time comparison:
+    Last Sync: ${lastSyncDate.toISOString()}
+    Cloud Modified: ${cloudDate.toISOString()}`);
+            
+            // Convert lastSync from locale string to Date properly
+            const [datePart, timePart] = lastSync.split(', ');
+            const [month, day, year] = datePart.split('/');
+            const [time, period] = timePart.split(' ');
+            const [hours, minutes, seconds] = time.split(':');
+            
+            // Create date object with correct timezone
+            let properLastSyncDate = new Date(
+                year,
+                parseInt(month) - 1,
+                day,
+                period === 'PM' ? parseInt(hours) + 12 : parseInt(hours),
+                minutes,
+                seconds
+            );
+            
+            const diffInHours = Math.abs(cloudDate - properLastSyncDate) / (1000 * 60 * 60);
             
             console.log(`ℹ️ Time difference: ${diffInHours.toFixed(2)} hours`);
-            // Changed to check for 24 hours (1 day) difference
             return diffInHours > 24;
         };
 
@@ -2075,4 +2096,103 @@ async function cleanupIncompleteMultipartUploads(s3, bucketName) {
     } catch (error) {
         console.error('Error cleaning up multipart uploads:', error);
     }
+}
+
+// Add this function near the top with other utility functions
+function showCustomAlert(message, title = 'Alert', buttons = [{text: 'OK', primary: true}]) {
+    return new Promise((resolve) => {
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[70] flex items-center justify-center p-4';
+        
+        const dialog = document.createElement('div');
+        dialog.className = 'bg-white dark:bg-zinc-900 rounded-lg max-w-md w-full p-6 shadow-xl';
+        
+        const titleElement = document.createElement('h3');
+        titleElement.className = 'text-lg font-semibold mb-4 text-gray-900 dark:text-white';
+        titleElement.textContent = title;
+        
+        const messageElement = document.createElement('div');
+        messageElement.className = 'text-gray-700 dark:text-gray-300 whitespace-pre-wrap mb-6';
+        messageElement.textContent = message;
+        
+        const buttonContainer = document.createElement('div');
+        buttonContainer.className = 'flex justify-end space-x-3';
+        
+        buttons.forEach(button => {
+            const btn = document.createElement('button');
+            btn.className = button.primary ? 
+                'px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700' :
+                'px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300';
+            btn.textContent = button.text;
+            btn.onclick = () => {
+                modal.remove();
+                resolve(button.value !== undefined ? button.value : button.text === 'OK');
+            };
+            buttonContainer.appendChild(btn);
+        });
+        
+        dialog.appendChild(titleElement);
+        dialog.appendChild(messageElement);
+        dialog.appendChild(buttonContainer);
+        modal.appendChild(dialog);
+        document.body.appendChild(modal);
+    });
+}
+
+const shouldProceed = await showCustomAlert(message, 'Warning', [
+    {text: 'Cancel', primary: false},
+    {text: 'Proceed', primary: true}
+]);
+if (!shouldProceed) {
+    console.log(`ℹ️ [${new Date().toLocaleString()}] Import cancelled by user`);
+    return false;
+}
+
+// Replace encryption key alert in encryptData():
+if (!encryptionKey) {
+    console.log(`⚠️ [${new Date().toLocaleString()}] No encryption key found`);
+    clearInterval(backupInterval);
+    backupIntervalRunning = false;
+    localStorage.setItem('activeTabBackupRunning', 'false');
+    wasImportSuccessful = false;
+    
+    await showCustomAlert('Please configure an encryption key in the backup settings before proceeding.', 'Configuration Required');
+    throw new Error('Encryption key not configured');
+}
+
+// Replace alert in checkAndImportBackup():
+if (!bucketName || !awsAccessKey || !awsSecretKey || !encryptionKey) {
+    wasImportSuccessful = false;
+    if (!encryptionKey) {
+        await showCustomAlert('Please configure your encryption key in the backup settings before proceeding.', 'Configuration Required');
+    } else {
+        await showCustomAlert('Please configure all AWS credentials in the backup settings before proceeding.', 'Configuration Required');
+    }
+    return false;
+}
+
+// Replace alert in deleteBackupFile():
+const isConfirmed = await showCustomAlert(
+    `Are you sure you want to delete ${selectedFile}? This action cannot be undone.`,
+    'Confirm Deletion',
+    [
+        {text: 'Cancel', primary: false},
+        {text: 'Delete', primary: true}
+    ]
+);
+
+if (!isConfirmed) {
+    return;
+}
+
+// Replace alert in decryptData():
+if (!encryptionKey) {
+    console.error(`❌ [${new Date().toLocaleString()}] Encrypted data found but no key provided`);
+    clearInterval(backupInterval);
+    backupIntervalRunning = false;
+    localStorage.setItem('activeTabBackupRunning', 'false');
+    wasImportSuccessful = false;
+    
+    await showCustomAlert('Please configure your encryption key in the backup settings before proceeding.', 'Configuration Required');
+    throw new Error('Encryption key not configured');
 }
