@@ -1,10 +1,10 @@
-const VERSION = '20250202-09:36';
+const VERSION = '20250202-09:44';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
 let isImportInProgress = false;
 let isSnapshotInProgress = false;
-let isConsoleLoggingEnabled = new URLSearchParams(window.location.search).get('log') === 'true'; // Query param - ?log=true
+let isConsoleLoggingEnabled = new URLSearchParams(window.location.search).get('log') === 'true';
 const TIME_BACKUP_INTERVAL = 15;
 const TIME_BACKUP_FILE_PREFIX = `T-${TIME_BACKUP_INTERVAL}`;
 let awsSdkLoadPromise = null;
@@ -1921,8 +1921,16 @@ function logToConsole(type, message, data = null) {
 
 const style = document.createElement('style');
 style.textContent = `
+    .toggle-checkbox {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: auto;
+        transition: transform 0.2s ease-in;
+        transform: translateX(0);
+    }
     .toggle-checkbox:checked {
-        right: 0;
+        transform: translateX(16px);
         border-color: #68D391;
     }
     .toggle-checkbox:checked + .toggle-label {
@@ -1930,10 +1938,6 @@ style.textContent = `
     }
     .toggle-label {
         transition: background-color 0.2s ease-in;
-    }
-    .toggle-checkbox {
-        right: 4px;
-        transition: all 0.2s ease-in;
     }
 `;
 document.head.appendChild(style);
