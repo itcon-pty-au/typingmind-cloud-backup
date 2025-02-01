@@ -1,4 +1,4 @@
-console.log(`v20250201-18:31`);
+console.log(`v20250201-18:52`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -15,6 +15,9 @@ const awsSdkPromise = loadAwsSdk();
 
 // Add this at the top of the file with other flags
 let isPageFullyLoaded = false;
+
+// At the top of file with other global variables
+let backupInterval = null; // Add this if not already present
 
 (async function checkDOMOrRunBackup() {
 	// Start loading AWS SDK immediately
@@ -160,7 +163,6 @@ cloudSyncBtn.addEventListener('click', function () {
 
 // New Popup
 let lastBackupTime = 0;
-let backupInterval;
 
 function openSyncModal() {
 	var existingModal = document.querySelector(
@@ -1635,9 +1637,10 @@ async function importFromS3() {
             console.log(`⚠️ [${new Date().toLocaleString()}] Showing prompt to user...`);
             
             // Stop backup interval while waiting for user input
-            if (backupIntervalRunning) {
+            if (backupInterval) {  // Check for interval directly
                 console.log(`⏸️ [${new Date().toLocaleString()}] Pausing backup interval while waiting for user input`);
                 clearInterval(backupInterval);
+                backupInterval = null;  // Clear the interval reference
                 backupIntervalRunning = false;
             }
 
