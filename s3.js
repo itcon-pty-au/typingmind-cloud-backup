@@ -1,4 +1,4 @@
-console.log(`Typingmind cloud backup version 20250202-06:55`);
+logToConsole('info', 'Typingmind cloud backup version 20250202-09:04');
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -12,6 +12,7 @@ const awsSdkPromise = loadAwsSdk();
 let isPageFullyLoaded = false;
 let backupInterval = null;
 let isWaitingForUserInput = false;
+let isConsoleLoggingEnabled = false;
 
 (async function checkDOMOrRunBackup() {
 	await awsSdkPromise;
@@ -48,23 +49,23 @@ async function handleDOMReady() {
 				startBackupInterval();
 			} else {
 				wasImportSuccessful = true;
-				console.log('Import was cancelled by user - starting backup of local data');
+				logToConsole('warning', 'Import was cancelled by user - starting backup of local data to cloud');
 				startBackupInterval();
 			}
 
 		} catch (error) {
-			console.error('Failed to initialize backup:', error);
+			logToConsole('error', 'Failed to initialize backup:', error);
 			isPageFullyLoaded = true;
 			if (error.code === 'NoSuchKey') {
 				wasImportSuccessful = true;
-				console.log('No existing backup found in S3 - starting fresh backup');
+				logToConsole('start', 'No existing backup found in S3 - starting fresh backup');
 				startBackupInterval();
 			} else if (error.code === 'CredentialsError' || error.code === 'InvalidAccessKeyId') {
-				console.log('AWS credential error, not starting backup');
+				logToConsole('error', 'AWS credential error, not starting backup');
 			} else if (error.message === 'Encryption key not configured') {
-				console.log('Encryption key missing, not starting backup');
+				logToConsole('error', 'Encryption key missing, not starting backup');
 			} else {
-				console.log('Unknown error during import, not starting backup');
+				logToConsole('error', `Unknown error during import, not starting backup. Error: ${error.message}`);
 			}
 			return;
 		}
@@ -222,6 +223,13 @@ function openSyncModal() {
                                     </label>
                                     <input id="encryption-key" name="encryption-key" type="password" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                 </div>
+                                <div class="flex items-center justify-end mt-4 space-x-2">
+    <span class="text-sm text-gray-600 dark:text-gray-400">Console Logging</span>
+    <label class="relative inline-flex items-center cursor-pointer">
+        <input type="checkbox" id="console-logging-toggle" class="sr-only peer">
+        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+    </label>
+</div>
                                 <div class="flex justify-between space-x-2">
                                     <button id="save-aws-details-btn" type="button" class="z-1 inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors" disabled>
                                         Save
@@ -519,7 +527,7 @@ function openSyncModal() {
 			const originalButtonContent = snapshotBtn.innerHTML;
 			snapshotBtn.innerHTML = '<span>Snapshot</span>';
 			try {
-				console.log(`📸 [${new Date().toLocaleString()}] Starting snapshot creation...`);
+				logToConsole('snapshot', 'Starting snapshot creation...');
 				const now = new Date();
 				const timestamp =
 					now.getFullYear() +
@@ -566,9 +574,9 @@ function openSyncModal() {
 				if (document.querySelector('[data-element-id="sync-modal-dbbackup"]')) {
 					await loadBackupFiles();
 				}
-				console.log(`✅ [${new Date().toLocaleString()}] Snapshot created successfully: Snapshot_${timestamp}.zip`);
+				logToConsole('success', `Snapshot created successfully: Snapshot_${timestamp}.zip`);
 			} catch (error) {
-				console.error(`❌ [${new Date().toLocaleString()}] Snapshot creation failed:`, error);
+				logToConsole('error', 'Snapshot creation failed:', error);
 				const lastSyncElement = document.getElementById('last-sync-msg');
 				lastSyncElement.textContent = `Error creating snapshot: ${error.message}`;
 				setTimeout(() => {
@@ -583,18 +591,22 @@ function openSyncModal() {
 				snapshotBtn.innerHTML = originalButtonContent;
 			}
 		});
+
+	document.getElementById('console-logging-toggle').addEventListener('change', function(e) {
+		isConsoleLoggingEnabled = e.target.checked;
+	});
 }
 document.addEventListener('visibilitychange', async () => {
-	console.log(`👁️ [${new Date().toLocaleString()}] Visibility changed: ${document.hidden ? 'hidden' : 'visible'}`);
+	logToConsole('visibility', `Visibility changed: ${document.hidden ? 'hidden' : 'visible'}`);
 	if (!document.hidden) {
-		console.log(`📱 [${new Date().toLocaleString()}] Tab became active`);
+		logToConsole('active', 'Tab became active');
 		if (backupIntervalRunning) {
 			localStorage.setItem('activeTabBackupRunning', 'false');
 			clearInterval(backupInterval);
 			backupIntervalRunning = false;
 		}
 		try {
-			console.log(`📥 [${new Date().toLocaleString()}] Checking for updates from S3...`);
+			logToConsole('info', 'Checking for updates from S3...');
 			const importSuccessful = await checkAndImportBackup();
 			if (importSuccessful) {
 				const currentTime = new Date().toLocaleString();
@@ -612,13 +624,13 @@ document.addEventListener('visibilitychange', async () => {
 				if (!storedSuffix || currentDateSuffix > storedSuffix) {
 					await handleBackupFiles();
 				}
-				console.log(`✅ [${new Date().toLocaleString()}] Import successful, starting backup interval`);
+				logToConsole('success', 'Import successful, starting backup interval');
 				startBackupInterval();
 			} else {
-				console.log(`⚠️ [${new Date().toLocaleString()}] Import was not successful, not starting backup interval`);
+				logToConsole('warning', 'Import was not successful, not starting backup interval');
 			}
 		} catch (error) {
-			console.error(`❌ [${new Date().toLocaleString()}] Error during tab activation:`, error);
+			logToConsole('error', 'Error during tab activation:', error);
 		}
 	}
 });
@@ -628,7 +640,7 @@ async function handleTimeBasedBackup() {
     const currentTime = new Date().getTime();
     if (!lastTimeBackup || isNaN(lastTimeBackup) || 
         currentTime - lastTimeBackup >= TIME_BACKUP_INTERVAL * 60 * 1000) {
-        console.log(`⏰ [${new Date().toLocaleString()}] Starting time-based backup (T-${TIME_BACKUP_INTERVAL})`);
+            logToConsole('time', `Starting time-based backup (T-${TIME_BACKUP_INTERVAL})`);
         const s3 = new AWS.S3();
         try {
             const data = await exportBackupData();
@@ -652,15 +664,15 @@ async function handleTimeBasedBackup() {
             };
             await s3.putObject(uploadParams).promise();
             localStorage.setItem('last-time-based-backup', currentTime.toString());
-            console.log(`✅ [${new Date().toLocaleString()}] Time-based backup completed`);
+            logToConsole('success', 'Time-based backup completed');
         } catch (error) {
-            console.error(`❌ [${new Date().toLocaleString()}] Time-based backup failed:`, error);
+            logToConsole('error', 'Time-based backup failed:', error);
             throw error;
         }
     } else {
         const timeUntilNextBackup = TIME_BACKUP_INTERVAL * 60 * 1000 - (currentTime - lastTimeBackup);
         const minutesUntilNext = Math.round(timeUntilNextBackup / 1000 / 60);
-        console.log(`⏳ [${new Date().toLocaleString()}] Time-based backup not yet due. Next backup in ${minutesUntilNext} minutes`);
+        logToConsole('wait', `Time-based backup not yet due. Next backup in ${minutesUntilNext} minutes`);
     }
 }
 
@@ -713,7 +725,7 @@ async function checkAndImportBackup() {
             wasImportSuccessful = false;
             return false;
         } else {
-            console.error('Import error:', err);
+            logToConsole('error', 'Import error:', err);
             alert('Error during import: ' + err.message);
             wasImportSuccessful = false;
             return false;
@@ -764,7 +776,7 @@ async function loadBackupFiles() {
         }
         updateBackupButtons();
     } catch (error) {
-        console.error('Error loading backup files:', error);
+        logToConsole('error', 'Error loading backup files:', error);
         select.innerHTML = '<option value="">Error loading backups</option>';
         updateBackupButtons();
     }
@@ -819,7 +831,7 @@ async function downloadBackupFile() {
     const selectedFile = document.getElementById('backup-files').value;
     const s3 = new AWS.S3();
     try {
-        console.log(`📥 [${new Date().toLocaleString()}] Starting download of ${selectedFile}`);
+        logToConsole('download', `Starting download of ${selectedFile}`);
         const data = await s3.getObject({
             Bucket: bucketName,
             Key: selectedFile,
@@ -843,9 +855,9 @@ async function downloadBackupFile() {
                 a.click();
                 window.URL.revokeObjectURL(url);
                 document.body.removeChild(a);
-                console.log(`✅ [${new Date().toLocaleString()}] File downloaded and decrypted successfully`);
+                logToConsole('success', `File downloaded and decrypted successfully`);
             } catch (decryptError) {
-                console.error(`❌ [${new Date().toLocaleString()}] Decryption failed:`, decryptError);
+                logToConsole('error', `Decryption failed:`, decryptError);
                 alert('Failed to decrypt the backup file. Please check your encryption key.');
                 return;
             }
@@ -864,15 +876,15 @@ async function downloadBackupFile() {
                 a.click();
                 window.URL.revokeObjectURL(url);
                 document.body.removeChild(a);
-                console.log(`✅ [${new Date().toLocaleString()}] File downloaded and decrypted successfully`);
+                logToConsole('success', `File downloaded and decrypted successfully`);
             } catch (decryptError) {
-                console.error(`❌ [${new Date().toLocaleString()}] Decryption failed:`, decryptError);
+                logToConsole('error', `Decryption failed:`, decryptError);
                 alert('Failed to decrypt the backup file. Please check your encryption key.');
                 return;
             }
         }
     } catch (error) {
-        console.error(`❌ [${new Date().toLocaleString()}] Download failed:`, error);
+        logToConsole('error', `Download failed:`, error);
         alert('Error downloading file: ' + error.message);
     }
 }
@@ -903,23 +915,23 @@ async function restoreBackupFile() {
 			}
 			alert('Backup restored successfully!');
 		} catch (error) {
-			console.error('Error restoring backup:', error);
+			logToConsole('error', 'Error restoring backup:', error);
 			alert('Error restoring backup: ' + (error.message || 'Failed to decrypt backup. Please check your encryption key.'));
 		}
 	} catch (error) {
-		console.error('Error restoring backup:', error);
+		logToConsole('error', 'Error restoring backup:', error);
 		alert('Error restoring backup: ' + error.message);
 	}
 }
 
 function startBackupInterval() {
     if (isWaitingForUserInput) {
-        console.log(`⏸️ [${new Date().toLocaleString()}] Skipping interval start - waiting for user input`);
+        logToConsole('skip', 'Skipping interval start - waiting for user input');
         return;
     }
-    console.log(`🕒 [${new Date().toLocaleString()}] Starting backup interval...`);
+    logToConsole('start', 'Starting backup interval...');
     if (backupIntervalRunning) {
-        console.log(`🔄 [${new Date().toLocaleString()}] Clearing existing interval`);
+        logToConsole('info', 'Clearing existing interval');
         clearInterval(backupInterval);
         backupIntervalRunning = false;
         backupInterval = null;
@@ -932,11 +944,11 @@ function startBackupInterval() {
         localStorage.setItem('activeTabBackupRunning', 'true');
         const configuredInterval = parseInt(localStorage.getItem('backup-interval')) || 60;
         const intervalInMilliseconds = Math.max(configuredInterval * 1000, 15000);
-        console.log(`ℹ️ [${new Date().toLocaleString()}] Setting backup interval to ${intervalInMilliseconds/1000} seconds`);
+        logToConsole('info', `Setting backup interval to ${intervalInMilliseconds/1000} seconds`);
         backupIntervalRunning = true;
         performBackup();
         backupInterval = setInterval(() => {
-            console.log(`⏰ [${new Date().toLocaleString()}] Interval triggered`);
+            logToConsole('start', 'Interval triggered');
             performBackup();
         }, intervalInMilliseconds);
     }, 100);
@@ -944,31 +956,31 @@ function startBackupInterval() {
 
 async function performBackup() {
     if (isWaitingForUserInput) {
-        console.log(`⏸️ [${new Date().toLocaleString()}] Backup skipped - waiting for user input`);
+        logToConsole('pause', 'Backup skipped - waiting for user input');
         return;
     }
     if (!isPageFullyLoaded) {
-        console.log(`⏳ [${new Date().toLocaleString()}] Page not fully loaded, skipping backup`);
+        logToConsole('skip', 'Page not fully loaded, skipping backup');
         return;
     }
     if (document.hidden) {
-        console.log(`🛑 [${new Date().toLocaleString()}] Tab is hidden, skipping backup`);
+        logToConsole('skip', 'Tab is hidden, skipping backup');
         return;
     }
     if (isExportInProgress) {
-        console.log(`⏳ [${new Date().toLocaleString()}] Previous backup still in progress, skipping this iteration`);
+        logToConsole('skip', 'Previous backup still in progress, skipping this iteration');
         return;
     }
     if (!wasImportSuccessful) {
-        console.log(`⚠️ [${new Date().toLocaleString()}] Import not yet successful, skipping backup`);
+        logToConsole('skip', 'Import not yet successful, skipping backup');
         return;
     }
     isExportInProgress = true;
     try {
         await backupToS3();
-        console.log(`✅ [${new Date().toLocaleString()}] Backup completed...`);
+        logToConsole('success', 'Backup completed...');
     } catch (error) {
-        console.error(`❌ [${new Date().toLocaleString()}] Backup failed:`, error);
+        logToConsole('error', 'Backup failed:', error);
     } finally {
         isExportInProgress = false;
     }
@@ -1072,7 +1084,7 @@ function exportBackupData() {
 }
 
 async function backupToS3() {
-    console.log(`🔄 [${new Date().toLocaleString()}] Starting export to S3...`);
+    logToConsole('start', 'Starting export to S3...');
     let data = null;
     let dataStr = null;
     let blob = null;
@@ -1097,10 +1109,10 @@ async function backupToS3() {
         const s3 = new AWS.S3();
         await cleanupIncompleteMultipartUploads(s3, bucketName);
         data = await exportBackupData();
-        console.log(`📤 [${new Date().toLocaleString()}] Starting backup encryption`);
+        logToConsole('start', 'Starting backup encryption');
         const encryptedData = await encryptData(data);
         blob = new Blob([encryptedData], { type: 'application/octet-stream' });
-        console.log(`💾 [${new Date().toLocaleString()}] Blob created`);
+        logToConsole('info', 'Blob created');
         const dataSize = blob.size;
         if (dataSize < 100) {
             const error = new Error('Final backup blob is too small or empty');
@@ -1111,7 +1123,7 @@ async function backupToS3() {
         const chunkSize = 5 * 1024 * 1024;
         if (dataSize > chunkSize) {
             try {
-                console.log(`📦 [${new Date().toLocaleString()}] Starting multipart upload for file size: ${dataSize} bytes`);
+                logToConsole('start', `Starting multipart upload for file size: ${dataSize} bytes`);
                 const createMultipartParams = {
                     Bucket: bucketName,
                     Key: 'typingmind-backup.json',
@@ -1119,7 +1131,7 @@ async function backupToS3() {
                     ServerSideEncryption: 'AES256'
                 };
                 const multipart = await s3.createMultipartUpload(createMultipartParams).promise();
-                console.log(`✨ [${new Date().toLocaleString()}] Created multipart upload with ID: ${multipart.UploadId}`);
+                logToConsole('success', `Created multipart upload with ID: ${multipart.UploadId}`);
                 
                 const uploadedParts = [];
                 let partNumber = 1;
@@ -1128,7 +1140,7 @@ async function backupToS3() {
                 for (let start = 0; start < dataSize; start += chunkSize) {
                     const end = Math.min(start + chunkSize, dataSize);
                     const chunk = blob.slice(start, end);
-                    console.log(`📤 [${new Date().toLocaleString()}] Processing part ${partNumber}/${totalParts} (${chunk.size} bytes)`);
+                    logToConsole('info', `Processing part ${partNumber}/${totalParts} (${chunk.size} bytes)`);
                     
                     const arrayBuffer = await new Promise((resolve, reject) => {
                         const reader = new FileReader();
@@ -1150,19 +1162,19 @@ async function backupToS3() {
                     
                     while (retryCount < maxRetries) {
                         try {
-                            console.log(`⬆️ [${new Date().toLocaleString()}] Uploading part ${partNumber}/${totalParts}`);
+                            logToConsole('upload', `Uploading part ${partNumber}/${totalParts}`);
                             const uploadResult = await s3.uploadPart(partParams).promise();
-                            console.log(`✅ [${new Date().toLocaleString()}] Successfully uploaded part ${partNumber}/${totalParts} (ETag: ${uploadResult.ETag})`);
+                             logToConsole('success', `Successfully uploaded part ${partNumber}/${totalParts} (ETag: ${uploadResult.ETag})`);
                             uploadedParts.push({
                                 ETag: uploadResult.ETag,
                                 PartNumber: partNumber,
                             });
                             break;
                         } catch (error) {
-                            console.error(`❌ [${new Date().toLocaleString()}] Error uploading part ${partNumber}/${totalParts}:`, error);
+                            logToConsole('error', `Error uploading part ${partNumber}/${totalParts}:`, error);
                             retryCount++;
                             if (retryCount === maxRetries) {
-                                console.log(`🛑 [${new Date().toLocaleString()}] All retries failed for part ${partNumber}, aborting multipart upload`);
+                                logToConsole('error', `All retries failed for part ${partNumber}, aborting multipart upload`);
                                 await s3.abortMultipartUpload({
                                     Bucket: bucketName,
                                     Key: 'typingmind-backup.json',
@@ -1171,18 +1183,18 @@ async function backupToS3() {
                                 throw error;
                             }
                             const waitTime = Math.pow(2, retryCount) * 1000;
-                            console.log(`⏳ [${new Date().toLocaleString()}] Retrying part ${partNumber} in ${waitTime/1000} seconds (attempt ${retryCount + 1}/${maxRetries})`);
+                            logToConsole('start', `Retrying part ${partNumber} in ${waitTime/1000} seconds (attempt ${retryCount + 1}/${maxRetries})`);
                             await new Promise((resolve) => setTimeout(resolve, waitTime));
                         }
                     }
                     partNumber++;
                     const progress = Math.round(((start + chunkSize) / dataSize) * 100);
-                    console.log(`📊 [${new Date().toLocaleString()}] Overall upload progress: ${Math.min(progress, 100)}%`);
+                    logToConsole('progress', `Overall upload progress: ${Math.min(progress, 100)}%`);
                 }
                 
-                console.log(`🔄 [${new Date().toLocaleString()}] All parts uploaded, completing multipart upload`);
+                logToConsole('success', `All parts uploaded, completing multipart upload`);
                 const sortedParts = uploadedParts.sort((a, b) => a.PartNumber - b.PartNumber);
-                console.log(`📋 [${new Date().toLocaleString()}] Sorted parts for completion:`, sortedParts);
+                logToConsole('success', `Sorted parts for completion:`, sortedParts);
                 
                 const completeParams = {
                     Bucket: bucketName,
@@ -1196,15 +1208,15 @@ async function backupToS3() {
                     },
                 };
                 
-                console.log(`📝 [${new Date().toLocaleString()}] Complete multipart upload params:`, JSON.stringify(completeParams, null, 2));
+                logToConsole('info', `Complete multipart upload params:`, JSON.stringify(completeParams, null, 2));
                 
                 try {
-                    console.log(`🔚 [${new Date().toLocaleString()}] Sending complete multipart upload request`);
+                    logToConsole('info', `Sending complete multipart upload request`);
                     const completeResult = await s3.completeMultipartUpload(completeParams).promise();
-                    console.log(`✨ [${new Date().toLocaleString()}] Complete multipart upload response:`, completeResult);
-                    console.log(`🎉 [${new Date().toLocaleString()}] Multipart upload completed successfully`);
+                    logToConsole('info', `Complete multipart upload response:`, completeResult);
+                    logToConsole('success', `Multipart upload completed successfully`);
                 } catch (completeError) {
-                    console.error(`💥 [${new Date().toLocaleString()}] Complete multipart upload failed:`, {
+                    logToConsole('error', 'Complete multipart upload failed:', {
                         error: completeError,
                         params: completeParams,
                         uploadId: multipart.UploadId,
@@ -1215,12 +1227,12 @@ async function backupToS3() {
                     throw completeError;
                 }
             } catch (error) {
-                console.error(`💥 [${new Date().toLocaleString()}] Multipart upload failed with error:`, error);
+                logToConsole('error', `Multipart upload failed with error:`, error);
                 await cleanupIncompleteMultipartUploads(s3, bucketName);
                 throw error;
             }
         } else {
-            console.log('Starting standard upload to S3');
+            logToConsole('start', 'Starting standard upload to S3');
             const putParams = {
                 Bucket: bucketName,
                 Key: 'typingmind-backup.json',
@@ -1233,7 +1245,7 @@ async function backupToS3() {
         await handleTimeBasedBackup();
         const currentTime = new Date().toLocaleString();
         localStorage.setItem('last-cloud-sync', currentTime);
-        console.log(`✅ [${new Date().toLocaleString()}] Export completed successfully`);
+        logToConsole('success', `Export completed successfully`);
         var element = document.getElementById('last-sync-msg');
         if (element !== null) {
             element.innerText = `Last sync done at ${currentTime}`;
@@ -1243,9 +1255,9 @@ async function backupToS3() {
         }
 
     } catch (error) {
-        console.error(`❌ [${new Date().toLocaleString()}] Export failed:`, error);
+        logToConsole('error', `Export failed:`, error);
         if (error.code && error.code.startsWith('INVALID_')) {
-            console.error(`Size validation failed: ${error.message}`);
+            logToConsole('error', `Size validation failed: ${error.message}`);
             var element = document.getElementById('last-sync-msg');
             if (element !== null) {
                 element.innerText = `Backup skipped: ${error.message}`;
@@ -1265,7 +1277,7 @@ async function backupToS3() {
 }
 
 async function importFromS3() {
-    console.log(`📥 [${new Date().toLocaleString()}] Starting import from S3...`);
+    logToConsole('download', 'Starting import from S3...');
     try {
         const bucketName = localStorage.getItem('aws-bucket');
         const awsRegion = localStorage.getItem('aws-region');
@@ -1295,12 +1307,12 @@ async function importFromS3() {
             s3Data = await s3.getObject(params).promise();
             cloudFileSize = s3Data.Body.length;
             cloudLastModified = s3Data.LastModified;
-            console.log(`✅ [${new Date().toLocaleString()}] S3 data fetched successfully:`, {
+            logToConsole('success', 'S3 data fetched successfully:', {
                 contentLength: cloudFileSize,
                 lastModified: cloudLastModified
             });
         } catch (fetchError) {
-            console.error(`❌ [${new Date().toLocaleString()}] Failed to fetch from S3:`, fetchError);
+            logToConsole('error', 'Failed to fetch from S3:', fetchError);
             throw fetchError;
         }
         const lastSync = localStorage.getItem('last-cloud-sync');
@@ -1318,14 +1330,15 @@ async function importFromS3() {
                     sizeDiffPercentage <= 0.1 :
                     Math.abs(cloudFileSize - localFileSize) <= 2
             ));
-        console.log(`📊 [${new Date().toLocaleString()}] Size comparison:
-    Cloud size: ${cloudFileSize} bytes
-    Local size: ${localFileSize} bytes
-    Difference: ${cloudFileSize - localFileSize} bytes ${sizeDiffPercentage ? `(${sizeDiffPercentage.toFixed(4)}%)` : ''}
-    Within tolerance: ${isWithinSizeTolerance ? 'Yes' : 'No'}`);
+        logToConsole('progress', 'Size comparison:', {
+            cloudSize: `${cloudFileSize} bytes`,
+            localSize: `${localFileSize} bytes`,
+            difference: `${cloudFileSize - localFileSize} bytes${sizeDiffPercentage ? ` (${sizeDiffPercentage.toFixed(4)}%)` : ''}`,
+            withinTolerance: isWithinSizeTolerance ? 'Yes' : 'No'
+        });
         const isTimeDifferenceSignificant = () => {
             if (!lastSync) {
-                console.log(`ℹ️ No last sync found`);
+                logToConsole('info', `No last sync found`);
                 return false;
             }
             const cloudDate = new Date(cloudLastModified);
@@ -1348,16 +1361,17 @@ async function importFromS3() {
                 if (!isNaN(localSyncDate.getTime())) {
                     const diffInMilliseconds = Math.abs(cloudDate - localSyncDate);
                     const diffInHours = diffInMilliseconds / (1000 * 60 * 60);
-                    console.log(`🕒 Time comparison:
-    Last Sync: ${localSyncDate.toISOString()}
-    Cloud Modified: ${cloudDate.toISOString()}
-    Difference: ${diffInHours.toFixed(2)} hours
-    Local Format: ${lastSync}`);
+                    logToConsole('time', 'Time comparison:', {
+                        lastSync: localSyncDate.toISOString(),
+                        cloudModified: cloudDate.toISOString(),
+                        difference: `${diffInHours.toFixed(2)} hours`,
+                        localFormat: lastSync
+                    });
                     return diffInHours > 24;
                 }
                 throw new Error('Invalid date format');
             } catch (error) {
-                console.error(`❌ Error parsing dates:`, error);
+                logToConsole('error', `❌ Error parsing dates:`, error);
                 return false;
             }
         };
@@ -1365,14 +1379,14 @@ async function importFromS3() {
             isCloudSmallerThanLocal || 
             sizeDiffPercentage > 1
         );
-        console.log(`📢 Should prompt user: ${shouldPrompt}`);
+        logToConsole('info', `Should prompt user: ${shouldPrompt}`);
         if (shouldPrompt) {
-            console.log(`⚠️ [${new Date().toLocaleString()}] Showing prompt to user...`);
+            logToConsole('info', `Showing prompt to user...`);
             isWaitingForUserInput = true;
             const existingIntervals = [backupInterval];
             existingIntervals.forEach(interval => {
                 if (interval) {
-                    console.log(`⏸️ [${new Date().toLocaleString()}] Clearing interval ${interval}`);
+                    logToConsole('pause', `Clearing backupinterval ${interval}`);
                     clearInterval(interval);
                 }
             });
@@ -1398,9 +1412,9 @@ async function importFromS3() {
                     {text: 'Proceed', primary: true}
                 ]);
                 if (!shouldProceed) {
-                    console.log(`ℹ️ [${new Date().toLocaleString()}] Import cancelled by user`);
+                    logToConsole('error', `Import cancelled by user`);
                     isWaitingForUserInput = false;
-                    console.log(`▶️ [${new Date().toLocaleString()}] Resuming backup interval after user cancelled`);
+                    logToConsole('resume', `Resuming backup interval after user cancelled cloud import`);
                     startBackupInterval();
                     return false;
                 }
@@ -1415,28 +1429,28 @@ async function importFromS3() {
                 throw error;
             }
         }
-        console.log(`📥 [${new Date().toLocaleString()}] Fetching data from S3...`);
-        console.log(`🔍 [${new Date().toLocaleString()}] S3 getObject params:`, {
+        logToConsole('info', `Fetching data from S3...`);
+        logToConsole('info', `S3 getObject params:`, {
             bucket: bucketName,
             key: params.Key
         });
         let data;
         try {
             data = await s3.getObject(params).promise();
-            console.log(`✅ [${new Date().toLocaleString()}] S3 data fetched successfully:`, {
+            logToConsole('success', 'S3 data fetched successfully:', {
                 contentLength: data.Body?.length || 0
             });
         } catch (fetchError) {
-            console.error(`❌ [${new Date().toLocaleString()}] Failed to fetch from S3:`, fetchError);
+            logToConsole('error', `Failed to fetch from S3:`, fetchError);
             throw fetchError;
         }
         const encryptedContent = new Uint8Array(data.Body);
         try {
-            console.log(`🔓 [${new Date().toLocaleString()}] Starting decryption...`);
+            logToConsole('encrypt', `Starting decryption...`);
             importedData = await decryptData(encryptedContent);
-            console.log(`✅ [${new Date().toLocaleString()}] Decryption successful`);
+            logToConsole('success', `Decryption successful`);
         } catch (error) {
-            console.error(`❌ [${new Date().toLocaleString()}] Decryption failed:`, error);
+            logToConsole('error', `Decryption failed:`, error);
             throw new Error('Failed to decrypt backup. Please check your encryption key.');
         }
         importDataToStorage(importedData);
@@ -1445,14 +1459,14 @@ async function importFromS3() {
         if (element !== null) {
             element.innerText = `Last sync done at ${currentTime}`;
         }
-        console.log(`✅ [${new Date().toLocaleString()}] Import completed successfully`);
+        logToConsole('success', `Import completed successfully`);
         wasImportSuccessful = true;
-        console.log(`▶️ [${new Date().toLocaleString()}] Resuming backup interval after successful import`);
+        logToConsole('info', `Resuming backup interval after successful import`);
         startBackupInterval();
         return true;
     } catch (error) {
-        console.error(`❌ [${new Date().toLocaleString()}] Import failed with error:`, error);
-        console.log(`▶️ [${new Date().toLocaleString()}] Resuming backup interval after import error`);
+        logToConsole('error', `Import failed with error:`, error);
+        logToConsole('info', `Resuming backup interval after import error`);
         startBackupInterval();
         throw error;
     }
@@ -1493,7 +1507,7 @@ async function deleteBackupFile() {
 			}, 3000);
 		}
 	} catch (error) {
-		console.error('Error deleting file:', error);
+		logToConsole('error', 'Error deleting file:', error);
 		const actionMsgElement = document.getElementById('action-msg');
 		if (actionMsgElement) {
 			actionMsgElement.textContent = `Error deleting file: ${error.message}`;
@@ -1534,7 +1548,7 @@ async function validateAwsCredentials(bucketName, accessKey, secretKey) {
 }
 
 async function handleBackupFiles() {
-	console.log(`📅 [${new Date().toLocaleString()}] Starting daily backup process...`);
+	logToConsole('start', `Starting daily backup process...`);
 	let backupFile = null;
 	let backupContent = null;
 	let zip = null;
@@ -1602,12 +1616,12 @@ async function handleBackupFiles() {
 					ServerSideEncryption: 'AES256'
 				};
 				await s3.putObject(uploadParams).promise();
-				console.log(`✅ [${new Date().toLocaleString()}] Daily backup created: ${zipKey}`);
+				logToConsole('success', `Daily backup created: ${zipKey}`);
 				localStorage.setItem('last-daily-backup-in-s3', currentDateSuffix);
 				if (document.querySelector('[data-element-id="sync-modal-dbbackup"]')) {
 					await loadBackupFiles();
 				}
-			} else {console.log(`📅 [${new Date().toLocaleString()}] Daily backup file already exists for today`);}
+			} else {logToConsole('info', `Daily backup file already exists for today`);}
 			const thirtyDaysAgo = new Date();
 			thirtyDaysAgo.setDate(today.getDate() - 30);
 			for (const file of data.Contents) {
@@ -1619,13 +1633,13 @@ async function handleBackupFiles() {
 							Key: file.Key,
 						};
 						await s3.deleteObject(deleteParams).promise();
-						console.log('🗑️ Purged old backup:', file.Key);
+						logToConsole('success', 'Purged old backup:', file.Key);
 					}
 				}
 			}
 		}
 	} catch (error) {
-		console.error(`❌ [${new Date().toLocaleString()}] Daily backup process failed:`, error);
+		logToConsole('error', `Daily backup process failed:`, error);
 	} finally {
 		backupFile = null;
 		backupContent = null;
@@ -1663,11 +1677,9 @@ async function deriveKey(password) {
 
 async function encryptData(data) {
     const encryptionKey = localStorage.getItem('encryption-key');
-    console.log(`🔐 [${new Date().toLocaleString()}] Encryption attempt:`, {
-        hasKey: !!encryptionKey
-    });
+    logToConsole('encrypt', 'Encryption attempt:', { hasKey: !!encryptionKey });
     if (!encryptionKey) {
-        console.log(`⚠️ [${new Date().toLocaleString()}] No encryption key found`);
+        logToConsole('warning', 'No encryption key found');
         if (backupIntervalRunning) {
             clearInterval(backupInterval);
             backupIntervalRunning = false;
@@ -1695,12 +1707,12 @@ async function encryptData(data) {
         combinedData.set(marker);
         combinedData.set(iv, marker.length);
         combinedData.set(new Uint8Array(encryptedContent), marker.length + iv.length);
-        console.log(`✅ [${new Date().toLocaleString()}] Encryption successful`);
+        logToConsole('success', 'Encryption successful');
         return combinedData;
     } catch (error) {
         localStorage.removeItem('encryption-key');
         clearInterval(backupInterval);
-        console.error(`❌ [${new Date().toLocaleString()}] Encryption failed:`, error);
+        logToConsole('error', 'Encryption failed:', error);
         throw error;
     }
 }
@@ -1708,18 +1720,18 @@ async function encryptData(data) {
 async function decryptData(data) {
     const marker = 'ENCRYPTED:';
     const dataString = new TextDecoder().decode(data.slice(0, marker.length));
-    console.log(`🏷️ [${new Date().toLocaleString()}] Checking encryption marker:`, {
+    logToConsole('tag', 'Checking encryption marker:', {
         expectedMarker: marker,
         foundMarker: dataString,
         isEncrypted: dataString === marker
     });
     if (dataString !== marker) {
-        console.log(`ℹ️ [${new Date().toLocaleString()}] Data is not encrypted, returning as-is`);
+        logToConsole('info', 'Data is not encrypted, returning as-is');
         return JSON.parse(new TextDecoder().decode(data));
     }
     const encryptionKey = localStorage.getItem('encryption-key');
     if (!encryptionKey) {
-        console.error(`❌ [${new Date().toLocaleString()}] Encrypted data found but no key provided`);
+        logToConsole('error', 'Encrypted data found but no key provided');
         if (backupIntervalRunning) {
             clearInterval(backupInterval);
             backupIntervalRunning = false;
@@ -1748,20 +1760,20 @@ async function decryptData(data) {
     } catch (error) {
         localStorage.removeItem('encryption-key');
         clearInterval(backupInterval);
-        console.error(`❌ [${new Date().toLocaleString()}] Decryption failed:`, error);
+        logToConsole('error', 'Decryption failed:', error);
         alert('Failed to decrypt backup. Please re-enter encryption key.');
         throw error;
     }
 }
 
 async function cleanupIncompleteMultipartUploads(s3, bucketName) {
-    console.log(`🧹 [${new Date().toLocaleString()}] Checking for incomplete multipart uploads...`);
+    logToConsole('cleanup', 'Checking for incomplete multipart uploads...');
     try {
         const multipartUploads = await s3.listMultipartUploads({
             Bucket: bucketName
         }).promise();
         if (multipartUploads.Uploads && multipartUploads.Uploads.length > 0) {
-            console.log(`Found ${multipartUploads.Uploads.length} incomplete multipart uploads`);
+            logToConsole('cleanup', `Found ${multipartUploads.Uploads.length} incomplete multipart uploads`);
             for (const upload of multipartUploads.Uploads) {
                 const uploadAge = Date.now() - new Date(upload.Initiated).getTime();
                 const fiveMinutes = 5 * 60 * 1000;
@@ -1772,19 +1784,19 @@ async function cleanupIncompleteMultipartUploads(s3, bucketName) {
                             Key: upload.Key,
                             UploadId: upload.UploadId
                         }).promise();
-                        console.log(`✅ Aborted incomplete upload for ${upload.Key} (${Math.round(uploadAge/1000/60)}min old)`);
+                        logToConsole('success', `Aborted incomplete upload for ${upload.Key} (${Math.round(uploadAge/1000/60)}min old)`);
                     } catch (error) {
-                        console.error(`Failed to abort upload for ${upload.Key}:`, error);
+                        logToConsole('error', 'Failed to abort upload:', error);
                     }
                 } else {
-                    console.log(`Skipping recent upload for ${upload.Key} (${Math.round(uploadAge/1000)}s old)`);
+                    logToConsole('skip', `Skipping recent upload for ${upload.Key} (${Math.round(uploadAge/1000)}s old)`);
                 }
             }
         } else {
-            console.log('No incomplete multipart uploads found');
+            logToConsole('info', 'No incomplete multipart uploads found');
         }
     } catch (error) {
-        console.error('Error cleaning up multipart uploads:', error);
+        logToConsole('error', 'Error cleaning up multipart uploads:', error);
     }
 }
 
@@ -1839,4 +1851,49 @@ function showCustomAlert(message, title = 'Alert', buttons = [{text: 'OK', prima
             e.stopPropagation();
         }, { passive: true });
     });
+}
+
+function logToConsole(type, message, data = null) {
+    if (!isConsoleLoggingEnabled) return;
+    
+    const timestamp = new Date().toISOString();
+    const icons = {
+        info: 'ℹ️',
+        success: '✅',
+        warning: '⚠️',
+        error: '❌',
+        start: '🔄',
+        end: '🏁',
+        upload: '⬆️',
+        download: '⬇️',
+        cleanup: '🧹',
+        snapshot: '📸',
+        encrypt: '🔐',
+        decrypt: '🔓',
+        progress: '📊',
+        time: '⏰',
+        wait: '⏳',
+        pause: '⏸️',
+        resume: '▶️',
+        visibility: '👁️',
+        active: '📱',
+        calendar: '📅',
+        tag: '🏷️',
+        stop: '🛑',
+        skip: '⏩'
+    };
+    
+    const icon = icons[type] || 'ℹ️';
+    const logMessage = `${icon} [${timestamp}] ${message}`;
+    
+    switch (type) {
+        case 'error':
+            console.error(logMessage, data);
+            break;
+        case 'warning':
+            console.warn(logMessage, data);
+            break;
+        default:
+            console.log(logMessage, data);
+    }
 }
