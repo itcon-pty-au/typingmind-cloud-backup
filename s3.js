@@ -1,20 +1,30 @@
-const VERSION = '20250202-09:29';
+const VERSION = '20250202-09:36';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
 let isImportInProgress = false;
 let isSnapshotInProgress = false;
-let isConsoleLoggingEnabled = false;
+let isConsoleLoggingEnabled = new URLSearchParams(window.location.search).get('log') === 'true'; // Query param - ?log=true
 const TIME_BACKUP_INTERVAL = 15;
 const TIME_BACKUP_FILE_PREFIX = `T-${TIME_BACKUP_INTERVAL}`;
-
 let awsSdkLoadPromise = null;
 const awsSdkPromise = loadAwsSdk();
 let isPageFullyLoaded = false;
 let backupInterval = null;
 let isWaitingForUserInput = false;
+
+function initializeLoggingState() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const logParam = urlParams.get('log');
+    if (logParam === 'true') {
+        isConsoleLoggingEnabled = true;
+        logToConsole('info', `Typingmind cloud backup version ${VERSION}`);
+    }
+}
+
 (async function checkDOMOrRunBackup() {
 	await awsSdkPromise;
+	initializeLoggingState();
 	if (document.readyState !== 'loading') {
 		await handleDOMReady();
 	} else {
@@ -232,17 +242,10 @@ function openSyncModal() {
                     </div>
                      <div class="flex items-center justify-end mb-4 space-x-2">
                          <span class="text-sm text-gray-600 dark:text-gray-400">Console Logging</span>
-                         <label class="relative inline-flex items-center cursor-pointer">
-                             <input type="checkbox" id="console-logging-toggle" class="sr-only peer">
-                             <div class="w-11 h-6 bg-gray-200 rounded-full peer dark:bg-gray-700 
-                                 peer-checked:bg-blue-600 
-                                 relative">
-                                 <div class="absolute inset-y-0 left-0 w-5 h-5 m-0.5 
-                                     bg-white rounded-full shadow transform transition-transform duration-300 ease-in-out
-                                     peer-checked:translate-x-5">
-                                 </div>
-                             </div>
-                         </label>
+                         <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                             <input type="checkbox" id="console-logging-toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"/>
+                             <label for="console-logging-toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
+                         </div>
                      </div>
                     <div class="flex justify-between space-x-2 mt-4">
                         <button id="export-to-s3-btn" type="button" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors" disabled>
@@ -602,8 +605,17 @@ function openSyncModal() {
 		isConsoleLoggingEnabled = e.target.checked;
         if (isConsoleLoggingEnabled) {
             logToConsole('info', `Typingmind cloud backup version ${VERSION}`);
+            const url = new URL(window.location);
+            url.searchParams.set('log', 'true');
+            window.history.replaceState({}, '', url);
+        } else {
+            const url = new URL(window.location);
+            url.searchParams.delete('log');
+            window.history.replaceState({}, '', url);
         }
 	});
+	const consoleLoggingToggle = document.getElementById('console-logging-toggle');
+	consoleLoggingToggle.checked = isConsoleLoggingEnabled;
 }
 document.addEventListener('visibilitychange', async () => {
 	logToConsole('visibility', `Visibility changed: ${document.hidden ? 'hidden' : 'visible'}`);
@@ -1906,3 +1918,22 @@ function logToConsole(type, message, data = null) {
             console.log(logMessage, data);
     }
 }
+
+const style = document.createElement('style');
+style.textContent = `
+    .toggle-checkbox:checked {
+        right: 0;
+        border-color: #68D391;
+    }
+    .toggle-checkbox:checked + .toggle-label {
+        background-color: #68D391;
+    }
+    .toggle-label {
+        transition: background-color 0.2s ease-in;
+    }
+    .toggle-checkbox {
+        right: 4px;
+        transition: all 0.2s ease-in;
+    }
+`;
+document.head.appendChild(style);
