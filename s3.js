@@ -1,4 +1,4 @@
-console.log(`v20250201-19:04`);
+console.log(`v20250201-19:21`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1132,6 +1132,12 @@ function startBackupInterval() {
 
 // Function to perform backup
 async function performBackup() {
+    // Add check for user input waiting at the start
+    if (isWaitingForUserInput) {
+        console.log(`⏸️ [${new Date().toLocaleString()}] Backup skipped - waiting for user input`);
+        return;
+    }
+
     if (!isPageFullyLoaded) {
         console.log(`⏳ [${new Date().toLocaleString()}] Page not fully loaded, skipping backup`);
         return;
@@ -1645,14 +1651,22 @@ async function importFromS3() {
         if (shouldPrompt) {
             console.log(`⚠️ [${new Date().toLocaleString()}] Showing prompt to user...`);
             
-            // Set waiting flag and stop interval
+            // Set waiting flag and stop ALL intervals
             isWaitingForUserInput = true;
-            if (backupInterval) {
-                console.log(`⏸️ [${new Date().toLocaleString()}] Pausing backup interval while waiting for user input`);
-                clearInterval(backupInterval);
-                backupInterval = null;
-                backupIntervalRunning = false;
-            }
+            
+            // Clear any existing intervals
+            const existingIntervals = [backupInterval];
+            existingIntervals.forEach(interval => {
+                if (interval) {
+                    console.log(`⏸️ [${new Date().toLocaleString()}] Clearing interval ${interval}`);
+                    clearInterval(interval);
+                }
+            });
+            
+            // Reset all interval-related variables
+            backupInterval = null;
+            backupIntervalRunning = false;
+            localStorage.setItem('activeTabBackupRunning', 'false');
 
             try {
                 let message = `Warning: Potential data mismatch detected!\n\n`;
@@ -1692,6 +1706,12 @@ async function importFromS3() {
             } catch (error) {
                 // Make sure to reset the flag even if there's an error
                 isWaitingForUserInput = false;
+                // Also clear any lingering intervals
+                if (backupInterval) {
+                    clearInterval(backupInterval);
+                    backupInterval = null;
+                    backupIntervalRunning = false;
+                }
                 throw error;
             }
         }
