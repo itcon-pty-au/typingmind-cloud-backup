@@ -48,7 +48,7 @@ WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXP
     - Delete
 
 ## Troubleshooting
-- add '?log=true' to the URL to initiate console logging. This helps log start right from the page load.
+- Add '?log=true' to the URL to initiate console logging. The log will start right from the beginning.
 - You can also toggle the 'Console Logging' in the Backup & Sync configuration modal. But this starts the logging at that instant, anything that happened before it wont be logged. 
 
 ## AWS Config
