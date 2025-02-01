@@ -47,6 +47,10 @@ WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXP
     - Restore
     - Delete
 
+## Troubleshooting
+- add '?log=true' to the URL to initiate console logging. This helps log start right from the page load.
+- You can also toggle the 'Console Logging' in the Backup & Sync configuration modal. But this starts the logging at that instant, anything that happened before it wont be logged. 
+
 ## AWS Config
 1. Create a user in Amazon IAM. In permissions option, select "Add user to group" but don't select any group. In next screen, "Create user".
 2. Open the user. Create Access Key for the user. In Step 1, select "Other", you can skip Step 2 and directly create Access Key. Copy the Access key and Secret Key and store it securely. You will need this to configure the extension.
