@@ -1,4 +1,4 @@
-console.log(`v20250201-19:21`);
+console.log(`v20250201-22:23`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1669,7 +1669,7 @@ async function importFromS3() {
             localStorage.setItem('activeTabBackupRunning', 'false');
 
             try {
-                let message = `Warning: Potential data mismatch detected!\n\n`;
+                let message = `Potential data mismatch detected!\n\n`;
                 message += `Cloud backup size: ${cloudFileSize || 'Unknown'} bytes\n`;
                 message += `Local data size: ${localFileSize} bytes\n`;
                 if (cloudFileSize) {
