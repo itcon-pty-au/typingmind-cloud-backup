@@ -1,4 +1,4 @@
-console.log(`v20250201-23:31`);
+console.log(`v20250202-06:50`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1111,26 +1111,32 @@ async function backupToS3() {
         const chunkSize = 5 * 1024 * 1024;
         if (dataSize > chunkSize) {
             try {
+                console.log(`📦 [${new Date().toLocaleString()}] Starting multipart upload for file size: ${dataSize} bytes`);
                 const createMultipartParams = {
                     Bucket: bucketName,
                     Key: 'typingmind-backup.json',
                     ContentType: 'application/json',
                     ServerSideEncryption: 'AES256'
                 };
-                const multipart = await s3
-                    .createMultipartUpload(createMultipartParams)
-                    .promise();
+                const multipart = await s3.createMultipartUpload(createMultipartParams).promise();
+                console.log(`✨ [${new Date().toLocaleString()}] Created multipart upload with ID: ${multipart.UploadId}`);
+                
                 const uploadedParts = [];
                 let partNumber = 1;
+                const totalParts = Math.ceil(dataSize / chunkSize);
+                
                 for (let start = 0; start < dataSize; start += chunkSize) {
                     const end = Math.min(start + chunkSize, dataSize);
                     const chunk = blob.slice(start, end);
+                    console.log(`📤 [${new Date().toLocaleString()}] Processing part ${partNumber}/${totalParts} (${chunk.size} bytes)`);
+                    
                     const arrayBuffer = await new Promise((resolve, reject) => {
                         const reader = new FileReader();
                         reader.onload = () => resolve(reader.result);
                         reader.onerror = () => reject(reader.error);
                         reader.readAsArrayBuffer(chunk);
                     });
+                    
                     const partParams = {
                         Body: arrayBuffer,
                         Bucket: bucketName,
@@ -1138,43 +1144,46 @@ async function backupToS3() {
                         PartNumber: partNumber,
                         UploadId: multipart.UploadId,
                     };
+                    
                     let retryCount = 0;
                     const maxRetries = 3;
+                    
                     while (retryCount < maxRetries) {
                         try {
+                            console.log(`⬆️ [${new Date().toLocaleString()}] Uploading part ${partNumber}/${totalParts}`);
                             const uploadResult = await s3.uploadPart(partParams).promise();
+                            console.log(`✅ [${new Date().toLocaleString()}] Successfully uploaded part ${partNumber}/${totalParts} (ETag: ${uploadResult.ETag})`);
                             uploadedParts.push({
                                 ETag: uploadResult.ETag,
                                 PartNumber: partNumber,
                             });
                             break;
                         } catch (error) {
-                            console.error(`Error uploading part ${partNumber}:`, error);
+                            console.error(`❌ [${new Date().toLocaleString()}] Error uploading part ${partNumber}/${totalParts}:`, error);
                             retryCount++;
                             if (retryCount === maxRetries) {
-                                console.log('All retries failed, aborting multipart upload');
-                                await s3
-                                    .abortMultipartUpload({
-                                        Bucket: bucketName,
-                                        Key: 'typingmind-backup.json',
-                                        UploadId: multipart.UploadId,
-                                    })
-                                    .promise();
+                                console.log(`🛑 [${new Date().toLocaleString()}] All retries failed for part ${partNumber}, aborting multipart upload`);
+                                await s3.abortMultipartUpload({
+                                    Bucket: bucketName,
+                                    Key: 'typingmind-backup.json',
+                                    UploadId: multipart.UploadId,
+                                }).promise();
                                 throw error;
                             }
                             const waitTime = Math.pow(2, retryCount) * 1000;
-                            console.log(
-                                `Retrying part ${partNumber} in ${waitTime / 1000} seconds...`
-                            );
+                            console.log(`⏳ [${new Date().toLocaleString()}] Retrying part ${partNumber} in ${waitTime/1000} seconds (attempt ${retryCount + 1}/${maxRetries})`);
                             await new Promise((resolve) => setTimeout(resolve, waitTime));
                         }
                     }
                     partNumber++;
                     const progress = Math.round(((start + chunkSize) / dataSize) * 100);
+                    console.log(`📊 [${new Date().toLocaleString()}] Overall upload progress: ${Math.min(progress, 100)}%`);
                 }
-                const sortedParts = uploadedParts.sort(
-                    (a, b) => a.PartNumber - b.PartNumber
-                );
+                
+                console.log(`🔄 [${new Date().toLocaleString()}] All parts uploaded, completing multipart upload`);
+                const sortedParts = uploadedParts.sort((a, b) => a.PartNumber - b.PartNumber);
+                console.log(`📋 [${new Date().toLocaleString()}] Sorted parts for completion:`, sortedParts);
+                
                 const completeParams = {
                     Bucket: bucketName,
                     Key: 'typingmind-backup.json',
@@ -1186,9 +1195,11 @@ async function backupToS3() {
                         })),
                     },
                 };
+                
                 await s3.completeMultipartUpload(completeParams).promise();
+                console.log(`🎉 [${new Date().toLocaleString()}] Multipart upload completed successfully`);
             } catch (error) {
-                console.error('Multipart upload failed:', error);
+                console.error(`💥 [${new Date().toLocaleString()}] Multipart upload failed with error:`, error);
                 await cleanupIncompleteMultipartUploads(s3, bucketName);
                 throw error;
             }
