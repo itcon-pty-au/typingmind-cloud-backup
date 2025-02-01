@@ -1,4 +1,4 @@
-console.log(`v20250201-11:24`);
+console.log(`v20250201-11:27`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1637,7 +1637,12 @@ async function importFromS3() {
             
             message += '\nDo you want to proceed with importing the cloud backup? This will overwrite your local data.';
 
-            if (!confirm(message)) {
+            const shouldProceed = await showCustomAlert(message, 'Warning', [
+                {text: 'Cancel', primary: false},
+                {text: 'Proceed', primary: true}
+            ]);
+
+            if (!shouldProceed) {
                 console.log(`ℹ️ [${new Date().toLocaleString()}] Import cancelled by user`);
                 return false;
             }
@@ -1702,8 +1707,13 @@ async function deleteBackupFile() {
 	}
 
 	// Ask for confirmation
-	const isConfirmed = confirm(
-		`Are you sure you want to delete ${selectedFile}? This action cannot be undone.`
+	const isConfirmed = await showCustomAlert(
+		`Are you sure you want to delete ${selectedFile}? This action cannot be undone.`,
+		'Confirm Deletion',
+		[
+			{text: 'Cancel', primary: false},
+			{text: 'Delete', primary: true}
+		]
 	);
 
 	if (!isConfirmed) {
@@ -1948,13 +1958,12 @@ async function encryptData(data) {
 
     if (!encryptionKey) {
         console.log(`⚠️ [${new Date().toLocaleString()}] No encryption key found`);
-        // Stop all backup intervals
         clearInterval(backupInterval);
         backupIntervalRunning = false;
         localStorage.setItem('activeTabBackupRunning', 'false');
         wasImportSuccessful = false;  // Prevent new backup attempts
         
-        alert('Please configure an encryption key in the backup settings before proceeding.');
+        await showCustomAlert('Please configure an encryption key in the backup settings before proceeding.', 'Configuration Required');
         throw new Error('Encryption key not configured');
     }
 
@@ -2016,13 +2025,12 @@ async function decryptData(data) {
     const encryptionKey = localStorage.getItem('encryption-key');
     if (!encryptionKey) {
         console.error(`❌ [${new Date().toLocaleString()}] Encrypted data found but no key provided`);
-        // Stop all backup intervals
         clearInterval(backupInterval);
         backupIntervalRunning = false;
         localStorage.setItem('activeTabBackupRunning', 'false');
         wasImportSuccessful = false;  // Prevent new backup attempts
         
-        // Throw error immediately and stop processing
+        await showCustomAlert('Please configure your encryption key in the backup settings before proceeding.', 'Configuration Required');
         throw new Error('Encryption key not configured');
     }
 
@@ -2137,62 +2145,4 @@ function showCustomAlert(message, title = 'Alert', buttons = [{text: 'OK', prima
         modal.appendChild(dialog);
         document.body.appendChild(modal);
     });
-}
-
-const shouldProceed = await showCustomAlert(message, 'Warning', [
-    {text: 'Cancel', primary: false},
-    {text: 'Proceed', primary: true}
-]);
-if (!shouldProceed) {
-    console.log(`ℹ️ [${new Date().toLocaleString()}] Import cancelled by user`);
-    return false;
-}
-
-// Replace encryption key alert in encryptData():
-if (!encryptionKey) {
-    console.log(`⚠️ [${new Date().toLocaleString()}] No encryption key found`);
-    clearInterval(backupInterval);
-    backupIntervalRunning = false;
-    localStorage.setItem('activeTabBackupRunning', 'false');
-    wasImportSuccessful = false;
-    
-    await showCustomAlert('Please configure an encryption key in the backup settings before proceeding.', 'Configuration Required');
-    throw new Error('Encryption key not configured');
-}
-
-// Replace alert in checkAndImportBackup():
-if (!bucketName || !awsAccessKey || !awsSecretKey || !encryptionKey) {
-    wasImportSuccessful = false;
-    if (!encryptionKey) {
-        await showCustomAlert('Please configure your encryption key in the backup settings before proceeding.', 'Configuration Required');
-    } else {
-        await showCustomAlert('Please configure all AWS credentials in the backup settings before proceeding.', 'Configuration Required');
-    }
-    return false;
-}
-
-// Replace alert in deleteBackupFile():
-const isConfirmed = await showCustomAlert(
-    `Are you sure you want to delete ${selectedFile}? This action cannot be undone.`,
-    'Confirm Deletion',
-    [
-        {text: 'Cancel', primary: false},
-        {text: 'Delete', primary: true}
-    ]
-);
-
-if (!isConfirmed) {
-    return;
-}
-
-// Replace alert in decryptData():
-if (!encryptionKey) {
-    console.error(`❌ [${new Date().toLocaleString()}] Encrypted data found but no key provided`);
-    clearInterval(backupInterval);
-    backupIntervalRunning = false;
-    localStorage.setItem('activeTabBackupRunning', 'false');
-    wasImportSuccessful = false;
-    
-    await showCustomAlert('Please configure your encryption key in the backup settings before proceeding.', 'Configuration Required');
-    throw new Error('Encryption key not configured');
 }
