@@ -1,4 +1,4 @@
-const VERSION = '20250202-09:44';
+const VERSION = '20250202-10:01';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -23,13 +23,13 @@ function initializeLoggingState() {
 }
 
 (async function checkDOMOrRunBackup() {
-	await awsSdkPromise;
-	initializeLoggingState();
-	if (document.readyState !== 'loading') {
-		await handleDOMReady();
-	} else {
-		window.addEventListener('DOMContentLoaded', handleDOMReady);
-	}
+    initializeLoggingState();
+    await awsSdkPromise;
+    if (document.readyState !== 'loading') {
+        await handleDOMReady();
+    } else {
+        window.addEventListener('DOMContentLoaded', handleDOMReady);
+    }
 })();
 
 async function handleDOMReady() {
