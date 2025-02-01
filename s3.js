@@ -1,4 +1,4 @@
-console.log(`Typingmind cloud backup v20250202-06:55`);
+console.log(`Typingmind cloud backup version 20250202-06:55`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
