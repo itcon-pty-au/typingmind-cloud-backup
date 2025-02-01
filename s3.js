@@ -1,4 +1,4 @@
-console.log(`v20250201-18:57`);
+console.log(`v20250201-19:04`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1670,7 +1670,7 @@ async function importFromS3() {
                     message += '⚠️ Size difference exceeds 1%\n';
                 }
                 
-                message += '\nDo you want to proceed with importing the cloud backup? This will overwrite your local data.';
+                message += '\nDo you want to proceed with importing the cloud backup? Clicking "Proceed" will overwrite your local data. If you "Cancel", the local data will overwrite the cloud backup.';
 
                 const shouldProceed = await showCustomAlert(message, 'Warning', [
                     {text: 'Cancel', primary: false},
