@@ -1,4 +1,4 @@
-console.log(`v20250201-11:45`);
+console.log(`v20250201-11:59`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1627,8 +1627,7 @@ async function importFromS3() {
         //console.log(`🔍 [${new Date().toLocaleString()}] Checking if prompt needed...`);
         const shouldPrompt = localFileSize > 0 && (
             isCloudSmallerThanLocal || 
-            sizeDiffPercentage > 1 ||  // Changed to match 1% threshold
-            isTimeDifferenceSignificant()
+            sizeDiffPercentage > 1  // Only check size difference
         );
         console.log(`📢 Should prompt user: ${shouldPrompt}`);
 
@@ -1640,9 +1639,6 @@ async function importFromS3() {
             if (cloudFileSize) {
                 message += `Size difference: ${sizeDiffPercentage.toFixed(2)}%\n\n`;
             }
-            message += `Local last sync: ${lastSync || 'Never'}\n`;
-            const cloudDate = new Date(cloudLastModified);
-            message += `Cloud last modified: ${cloudDate.toLocaleString()}\n\n`;
             
             // Add specific warnings based on what triggered the prompt
             if (cloudFileSize && cloudFileSize < localFileSize) {
@@ -1650,9 +1646,6 @@ async function importFromS3() {
             }
             if (cloudFileSize && sizeDiffPercentage > 1) {
                 message += '⚠️ Size difference exceeds 1%\n';
-            }
-            if (isTimeDifferenceSignificant()) {
-                message += '⚠️ Time difference exceeds 24 hours\n';
             }
             
             message += '\nDo you want to proceed with importing the cloud backup? This will overwrite your local data.';
