@@ -1,3 +1,4 @@
+const VERSION = '20250202-09:29';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -6,14 +7,12 @@ let isSnapshotInProgress = false;
 let isConsoleLoggingEnabled = false;
 const TIME_BACKUP_INTERVAL = 15;
 const TIME_BACKUP_FILE_PREFIX = `T-${TIME_BACKUP_INTERVAL}`;
+
 let awsSdkLoadPromise = null;
 const awsSdkPromise = loadAwsSdk();
 let isPageFullyLoaded = false;
 let backupInterval = null;
 let isWaitingForUserInput = false;
-
-logToConsole('info', 'Typingmind cloud backup version 20250202-09:19');
-
 (async function checkDOMOrRunBackup() {
 	await awsSdkPromise;
 	if (document.readyState !== 'loading') {
@@ -231,13 +230,20 @@ function openSyncModal() {
                             </div>
                         </div>
                     </div>
-                    <div class="flex items-center justify-end mb-4 space-x-2">
-                        <span class="text-sm text-gray-600 dark:text-gray-400">Console Logging</span>
-                        <label class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" id="console-logging-toggle" class="sr-only peer">
-                            <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-                        </label>
-                    </div>
+                     <div class="flex items-center justify-end mb-4 space-x-2">
+                         <span class="text-sm text-gray-600 dark:text-gray-400">Console Logging</span>
+                         <label class="relative inline-flex items-center cursor-pointer">
+                             <input type="checkbox" id="console-logging-toggle" class="sr-only peer">
+                             <div class="w-11 h-6 bg-gray-200 rounded-full peer dark:bg-gray-700 
+                                 peer-checked:bg-blue-600 
+                                 relative">
+                                 <div class="absolute inset-y-0 left-0 w-5 h-5 m-0.5 
+                                     bg-white rounded-full shadow transform transition-transform duration-300 ease-in-out
+                                     peer-checked:translate-x-5">
+                                 </div>
+                             </div>
+                         </label>
+                     </div>
                     <div class="flex justify-between space-x-2 mt-4">
                         <button id="export-to-s3-btn" type="button" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors" disabled>
                             <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024" fill-rule="evenodd" class="w-4 h-4 mr-2" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg">
@@ -594,6 +600,9 @@ function openSyncModal() {
 
 	document.getElementById('console-logging-toggle').addEventListener('change', function(e) {
 		isConsoleLoggingEnabled = e.target.checked;
+        if (isConsoleLoggingEnabled) {
+            logToConsole('info', `Typingmind cloud backup version ${VERSION}`);
+        }
 	});
 }
 document.addEventListener('visibilitychange', async () => {
