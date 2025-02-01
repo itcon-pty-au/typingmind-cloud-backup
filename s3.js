@@ -1,4 +1,4 @@
-console.log(`v20250202-06:50`);
+console.log(`Typingmind cloud backup v20250202-06:55`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -402,7 +402,7 @@ function openSyncModal() {
 			const secretKey = awsSecretKeyInput.value.trim();
 			const endpoint = awsEndpointInput.value.trim();
 			const backupInterval = document.getElementById('backup-interval').value;
-			const encryptionKey = document.getElementById('encryption-key').value.trim();  // Add this line
+			const encryptionKey = document.getElementById('encryption-key').value.trim();
 
 			if (backupInterval < 15) {
 				alert('Backup interval must be at least 15 seconds');
@@ -931,7 +931,7 @@ function startBackupInterval() {
         }
         localStorage.setItem('activeTabBackupRunning', 'true');
         const configuredInterval = parseInt(localStorage.getItem('backup-interval')) || 60;
-        const intervalInMilliseconds = Math.max(configuredInterval * 1000, 15000); // Minimum 15 seconds
+        const intervalInMilliseconds = Math.max(configuredInterval * 1000, 15000);
         console.log(`ℹ️ [${new Date().toLocaleString()}] Setting backup interval to ${intervalInMilliseconds/1000} seconds`);
         backupIntervalRunning = true;
         performBackup();
@@ -1196,8 +1196,24 @@ async function backupToS3() {
                     },
                 };
                 
-                await s3.completeMultipartUpload(completeParams).promise();
-                console.log(`🎉 [${new Date().toLocaleString()}] Multipart upload completed successfully`);
+                console.log(`📝 [${new Date().toLocaleString()}] Complete multipart upload params:`, JSON.stringify(completeParams, null, 2));
+                
+                try {
+                    console.log(`🔚 [${new Date().toLocaleString()}] Sending complete multipart upload request`);
+                    const completeResult = await s3.completeMultipartUpload(completeParams).promise();
+                    console.log(`✨ [${new Date().toLocaleString()}] Complete multipart upload response:`, completeResult);
+                    console.log(`🎉 [${new Date().toLocaleString()}] Multipart upload completed successfully`);
+                } catch (completeError) {
+                    console.error(`💥 [${new Date().toLocaleString()}] Complete multipart upload failed:`, {
+                        error: completeError,
+                        params: completeParams,
+                        uploadId: multipart.UploadId,
+                        partsCount: sortedParts.length,
+                        firstPart: sortedParts[0],
+                        lastPart: sortedParts[sortedParts.length - 1]
+                    });
+                    throw completeError;
+                }
             } catch (error) {
                 console.error(`💥 [${new Date().toLocaleString()}] Multipart upload failed with error:`, error);
                 await cleanupIncompleteMultipartUploads(s3, bucketName);
