@@ -1,4 +1,4 @@
-console.log(`v20250201-11:36`);
+console.log(`v20250201-11:45`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1577,67 +1577,45 @@ async function importFromS3() {
             const cloudDate = new Date(cloudLastModified);
             
             try {
-                // First try using the built-in date parser
-                const localSyncDate = new Date(lastSync);
+                // First try using ISO format conversion to ensure consistent parsing
+                const [datePart, timePart] = lastSync.split(', ');
+                let localSyncDate;
+                
+                // Handle different date formats
+                if (datePart.includes('/')) {
+                    // US format: MM/DD/YYYY
+                    const [month, day, year] = datePart.split('/').map(num => parseInt(num));
+                    const [time, period] = timePart.split(' ');
+                    const [hours, minutes, seconds] = time.split(':').map(num => parseInt(num));
+                    
+                    // Convert to 24-hour format if needed
+                    let hour = hours;
+                    if (period) {
+                        if (period.toUpperCase() === 'PM' && hour !== 12) hour += 12;
+                        else if (period.toUpperCase() === 'AM' && hour === 12) hour = 0;
+                    }
+                    
+                    localSyncDate = new Date(year, month - 1, day, hour, minutes, seconds);
+                } else {
+                    // Try parsing as ISO format
+                    localSyncDate = new Date(lastSync);
+                }
                 
                 // Verify if the date is valid
                 if (!isNaN(localSyncDate.getTime())) {
                     const diffInMilliseconds = Math.abs(cloudDate - localSyncDate);
                     const diffInHours = diffInMilliseconds / (1000 * 60 * 60);
                     
-                    console.log(`🕒 Time comparison (using system format):
+                    console.log(`🕒 Time comparison:
     Last Sync: ${localSyncDate.toISOString()}
     Cloud Modified: ${cloudDate.toISOString()}
-    Difference: ${diffInHours.toFixed(2)} hours`);
+    Difference: ${diffInHours.toFixed(2)} hours
+    Local Format: ${lastSync}`);
                     
                     return diffInHours > 24;
                 }
                 
-                // If built-in parser fails, try manual parsing
-                const [datePart, timePart] = lastSync.split(', ');
-                
-                // Try to determine date format based on the separators
-                let day, month, year;
-                if (datePart.includes('/')) {
-                    [month, day, year] = datePart.split('/').map(num => parseInt(num));
-                } else if (datePart.includes('-')) {
-                    [year, month, day] = datePart.split('-').map(num => parseInt(num));
-                } else if (datePart.includes('.')) {
-                    [day, month, year] = datePart.split('.').map(num => parseInt(num));
-                } else {
-                    throw new Error('Unrecognized date format');
-                }
-                
-                // Parse time part
-                const [time, period] = timePart.trim().split(' ');
-                const [hours, minutes, seconds] = time.split(':').map(num => parseInt(num));
-                
-                // Convert to 24-hour format if needed
-                let hour = hours;
-                if (period) {  // If period exists (12-hour format)
-                    if (period.toUpperCase() === 'PM' && hour !== 12) hour += 12;
-                    else if (period.toUpperCase() === 'AM' && hour === 12) hour = 0;
-                }
-                
-                // Create date object
-                const parsedLocalSyncDate = new Date(
-                    year,
-                    month - 1,
-                    day,
-                    hour,
-                    minutes,
-                    seconds
-                );
-                
-                const diffInMilliseconds = Math.abs(cloudDate - parsedLocalSyncDate);
-                const diffInHours = diffInMilliseconds / (1000 * 60 * 60);
-                
-                console.log(`🕒 Time comparison (using manual parsing):
-    Last Sync: ${parsedLocalSyncDate.toISOString()}
-    Cloud Modified: ${cloudDate.toISOString()}
-    Difference: ${diffInHours.toFixed(2)} hours`);
-                
-                return diffInHours > 24;
+                throw new Error('Invalid date format');
                 
             } catch (error) {
                 console.error(`❌ Error parsing dates:`, error);
@@ -2152,10 +2130,12 @@ async function cleanupIncompleteMultipartUploads(s3, bucketName) {
 function showCustomAlert(message, title = 'Alert', buttons = [{text: 'OK', primary: true}]) {
     return new Promise((resolve) => {
         const modal = document.createElement('div');
-        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[70] flex items-center justify-center p-4';
+        // Increase z-index and ensure pointer-events work
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[999] flex items-center justify-center p-4';
+        modal.style.touchAction = 'auto'; // Enable touch events
         
         const dialog = document.createElement('div');
-        dialog.className = 'bg-white dark:bg-zinc-900 rounded-lg max-w-md w-full p-6 shadow-xl';
+        dialog.className = 'bg-white dark:bg-zinc-900 rounded-lg max-w-md w-full p-6 shadow-xl relative'; // Added relative positioning
         
         const titleElement = document.createElement('h3');
         titleElement.className = 'text-lg font-semibold mb-4 text-gray-900 dark:text-white';
@@ -2170,14 +2150,26 @@ function showCustomAlert(message, title = 'Alert', buttons = [{text: 'OK', prima
         
         buttons.forEach(button => {
             const btn = document.createElement('button');
-            btn.className = button.primary ? 
+            // Add explicit cursor pointer and touch handling styles
+            btn.className = `${button.primary ? 
                 'px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700' :
-                'px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300';
+                'px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300'} 
+                cursor-pointer touch-manipulation`;
+            btn.style.WebkitTapHighlightColor = 'transparent'; // Remove tap highlight on mobile
+            btn.style.userSelect = 'none'; // Prevent text selection
             btn.textContent = button.text;
-            btn.onclick = () => {
+            
+            // Add both click and touch events
+            const handleClick = (e) => {
+                e.preventDefault(); // Prevent any default behavior
+                e.stopPropagation(); // Stop event bubbling
                 modal.remove();
                 resolve(button.value !== undefined ? button.value : button.text === 'OK');
             };
+            
+            btn.addEventListener('click', handleClick, { passive: false });
+            btn.addEventListener('touchend', handleClick, { passive: false });
+            
             buttonContainer.appendChild(btn);
         });
         
@@ -2185,6 +2177,27 @@ function showCustomAlert(message, title = 'Alert', buttons = [{text: 'OK', prima
         dialog.appendChild(messageElement);
         dialog.appendChild(buttonContainer);
         modal.appendChild(dialog);
+        
+        // Prevent background scrolling when modal is open
+        document.body.style.overflow = 'hidden';
+        
+        // Restore scrolling when modal is closed
+        const cleanup = () => {
+            document.body.style.overflow = '';
+        };
+        
+        // Attach cleanup to modal removal
+        modal.addEventListener('remove', cleanup);
+        
         document.body.appendChild(modal);
+        
+        // Prevent modal background clicks from closing on mobile
+        modal.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+        }, { passive: false });
+        
+        dialog.addEventListener('touchmove', (e) => {
+            e.stopPropagation();
+        }, { passive: true });
     });
 }
