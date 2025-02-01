@@ -1,9 +1,10 @@
-logToConsole('info', 'Typingmind cloud backup version 20250202-09:04');
+logToConsole('info', 'Typingmind cloud backup version 20250202-09:08');
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
 let isImportInProgress = false;
 let isSnapshotInProgress = false;
+let isConsoleLoggingEnabled = false;
 const TIME_BACKUP_INTERVAL = 15;
 const TIME_BACKUP_FILE_PREFIX = `T-${TIME_BACKUP_INTERVAL}`;
 
@@ -12,7 +13,6 @@ const awsSdkPromise = loadAwsSdk();
 let isPageFullyLoaded = false;
 let backupInterval = null;
 let isWaitingForUserInput = false;
-let isConsoleLoggingEnabled = false;
 
 (async function checkDOMOrRunBackup() {
 	await awsSdkPromise;
