@@ -14,25 +14,35 @@
 - Allows you to view all the backups in the cloud and lets you download it or restore from the UI itself. The snapshot backups can be deleted from the UI as well.
 - The backup interval is now configurable (Minimum of 15 seconds).
 - ✨ All backups are now encrypted! The backup system uses AES-GCM encryption with a 256-bit key derived using PBKDF2. All data is encrypted client-side before being uploaded to S3. The encryption key is derived from a user-provided password using 100,000 PBKDF2 iterations with SHA-256, providing strong protection for sensitive data.
-- ✨ The system includes several safeguards to prevent unintended data loss:
-    - Size comparison with 0.1% tolerance for files >1MB and 2-byte tolerance for smaller files
-    - Timestamp comparison to detect potential conflicts
-    - Cloud-vs-local size verification to prevent smaller backups overwriting larger datasets
-    - User prompts with detailed information when significant differences are detected
-    - Backup size, modification time, and percentage difference displayed before risky operations
+- ✨ The system includes several safeguards to prevent unintended data loss.
+    - Cloud-vs-local data Size comparison with 1% tolerance when cloud data size > local data size
+    - Cloud-vs-local size verification to prevent smaller cloud backups overwriting larger local data
+    - User confirmation prompts with detailed information when significant differences are detected
   
 ## Using this extension
 WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXPORT" before setting up the extension.
 1. Logout of Typingmind
 2. Load "https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js" into Menu > Preferences > Extension in Typingmind.
 3. Once the extension is installed, a new Backup button will be added to the menu. Clicking on this will bring up the S3 backup configuration form.
-4. Provide the AWS details in the form. [These are stored locally in your browser]
-5. The save button checks if there is a backup already in S3, if yes it restores it and updates the local typingmind instance.
-6. Manually refresh the page to reflect the new data. CTRL + F5 if it does not.
-7. If there is no backup in S3, it is expected that you click on the "Export to S3" button in the configuration form to kickstart the backup process.
-8. You can do on demand cloud backups and restore using the respective buttons in the form - "Export to S3" and "Import from S3".
-9. Full backup to S3 is performed every minute automatically.
-10. Whenever the page is loaded, it pulls the latest backed up version from S3 and refreshes the data. You may need to do a Ctrl + F5 (Force refresh) to make it reflect in the UI.
+4. Provide the AWS details in the configuration form. [These are stored locally in your browser]
+   - Bucket Name
+   - Region - Give the region where your bucket resides. For Cloudflare R2, give 'auto'
+   - Access Key
+   - Secret Key
+   - S3 Compatible Storage Endpoint - If you are using AWS S3, skip this. For S3 compatible endpoints (Cloudflare, iDrive etc), you should provide a value here.
+   - Backup Interval - Minimum is 15 seconds, default is 60 seconds.
+   - Encryption Key - This is to encrypt your app data before saving to the cloud. Provide a 8 or more character long key. You will need this key for encrypting the backed up data. So ensure you remember this.
+6. The save button checks if there is a backup already in S3, if yes it tries to restores the local app data using the cloud data. There are some rules implemented to prevent unintended corruption of data. In such detections, the extension will prompt you to confirm data import. When you are prompted, you should know which data is the latest... If cloud is having the latest data and you want your local app data to be synced with the cloud, you click on Proceed. When you do this, you local app data is overwritten with the cloud backup data. Whereas, if you know that the local app data is more recent and should not be overwritten with the cloud data, then click on Cancel. Note that when you click cancel, the local app data will be pushed to the cloud to ensure cloud is in sync. 
+7. Manually refresh the page to reflect the new data. CTRL + F5 if it does not.
+8. Full backup to S3 is performed as per configured Backup interval automatically.
+9. If there is no backup in S3, it is expected that you click on the "Export" button in the extension configuration form to kickstart the backup process.
+10. You can do on demand cloud backups and restore using the respective buttons in the form - "Export" and "Import". Clicking on Export pushes the local app data to the cloud. Import overwrites the local app data with the cloud data. 
+11. To create a 'no-touch' backup of the app data, you can click on 'Snapshot'. It will create a data snapshot at that particular instance.
+12. Whenever the page is loaded, it pulls the latest backed up version from S3 and refreshes the data. You may need to do a Ctrl + F5 (Force refresh) to make it reflect in the UI.
+13. In the Available backups section, all the available backups in the cloud are listed. You can choose to select any of them and then either
+    - Download
+    - Restore
+    - Delete
 
 ## AWS Config
 1. Create a user in Amazon IAM. In permissions option, select "Add user to group" but don't select any group. In next screen, "Create user".
