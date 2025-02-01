@@ -1,4 +1,4 @@
-console.log(`v20250201-11:59`);
+console.log(`v20250201-16:55`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -2156,21 +2156,20 @@ function showCustomAlert(message, title = 'Alert', buttons = [{text: 'OK', prima
         
         buttons.forEach(button => {
             const btn = document.createElement('button');
-            // Add explicit cursor pointer and touch handling styles
             btn.className = `${button.primary ? 
                 'px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700' :
                 'px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300'} 
                 cursor-pointer touch-manipulation`;
-            btn.style.WebkitTapHighlightColor = 'transparent'; // Remove tap highlight on mobile
-            btn.style.userSelect = 'none'; // Prevent text selection
+            btn.style.WebkitTapHighlightColor = 'transparent';
+            btn.style.userSelect = 'none';
             btn.textContent = button.text;
             
-            // Add both click and touch events
             const handleClick = (e) => {
-                e.preventDefault(); // Prevent any default behavior
-                e.stopPropagation(); // Stop event bubbling
+                e.preventDefault();
+                e.stopPropagation();
                 modal.remove();
-                resolve(button.value !== undefined ? button.value : button.text === 'OK');
+                // Fix: Return true for 'Proceed' and false for 'Cancel'
+                resolve(button.text === 'Proceed' || button.text === 'OK');
             };
             
             btn.addEventListener('click', handleClick, { passive: false });
