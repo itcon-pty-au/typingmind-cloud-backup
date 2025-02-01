@@ -1,4 +1,4 @@
-console.log(`v20250201-16:55`);
+console.log(`v20250201-18:31`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1716,10 +1716,17 @@ async function importFromS3() {
         }
         console.log(`✅ [${new Date().toLocaleString()}] Import completed successfully`);
         wasImportSuccessful = true;
+
+        // After successful import, restart backup interval
+        console.log(`▶️ [${new Date().toLocaleString()}] Resuming backup interval after successful import`);
+        startBackupInterval();
         return true;
     } catch (error) {
         console.error(`❌ [${new Date().toLocaleString()}] Import failed with error:`, error);
-        throw error; // Re-throw to maintain existing error handling
+        // Resume backup interval on error
+        console.log(`▶️ [${new Date().toLocaleString()}] Resuming backup interval after import error`);
+        startBackupInterval();
+        throw error;
     }
 }
 
@@ -1984,9 +1991,12 @@ async function encryptData(data) {
 
     if (!encryptionKey) {
         console.log(`⚠️ [${new Date().toLocaleString()}] No encryption key found`);
-        clearInterval(backupInterval);
-        backupIntervalRunning = false;
-        localStorage.setItem('activeTabBackupRunning', 'false');
+        // Stop backup interval before showing alert
+        if (backupIntervalRunning) {
+            clearInterval(backupInterval);
+            backupIntervalRunning = false;
+            localStorage.setItem('activeTabBackupRunning', 'false');
+        }
         wasImportSuccessful = false;  // Prevent new backup attempts
         
         await showCustomAlert('Please configure an encryption key in the backup settings before proceeding.', 'Configuration Required');
@@ -2051,9 +2061,12 @@ async function decryptData(data) {
     const encryptionKey = localStorage.getItem('encryption-key');
     if (!encryptionKey) {
         console.error(`❌ [${new Date().toLocaleString()}] Encrypted data found but no key provided`);
-        clearInterval(backupInterval);
-        backupIntervalRunning = false;
-        localStorage.setItem('activeTabBackupRunning', 'false');
+        // Stop backup interval before showing alert
+        if (backupIntervalRunning) {
+            clearInterval(backupInterval);
+            backupIntervalRunning = false;
+            localStorage.setItem('activeTabBackupRunning', 'false');
+        }
         wasImportSuccessful = false;  // Prevent new backup attempts
         
         await showCustomAlert('Please configure your encryption key in the backup settings before proceeding.', 'Configuration Required');
