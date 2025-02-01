@@ -1,4 +1,4 @@
-console.log(`v20250201-22:23`);
+console.log(`v20250201-23:12`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1686,7 +1686,7 @@ async function importFromS3() {
                 
                 message += '\nDo you want to proceed with importing the cloud backup? Clicking "Proceed" will overwrite your local data. If you "Cancel", the local data will overwrite the cloud backup.';
 
-                const shouldProceed = await showCustomAlert(message, 'Warning', [
+                const shouldProceed = await showCustomAlert(message, 'Confirmation required', [
                     {text: 'Cancel', primary: false},
                     {text: 'Proceed', primary: true}
                 ]);
