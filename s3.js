@@ -1,4 +1,4 @@
-console.log(`v20250201-18:52`);
+console.log(`v20250201-18:57`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -18,6 +18,9 @@ let isPageFullyLoaded = false;
 
 // At the top of file with other global variables
 let backupInterval = null; // Add this if not already present
+
+// Add a new flag at the top of the file with other flags
+let isWaitingForUserInput = false;
 
 (async function checkDOMOrRunBackup() {
 	// Start loading AWS SDK immediately
@@ -1078,47 +1081,53 @@ async function restoreBackupFile() {
 
 // Function to start the backup interval
 function startBackupInterval() {
-	console.log(`🕒 [${new Date().toLocaleString()}] Starting backup interval...`);
-	
-	// Clear any existing interval first
-	if (backupIntervalRunning) {
-		console.log(`🔄 [${new Date().toLocaleString()}] Clearing existing interval`);
-		clearInterval(backupInterval);
-		backupIntervalRunning = false;
-	}
-	
-	// Reset the active tab flag before checking
-	localStorage.setItem('activeTabBackupRunning', 'false');
-	
-	// Small delay to ensure flag is reset across all tabs
-	setTimeout(() => {
-		// Set flag for this tab
-		localStorage.setItem('activeTabBackupRunning', 'true');
-		
-		const configuredInterval = parseInt(localStorage.getItem('backup-interval')) || 60;
-		const intervalInMilliseconds = Math.max(configuredInterval * 1000, 15000); // Minimum 15 seconds
-		
-		console.log(`ℹ️ [${new Date().toLocaleString()}] Setting backup interval to ${intervalInMilliseconds/1000} seconds`);
-		
-		backupIntervalRunning = true;
-		
-		// Initial backup
-		performBackup();
-		
-		// Start a new interval and store the interval ID
-		backupInterval = setInterval(() => {
-			console.log(`⏰ [${new Date().toLocaleString()}] Interval triggered`);
-			performBackup();
-		}, intervalInMilliseconds);
-		
-		// Add a check to ensure interval is running
-		setTimeout(() => {
-			if (!backupIntervalRunning) {
-				console.log(`🔄 [${new Date().toLocaleString()}] Backup interval stopped, restarting...`);
-				startBackupInterval();
-			}
-		}, intervalInMilliseconds + 1000);
-	}, 100); // Small delay to ensure clean state
+    // Don't start interval if waiting for user input
+    if (isWaitingForUserInput) {
+        console.log(`⏸️ [${new Date().toLocaleString()}] Skipping interval start - waiting for user input`);
+        return;
+    }
+
+    console.log(`🕒 [${new Date().toLocaleString()}] Starting backup interval...`);
+    
+    // Clear any existing interval first
+    if (backupIntervalRunning) {
+        console.log(`🔄 [${new Date().toLocaleString()}] Clearing existing interval`);
+        clearInterval(backupInterval);
+        backupIntervalRunning = false;
+        backupInterval = null;
+    }
+    
+    // Reset the active tab flag before checking
+    localStorage.setItem('activeTabBackupRunning', 'false');
+    
+    // Small delay to ensure flag is reset across all tabs
+    setTimeout(() => {
+        // Don't proceed if user input is pending
+        if (isWaitingForUserInput) {
+            return;
+        }
+
+        // Set flag for this tab
+        localStorage.setItem('activeTabBackupRunning', 'true');
+        
+        const configuredInterval = parseInt(localStorage.getItem('backup-interval')) || 60;
+        const intervalInMilliseconds = Math.max(configuredInterval * 1000, 15000); // Minimum 15 seconds
+        
+        console.log(`ℹ️ [${new Date().toLocaleString()}] Setting backup interval to ${intervalInMilliseconds/1000} seconds`);
+        
+        backupIntervalRunning = true;
+        
+        // Initial backup
+        performBackup();
+        
+        // Start a new interval and store the interval ID
+        backupInterval = setInterval(() => {
+            console.log(`⏰ [${new Date().toLocaleString()}] Interval triggered`);
+            performBackup();
+        }, intervalInMilliseconds);
+        
+        // Remove the auto-restart check since we have better control now
+    }, 100);
 }
 
 // Function to perform backup
@@ -1636,45 +1645,55 @@ async function importFromS3() {
         if (shouldPrompt) {
             console.log(`⚠️ [${new Date().toLocaleString()}] Showing prompt to user...`);
             
-            // Stop backup interval while waiting for user input
-            if (backupInterval) {  // Check for interval directly
+            // Set waiting flag and stop interval
+            isWaitingForUserInput = true;
+            if (backupInterval) {
                 console.log(`⏸️ [${new Date().toLocaleString()}] Pausing backup interval while waiting for user input`);
                 clearInterval(backupInterval);
-                backupInterval = null;  // Clear the interval reference
+                backupInterval = null;
                 backupIntervalRunning = false;
             }
 
-            let message = `Warning: Potential data mismatch detected!\n\n`;
-            message += `Cloud backup size: ${cloudFileSize || 'Unknown'} bytes\n`;
-            message += `Local data size: ${localFileSize} bytes\n`;
-            if (cloudFileSize) {
-                message += `Size difference: ${sizeDiffPercentage.toFixed(2)}%\n\n`;
-            }
-            
-            // Add specific warnings based on what triggered the prompt
-            if (cloudFileSize && cloudFileSize < localFileSize) {
-                message += '⚠️ Cloud backup is smaller than local data\n';
-            }
-            if (cloudFileSize && sizeDiffPercentage > 1) {
-                message += '⚠️ Size difference exceeds 1%\n';
-            }
-            
-            message += '\nDo you want to proceed with importing the cloud backup? This will overwrite your local data.';
+            try {
+                let message = `Warning: Potential data mismatch detected!\n\n`;
+                message += `Cloud backup size: ${cloudFileSize || 'Unknown'} bytes\n`;
+                message += `Local data size: ${localFileSize} bytes\n`;
+                if (cloudFileSize) {
+                    message += `Size difference: ${sizeDiffPercentage.toFixed(2)}%\n\n`;
+                }
+                
+                // Add specific warnings based on what triggered the prompt
+                if (cloudFileSize && cloudFileSize < localFileSize) {
+                    message += '⚠️ Cloud backup is smaller than local data\n';
+                }
+                if (cloudFileSize && sizeDiffPercentage > 1) {
+                    message += '⚠️ Size difference exceeds 1%\n';
+                }
+                
+                message += '\nDo you want to proceed with importing the cloud backup? This will overwrite your local data.';
 
-            const shouldProceed = await showCustomAlert(message, 'Warning', [
-                {text: 'Cancel', primary: false},
-                {text: 'Proceed', primary: true}
-            ]);
+                const shouldProceed = await showCustomAlert(message, 'Warning', [
+                    {text: 'Cancel', primary: false},
+                    {text: 'Proceed', primary: true}
+                ]);
 
-            if (!shouldProceed) {
-                console.log(`ℹ️ [${new Date().toLocaleString()}] Import cancelled by user`);
-                // Resume backup interval if user cancels
-                console.log(`▶️ [${new Date().toLocaleString()}] Resuming backup interval after user cancelled`);
-                startBackupInterval();
-                return false;
+                if (!shouldProceed) {
+                    console.log(`ℹ️ [${new Date().toLocaleString()}] Import cancelled by user`);
+                    isWaitingForUserInput = false;  // Reset waiting flag
+                    // Resume backup interval if user cancels
+                    console.log(`▶️ [${new Date().toLocaleString()}] Resuming backup interval after user cancelled`);
+                    startBackupInterval();
+                    return false;
+                }
+                
+                // If user proceeds, continue with import
+                isWaitingForUserInput = false;  // Reset waiting flag
+                // Backup interval will be restarted after successful import
+            } catch (error) {
+                // Make sure to reset the flag even if there's an error
+                isWaitingForUserInput = false;
+                throw error;
             }
-            
-            // If user proceeds, backup interval will be restarted after successful import
         }
 
         console.log(`📥 [${new Date().toLocaleString()}] Fetching data from S3...`);
