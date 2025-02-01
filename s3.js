@@ -1,4 +1,4 @@
-console.log(`v20250201-11:35`);
+console.log(`v20250201-11:36`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1576,41 +1576,74 @@ async function importFromS3() {
             
             const cloudDate = new Date(cloudLastModified);
             
-            // Parse lastSync string properly
-            const [datePart, timePart] = lastSync.split(', ');
-            const [month, day, year] = datePart.split('/');
-            const [time, period] = timePart.split(' ');
-            const [hours, minutes, seconds] = time.split(':');
-            
-            // Convert 12-hour format to 24-hour
-            let hour = parseInt(hours);
-            if (period === 'PM' && hour !== 12) {
-                hour += 12;
-            } else if (period === 'AM' && hour === 12) {
-                hour = 0;
-            }
-            
-            // Create date object with correct timezone
-            const localSyncDate = new Date(
-                parseInt(year),
-                parseInt(month) - 1, // Month is 0-based
-                parseInt(day),
-                hour,
-                parseInt(minutes),
-                parseInt(seconds)
-            );
-            
-            // Calculate difference in hours
-            const diffInMilliseconds = Math.abs(cloudDate - localSyncDate);
-            const diffInHours = diffInMilliseconds / (1000 * 60 * 60);
-            
-            console.log(`🕒 Time comparison:
+            try {
+                // First try using the built-in date parser
+                const localSyncDate = new Date(lastSync);
+                
+                // Verify if the date is valid
+                if (!isNaN(localSyncDate.getTime())) {
+                    const diffInMilliseconds = Math.abs(cloudDate - localSyncDate);
+                    const diffInHours = diffInMilliseconds / (1000 * 60 * 60);
+                    
+                    console.log(`🕒 Time comparison (using system format):
     Last Sync: ${localSyncDate.toISOString()}
     Cloud Modified: ${cloudDate.toISOString()}
     Difference: ${diffInHours.toFixed(2)} hours`);
-            
-            // Only return true if difference is actually more than 24 hours
-            return diffInHours > 24;
+                    
+                    return diffInHours > 24;
+                }
+                
+                // If built-in parser fails, try manual parsing
+                const [datePart, timePart] = lastSync.split(', ');
+                
+                // Try to determine date format based on the separators
+                let day, month, year;
+                if (datePart.includes('/')) {
+                    [month, day, year] = datePart.split('/').map(num => parseInt(num));
+                } else if (datePart.includes('-')) {
+                    [year, month, day] = datePart.split('-').map(num => parseInt(num));
+                } else if (datePart.includes('.')) {
+                    [day, month, year] = datePart.split('.').map(num => parseInt(num));
+                } else {
+                    throw new Error('Unrecognized date format');
+                }
+                
+                // Parse time part
+                const [time, period] = timePart.trim().split(' ');
+                const [hours, minutes, seconds] = time.split(':').map(num => parseInt(num));
+                
+                // Convert to 24-hour format if needed
+                let hour = hours;
+                if (period) {  // If period exists (12-hour format)
+                    if (period.toUpperCase() === 'PM' && hour !== 12) hour += 12;
+                    else if (period.toUpperCase() === 'AM' && hour === 12) hour = 0;
+                }
+                
+                // Create date object
+                const parsedLocalSyncDate = new Date(
+                    year,
+                    month - 1,
+                    day,
+                    hour,
+                    minutes,
+                    seconds
+                );
+                
+                const diffInMilliseconds = Math.abs(cloudDate - parsedLocalSyncDate);
+                const diffInHours = diffInMilliseconds / (1000 * 60 * 60);
+                
+                console.log(`🕒 Time comparison (using manual parsing):
+    Last Sync: ${parsedLocalSyncDate.toISOString()}
+    Cloud Modified: ${cloudDate.toISOString()}
+    Difference: ${diffInHours.toFixed(2)} hours`);
+                
+                return diffInHours > 24;
+                
+            } catch (error) {
+                console.error(`❌ Error parsing dates:`, error);
+                // If we can't parse the date properly, return false to avoid false positives
+                return false;
+            }
         };
 
         //console.log(`🔍 [${new Date().toLocaleString()}] Checking if prompt needed...`);
