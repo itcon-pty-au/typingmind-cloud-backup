@@ -1,4 +1,4 @@
-console.log(`v20250201-11:59`);
+console.log(`v20250201-07:12`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1633,6 +1633,14 @@ async function importFromS3() {
 
         if (shouldPrompt) {
             console.log(`⚠️ [${new Date().toLocaleString()}] Showing prompt to user...`);
+            
+            // Stop backup interval while waiting for user input
+            if (backupIntervalRunning) {
+                console.log(`⏸️ [${new Date().toLocaleString()}] Pausing backup interval while waiting for user input`);
+                clearInterval(backupInterval);
+                backupIntervalRunning = false;
+            }
+
             let message = `Warning: Potential data mismatch detected!\n\n`;
             message += `Cloud backup size: ${cloudFileSize || 'Unknown'} bytes\n`;
             message += `Local data size: ${localFileSize} bytes\n`;
@@ -1657,8 +1665,13 @@ async function importFromS3() {
 
             if (!shouldProceed) {
                 console.log(`ℹ️ [${new Date().toLocaleString()}] Import cancelled by user`);
+                // Resume backup interval if user cancels
+                console.log(`▶️ [${new Date().toLocaleString()}] Resuming backup interval after user cancelled`);
+                startBackupInterval();
                 return false;
             }
+            
+            // If user proceeds, backup interval will be restarted after successful import
         }
 
         console.log(`📥 [${new Date().toLocaleString()}] Fetching data from S3...`);
