@@ -1,4 +1,4 @@
-console.log(`v20250201-10:52`);
+console.log(`v20250201-11:09`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1575,18 +1575,18 @@ async function importFromS3() {
             }
             
             const lastSyncDate = new Date(lastSync);
-            const cloudDate = new Date(cloudLastModified);  // Use the timestamp from getObject
-            const diffInMinutes = Math.abs(cloudDate - lastSyncDate) / (1000 * 60);
+            const cloudDate = new Date(cloudLastModified);
+            const diffInHours = Math.abs(cloudDate - lastSyncDate) / (1000 * 60 * 60);
             
-            console.log(`ℹ️ Time difference: ${diffInMinutes.toFixed(2)} minutes`);
-            return diffInMinutes > 2;
+            console.log(`ℹ️ Time difference: ${diffInHours.toFixed(2)} hours`);
+            // Changed to check for 24 hours (1 day) difference
+            return diffInHours > 24;
         };
 
         //console.log(`🔍 [${new Date().toLocaleString()}] Checking if prompt needed...`);
         const shouldPrompt = localFileSize > 0 && (
             isCloudSmallerThanLocal || 
-            !isWithinSizeTolerance || 
-            sizeDiffPercentage > 1 || 
+            sizeDiffPercentage > 1 ||  // Changed to match 1% threshold
             isTimeDifferenceSignificant()
         );
         console.log(`📢 Should prompt user: ${shouldPrompt}`);
@@ -1600,19 +1600,18 @@ async function importFromS3() {
                 message += `Size difference: ${sizeDiffPercentage.toFixed(2)}%\n\n`;
             }
             message += `Local last sync: ${lastSync || 'Never'}\n`;
-            // Create cloudDate from cloudLastModified
             const cloudDate = new Date(cloudLastModified);
             message += `Cloud last modified: ${cloudDate.toLocaleString()}\n\n`;
             
             // Add specific warnings based on what triggered the prompt
-            if (cloudFileSize && cloudFileSize < localFileSize && !isWithinSizeTolerance) {
+            if (cloudFileSize && cloudFileSize < localFileSize) {
                 message += '⚠️ Cloud backup is smaller than local data\n';
             }
-            if (cloudFileSize && sizeDiffPercentage > 10) {
-                message += '⚠️ Significant size difference detected\n';
+            if (cloudFileSize && sizeDiffPercentage > 1) {
+                message += '⚠️ Size difference exceeds 1%\n';
             }
             if (isTimeDifferenceSignificant()) {
-                    message += '⚠️ Timestamp mismatch detected\n';
+                message += '⚠️ Time difference exceeds 24 hours\n';
             }
             
             message += '\nDo you want to proceed with importing the cloud backup? This will overwrite your local data.';
