@@ -1,4 +1,4 @@
-console.log(`v20250201-11:27`);
+console.log(`v20250201-11:35`);
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1574,33 +1574,42 @@ async function importFromS3() {
                 return false;
             }
             
-            const lastSyncDate = new Date(lastSync);
             const cloudDate = new Date(cloudLastModified);
             
-            // Add debug logging
-            console.log(`🕒 Time comparison:
-    Last Sync: ${lastSyncDate.toISOString()}
-    Cloud Modified: ${cloudDate.toISOString()}`);
-            
-            // Convert lastSync from locale string to Date properly
+            // Parse lastSync string properly
             const [datePart, timePart] = lastSync.split(', ');
             const [month, day, year] = datePart.split('/');
             const [time, period] = timePart.split(' ');
             const [hours, minutes, seconds] = time.split(':');
             
+            // Convert 12-hour format to 24-hour
+            let hour = parseInt(hours);
+            if (period === 'PM' && hour !== 12) {
+                hour += 12;
+            } else if (period === 'AM' && hour === 12) {
+                hour = 0;
+            }
+            
             // Create date object with correct timezone
-            let properLastSyncDate = new Date(
-                year,
-                parseInt(month) - 1,
-                day,
-                period === 'PM' ? parseInt(hours) + 12 : parseInt(hours),
-                minutes,
-                seconds
+            const localSyncDate = new Date(
+                parseInt(year),
+                parseInt(month) - 1, // Month is 0-based
+                parseInt(day),
+                hour,
+                parseInt(minutes),
+                parseInt(seconds)
             );
             
-            const diffInHours = Math.abs(cloudDate - properLastSyncDate) / (1000 * 60 * 60);
+            // Calculate difference in hours
+            const diffInMilliseconds = Math.abs(cloudDate - localSyncDate);
+            const diffInHours = diffInMilliseconds / (1000 * 60 * 60);
             
-            console.log(`ℹ️ Time difference: ${diffInHours.toFixed(2)} hours`);
+            console.log(`🕒 Time comparison:
+    Last Sync: ${localSyncDate.toISOString()}
+    Cloud Modified: ${cloudDate.toISOString()}
+    Difference: ${diffInHours.toFixed(2)} hours`);
+            
+            // Only return true if difference is actually more than 24 hours
             return diffInHours > 24;
         };
 
