@@ -1,4 +1,4 @@
-const VERSION = '20250203-09:40';
+const VERSION = '20250203-09:56';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -206,40 +206,48 @@ function openSyncModal() {
                             <div class="space-y-4">
                                 <div class="flex space-x-4">
                                     <div class="w-2/3">
-                                        <label for="aws-bucket" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Bucket Name</label>
+                                        <label for="aws-bucket" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Bucket Name <span class="text-red-500">*</span></label>
                                         <input id="aws-bucket" name="aws-bucket" type="text" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                     </div>
                                     <div class="w-1/3">
-                                        <label for="aws-region" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Region</label>
+                                        <label for="aws-region" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Region <span class="text-red-500">*</span></label>
                                         <input id="aws-region" name="aws-region" type="text" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                     </div>
                                 </div>
                                 <div>
-                                    <label for="aws-access-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Access Key</label>
+                                    <label for="aws-access-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Access Key <span class="text-red-500">*</span></label>
                                     <input id="aws-access-key" name="aws-access-key" type="password" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                 </div>
                                 <div>
-                                    <label for="aws-secret-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Secret Key</label>
+                                    <label for="aws-secret-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Secret Key <span class="text-red-500">*</span></label>
                                     <input id="aws-secret-key" name="aws-secret-key" type="password" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                 </div>
                                 <div>
-                                    <label for="aws-endpoint" class="block text-sm font-medium text-gray-700 dark:text-gray-400">S3 Compatible Storage Endpoint (Optional)</label>
+                                    <label for="aws-endpoint" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
+                                        <span class="relative group cursor-pointer">
+                                            <span class="text-xs">ℹ</span>
+                                            <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 w-64 bg-black text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
+                                                For Amazon AWS, leave this blank. For S3 compatible cloud services like Cloudflare, iDrive and the likes, populate this.
+                                            </div>
+                                        </span>
+                                        S3 Compatible Storage Endpoint
+                                    </label>
                                     <input id="aws-endpoint" name="aws-endpoint" type="text" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off">
                                 </div>
                                 <div class="flex space-x-4">
                                     <div class="w-1/2">
-                                        <label for="backup-interval" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Backup Interval (sec)</label>
+                                        <label for="backup-interval" placeholder="Default: 60" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Backup Interval (sec)</label>
                                         <input id="backup-interval" name="backup-interval" type="number" min="30" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                     </div>
                                     <div class="w-1/2">
                                         <label for="encryption-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
-                                            Encryption Key
-                                            <span class="ml-1 relative group cursor-pointer">
+                                            <span class="relative group cursor-pointer">
                                                 <span class="text-xs">ℹ</span>
                                                 <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 w-64 bg-black text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
                                                     Choose a secure 8+ character string. This is to encrypt the backup file before uploading to cloud. Securely store this somewhere as you will need this to restore backup from cloud.
                                                 </div>
                                             </span>
+                                            Encryption Key <span class="text-red-500">*</span>
                                         </label>
                                         <input id="encryption-key" name="encryption-key" type="password" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                     </div>
@@ -274,7 +282,15 @@ function openSyncModal() {
                         </div>
                     </div>
                      <div class="flex items-center justify-end mb-4 space-x-2">
-                         <span class="text-sm text-gray-600 dark:text-gray-400">Console Logging</span>
+                         <span class="text-sm text-gray-600 dark:text-gray-400">
+                             <span class="relative group cursor-pointer">
+                                 <span class="text-xs">ℹ</span>
+                                 <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 w-64 bg-black text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
+                                     Use this to enable detailed logging in Browser console for troubleshooting purpose. Clicking on this button will instantly start logging. However, earlier events will not be logged. You could add ?log=true to the page URL and reload the page to start logging from the beginning of the page load.
+                                 </div>
+                             </span>
+                             Console Logging
+                         </span>
                          <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
                              <input type="checkbox" id="console-logging-toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"/>
                              <label for="console-logging-toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
