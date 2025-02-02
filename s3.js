@@ -1,4 +1,4 @@
-const VERSION = '20250203-10:21';
+const VERSION = '20250203-10:27';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -423,34 +423,6 @@ function openSyncModal() {
 	exportThresholdInput.addEventListener('input', updateButtonState);
 
 	updateButtonState();
-
-	const infoIcon = document.getElementById('info-icon');
-	const tooltip = document.getElementById('tooltip');
-
-	function showTooltip() {
-		tooltip.style.removeProperty('display');
-		tooltip.classList.add('opacity-100');
-		tooltip.classList.remove('z-1');
-		tooltip.classList.add('z-10');
-		tooltip.classList.remove('opacity-0');
-	}
-
-	function hideTooltip() {
-		tooltip.style.display = 'none';
-		tooltip.classList.add('opacity-0');
-		tooltip.classList.remove('z-10');
-		tooltip.classList.add('z-1');
-		tooltip.classList.remove('opacity-100');
-	}
-
-	infoIcon.addEventListener('click', () => {
-		const isVisible = tooltip.classList.contains('opacity-100');
-		if (isVisible) {
-			hideTooltip();
-		} else {
-			showTooltip();
-		}
-	});
 
 	document
 		.getElementById('backup-files')
