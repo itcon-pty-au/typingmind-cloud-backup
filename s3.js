@@ -1,4 +1,4 @@
-const VERSION = '20250203-10:51';
+const VERSION = '20250203-10:58';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -165,7 +165,7 @@ function openSyncModal() {
             <div class="text-gray-800 dark:text-white text-left text-sm max-h-[90vh] overflow-y-auto">
                 <div class="flex justify-center items-center mb-4">
                     <h3 class="text-center text-xl font-bold">Backup & Sync</h3>
-                    <button class="ml-2 text-blue-600 text-lg" onclick="showInfoModal('About Backup & Sync', 'Fill form & Save. If you are using Amazon S3 - fill in S3 Bucket Name, AWS Region, AWS Access Key, AWS Secret Key and Encryption key.<br/><br/>Initial backup: You will need to click on &quot;Export&quot; to create your first backup in S3. Thereafter, automatic backups are done to S3 as per Backup Interval if the browser tab is active.<br/><br/>Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the local data.<br/><br/>Adhoc Backup & Restore: Use the &quot;Export&quot; and &quot;Import&quot; to perform on-demand backup or restore. Note that this overwrites the main backup/local data.<br/><br/>Snapshot: Creates an instant &apos;no-touch&apos; backup that will not be overwritten.<br/><br/>Download: You can select the backup data to be download and click on Download button to download it for local storage.<br/><br/>Restore: Select the backup you want to restore and Click on Restore. The typingmind data will be restored to the selected backup data/date.')">ⓘ</button>
+                    <button class="ml-2 text-blue-600 text-lg" onclick='showInfoModal("About Backup & Sync", "Fill form & Save. If you are using Amazon S3 - fill in S3 Bucket Name, AWS Region, AWS Access Key, AWS Secret Key and Encryption key.<br/><br/>Initial backup: You will need to click on Export to create your first backup in S3. Thereafter, automatic backups are done to S3 as per Backup Interval if the browser tab is active.<br/><br/>Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the local data.<br/><br/>Adhoc Backup & Restore: Use the Export and Import to perform on-demand backup or restore. Note that this overwrites the main backup/local data.<br/><br/>Snapshot: Creates an instant no-touch backup that will not be overwritten.<br/><br/>Download: You can select the backup data to be download and click on Download button to download it for local storage.<br/><br/>Restore: Select the backup you want to restore and Click on Restore. The typingmind data will be restored to the selected backup data/date.")'>ⓘ</button>
                 </div>
                 <div class="space-y-4">
                     <div>
@@ -220,7 +220,7 @@ function openSyncModal() {
                                 <div>
                                     <label for="aws-endpoint" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
                                         S3 Compatible Storage Endpoint
-                                        <button class="ml-1 text-blue-600 text-lg" onclick="showInfoModal('S3 Compatible Storage', 'For Amazon AWS, leave this blank. For S3 compatible cloud services like Cloudflare, iDrive and the likes, populate this.')">ⓘ</button>
+                                        <button class="ml-1 text-blue-600 text-lg" onclick='showInfoModal("S3 Compatible Storage", "For Amazon AWS, leave this blank. For S3 compatible cloud services like Cloudflare, iDrive and the likes, populate this.")'>ⓘ</button>
                                     </label>
                                     <input id="aws-endpoint" name="aws-endpoint" type="text" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off">
                                 </div>
@@ -232,7 +232,7 @@ function openSyncModal() {
                                     <div class="w-1/2">
                                         <label for="encryption-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
                                             Encryption Key <span class="text-red-500">*</span>
-                                            <button class="ml-1 text-blue-600 text-lg" onclick="showInfoModal('Encryption Key', 'Choose a secure 8+ character string. This is to encrypt the backup file before uploading to cloud. Securely store this somewhere as you will need this to restore backup from cloud.')">ⓘ</button>
+                                            <button class="ml-1 text-blue-600 text-lg" onclick='showInfoModal("Encryption Key", "Choose a secure 8+ character string. This is to encrypt the backup file before uploading to cloud. Securely store this somewhere as you will need this to restore backup from cloud.")'>ⓘ</button>
                                         </label>
                                         <input id="encryption-key" name="encryption-key" type="password" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                     </div>
@@ -240,7 +240,7 @@ function openSyncModal() {
                                 <div class="mt-6 bg-gray-100 px-3 py-3 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
                                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">
                                         Safety Threshold
-                                        <button class="ml-1 text-blue-600 text-lg" onclick="showInfoModal('Safety Threshold', 'This is to prevent unintentional corruption of app data. When exporting, the local data size and the cloud data size is compared and if the difference percentage exceeds the configuration threshold, you are asked to provide a confirmation before the cloud data is overwritten. If you feel this is a mistake and cloud data should not be overwritten, click on Cancel else click on Proceed. Similarly while importing, the cloud data size and local data size is compared and if the difference percentage exceeds the configuration threshold, you are asked to provide a confirmation before the local data is overwritten. If you feel your local data is more recent and should not be overwritten, click on Cancel else click on Proceed.')">ⓘ</button>
+                                        <button class="ml-1 text-blue-600 text-lg" onclick='showInfoModal("Safety Threshold", "This is to prevent unintentional corruption of app data. When exporting, the local data size and the cloud data size is compared and if the difference percentage exceeds the configuration threshold, you are asked to provide a confirmation before the cloud data is overwritten. If you feel this is a mistake and cloud data should not be overwritten, click on Cancel else click on Proceed. Similarly while importing, the cloud data size and local data size is compared and if the difference percentage exceeds the configuration threshold, you are asked to provide a confirmation before the local data is overwritten. If you feel your local data is more recent and should not be overwritten, click on Cancel else click on Proceed.")'>ⓘ</button>
                                     </label>
                                     <div class="mt-2 flex space-x-4">
                                         <div class="w-1/2">
@@ -264,7 +264,7 @@ function openSyncModal() {
                      <div class="flex items-center justify-end mb-4 space-x-2">
                          <span class="text-sm text-gray-600 dark:text-gray-400">
                              Console Logging
-                             <button class="ml-1 text-blue-600 text-lg" onclick="showInfoModal('Console Logging', 'Use this to enable detailed logging in Browser console for troubleshooting purpose. Clicking on this button will instantly start logging. However, earlier events will not be logged. You could add ?log=true to the page URL and reload the page to start logging from the beginning of the page load.')">ⓘ</button>
+                             <button class="ml-1 text-blue-600 text-lg" onclick='showInfoModal("Console Logging", "Use this to enable detailed logging in Browser console for troubleshooting purpose. Clicking on this button will instantly start logging. However, earlier events will not be logged. You could add ?log=true to the page URL and reload the page to start logging from the beginning of the page load.")'>ⓘ</button>
                          </span>
                          <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
                              <input type="checkbox" id="console-logging-toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"/>
@@ -1977,13 +1977,20 @@ document.head.appendChild(style);
 function showInfoModal(title, content) {
     const infoModal = document.createElement('div');
     infoModal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[80] p-4';
+    
+    // Replace quotes with HTML entities and line breaks with <br/>
+    const safeContent = content
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;')
+        .replace(/<br\/><br\/>/g, '<br/><br/>');
+
     infoModal.innerHTML = `
-        <div class="bg-white dark:bg-zinc-900 rounded-lg w-full max-w-lg max-h-[80vh] overflow-y-auto">
+        <div class="bg-white dark:bg-zinc-900 rounded-lg w-full max-w-lg">
             <div class="p-4 border-b border-gray-200 dark:border-gray-700">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white">${title}</h3>
             </div>
             <div class="p-4 text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
-                ${content}
+                ${safeContent}
             </div>
             <div class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end">
                 <button class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Close</button>
