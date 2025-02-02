@@ -1,4 +1,4 @@
-const VERSION = '20250202-10:01';
+const VERSION = '20250202-06:30';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1396,10 +1396,7 @@ async function importFromS3() {
                 return false;
             }
         };
-        const shouldPrompt = localFileSize > 0 && (
-            isCloudSmallerThanLocal || 
-            sizeDiffPercentage > 1
-        );
+        const shouldPrompt = localFileSize > 0 && sizeDiffPercentage > 1;
         logToConsole('info', `Should prompt user: ${shouldPrompt}`);
         if (shouldPrompt) {
             logToConsole('info', `Showing prompt to user...`);
@@ -1420,9 +1417,6 @@ async function importFromS3() {
                 message += `Local data size: ${localFileSize} bytes\n`;
                 if (cloudFileSize) {
                     message += `Size difference: ${sizeDiffPercentage.toFixed(2)}%\n\n`;
-                }
-                if (cloudFileSize && cloudFileSize < localFileSize) {
-                    message += '⚠️ Cloud backup is smaller than local data\n';
                 }
                 if (cloudFileSize && sizeDiffPercentage > 1) {
                     message += '⚠️ Size difference exceeds 1%\n';
