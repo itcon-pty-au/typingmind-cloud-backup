@@ -1,4 +1,4 @@
-const VERSION = '20250203-10:00';
+const VERSION = '20250203-10:06';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -166,10 +166,12 @@ function openSyncModal() {
                 <div class="flex justify-center items-center mb-4">
                     <h3 class="text-center text-xl font-bold">Backup & Sync</h3>
                     <div class="relative group ml-2">
-                        <span class="cursor-pointer" id="info-icon" style="color: white">ℹ</span>
-                        <div id="tooltip" style="display:none; width: 250px; margin-top: 0.5em;" class="z-1 absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded-md px-2 py-1 opacity-90 transition-opacity duration-300 opacity-0 transition-opacity">
-                            Fill form & Save. If you are using Amazon S3 - fill in S3 Bucket Name, AWS Region, AWS Access Key, AWS Secret Key.<br/><br/> Initial backup: You will need to click on "Export" to create your first backup in S3. Thereafter, automatic backups are done to S3 every 1 minute if the browser tab is active.<br/><br/> Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the data in this typingmind instance. <br/><br/> Adhoc Backup & Restore:  Use the "Export" and "Import" to perform on-demand backup or restore. Note that this overwrites the main backup. <br/><br/> Snapshot: Creates an instant 'no-touch' backup that will not be overwritten. <br/><br/> Download: You can select the backup data to be download and click on Download button to download it for local storage. <br/><br/> Restore: Select the backup you want to restore and Click on Restore. The typingmind data will be restored to the selected backup data/date.
-                        </div>
+                        <span class="relative group cursor-pointer">
+                            <span class="text-blue-600 inline-block text-lg" style="width: 1.2em; height: 1.2em;">ⓘ</span>
+                            <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 w-64 bg-black text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[70]">
+                                Fill form & Save. If you are using Amazon S3 - fill in S3 Bucket Name, AWS Region, AWS Access Key, AWS Secret Key.<br/><br/> Initial backup: You will need to click on "Export" to create your first backup in S3. Thereafter, automatic backups are done to S3 every 1 minute if the browser tab is active.<br/><br/> Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the data in this typingmind instance. <br/><br/> Adhoc Backup & Restore:  Use the "Export" and "Import" to perform on-demand backup or restore. Note that this overwrites the main backup. <br/><br/> Snapshot: Creates an instant 'no-touch' backup that will not be overwritten. <br/><br/> Download: You can select the backup data to be download and click on Download button to download it for local storage. <br/><br/> Restore: Select the backup you want to restore and Click on Restore. The typingmind data will be restored to the selected backup data/date.
+                            </div>
+                        </span>
                     </div>
                 </div>
                 <div class="space-y-4">
@@ -225,8 +227,8 @@ function openSyncModal() {
                                 <div>
                                     <label for="aws-endpoint" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
                                         <span class="relative group cursor-pointer">
-                                            <span class="text-xs inline-block" style="width: 1em; height: 1em;">ⓘ</span>
-                                            <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 w-64 bg-black text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
+                                            <span class="text-blue-600 inline-block text-lg" style="width: 1.2em; height: 1.2em;">ⓘ</span>
+                                            <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 w-96 bg-black text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[70]">
                                                 For Amazon AWS, leave this blank. For S3 compatible cloud services like Cloudflare, iDrive and the likes, populate this.
                                             </div>
                                         </span>
@@ -242,8 +244,8 @@ function openSyncModal() {
                                     <div class="w-1/2">
                                         <label for="encryption-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
                                             <span class="relative group cursor-pointer">
-                                                <span class="text-xs inline-block" style="width: 1em; height: 1em;">ⓘ</span>
-                                                <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 w-64 bg-black text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
+                                                <span class="text-blue-600 inline-block text-lg" style="width: 1.2em; height: 1.2em;">ⓘ</span>
+                                                <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 w-96 bg-black text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[70]">
                                                     Choose a secure 8+ character string. This is to encrypt the backup file before uploading to cloud. Securely store this somewhere as you will need this to restore backup from cloud.
                                                 </div>
                                             </span>
@@ -255,8 +257,8 @@ function openSyncModal() {
                                 <div class="mt-6 bg-gray-100 px-3 py-3 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
                                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">
                                         <span class="relative group cursor-pointer">
-                                            <span class="text-xs inline-block" style="width: 1em; height: 1em;">ⓘ</span>
-                                            <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 w-64 bg-black text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
+                                            <span class="text-blue-600 inline-block text-lg" style="width: 1.2em; height: 1.2em;">ⓘ</span>
+                                            <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 w-96 bg-black text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[70]">
                                                 This is to prevent unintentional corruption of app data. When exporting, the local data size and the cloud data size is compared and if the difference percentage exceeds the configuration threshold, you are asked to provide a confirmation before the cloud data is overwritten. If you feel this is a mistake and cloud data should not be overwritten, click on Cancel else click on Proceed. Similarly while importing, the cloud data size and local data size is compared and if the difference percentage exceeds the configuration threshold, you are asked to provide a confirmation before the local data is overwritten. If you feel your local data is more recent and should not be overwritten, click on Cancel else click on Proceed.
                                             </div>
                                         </span>
@@ -284,8 +286,8 @@ function openSyncModal() {
                      <div class="flex items-center justify-end mb-4 space-x-2">
                          <span class="text-sm text-gray-600 dark:text-gray-400">
                              <span class="relative group cursor-pointer">
-                                 <span class="text-xs inline-block" style="width: 1em; height: 1em;">ⓘ</span>
-                                 <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 w-64 bg-black text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
+                                 <span class="text-blue-600 inline-block text-lg" style="width: 1.2em; height: 1.2em;">ⓘ</span>
+                                 <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 w-64 bg-black text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[70]">
                                      Use this to enable detailed logging in Browser console for troubleshooting purpose. Clicking on this button will instantly start logging. However, earlier events will not be logged. You could add ?log=true to the page URL and reload the page to start logging from the beginning of the page load.
                                  </div>
                              </span>
