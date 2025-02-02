@@ -1,4 +1,4 @@
-const VERSION = '20250202-06:30';
+const VERSION = '20250202-18:54';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -12,6 +12,8 @@ const awsSdkPromise = loadAwsSdk();
 let isPageFullyLoaded = false;
 let backupInterval = null;
 let isWaitingForUserInput = false;
+const IMPORT_SIZE_DIFF_THRESHOLD = 5; // 5% threshold for import size difference
+const EXPORT_SIZE_DIFF_THRESHOLD = 10; // 10% threshold for export size difference
 
 function initializeLoggingState() {
     const urlParams = new URLSearchParams(window.location.search);
@@ -1140,6 +1142,44 @@ async function backupToS3() {
             error.code = 'INVALID_BLOB_SIZE';
             throw error;
         }
+
+        try {
+            const currentCloudData = await s3.getObject({
+                Bucket: bucketName,
+                Key: 'typingmind-backup.json'
+            }).promise();
+
+            const cloudSize = currentCloudData.Body.length;
+            const localSize = dataSize;
+            const sizeDiffPercentage = Math.abs((localSize - cloudSize) / cloudSize * 100);
+
+            logToConsole('progress', 'Export size comparison:', {
+                cloudSize: `${cloudSize} bytes`,
+                localSize: `${localSize} bytes`,
+                difference: `${localSize - cloudSize} bytes (${sizeDiffPercentage.toFixed(4)}%)`
+            });
+
+            if (sizeDiffPercentage > EXPORT_SIZE_DIFF_THRESHOLD) {
+                isWaitingForUserInput = true;
+                const message = `Warning: The new backup size (${localSize} bytes) differs significantly from the current cloud backup (${cloudSize} bytes) by ${sizeDiffPercentage.toFixed(2)}%.\n\nDo you want to proceed with the upload?`;
+                const shouldProceed = await showCustomAlert(message, 'Size Difference Warning', [
+                    {text: 'Cancel', primary: false},
+                    {text: 'Proceed', primary: true}
+                ]);
+                isWaitingForUserInput = false;
+                if (!shouldProceed) {
+                    logToConsole('info', 'Export cancelled due to size difference');
+                    throw new Error('Export cancelled due to significant size difference');
+                }
+            }
+        } catch (err) {
+            if (err.code !== 'NoSuchKey') {
+                throw err;
+            }
+            // If no existing backup, continue with upload
+            logToConsole('info', 'No existing backup found, proceeding with upload');
+        }
+
         localStorage.setItem('backup-size', dataSize.toString());
         const chunkSize = 5 * 1024 * 1024;
         if (dataSize > chunkSize) {
@@ -1342,20 +1382,10 @@ async function importFromS3() {
         const localFileSize = new Blob([currentDataStr]).size;
         const sizeDiffPercentage = cloudFileSize && localFileSize ? 
             Math.abs((cloudFileSize - localFileSize) / localFileSize * 100) : 0;
-        const isCloudSmallerThanLocal = cloudFileSize && 
-            cloudFileSize < localFileSize && 
-            (localFileSize - cloudFileSize) > 2;
-        const isWithinSizeTolerance = !cloudFileSize || 
-            (!isCloudSmallerThanLocal && (
-                localFileSize > 1024 * 1024 ? 
-                    sizeDiffPercentage <= 0.1 :
-                    Math.abs(cloudFileSize - localFileSize) <= 2
-            ));
         logToConsole('progress', 'Size comparison:', {
             cloudSize: `${cloudFileSize} bytes`,
             localSize: `${localFileSize} bytes`,
-            difference: `${cloudFileSize - localFileSize} bytes${sizeDiffPercentage ? ` (${sizeDiffPercentage.toFixed(4)}%)` : ''}`,
-            withinTolerance: isWithinSizeTolerance ? 'Yes' : 'No'
+            difference: `${cloudFileSize - localFileSize} bytes${sizeDiffPercentage ? ` (${sizeDiffPercentage.toFixed(4)}%)` : ''}`
         });
         const isTimeDifferenceSignificant = () => {
             if (!lastSync) {
@@ -1392,11 +1422,12 @@ async function importFromS3() {
                 }
                 throw new Error('Invalid date format');
             } catch (error) {
-                logToConsole('error', `❌ Error parsing dates:`, error);
+                logToConsole('error', `Error parsing dates:`, error);
                 return false;
             }
         };
-        const shouldPrompt = localFileSize > 0 && sizeDiffPercentage > 1;
+        // Local vs Cloud data - 5% comparison criteria
+        const shouldPrompt = localFileSize > 0 && sizeDiffPercentage > IMPORT_SIZE_DIFF_THRESHOLD;
         logToConsole('info', `Should prompt user: ${shouldPrompt}`);
         if (shouldPrompt) {
             logToConsole('info', `Showing prompt to user...`);
@@ -1412,8 +1443,7 @@ async function importFromS3() {
             backupIntervalRunning = false;
             localStorage.setItem('activeTabBackupRunning', 'false');
             try {
-                let message = `Potential data mismatch detected!\n\n`;
-                message += `Cloud backup size: ${cloudFileSize || 'Unknown'} bytes\n`;
+                let message = `Cloud backup size: ${cloudFileSize || 'Unknown'} bytes\n`;
                 message += `Local data size: ${localFileSize} bytes\n`;
                 if (cloudFileSize) {
                     message += `Size difference: ${sizeDiffPercentage.toFixed(2)}%\n\n`;
