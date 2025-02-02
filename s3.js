@@ -1,4 +1,4 @@
-const VERSION = '20250202-18:54';
+const VERSION = '20250203-07:56';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -12,8 +12,14 @@ const awsSdkPromise = loadAwsSdk();
 let isPageFullyLoaded = false;
 let backupInterval = null;
 let isWaitingForUserInput = false;
-const IMPORT_SIZE_DIFF_THRESHOLD = 5; // 5% threshold for import size difference
-const EXPORT_SIZE_DIFF_THRESHOLD = 10; // 10% threshold for export size difference
+
+function getImportThreshold() {
+    return parseFloat(localStorage.getItem('import-size-threshold')) || 1;
+}
+
+function getExportThreshold() {
+    return parseFloat(localStorage.getItem('export-size-threshold')) || 10;
+}
 
 function initializeLoggingState() {
     const urlParams = new URLSearchParams(window.location.search);
@@ -234,6 +240,27 @@ function openSyncModal() {
                                     </label>
                                     <input id="encryption-key" name="encryption-key" type="password" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                 </div>
+                                	<div class="mt-6 bg-gray-100 px-3 py-3 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">
+                                        Safety Threshold
+                                        <span class="ml-1 relative group cursor-pointer">
+                                            <span class="text-xs">ℹ</span>
+                                            <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 w-64 bg-black text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
+                                                This is to prevent unintentional corruption of app data. When exporting, the local data size and the cloud data size is compared and if the difference percentage exceeds the configuration threshold, you are asked to provide a confirmation before the cloud data is overwritten. If you feel this is a mistake and cloud data should not be overwritten, click on Cancel else click on Proceed. Similarly while importing, the cloud data size and local data size is compared and if the difference percentage exceeds the configuration threshold, you are asked to provide a confirmation before the local data is overwritten. If you feel your local data is more recent and should not be overwritten, click on Cancel else click on Proceed.
+                                            </div>
+                                        </span>
+                                    </label>
+                                    <div class="mt-2 space-y-2">
+                                        <div>
+                                            <label for="import-threshold" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Import (%)</label>
+                                            <input id="import-threshold" name="import-threshold" type="number" step="0.1" min="0" placeholder="Default: 5" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off">
+                                        </div>
+                                        <div>
+                                            <label for="export-threshold" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Export (%)</label>
+                                            <input id="export-threshold" name="export-threshold" type="number" step="0.1" min="0" placeholder="Default: 10" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off">
+                                        </div>
+                                    </div>
+                                </div>
                                 <div class="flex justify-between space-x-2">
                                     <button id="save-aws-details-btn" type="button" class="z-1 inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors" disabled>
                                         Save
@@ -287,6 +314,8 @@ function openSyncModal() {
 	const awsEndpointInput = document.getElementById('aws-endpoint');
 	const backupIntervalInput = document.getElementById('backup-interval');
 	const encryptionKeyInput = document.getElementById('encryption-key');
+	const importThresholdInput = document.getElementById('import-threshold');
+	const exportThresholdInput = document.getElementById('export-threshold');
 	const closeButton = document.getElementById('close-modal-btn');
 
 	const savedBucket = localStorage.getItem('aws-bucket');
@@ -297,6 +326,8 @@ function openSyncModal() {
 	const lastSync = localStorage.getItem('last-cloud-sync');
 	const savedInterval = localStorage.getItem('backup-interval') || '60';
 	const savedEncryptionKey = localStorage.getItem('encryption-key');
+    const savedImportThreshold = localStorage.getItem('import-size-threshold');
+	const savedExportThreshold = localStorage.getItem('export-size-threshold');
 
 	if (savedBucket) awsBucketInput.value = savedBucket;
 	if (savedRegion) awsRegionInput.value = savedRegion;
@@ -305,6 +336,8 @@ function openSyncModal() {
 	if (savedEndpoint) awsEndpointInput.value = savedEndpoint;
 	if (backupIntervalInput) backupIntervalInput.value = savedInterval;
 	if (savedEncryptionKey) document.getElementById('encryption-key').value = savedEncryptionKey;
+    if (savedImportThreshold) document.getElementById('import-threshold').value = savedImportThreshold;
+	if (savedExportThreshold) document.getElementById('export-threshold').value = savedExportThreshold;
 
 	var element = document.getElementById('last-sync-msg');
 	if (lastSync) {
@@ -321,6 +354,9 @@ function openSyncModal() {
 		const awsSecretKeyInput = document.getElementById('aws-secret-key');
 		const backupIntervalInput = document.getElementById('backup-interval');
 		const encryptionKeyInput = document.getElementById('encryption-key');
+		const importThresholdInput = document.getElementById('import-threshold');
+		const exportThresholdInput = document.getElementById('export-threshold');
+
 		const hasRequiredFields = 
 			awsBucketInput?.value?.trim() &&
 			awsRegionInput?.value?.trim() &&
@@ -328,7 +364,9 @@ function openSyncModal() {
 			awsSecretKeyInput?.value?.trim() &&
 			backupIntervalInput?.value &&
 			parseInt(backupIntervalInput.value) >= 15 &&
-			encryptionKeyInput?.value?.trim().length >= 8;
+			encryptionKeyInput?.value?.trim().length >= 8 &&
+			(!importThresholdInput?.value || parseFloat(importThresholdInput.value) >= 0) &&
+			(!exportThresholdInput?.value || parseFloat(exportThresholdInput.value) >= 0);
 		const saveButton = document.getElementById('save-aws-details-btn');
 		const exportButton = document.getElementById('export-to-s3-btn');
 		const importButton = document.getElementById('import-from-s3-btn');
@@ -353,6 +391,8 @@ function openSyncModal() {
 	awsEndpointInput.addEventListener('input', updateButtonState);
 	backupIntervalInput.addEventListener('input', updateButtonState);
 	encryptionKeyInput.addEventListener('input', updateButtonState);
+	importThresholdInput.addEventListener('input', updateButtonState);
+	exportThresholdInput.addEventListener('input', updateButtonState);
 
 	updateButtonState();
 
@@ -1159,7 +1199,7 @@ async function backupToS3() {
                 difference: `${localSize - cloudSize} bytes (${sizeDiffPercentage.toFixed(4)}%)`
             });
 
-            if (sizeDiffPercentage > EXPORT_SIZE_DIFF_THRESHOLD) {
+            if (sizeDiffPercentage > getExportThreshold()) {
                 isWaitingForUserInput = true;
                 const message = `Warning: The new backup size (${localSize} bytes) differs significantly from the current cloud backup (${cloudSize} bytes) by ${sizeDiffPercentage.toFixed(2)}%.\n\nDo you want to proceed with the upload?`;
                 const shouldProceed = await showCustomAlert(message, 'Size Difference Warning', [
@@ -1427,7 +1467,7 @@ async function importFromS3() {
             }
         };
         // Local vs Cloud data - 5% comparison criteria
-        const shouldPrompt = localFileSize > 0 && sizeDiffPercentage > IMPORT_SIZE_DIFF_THRESHOLD;
+        const shouldPrompt = localFileSize > 0 && sizeDiffPercentage > getImportThreshold();
         logToConsole('info', `Should prompt user: ${shouldPrompt}`);
         if (shouldPrompt) {
             logToConsole('info', `Showing prompt to user...`);
