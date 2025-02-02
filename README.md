@@ -49,7 +49,7 @@ WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXP
 
 ## Troubleshooting
 - Add '?log=true' to the URL to initiate console logging. The log will start right from the beginning.
-- You can also toggle the 'Console Logging' in the Backup & Sync configuration modal. But this starts the logging at that instant, anything that happened before it wont be logged. 
+- You can also toggle the 'Console Logging' in the Backup & Sync configuration modal. But this starts the logging at that instant, anything that happened before won't be logged. 
 
 ## AWS Config
 1. Create a user in Amazon IAM. In permissions option, select "Add user to group" but don't select any group. In next screen, "Create user".
