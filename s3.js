@@ -1,4 +1,4 @@
-const VERSION = '20250203-09:56';
+const VERSION = '20250203-10:00';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -225,7 +225,7 @@ function openSyncModal() {
                                 <div>
                                     <label for="aws-endpoint" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
                                         <span class="relative group cursor-pointer">
-                                            <span class="text-xs">ℹ</span>
+                                            <span class="text-xs inline-block" style="width: 1em; height: 1em;">ⓘ</span>
                                             <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 w-64 bg-black text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
                                                 For Amazon AWS, leave this blank. For S3 compatible cloud services like Cloudflare, iDrive and the likes, populate this.
                                             </div>
@@ -242,7 +242,7 @@ function openSyncModal() {
                                     <div class="w-1/2">
                                         <label for="encryption-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
                                             <span class="relative group cursor-pointer">
-                                                <span class="text-xs">ℹ</span>
+                                                <span class="text-xs inline-block" style="width: 1em; height: 1em;">ⓘ</span>
                                                 <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 w-64 bg-black text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
                                                     Choose a secure 8+ character string. This is to encrypt the backup file before uploading to cloud. Securely store this somewhere as you will need this to restore backup from cloud.
                                                 </div>
@@ -254,13 +254,13 @@ function openSyncModal() {
                                 </div>
                                 <div class="mt-6 bg-gray-100 px-3 py-3 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
                                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">
-                                        Safety Threshold
-                                        <span class="ml-1 relative group cursor-pointer">
-                                            <span class="text-xs">ℹ</span>
+                                        <span class="relative group cursor-pointer">
+                                            <span class="text-xs inline-block" style="width: 1em; height: 1em;">ⓘ</span>
                                             <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 w-64 bg-black text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
                                                 This is to prevent unintentional corruption of app data. When exporting, the local data size and the cloud data size is compared and if the difference percentage exceeds the configuration threshold, you are asked to provide a confirmation before the cloud data is overwritten. If you feel this is a mistake and cloud data should not be overwritten, click on Cancel else click on Proceed. Similarly while importing, the cloud data size and local data size is compared and if the difference percentage exceeds the configuration threshold, you are asked to provide a confirmation before the local data is overwritten. If you feel your local data is more recent and should not be overwritten, click on Cancel else click on Proceed.
                                             </div>
                                         </span>
+                                        Safety Threshold
                                     </label>
                                     <div class="mt-2 flex space-x-4">
                                         <div class="w-1/2">
@@ -284,7 +284,7 @@ function openSyncModal() {
                      <div class="flex items-center justify-end mb-4 space-x-2">
                          <span class="text-sm text-gray-600 dark:text-gray-400">
                              <span class="relative group cursor-pointer">
-                                 <span class="text-xs">ℹ</span>
+                                 <span class="text-xs inline-block" style="width: 1em; height: 1em;">ⓘ</span>
                                  <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 p-2 w-64 bg-black text-white text-xs rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-10">
                                      Use this to enable detailed logging in Browser console for troubleshooting purpose. Clicking on this button will instantly start logging. However, earlier events will not be logged. You could add ?log=true to the page URL and reload the page to start logging from the beginning of the page load.
                                  </div>
