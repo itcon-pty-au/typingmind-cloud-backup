@@ -15,8 +15,8 @@
 - The backup interval is now configurable (Minimum of 15 seconds).
 - ✨ All backups are now encrypted! The backup system uses AES-GCM encryption with a 256-bit key derived using PBKDF2. All data is encrypted client-side before being uploaded to S3. The encryption key is derived from a user-provided password using 100,000 PBKDF2 iterations with SHA-256, providing strong protection for sensitive data.
 - ✨ The system includes several safeguards to prevent unintended data loss.
-    - Cloud-vs-local data Size comparison with 1% tolerance when cloud data size > local data size
-    - Cloud-vs-local size verification to prevent smaller cloud backups overwriting larger local data
+    - Cloud-vs-local data size comparison with 5% tolerance during import
+    - Cloud-vs-local data size comparison with 10% tolerance during export
     - User confirmation prompts with detailed information when significant differences are detected
   
 ## Using this extension
