@@ -1,4 +1,4 @@
-const VERSION = '20250203-10:27';
+const VERSION = '20250203-10:35';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -159,16 +159,16 @@ function openSyncModal() {
 	modalPopup.style.cssText = 'padding-left: 10px; padding-right: 10px; overflow-y: auto;';
 	modalPopup.setAttribute('data-element-id', 'sync-modal-dbbackup');
 	modalPopup.className =
-		'bg-opacity-75 fixed inset-0 bg-gray-800 transition-all flex items-center justify-center z-[60]';
+		'bg-opacity-75 fixed inset-0 bg-gray-800 transition-all flex items-start justify-center z-[60] p-4 overflow-y-auto';
 	modalPopup.innerHTML = `
-        <div class="inline-block w-full align-bottom bg-white dark:bg-zinc-950 rounded-lg px-4 pb-4 text-left shadow-xl transform transition-all sm:my-8 sm:p-6 sm:align-middle pt-4 overflow-hidden sm:max-w-lg">
-            <div class="text-gray-800 dark:text-white text-left text-sm">
+        <div class="inline-block w-full align-bottom bg-white dark:bg-zinc-950 rounded-lg px-4 pb-4 text-left shadow-xl transform transition-all sm:my-8 sm:p-6 sm:align-middle pt-4 overflow-hidden sm:max-w-lg mt-4">
+            <div class="text-gray-800 dark:text-white text-left text-sm max-h-[90vh] overflow-y-auto">
                 <div class="flex justify-center items-center mb-4">
                     <h3 class="text-center text-xl font-bold">Backup & Sync</h3>
                     <div class="relative group ml-2">
                         <span class="relative group cursor-pointer">
                             <span class="text-blue-600 inline-block text-lg" style="width: 1.2em; height: 1.2em;">ⓘ</span>
-                            <div class="fixed top-1/4 left-1/2 transform -translate-x-1/2 p-4 w-[500px] bg-black text-white text-sm rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[70] leading-relaxed">
+                            <div class="fixed top-1/4 left-1/2 transform -translate-x-1/2 p-4 w-[calc(100vw-2rem)] sm:w-[500px] mx-4 bg-black text-white text-sm rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[70] leading-relaxed">
                                 Fill form & Save. If you are using Amazon S3 - fill in S3 Bucket Name, AWS Region, AWS Access Key, AWS Secret Key and Encryption key.<br/><br/>
                                 Initial backup: You will need to click on "Export" to create your first backup in S3. Thereafter, automatic backups are done to S3 as per Backup Interval if the browser tab is active.<br/><br/>
                                 Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the local data.<br/><br/>
@@ -234,7 +234,7 @@ function openSyncModal() {
                                     <label for="aws-endpoint" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
                                         <span class="relative group cursor-pointer">
                                             <span class="text-blue-600 inline-block text-lg" style="width: 1.2em; height: 1.2em;">ⓘ</span>
-                                            <div class="fixed top-1/4 left-1/2 transform -translate-x-1/2 p-4 w-[500px] bg-black text-white text-sm rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[70] leading-relaxed">
+                                            <div class="fixed top-1/4 left-1/2 transform -translate-x-1/2 p-4 w-[calc(100vw-2rem)] sm:w-[500px] mx-4 bg-black text-white text-sm rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[70] leading-relaxed">
                                                 For Amazon AWS, leave this blank. For S3 compatible cloud services like Cloudflare, iDrive and the likes, populate this.
                                             </div>
                                         </span>
@@ -251,7 +251,7 @@ function openSyncModal() {
                                         <label for="encryption-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
                                             <span class="relative group cursor-pointer">
                                                 <span class="text-blue-600 inline-block text-lg" style="width: 1.2em; height: 1.2em;">ⓘ</span>
-                                                <div class="fixed top-1/4 left-1/2 transform -translate-x-1/2 p-4 w-[500px] bg-black text-white text-sm rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[70] leading-relaxed">
+                                                <div class="fixed top-1/4 left-1/2 transform -translate-x-1/2 p-4 w-[calc(100vw-2rem)] sm:w-[500px] mx-4 bg-black text-white text-sm rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[70] leading-relaxed">
                                                     Choose a secure 8+ character string. This is to encrypt the backup file before uploading to cloud. Securely store this somewhere as you will need this to restore backup from cloud.
                                                 </div>
                                             </span>
@@ -264,7 +264,7 @@ function openSyncModal() {
                                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">
                                         <span class="relative group cursor-pointer">
                                             <span class="text-blue-600 inline-block text-lg" style="width: 1.2em; height: 1.2em;">ⓘ</span>
-                                            <div class="fixed top-1/4 left-1/2 transform -translate-x-1/2 p-4 w-[500px] bg-black text-white text-sm rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[70] leading-relaxed">
+                                            <div class="fixed top-1/4 left-1/2 transform -translate-x-1/2 p-4 w-[calc(100vw-2rem)] sm:w-[500px] mx-4 bg-black text-white text-sm rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[70] leading-relaxed">
                                                 This is to prevent unintentional corruption of app data. When exporting, the local data size and the cloud data size is compared and if the difference percentage exceeds the configuration threshold, you are asked to provide a confirmation before the cloud data is overwritten. If you feel this is a mistake and cloud data should not be overwritten, click on Cancel else click on Proceed. Similarly while importing, the cloud data size and local data size is compared and if the difference percentage exceeds the configuration threshold, you are asked to provide a confirmation before the local data is overwritten. If you feel your local data is more recent and should not be overwritten, click on Cancel else click on Proceed.
                                             </div>
                                         </span>
@@ -293,7 +293,7 @@ function openSyncModal() {
                          <span class="text-sm text-gray-600 dark:text-gray-400">
                              <span class="relative group cursor-pointer">
                                  <span class="text-blue-600 inline-block text-lg" style="width: 1.2em; height: 1.2em;">ⓘ</span>
-                                 <div class="fixed top-1/4 left-1/2 transform -translate-x-1/2 p-4 w-[500px] bg-black text-white text-sm rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[70] leading-relaxed">
+                                 <div class="fixed top-1/4 left-1/2 transform -translate-x-1/2 p-4 w-[calc(100vw-2rem)] sm:w-[500px] mx-4 bg-black text-white text-sm rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-[70] leading-relaxed">
                                      Use this to enable detailed logging in Browser console for troubleshooting purpose. Clicking on this button will instantly start logging. However, earlier events will not be logged. You could add ?log=true to the page URL and reload the page to start logging from the beginning of the page load.
                                  </div>
                              </span>
