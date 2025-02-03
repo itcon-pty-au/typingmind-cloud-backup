@@ -1,4 +1,4 @@
-const VERSION = '20250203-13:28';
+const VERSION = '20250203-14:48';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -246,7 +246,7 @@ function openSyncModal() {
                                 <div class="mt-2 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
                                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">
                                         Backup Size Safety Check
-                                        <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="This is to prevent unintentional corruption of app data. When exporting, the local data size and the cloud data size is compared and if the difference percentage exceeds the configured threshold, you are asked to provide a confirmation before the cloud data is overwritten. If you feel this is a mistake and cloud data should not be overwritten, click on Cancel else click on Proceed. Similarly while importing, the cloud data size and local data size is compared and if the difference percentage exceeds the configured threshold, you are asked to provide a confirmation before the local data is overwritten. If you feel your local data is more recent and should not be overwritten, click on Cancel else click on Proceed.">ⓘ</button>
+                                        <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--large" aria-label="This is to prevent unintentional corruption of app data. When exporting, the local data size and the cloud data size is compared and if the difference percentage exceeds the configured threshold, you are asked to provide a confirmation before the cloud data is overwritten. If you feel this is a mistake and cloud data should not be overwritten, click on Cancel else click on Proceed. Similarly while importing, the cloud data size and local data size is compared and if the difference percentage exceeds the configured threshold, you are asked to provide a confirmation before the local data is overwritten. If you feel your local data is more recent and should not be overwritten, click on Cancel else click on Proceed.">ⓘ</button>
                                     </label>
                                     <div class="mt-1 flex space-x-4">
                                         <div class="w-1/2">
@@ -262,7 +262,6 @@ function openSyncModal() {
                                         <input type="checkbox" id="alert-smaller-cloud" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
                                         <label for="alert-smaller-cloud" class="ml-2 block text-sm text-gray-700 dark:text-gray-400">
                                             Alert if cloud backup is smaller during import
-                                            <button class="ml-1 text-blue-600 text-sm hint--top-left hint--rounded hint--medium" aria-label="When enabled, you'll be alerted if the cloud backup is smaller than your local data during import. This helps prevent data loss due toimporting older backups.">ⓘ</button>
                                         </label>
                                     </div>
                                 </div>
