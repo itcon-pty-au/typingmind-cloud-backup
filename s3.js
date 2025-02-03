@@ -1,4 +1,4 @@
-const VERSION = '20250203-08:02';
+const VERSION = '20250203-12:02';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1973,12 +1973,10 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
-// First, add this helper function to create info modals
 function showInfoModal(title, content) {
     const infoModal = document.createElement('div');
-    infoModal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[80] p-4';
+    infoModal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[90] p-4';
     
-    // Replace quotes with HTML entities and line breaks with <br/>
     const safeContent = content
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&apos;')
@@ -2000,7 +1998,6 @@ function showInfoModal(title, content) {
 
     document.body.appendChild(infoModal);
 
-    // Close on button click or outside click
     infoModal.addEventListener('click', (e) => {
         if (e.target === infoModal || e.target.closest('button')) {
             infoModal.remove();
