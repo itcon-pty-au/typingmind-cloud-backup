@@ -1,4 +1,4 @@
-const VERSION = '20250203-13:14';
+const VERSION = '20250203-13:23';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -166,108 +166,108 @@ function openSyncModal() {
 	modalPopup.className =
 		'bg-opacity-75 fixed inset-0 bg-gray-800 transition-all flex items-start justify-center z-[60] p-4 overflow-y-auto';
 	modalPopup.innerHTML = `
-        <div class="inline-block w-full align-bottom bg-white dark:bg-zinc-950 rounded-lg px-4 pb-4 text-left shadow-xl transform transition-all sm:my-4 sm:p-4 sm:align-middle pt-4 overflow-hidden sm:max-w-lg mt-4">
+        <div class="inline-block w-full align-bottom bg-white dark:bg-zinc-950 rounded-lg px-4 pb-4 text-left shadow-xl transform transition-all sm:my-8 sm:p-6 sm:align-middle pt-4 overflow-hidden sm:max-w-lg mt-4">
             <div class="text-gray-800 dark:text-white text-left text-sm">
-                <div class="flex justify-center items-center mb-2">
-                    <h3 class="text-center text-lg font-bold">Backup & Sync</h3>
+                <div class="flex justify-center items-center mb-3">
+                    <h3 class="text-center text-xl font-bold">Backup & Sync</h3>
                     <button class="ml-2 text-blue-600 text-lg hint--bottom-left hint--rounded hint--medium" 
                         aria-label="Fill form & Save. If you are using Amazon S3 - fill in S3 Bucket Name, AWS Region, AWS Access Key, AWS Secret Key and Encryption key.&#10;&#10;Initial backup: You will need to click on Export to create your first backup in S3. Thereafter, automatic backups are done to S3 as per Backup Interval if the browser tab is active.&#10;&#10;Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the local data.&#10;&#10;Adhoc Backup & Restore: Use the Export and Import to perform on-demand backup or restore. Note that this overwrites the main backup/local data.&#10;&#10;Snapshot: Creates an instant no-touch backup that will not be overwritten.&#10;&#10;Download: You can select the backup data to be download and click on Download button to download it for local storage.&#10;&#10;Restore: Select the backup you want to restore and Click on Restore. The typingmind data will be restored to the selected backup data/date.">ⓘ</button>
                 </div>
-                <div class="space-y-2">
+                <div class="space-y-3">
                     <div>
-		    	<div class="mt-6 bg-gray-100 px-3 py-3 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
-			    <div class="flex items-center justify-between mb-2">
-			        <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">Available Backups</label>
-			        <button id="refresh-backups-btn" class="text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50" disabled>
-			            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-			                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-			            </svg>
-			        </button>
-			    </div>
-			    <div class="space-y-2">
-			        <div class="w-full">
-			            <select id="backup-files" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700">
-			                <option value="">Please configure AWS credentials first</option>
-			            </select>
-			        </div>
-			        <div class="flex justify-end space-x-2">
-			            <button id="download-backup-btn" class="z-1 px-3 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
-			                Download
-			            </button>
-			            <button id="restore-backup-btn" class="z-1 px-3 py-2 text-sm text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
-			                Restore
-			            </button>
-			            <button id="delete-backup-btn" class="z-1 px-3 py-2 text-sm text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
-			                Delete
-			            </button>
-			        </div>
-			    </div>
-			</div>
-                        <div class="my-2 bg-gray-100 px-2 py-2 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
+                        <div class="mt-4 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">Available Backups</label>
+                                <button id="refresh-backups-btn" class="text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50" disabled>
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                    </svg>
+                                </button>
+                            </div>
                             <div class="space-y-2">
-                                <div class="flex space-x-2">
+                                <div class="w-full">
+                                    <select id="backup-files" class="w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700">
+                                        <option value="">Please configure AWS credentials first</option>
+                                    </select>
+                                </div>
+                                <div class="flex justify-end space-x-2">
+                                    <button id="download-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                                        Download
+                                    </button>
+                                    <button id="restore-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                                        Restore
+                                    </button>
+                                    <button id="delete-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="my-3 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
+                            <div class="space-y-2">
+                                <div class="flex space-x-4">
                                     <div class="w-2/3">
-                                        <label for="aws-bucket" class="block text-xs font-medium text-gray-700 dark:text-gray-400">Bucket Name <span class="text-red-500">*</span></label>
-                                        <input id="aws-bucket" name="aws-bucket" type="text" class="z-1 w-full px-2 py-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                                        <label for="aws-bucket" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Bucket Name <span class="text-red-500">*</span></label>
+                                        <input id="aws-bucket" name="aws-bucket" type="text" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                     </div>
                                     <div class="w-1/3">
-                                        <label for="aws-region" class="block text-xs font-medium text-gray-700 dark:text-gray-400">Region <span class="text-red-500">*</span></label>
-                                        <input id="aws-region" name="aws-region" type="text" class="z-1 w-full px-2 py-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                                        <label for="aws-region" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Region <span class="text-red-500">*</span></label>
+                                        <input id="aws-region" name="aws-region" type="text" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                     </div>
                                 </div>
                                 <div>
                                     <label for="aws-access-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Access Key <span class="text-red-500">*</span></label>
-                                    <input id="aws-access-key" name="aws-access-key" type="password" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                                    <input id="aws-access-key" name="aws-access-key" type="password" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                 </div>
                                 <div>
                                     <label for="aws-secret-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Secret Key <span class="text-red-500">*</span></label>
-                                    <input id="aws-secret-key" name="aws-secret-key" type="password" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                                    <input id="aws-secret-key" name="aws-secret-key" type="password" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                 </div>
                                 <div>
                                     <label for="aws-endpoint" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
                                         S3 Compatible Storage Endpoint
                                         <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="For Amazon AWS, leave this blank. For S3 compatible cloud services like Cloudflare, iDrive and the likes, populate this.">ⓘ</button>
                                     </label>
-                                    <input id="aws-endpoint" name="aws-endpoint" type="text" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off">
+                                    <input id="aws-endpoint" name="aws-endpoint" type="text" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off">
                                 </div>
                                 <div class="flex space-x-4">
                                     <div class="w-1/2">
                                         <label for="backup-interval" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Backup Interval (sec)</label>
-                                        <input id="backup-interval" name="backup-interval" type="number" min="30" placeholder="Default: 60" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                                        <input id="backup-interval" name="backup-interval" type="number" min="30" placeholder="Default: 60" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                     </div>
                                     <div class="w-1/2">
                                         <label for="encryption-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
                                             Encryption Key <span class="text-red-500">*</span>
                                             <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="Choose a secure 8+ character string. This is to encrypt the backup file before uploading to cloud. Securely store this somewhere as you will need this to restore backup from cloud.">ⓘ</button>
                                         </label>
-                                        <input id="encryption-key" name="encryption-key" type="password" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                                        <input id="encryption-key" name="encryption-key" type="password" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                     </div>
                                 </div>
-                                <div class="mt-6 bg-gray-100 px-3 py-3 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
+                                <div class="mt-2 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
                                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">
                                         Backup Size Safety Check
                                         <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="This is to prevent unintentional corruption of app data. When exporting, the local data size and the cloud data size is compared and if the difference percentage exceeds the configured threshold, you are asked to provide a confirmation before the cloud data is overwritten. If you feel this is a mistake and cloud data should not be overwritten, click on Cancel else click on Proceed. Similarly while importing, the cloud data size and local data size is compared and if the difference percentage exceeds the configured threshold, you are asked to provide a confirmation before the local data is overwritten. If you feel your local data is more recent and should not be overwritten, click on Cancel else click on Proceed.">ⓘ</button>
                                     </label>
-                                    <div class="mt-2 flex space-x-4">
+                                    <div class="mt-1 flex space-x-4">
                                         <div class="w-1/2">
                                             <label for="import-threshold" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Import (%)</label>
-                                            <input id="import-threshold" name="import-threshold" type="number" step="0.1" min="0" placeholder="Default: 1" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off">
+                                            <input id="import-threshold" name="import-threshold" type="number" step="0.1" min="0" placeholder="Default: 1" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off">
                                         </div>
                                         <div class="w-1/2">
                                             <label for="export-threshold" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Export (%)</label>
-                                            <input id="export-threshold" name="export-threshold" type="number" step="0.1" min="0" placeholder="Default: 10" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off">
+                                            <input id="export-threshold" name="export-threshold" type="number" step="0.1" min="0" placeholder="Default: 10" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off">
                                         </div>
                                     </div>
-                                    <div class="mt-3 flex items-center">
+                                    <div class="mt-2 flex items-center">
                                         <input type="checkbox" id="alert-smaller-cloud" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
                                         <label for="alert-smaller-cloud" class="ml-2 block text-sm text-gray-700 dark:text-gray-400">
                                             Alert if cloud backup is smaller during import
-                                            <button class="ml-1 text-blue-600 text-sm hint--top-left hint--rounded hint--medium" aria-label="When enabled, you'll be alerted if the cloud backup is smaller than your local data during import (with 5 byte tolerance). This helps prevent importing potentially corrupted or incomplete backups.">ⓘ</button>
+                                            <button class="ml-1 text-blue-600 text-sm hint--top-left hint--rounded hint--medium" aria-label="When enabled, you'll be alerted if the cloud backup is smaller than your local data during import. This helps prevent data loss due toimporting older backups.">ⓘ</button>
                                         </label>
                                     </div>
                                 </div>
                                 <div class="flex justify-between space-x-2">
-                                    <button id="save-aws-details-btn" type="button" class="z-1 inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors" disabled>
+                                    <button id="save-aws-details-btn" type="button" class="z-1 inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors" disabled>
                                         Save
                                     </button>
                                 </div>
