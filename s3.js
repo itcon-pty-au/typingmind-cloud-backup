@@ -1,4 +1,4 @@
-const VERSION = '20250203-12:17';
+const VERSION = '20250203-12:23';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -170,7 +170,8 @@ function openSyncModal() {
             <div class="text-gray-800 dark:text-white text-left text-sm">
                 <div class="flex justify-center items-center mb-4">
                     <h3 class="text-center text-xl font-bold">Backup & Sync</h3>
-                    <button class="ml-2 text-blue-600 text-lg" onclick='showInfoModal("About Backup & Sync", "Fill form & Save. If you are using Amazon S3 - fill in S3 Bucket Name, AWS Region, AWS Access Key, AWS Secret Key and Encryption key.<br/><br/>Initial backup: You will need to click on Export to create your first backup in S3. Thereafter, automatic backups are done to S3 as per Backup Interval if the browser tab is active.<br/><br/>Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the local data.<br/><br/>Adhoc Backup & Restore: Use the Export and Import to perform on-demand backup or restore. Note that this overwrites the main backup/local data.<br/><br/>Snapshot: Creates an instant no-touch backup that will not be overwritten.<br/><br/>Download: You can select the backup data to be download and click on Download button to download it for local storage.<br/><br/>Restore: Select the backup you want to restore and Click on Restore. The typingmind data will be restored to the selected backup data/date.")'>ⓘ</button>
+                    <button class="ml-2 text-blue-600 text-lg hint--left hint--rounded hint--medium" 
+                        aria-label="Fill form & Save. If you are using Amazon S3 - fill in S3 Bucket Name, AWS Region, AWS Access Key, AWS Secret Key and Encryption key.&#10;&#10;Initial backup: You will need to click on Export to create your first backup in S3. Thereafter, automatic backups are done to S3 as per Backup Interval if the browser tab is active.&#10;&#10;Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the local data.&#10;&#10;Adhoc Backup & Restore: Use the Export and Import to perform on-demand backup or restore. Note that this overwrites the main backup/local data.&#10;&#10;Snapshot: Creates an instant no-touch backup that will not be overwritten.&#10;&#10;Download: You can select the backup data to be download and click on Download button to download it for local storage.&#10;&#10;Restore: Select the backup you want to restore and Click on Restore. The typingmind data will be restored to the selected backup data/date.">ⓘ</button>
                 </div>
                 <div class="space-y-4">
                     <div>
@@ -2009,3 +2010,27 @@ function showInfoModal(title, content) {
         }
     });
 }
+
+const hintCustomStyles = document.createElement('style');
+hintCustomStyles.textContent = `
+    [class*="hint--"][aria-label]:after {
+        white-space: pre-wrap;
+        max-width: 300px;
+        word-wrap: break-word;
+        line-height: 1.4;
+        padding: 8px 10px;
+    }
+    .hint--medium:after {
+        width: 250px;
+    }
+    .hint--large:after {
+        width: 350px;
+    }
+    .hint--left:after {
+        margin-right: 10px;
+    }
+    .hint--bottom:after {
+        margin-top: 6px;
+    }
+`;
+document.head.appendChild(hintCustomStyles);
