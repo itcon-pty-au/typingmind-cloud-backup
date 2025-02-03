@@ -1,4 +1,4 @@
-const VERSION = '20250203-12:02';
+const VERSION = '20250203-12:06';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -162,7 +162,7 @@ function openSyncModal() {
 		'bg-opacity-75 fixed inset-0 bg-gray-800 transition-all flex items-start justify-center z-[60] p-4 overflow-y-auto';
 	modalPopup.innerHTML = `
         <div class="inline-block w-full align-bottom bg-white dark:bg-zinc-950 rounded-lg px-4 pb-4 text-left shadow-xl transform transition-all sm:my-8 sm:p-6 sm:align-middle pt-4 overflow-hidden sm:max-w-lg mt-4">
-            <div class="text-gray-800 dark:text-white text-left text-sm max-h-[90vh] overflow-y-auto">
+            <div class="text-gray-800 dark:text-white text-left text-sm">
                 <div class="flex justify-center items-center mb-4">
                     <h3 class="text-center text-xl font-bold">Backup & Sync</h3>
                     <button class="ml-2 text-blue-600 text-lg" onclick='showInfoModal("About Backup & Sync", "Fill form & Save. If you are using Amazon S3 - fill in S3 Bucket Name, AWS Region, AWS Access Key, AWS Secret Key and Encryption key.<br/><br/>Initial backup: You will need to click on Export to create your first backup in S3. Thereafter, automatic backups are done to S3 as per Backup Interval if the browser tab is active.<br/><br/>Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the local data.<br/><br/>Adhoc Backup & Restore: Use the Export and Import to perform on-demand backup or restore. Note that this overwrites the main backup/local data.<br/><br/>Snapshot: Creates an instant no-touch backup that will not be overwritten.<br/><br/>Download: You can select the backup data to be download and click on Download button to download it for local storage.<br/><br/>Restore: Select the backup you want to restore and Click on Restore. The typingmind data will be restored to the selected backup data/date.")'>ⓘ</button>
@@ -1975,7 +1975,7 @@ document.head.appendChild(style);
 
 function showInfoModal(title, content) {
     const infoModal = document.createElement('div');
-    infoModal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[90] p-4';
+    infoModal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[999] p-4';
     
     const safeContent = content
         .replace(/"/g, '&quot;')
