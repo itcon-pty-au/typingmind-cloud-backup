@@ -70,7 +70,11 @@ WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXP
         "s3:ListBucket",
         "s3:GetObject",
         "s3:PutObject",
-        "s3:DeleteObject"
+        "s3:DeleteObject",
+        "s3:ListBucketMultipartUploads",
+        "s3:ListMultipartUploadParts",
+        "s3:AbortMultipartUpload",
+        "s3:GetBucketLocation"
       ],
       "Resource": [
         "arn:aws:s3:::<AWS bucket name>",
@@ -98,7 +102,7 @@ Update AWS Account ID, IAM username and AWS bucket name in the policy with your 
     "AllowedHeaders": ["*"],
     "AllowedMethods": ["HEAD", "GET", "PUT", "POST", "DELETE"],
     "AllowedOrigins": ["https://*.hostname.com"],
-    "ExposeHeaders": ["Access-Control-Allow-Origin", "ETag"],
+    "ExposeHeaders": ["Access-Control-Allow-Origin","ETag","x-amz-server-side-encryption","x-amz-request-id","x-amz-id-2"],
     "MaxAgeSeconds": 3000
   }
 ]
@@ -110,7 +114,7 @@ If you are using typingmind cloud, use the below
     "AllowedHeaders": ["*"],
     "AllowedMethods": ["HEAD", "GET", "PUT", "POST", "DELETE"],
     "AllowedOrigins": ["https://www.typingmind.com"],
-    "ExposeHeaders": ["Access-Control-Allow-Origin", "ETag"],
+    "ExposeHeaders": ["Access-Control-Allow-Origin","ETag","x-amz-server-side-encryption","x-amz-request-id","x-amz-id-2"],
     "MaxAgeSeconds": 3000
   }
 ]
