@@ -1,4 +1,4 @@
-const VERSION = '20250203-12:38';
+const VERSION = '20250203-12:43';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -170,7 +170,7 @@ function openSyncModal() {
             <div class="text-gray-800 dark:text-white text-left text-sm">
                 <div class="flex justify-center items-center mb-4">
                     <h3 class="text-center text-xl font-bold">Backup & Sync</h3>
-                    <button class="ml-2 text-blue-600 text-lg hint--bottom hint--rounded hint--large" 
+                    <button class="ml-2 text-blue-600 text-lg hint--bottom-left hint--rounded hint--medium" 
                         aria-label="Fill form & Save. If you are using Amazon S3 - fill in S3 Bucket Name, AWS Region, AWS Access Key, AWS Secret Key and Encryption key.&#10;&#10;Initial backup: You will need to click on Export to create your first backup in S3. Thereafter, automatic backups are done to S3 as per Backup Interval if the browser tab is active.&#10;&#10;Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the local data.&#10;&#10;Adhoc Backup & Restore: Use the Export and Import to perform on-demand backup or restore. Note that this overwrites the main backup/local data.&#10;&#10;Snapshot: Creates an instant no-touch backup that will not be overwritten.&#10;&#10;Download: You can select the backup data to be download and click on Download button to download it for local storage.&#10;&#10;Restore: Select the backup you want to restore and Click on Restore. The typingmind data will be restored to the selected backup data/date.">ⓘ</button>
                 </div>
                 <div class="space-y-4">
@@ -246,7 +246,7 @@ function openSyncModal() {
                                 <div class="mt-6 bg-gray-100 px-3 py-3 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
                                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">
                                         Safety Threshold
-                                        <button class="ml-1 text-blue-600 text-lg hint--top-right hint--rounded hint--large" aria-label="This is to prevent unintentional corruption of app data. When exporting, the local data size and the cloud data size is compared and if the difference percentage exceeds the configuration threshold, you are asked to provide a confirmation before the cloud data is overwritten. If you feel this is a mistake and cloud data should not be overwritten, click on Cancel else click on Proceed. Similarly while importing, the cloud data size and local data size is compared and if the difference percentage exceeds the configuration threshold, you are asked to provide a confirmation before the local data is overwritten. If you feel your local data is more recent and should not be overwritten, click on Cancel else click on Proceed.">ⓘ</button>
+                                        <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="This is to prevent unintentional corruption of app data. When exporting, the local data size and the cloud data size is compared and if the difference percentage exceeds the configuration threshold, you are asked to provide a confirmation before the cloud data is overwritten. If you feel this is a mistake and cloud data should not be overwritten, click on Cancel else click on Proceed. Similarly while importing, the cloud data size and local data size is compared and if the difference percentage exceeds the configuration threshold, you are asked to provide a confirmation before the local data is overwritten. If you feel your local data is more recent and should not be overwritten, click on Cancel else click on Proceed.">ⓘ</button>
                                     </label>
                                     <div class="mt-2 flex space-x-4">
                                         <div class="w-1/2">
