@@ -1,4 +1,4 @@
-const VERSION = '20250203-12:59';
+const VERSION = '20250203-01:03';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -262,7 +262,7 @@ function openSyncModal() {
                                         <input type="checkbox" id="alert-smaller-cloud" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
                                         <label for="alert-smaller-cloud" class="ml-2 block text-sm text-gray-700 dark:text-gray-400">
                                             Alert if cloud backup is smaller during import
-                                            <button class="ml-1 text-blue-600 text-sm hint--right hint--rounded hint--medium" aria-label="When enabled, you'll be alerted if the cloud backup is smaller than your local data during import (with 5 byte tolerance). This helps prevent importing potentially corrupted or incomplete backups.">ⓘ</button>
+                                            <button class="ml-1 text-blue-600 text-sm hint--top-left hint--rounded hint--medium" aria-label="When enabled, you'll be alerted if the cloud backup is smaller than your local data during import (with 5 byte tolerance). This helps prevent importing potentially corrupted or incomplete backups.">ⓘ</button>
                                         </label>
                                     </div>
                                 </div>
