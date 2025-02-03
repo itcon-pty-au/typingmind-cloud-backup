@@ -1,4 +1,4 @@
-const VERSION = '20250203-12:43';
+const VERSION = '20250203-12:59';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -245,8 +245,8 @@ function openSyncModal() {
                                 </div>
                                 <div class="mt-6 bg-gray-100 px-3 py-3 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
                                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">
-                                        Safety Threshold
-                                        <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="This is to prevent unintentional corruption of app data. When exporting, the local data size and the cloud data size is compared and if the difference percentage exceeds the configuration threshold, you are asked to provide a confirmation before the cloud data is overwritten. If you feel this is a mistake and cloud data should not be overwritten, click on Cancel else click on Proceed. Similarly while importing, the cloud data size and local data size is compared and if the difference percentage exceeds the configuration threshold, you are asked to provide a confirmation before the local data is overwritten. If you feel your local data is more recent and should not be overwritten, click on Cancel else click on Proceed.">ⓘ</button>
+                                        Backup Size Safety Check
+                                        <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="This is to prevent unintentional corruption of app data. When exporting, the local data size and the cloud data size is compared and if the difference percentage exceeds the configured threshold, you are asked to provide a confirmation before the cloud data is overwritten. If you feel this is a mistake and cloud data should not be overwritten, click on Cancel else click on Proceed. Similarly while importing, the cloud data size and local data size is compared and if the difference percentage exceeds the configured threshold, you are asked to provide a confirmation before the local data is overwritten. If you feel your local data is more recent and should not be overwritten, click on Cancel else click on Proceed.">ⓘ</button>
                                     </label>
                                     <div class="mt-2 flex space-x-4">
                                         <div class="w-1/2">
@@ -257,6 +257,13 @@ function openSyncModal() {
                                             <label for="export-threshold" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Export (%)</label>
                                             <input id="export-threshold" name="export-threshold" type="number" step="0.1" min="0" placeholder="Default: 10" class="z-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off">
                                         </div>
+                                    </div>
+                                    <div class="mt-3 flex items-center">
+                                        <input type="checkbox" id="alert-smaller-cloud" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                                        <label for="alert-smaller-cloud" class="ml-2 block text-sm text-gray-700 dark:text-gray-400">
+                                            Alert if cloud backup is smaller during import
+                                            <button class="ml-1 text-blue-600 text-sm hint--right hint--rounded hint--medium" aria-label="When enabled, you'll be alerted if the cloud backup is smaller than your local data during import (with 5 byte tolerance). This helps prevent importing potentially corrupted or incomplete backups.">ⓘ</button>
+                                        </label>
                                     </div>
                                 </div>
                                 <div class="flex justify-between space-x-2">
@@ -631,6 +638,14 @@ function openSyncModal() {
 	});
 	const consoleLoggingToggle = document.getElementById('console-logging-toggle');
 	consoleLoggingToggle.checked = isConsoleLoggingEnabled;
+
+    const alertSmallerCloudCheckbox = document.getElementById('alert-smaller-cloud');
+    if (alertSmallerCloudCheckbox) {
+        alertSmallerCloudCheckbox.checked = getShouldAlertOnSmallerCloud();
+        alertSmallerCloudCheckbox.addEventListener('change', (e) => {
+            localStorage.setItem('alert-smaller-cloud', e.target.checked);
+        });
+    }
 }
 document.addEventListener('visibilitychange', async () => {
 	logToConsole('visibility', `Visibility changed: ${document.hidden ? 'hidden' : 'visible'}`);
@@ -1174,7 +1189,7 @@ async function backupToS3() {
 
             if (sizeDiffPercentage > getExportThreshold()) {
                 isWaitingForUserInput = true;
-                const message = `Warning: The new backup size (${localSize} bytes) differs significantly from the current cloud backup (${cloudSize} bytes) by ${sizeDiffPercentage.toFixed(2)}%.\n\nDo you want to proceed with the upload?`;
+                const message = `Warning: The new backup size (${localSize} bytes) differs significantly from the current cloud backup (${cloudSize} bytes) by ${sizeDiffPercentage.toFixed(2)}% (threshold: ${getExportThreshold()}%).\n\nDo you want to proceed with the upload?`;
                 const shouldProceed = await showCustomAlert(message, 'Size Difference Warning', [
                     {text: 'Cancel', primary: false},
                     {text: 'Proceed', primary: true}
@@ -1395,53 +1410,21 @@ async function importFromS3() {
         const localFileSize = new Blob([currentDataStr]).size;
         const sizeDiffPercentage = cloudFileSize && localFileSize ? 
             Math.abs((cloudFileSize - localFileSize) / localFileSize * 100) : 0;
+
+        const shouldAlertOnSmallerCloud = getShouldAlertOnSmallerCloud();
+        const TOLERANCE_BYTES = 5;
+        const isCloudSignificantlySmaller = shouldAlertOnSmallerCloud && 
+            cloudFileSize < (localFileSize - TOLERANCE_BYTES);
+
         logToConsole('progress', 'Size comparison:', {
             cloudSize: `${cloudFileSize} bytes`,
             localSize: `${localFileSize} bytes`,
-            difference: `${cloudFileSize - localFileSize} bytes${sizeDiffPercentage ? ` (${sizeDiffPercentage.toFixed(4)}%)` : ''}`
+            difference: `${cloudFileSize - localFileSize} bytes${sizeDiffPercentage ? ` (${sizeDiffPercentage.toFixed(4)}%)` : ''}`,
+            isCloudSmaller: isCloudSignificantlySmaller
         });
-        const isTimeDifferenceSignificant = () => {
-            if (!lastSync) {
-                logToConsole('info', `No last sync found`);
-                return false;
-            }
-            const cloudDate = new Date(cloudLastModified);
-            try {
-                const [datePart, timePart] = lastSync.split(', ');
-                let localSyncDate;
-                if (datePart.includes('/')) {
-                    const [month, day, year] = datePart.split('/').map(num => parseInt(num));
-                    const [time, period] = timePart.split(' ');
-                    const [hours, minutes, seconds] = time.split(':').map(num => parseInt(num));
-                    let hour = hours;
-                    if (period) {
-                        if (period.toUpperCase() === 'PM' && hour !== 12) hour += 12;
-                        else if (period.toUpperCase() === 'AM' && hour === 12) hour = 0;
-                    }
-                    localSyncDate = new Date(year, month - 1, day, hour, minutes, seconds);
-                } else {
-                    localSyncDate = new Date(lastSync);
-                }
-                if (!isNaN(localSyncDate.getTime())) {
-                    const diffInMilliseconds = Math.abs(cloudDate - localSyncDate);
-                    const diffInHours = diffInMilliseconds / (1000 * 60 * 60);
-                    logToConsole('time', 'Time comparison:', {
-                        lastSync: localSyncDate.toISOString(),
-                        cloudModified: cloudDate.toISOString(),
-                        difference: `${diffInHours.toFixed(2)} hours`,
-                        localFormat: lastSync
-                    });
-                    return diffInHours > 24;
-                }
-                throw new Error('Invalid date format');
-            } catch (error) {
-                logToConsole('error', `Error parsing dates:`, error);
-                return false;
-            }
-        };
-        // Local vs Cloud data - 5% comparison criteria
-        const shouldPrompt = localFileSize > 0 && sizeDiffPercentage > getImportThreshold();
-        logToConsole('info', `Should prompt user: ${shouldPrompt}`);
+
+        const shouldPrompt = (localFileSize > 0 && sizeDiffPercentage > getImportThreshold()) || isCloudSignificantlySmaller;
+        
         if (shouldPrompt) {
             logToConsole('info', `Showing prompt to user...`);
             isWaitingForUserInput = true;
@@ -1461,8 +1444,11 @@ async function importFromS3() {
                 if (cloudFileSize) {
                     message += `Size difference: ${sizeDiffPercentage.toFixed(2)}%\n\n`;
                 }
-                if (cloudFileSize && sizeDiffPercentage > 1) {
-                    message += '⚠️ Size difference exceeds 1%\n';
+                if (cloudFileSize && sizeDiffPercentage > getImportThreshold()) {
+                    message += `⚠️ Size difference exceeds ${getImportThreshold()}%\n`;
+                }
+                if (isCloudSignificantlySmaller) {
+                    message += '⚠️ Warning: Cloud backup is smaller than local data\n';
                 }
                 message += '\nDo you want to proceed with importing the cloud backup? Clicking "Proceed" will overwrite your local data. If you "Cancel", the local data will overwrite the cloud backup.';
                 const shouldProceed = await showCustomAlert(message, 'Confirmation required', [
@@ -2034,3 +2020,7 @@ hintCustomStyles.textContent = `
     }
 `;
 document.head.appendChild(hintCustomStyles);
+
+function getShouldAlertOnSmallerCloud() {
+    return localStorage.getItem('alert-smaller-cloud') === 'true';
+}
