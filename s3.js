@@ -1,4 +1,4 @@
-const VERSION = '20250204-20:13';
+const VERSION = '20250204-20:27';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -647,42 +647,48 @@ function openSyncModal() {
     }
 }
 document.addEventListener('visibilitychange', async () => {
-	logToConsole('visibility', `Visibility changed: ${document.hidden ? 'hidden' : 'visible'}`);
-	if (!document.hidden) {
-		logToConsole('active', 'Tab became active');
-		if (backupIntervalRunning) {
-			localStorage.setItem('activeTabBackupRunning', 'false');
-			clearInterval(backupInterval);
-			backupIntervalRunning = false;
-		}
-		try {
-			logToConsole('info', 'Checking for updates from S3...');
-			const importSuccessful = await checkAndImportBackup();
-			if (importSuccessful) {
-				const currentTime = new Date().toLocaleString();
-				const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
-				const today = new Date();
-				const currentDateSuffix = `${today.getFullYear()}${String(
-					today.getMonth() + 1
-				).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-				
-				var element = document.getElementById('last-sync-msg');
-				if (element !== null) {
-					element.innerText = `Last sync done at ${currentTime}`;
-					element = null;
-				}
-				if (!storedSuffix || currentDateSuffix > storedSuffix) {
-					await handleBackupFiles();
-				}
-				logToConsole('success', 'Import successful, starting backup interval');
-				startBackupInterval();
-			} else {
-				logToConsole('warning', 'Import was not successful, not starting backup interval');
-			}
-		} catch (error) {
-			logToConsole('error', 'Error during tab activation:', error);
-		}
-	}
+    logToConsole('visibility', `Visibility changed: ${document.hidden ? 'hidden' : 'visible'}`);
+    if (!document.hidden) {
+        logToConsole('active', 'Tab became active');
+        if (backupIntervalRunning) {
+            localStorage.setItem('activeTabBackupRunning', 'false');
+            clearInterval(backupInterval);
+            backupIntervalRunning = false;
+        }
+        
+        if (isWaitingForUserInput) {
+            logToConsole('skip', 'Tab activation tasks skipped - waiting for user input');
+            return;
+        }
+
+        try {
+            logToConsole('info', 'Checking for updates from S3...');
+            const importSuccessful = await checkAndImportBackup();
+            if (importSuccessful) {
+                const currentTime = new Date().toLocaleString();
+                const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
+                const today = new Date();
+                const currentDateSuffix = `${today.getFullYear()}${String(
+                    today.getMonth() + 1
+                ).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+                
+                var element = document.getElementById('last-sync-msg');
+                if (element !== null) {
+                    element.innerText = `Last sync done at ${currentTime}`;
+                    element = null;
+                }
+                if (!storedSuffix || currentDateSuffix > storedSuffix) {
+                    await handleBackupFiles();
+                }
+                logToConsole('success', 'Import successful, starting backup interval');
+                startBackupInterval();
+            } else {
+                logToConsole('warning', 'Import was not successful, not starting backup interval');
+            }
+        } catch (error) {
+            logToConsole('error', 'Error during tab activation:', error);
+        }
+    }
 });
 async function handleTimeBasedBackup() {
     const bucketName = localStorage.getItem('aws-bucket');
