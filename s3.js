@@ -1,4 +1,4 @@
-const VERSION = '20250205-07:01';
+const VERSION = '20250205-07:06';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1539,13 +1539,9 @@ async function importFromS3() {
         }
         logToConsole('success', `Import completed successfully`);
         wasImportSuccessful = true;
-        logToConsole('info', `Resuming backup interval after successful import`);
-        startBackupInterval();
         return true;
     } catch (error) {
         logToConsole('error', `Import failed with error:`, error);
-        logToConsole('info', `Resuming backup interval after import error`);
-        startBackupInterval();
         throw error;
     }
 }
