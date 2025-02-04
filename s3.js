@@ -1,4 +1,4 @@
-const VERSION = '20250203-14:48';
+const VERSION = '20250204-20:13';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1203,7 +1203,6 @@ async function backupToS3() {
             if (err.code !== 'NoSuchKey') {
                 throw err;
             }
-            // If no existing backup, continue with upload
             logToConsole('info', 'No existing backup found, proceeding with upload');
         }
 
@@ -1365,6 +1364,10 @@ async function backupToS3() {
 }
 
 async function importFromS3() {
+    if (isWaitingForUserInput) {
+        logToConsole('skip', 'Skipping import - another prompt is already open');
+        return false;
+    }
     logToConsole('download', 'Starting import from S3...');
     try {
         const bucketName = localStorage.getItem('aws-bucket');
@@ -1423,21 +1426,22 @@ async function importFromS3() {
         });
 
         const shouldPrompt = (localFileSize > 0 && sizeDiffPercentage > getImportThreshold()) || isCloudSignificantlySmaller;
-        
+
         if (shouldPrompt) {
-            logToConsole('info', `Showing prompt to user...`);
-            isWaitingForUserInput = true;
-            const existingIntervals = [backupInterval];
-            existingIntervals.forEach(interval => {
-                if (interval) {
-                    logToConsole('pause', `Clearing backupinterval ${interval}`);
-                    clearInterval(interval);
-                }
-            });
-            backupInterval = null;
-            backupIntervalRunning = false;
-            localStorage.setItem('activeTabBackupRunning', 'false');
             try {
+                isWaitingForUserInput = true;
+                logToConsole('info', `Showing prompt to user...`);
+                const existingIntervals = [backupInterval];
+                existingIntervals.forEach(interval => {
+                    if (interval) {
+                        logToConsole('pause', `Clearing backupinterval ${interval}`);
+                        clearInterval(interval);
+                    }
+                });
+                backupInterval = null;
+                backupIntervalRunning = false;
+                localStorage.setItem('activeTabBackupRunning', 'false');
+
                 let message = `Cloud backup size: ${cloudFileSize || 'Unknown'} bytes\n`;
                 message += `Local data size: ${localFileSize} bytes\n`;
                 if (cloudFileSize) {
@@ -1450,26 +1454,23 @@ async function importFromS3() {
                     message += '⚠️ Warning: Cloud backup is smaller than local data\n';
                 }
                 message += '\nDo you want to proceed with importing the cloud backup? Clicking "Proceed" will overwrite your local data. If you "Cancel", the local data will overwrite the cloud backup.';
+
                 const shouldProceed = await showCustomAlert(message, 'Confirmation required', [
                     {text: 'Cancel', primary: false},
                     {text: 'Proceed', primary: true}
                 ]);
+
                 if (!shouldProceed) {
                     logToConsole('info', `Import cancelled by user`);
-                    isWaitingForUserInput = false;
                     logToConsole('resume', `Resuming backup interval after user cancelled cloud import`);
                     startBackupInterval();
                     return false;
                 }
-                isWaitingForUserInput = false;
             } catch (error) {
-                isWaitingForUserInput = false;
-                if (backupInterval) {
-                    clearInterval(backupInterval);
-                    backupInterval = null;
-                    backupIntervalRunning = false;
-                }
+                logToConsole('error', 'Error during import prompt:', error);
                 throw error;
+            } finally {
+                isWaitingForUserInput = false;
             }
         }
         logToConsole('info', `Fetching data from S3...`);
