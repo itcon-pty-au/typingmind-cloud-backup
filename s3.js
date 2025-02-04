@@ -1,4 +1,4 @@
-const VERSION = '20250204-20:35';
+const VERSION = '20250205-06:44';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -232,7 +232,7 @@ function openSyncModal() {
                                 </div>
                                 <div class="flex space-x-4">
                                     <div class="w-1/2">
-                                        <label for="backup-interval" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Backup Interval (sec)</label>
+                                        <label for="backup-interval" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Backup Interval</label>
                                         <button class="ml-1 text-blue-600 text-lg hint--top-right hint--rounded hint--medium" aria-label="How often do you want to backup your data to cloud? Minimum 15 seconds, Default: 60 seconds">ⓘ</button>
                                         <input id="backup-interval" name="backup-interval" type="number" min="30" placeholder="Default: 60" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                     </div>
@@ -442,6 +442,15 @@ function openSyncModal() {
 			const endpoint = awsEndpointInput.value.trim();
 			const backupInterval = document.getElementById('backup-interval').value;
 			const encryptionKey = document.getElementById('encryption-key').value.trim();
+			const importThreshold = document.getElementById('import-threshold').value;
+			const exportThreshold = document.getElementById('export-threshold').value;
+
+			if (importThreshold) {
+				localStorage.setItem('import-size-threshold', importThreshold);
+			}
+			if (exportThreshold) {
+				localStorage.setItem('export-size-threshold', exportThreshold);
+			}
 
 			if (backupInterval < 15) {
 				alert('Backup interval must be at least 15 seconds');
