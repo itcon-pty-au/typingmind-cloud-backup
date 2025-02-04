@@ -1,4 +1,4 @@
-const VERSION = '20250205-06:49';
+const VERSION = '20250205-07:01';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1012,7 +1012,6 @@ function startBackupInterval() {
         const intervalInMilliseconds = Math.max(configuredInterval * 1000, 15000);
         logToConsole('info', `Setting backup interval to ${intervalInMilliseconds/1000} seconds`);
         backupIntervalRunning = true;
-        performBackup();
         backupInterval = setInterval(() => {
             logToConsole('start', 'Interval triggered');
             performBackup();
@@ -1083,9 +1082,28 @@ async function loadJSZip() {
 
 function importDataToStorage(data) {
     return new Promise((resolve, reject) => {
+        // Keys that should not be overwritten during import
+        const preserveKeys = [
+            'import-size-threshold',
+            'export-size-threshold',
+            'alert-smaller-cloud',
+            'encryption-key',
+            'aws-bucket',
+            'aws-access-key', 
+            'aws-secret-key',
+            'aws-region',
+            'aws-endpoint',
+            'backup-interval'
+        ];
+
+        // Only import localStorage items that aren't in preserveKeys
         Object.keys(data.localStorage).forEach((key) => {
-            localStorage.setItem(key, data.localStorage[key]);
+            if (!preserveKeys.includes(key)) {
+                localStorage.setItem(key, data.localStorage[key]);
+            }
         });
+
+        // Rest of the existing importDataToStorage code...
         const request = indexedDB.open('keyval-store');
         request.onerror = () => reject(request.error);
         request.onsuccess = function (event) {
