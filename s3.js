@@ -1,4 +1,4 @@
-const VERSION = '20250205-07:26';
+const VERSION = '20250206-07:40';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1994,7 +1994,15 @@ function logToConsole(type, message, data = null) {
                 logEntry.appendChild(dataEntry);
             }
             
+            // Check if user is scrolled near bottom before inserting new log
+            const isAtBottom = logsContent.scrollHeight - logsContent.scrollTop - logsContent.clientHeight < 50;
+            
             logsContent.insertBefore(logEntry, logsContent.firstChild);
+            
+            // Only auto-scroll if user was already at bottom
+            if (isAtBottom) {
+                logsContent.scrollTop = 0;
+            }
             
             // Keep only last 50 logs
             while (logsContent.children.length > 50) {
@@ -2169,7 +2177,15 @@ function logToConsole(type, message, data = null) {
                 logEntry.appendChild(dataEntry);
             }
             
+            // Check if user is scrolled near bottom before inserting new log
+            const isAtBottom = logsContent.scrollHeight - logsContent.scrollTop - logsContent.clientHeight < 50;
+            
             logsContent.insertBefore(logEntry, logsContent.firstChild);
+            
+            // Only auto-scroll if user was already at bottom
+            if (isAtBottom) {
+                logsContent.scrollTop = 0;
+            }
             
             // Keep only last 50 logs
             while (logsContent.children.length > 50) {
