@@ -1,4 +1,4 @@
-const VERSION = '20250206-09:53';
+const VERSION = '20250206-10:01';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -2150,10 +2150,6 @@ function createMobileLogContainer() {
     logsContent.id = 'logs-content';
     logsContent.className = 'p-2 overflow-y-auto';
     logsContent.style.height = 'calc(100% - 36px)';
-    
-    controls.appendChild(clearBtn);
-    controls.appendChild(toggleSize);
-    controls.appendChild(closeBtn);
     
     header.appendChild(title);
     header.appendChild(controls);
