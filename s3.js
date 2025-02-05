@@ -1,4 +1,5 @@
-const VERSION = '20250206-10:13';
+
+const VERSION = '20250206-10:23';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -2065,7 +2066,7 @@ function createMobileLogContainer() {
     
     const minimizeBtn = document.createElement('button');
     minimizeBtn.className = 'text-white p-1 hover:bg-gray-700 rounded text-sm';
-    minimizeBtn.textContent = 'Minimize';
+    minimizeBtn.textContent = '-';
     minimizeBtn.onclick = () => {
         container.style.display = 'none';
         minimizedTag.style.display = 'block';
@@ -2132,9 +2133,9 @@ function createMobileLogContainer() {
         isConsoleLoggingEnabled = false;
     };
 
-    controls.appendChild(minimizeBtn);
     controls.appendChild(clearBtn);
     controls.appendChild(exportBtn);
+    controls.appendChild(minimizeBtn);
     controls.appendChild(toggleSize);
     controls.appendChild(closeBtn);
     
@@ -2146,11 +2147,7 @@ function createMobileLogContainer() {
     logsContent.id = 'logs-content';
     logsContent.className = 'p-2 overflow-y-auto';
     logsContent.style.height = 'calc(100% - 36px)';
-    
-    controls.appendChild(clearBtn);
-    controls.appendChild(toggleSize);
-    controls.appendChild(closeBtn);
-    
+       
     header.appendChild(title);
     header.appendChild(controls);
     
