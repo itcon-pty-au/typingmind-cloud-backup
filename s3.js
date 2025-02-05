@@ -1,4 +1,5 @@
-const VERSION = '20250206-10:44';
+
+const VERSION = '20250206-10:23';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1918,13 +1919,13 @@ function showCustomAlert(message, title = 'Alert', buttons = [{text: 'OK', prima
         messageElement.className = 'text-gray-700 dark:text-gray-300 whitespace-pre-wrap mb-6';
         messageElement.textContent = message;
         const buttonContainer = document.createElement('div');
-        buttonContainer.className = 'flex justify-end space-x-4';
+        buttonContainer.className = 'flex justify-end space-x-3';
         buttons.forEach(button => {
             const btn = document.createElement('button');
             btn.className = `${button.primary ? 
-                'px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700' :
-                'px-6 py-3 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300'} 
-                cursor-pointer touch-manipulation text-base min-w-[100px]`;
+                'px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700' :
+                'px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300'} 
+                cursor-pointer touch-manipulation`;
             btn.style.WebkitTapHighlightColor = 'transparent';
             btn.style.userSelect = 'none';
             btn.textContent = button.text;
@@ -2005,8 +2006,17 @@ function logToConsole(type, message, data = null) {
                 logEntry.appendChild(dataEntry);
             }
             
-            logsContent.appendChild(logEntry);
-            logsContent.scrollTop = logsContent.scrollHeight;
+            const isAtBottom = logsContent.scrollHeight - logsContent.scrollTop - logsContent.clientHeight < 50;
+            
+            logsContent.insertBefore(logEntry, logsContent.firstChild);
+            
+            if (isAtBottom) {
+                logsContent.scrollTop = 0;
+            }
+            
+            // while (logsContent.children.length > 50) {
+            //     logsContent.removeChild(logsContent.lastChild);
+            // }
         }
     }
     
@@ -2032,8 +2042,6 @@ function createMobileLogContainer() {
         display: ${isConsoleLoggingEnabled ? 'block' : 'none'};
         resize: vertical;
         overflow-y: auto;
-        display: flex;
-        flex-direction: column;
     `;
 
     const minimizedTag = document.createElement('div');
@@ -2048,38 +2056,33 @@ function createMobileLogContainer() {
 
     const header = document.createElement('div');
     header.className = 'sticky top-0 left-0 right-0 bg-gray-800 p-2 flex justify-between items-center border-b border-gray-700';
-    header.style.cssText = `
-        position: relative;
-        background-color: rgb(31, 41, 55);
-    `;
     
     const title = document.createElement('span');
     title.textContent = 'Debug Logs';
     title.className = 'text-sm font-medium';
     
     const controls = document.createElement('div');
-    controls.className = 'flex items-center gap-3 px-2';
-    controls.style.position = 'relative';
+    controls.className = 'flex items-center gap-2';
     
     const minimizeBtn = document.createElement('button');
-    minimizeBtn.className = 'text-white p-2 hover:bg-gray-700 rounded flex items-center justify-center min-w-[32px] min-h-[32px]';
-    minimizeBtn.innerHTML = '<i class="fas fa-minus"></i>';
+    minimizeBtn.className = 'text-white p-1 hover:bg-gray-700 rounded text-sm';
+    minimizeBtn.textContent = '—';
     minimizeBtn.onclick = () => {
         container.style.display = 'none';
         minimizedTag.style.display = 'block';
     };
 
     const clearBtn = document.createElement('button');
-    clearBtn.className = 'text-white p-2 hover:bg-gray-700 rounded flex items-center justify-center min-w-[32px] min-h-[32px]';
-    clearBtn.innerHTML = '<i class="fas fa-trash-alt"></i>';
+    clearBtn.className = 'text-white p-1 hover:bg-gray-700 rounded text-sm';
+    clearBtn.textContent = 'Clear';
     clearBtn.onclick = () => {
         const logsContainer = container.querySelector('#logs-content');
         if (logsContainer) logsContainer.innerHTML = '';
     };
 
     const exportBtn = document.createElement('button');
-    exportBtn.className = 'text-white p-2 hover:bg-gray-700 rounded flex items-center justify-center min-w-[32px] min-h-[32px]';
-    exportBtn.innerHTML = '<i class="fas fa-download"></i>';
+    exportBtn.className = 'text-white p-1 hover:bg-gray-700 rounded text-sm';
+    exportBtn.textContent = 'Export';
     exportBtn.onclick = () => {
         const logsContainer = container.querySelector('#logs-content');
         if (logsContainer) {
@@ -2107,68 +2110,21 @@ function createMobileLogContainer() {
     };
     
     const toggleSize = document.createElement('button');
-    toggleSize.className = 'text-white p-2 hover:bg-gray-700 rounded flex items-center justify-center min-w-[32px] min-h-[32px]';
-    toggleSize.innerHTML = '<i class="fas fa-expand"></i>';
+    toggleSize.className = 'text-white p-1 hover:bg-gray-700 rounded';
+    toggleSize.innerHTML = '□';
     toggleSize.onclick = () => {
         if (container.style.height === '200px') {
-            container.style.cssText = `
-                position: fixed;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                height: 100vh !important;
-                max-height: 100vh !important;
-                width: 100vw;
-                z-index: 9999;
-                background-color: rgba(0, 0, 0, 0.95);
-                display: flex;
-                flex-direction: column;
-                resize: none;
-            `;
-            const logsContent = container.querySelector('#logs-content');
-            if (logsContent) {
-                logsContent.style.cssText = `
-                    height: calc(100vh - 36px);
-                    max-height: calc(100vh - 36px);
-                    overflow-y: auto;
-                    display: flex;
-                    flex-direction: column;
-                    position: relative;
-                `;
-            }
-            toggleSize.innerHTML = '<i class="fas fa-compress"></i>';
+            container.style.height = '80vh';
+            toggleSize.innerHTML = '▢';
         } else {
-            container.style.cssText = `
-                position: fixed;
-                bottom: 0;
-                left: 0;
-                right: 0;
-                height: 200px;
-                max-height: 50vh;
-                display: flex;
-                flex-direction: column;
-                resize: vertical;
-                background-color: rgba(0, 0, 0, 0.75);
-                z-index: 9999;
-            `;
-            const logsContent = container.querySelector('#logs-content');
-            if (logsContent) {
-                logsContent.style.cssText = `
-                    height: calc(100% - 36px);
-                    overflow-y: auto;
-                    display: flex;
-                    flex-direction: column;
-                    position: relative;
-                `;
-            }
-            toggleSize.innerHTML = '<i class="fas fa-expand"></i>';
+            container.style.height = '200px';
+            toggleSize.innerHTML = '□';
         }
     };
     
     const closeBtn = document.createElement('button');
-    closeBtn.className = 'text-white p-2 hover:bg-gray-700 rounded flex items-center justify-center min-w-[32px] min-h-[32px]';
-    closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+    closeBtn.className = 'text-white p-1 hover:bg-gray-700 rounded';
+    closeBtn.innerHTML = '✕';
     closeBtn.onclick = () => {
         container.style.display = 'none';
         minimizedTag.style.display = 'none';
@@ -2189,15 +2145,9 @@ function createMobileLogContainer() {
     
     const logsContent = document.createElement('div');
     logsContent.id = 'logs-content';
-    logsContent.className = 'p-2 overflow-y-auto flex-grow';
-    logsContent.style.cssText = `
-        height: calc(100% - 36px);
-        overflow-y: auto;
-        display: flex;
-        flex-direction: column;
-        position: relative;
-    `;
-
+    logsContent.className = 'p-2 overflow-y-auto';
+    logsContent.style.height = 'calc(100% - 36px)';
+       
     header.appendChild(title);
     header.appendChild(controls);
     
@@ -2243,6 +2193,74 @@ function createMobileLogContainer() {
     document.body.appendChild(container);
 
     return container;
+}
+
+function logToConsole(type, message, data = null) {
+    if (!isConsoleLoggingEnabled) return;
+    
+    const timestamp = new Date().toISOString();
+    const icons = {
+        info: 'ℹ️',
+        success: '✅',
+        warning: '⚠️',
+        error: '❌',
+        start: '🔄',
+        end: '🏁',
+        upload: '⬆️',
+        download: '⬇️',
+        cleanup: '🧹',
+        snapshot: '📸',
+        encrypt: '🔐',
+        decrypt: '🔓',
+        progress: '📊',
+        time: '⏰',
+        wait: '⏳',
+        pause: '⏸️',
+        resume: '▶️',
+        visibility: '👁️',
+        active: '📱',
+        calendar: '📅',
+        tag: '🏷️',
+        stop: '🛑',
+        skip: '⏩'
+    };
+    
+    const icon = icons[type] || 'ℹ️';
+    const logMessage = `${icon} [${timestamp}] ${message}`;
+    
+    if (/Mobi|Android/i.test(navigator.userAgent)) {
+        const container = document.getElementById('mobile-log-container') || createMobileLogContainer();
+        const logsContent = container.querySelector('#logs-content');
+        if (logsContent) {
+            const logEntry = document.createElement('div');
+            logEntry.className = 'text-sm mb-1 break-words';
+            logEntry.textContent = logMessage;
+            
+            if (data) {
+                const dataEntry = document.createElement('div');
+                dataEntry.className = 'text-xs text-gray-500 ml-4 mb-2';
+                dataEntry.textContent = JSON.stringify(data, null, 2);
+                logEntry.appendChild(dataEntry);
+            }
+            
+            logsContent.appendChild(logEntry);
+            
+            // while (logsContent.children.length > 50) {
+            //     logsContent.removeChild(logsContent.firstChild);
+            // }
+        }
+    }
+    
+    switch (type) {
+        case 'error':
+            console.error(logMessage, data);
+            break;
+        case 'warning':
+            console.warn(logMessage, data);
+            break;
+        default:
+            console.log(logMessage, data);
+    }
 }
 
 function showInfoModal(title, content) {
