@@ -1,4 +1,4 @@
-const VERSION = '20250206-10:35';
+const VERSION = '20250206-10:40';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -2048,7 +2048,6 @@ function createMobileLogContainer() {
 
     const header = document.createElement('div');
     header.className = 'sticky top-0 left-0 right-0 bg-gray-800 p-2 flex justify-between items-center border-b border-gray-700';
-    header.style.zIndex = '1';
     
     const title = document.createElement('span');
     title.textContent = 'Debug Logs';
@@ -2056,6 +2055,7 @@ function createMobileLogContainer() {
     
     const controls = document.createElement('div');
     controls.className = 'flex items-center gap-3 px-2';
+    controls.style.zIndex = '3';
     
     const minimizeBtn = document.createElement('button');
     minimizeBtn.className = 'text-white p-2 hover:bg-gray-700 rounded flex items-center justify-center min-w-[32px] min-h-[32px]';
@@ -2124,9 +2124,15 @@ function createMobileLogContainer() {
             `;
             const logsContent = container.querySelector('#logs-content');
             if (logsContent) {
-                logsContent.style.height = 'calc(100vh - 36px)';
-                logsContent.style.maxHeight = 'calc(100vh - 36px)';
-                logsContent.style.overflowY = 'auto';
+                logsContent.style.cssText = `
+                    height: calc(100vh - 36px);
+                    max-height: calc(100vh - 36px);
+                    overflow-y: auto;
+                    display: flex;
+                    flex-direction: column;
+                    position: relative;
+                    z-index: 1;
+                `;
             }
             toggleSize.innerHTML = '<i class="fas fa-compress"></i>';
         } else {
@@ -2145,9 +2151,14 @@ function createMobileLogContainer() {
             `;
             const logsContent = container.querySelector('#logs-content');
             if (logsContent) {
-                logsContent.style.height = 'calc(100% - 36px)';
-                logsContent.style.maxHeight = '';
-                logsContent.style.overflowY = 'auto';
+                logsContent.style.cssText = `
+                    height: calc(100% - 36px);
+                    overflow-y: auto;
+                    display: flex;
+                    flex-direction: column;
+                    position: relative;
+                    z-index: 1;
+                `;
             }
             toggleSize.innerHTML = '<i class="fas fa-expand"></i>';
         }
@@ -2177,11 +2188,15 @@ function createMobileLogContainer() {
     const logsContent = document.createElement('div');
     logsContent.id = 'logs-content';
     logsContent.className = 'p-2 overflow-y-auto flex-grow';
-    logsContent.style.height = 'calc(100% - 36px)';
-    logsContent.style.overflowY = 'auto';
-    logsContent.style.display = 'flex';
-    logsContent.style.flexDirection = 'column';
-    
+    logsContent.style.cssText = `
+        height: calc(100% - 36px);
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+        z-index: 1;
+    `;
+
     header.appendChild(title);
     header.appendChild(controls);
     
