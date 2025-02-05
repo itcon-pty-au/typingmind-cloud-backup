@@ -1,4 +1,4 @@
-const VERSION = '20250206-10:09';
+const VERSION = '20250206-10:13';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -2032,14 +2032,6 @@ function logToConsole(type, message, data = null) {
 }
 
 function createMobileLogContainer() {
-    // Add Font Awesome if not already present
-    if (!document.querySelector('link[href*="font-awesome"]')) {
-        const fontAwesome = document.createElement('link');
-        fontAwesome.rel = 'stylesheet';
-        fontAwesome.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css';
-        document.head.appendChild(fontAwesome);
-    }
-
     const container = document.createElement('div');
     container.id = 'mobile-log-container';
     container.className = 'fixed bottom-0 left-0 right-0 bg-black bg-opacity-75 text-white z-[9999]';
@@ -2069,29 +2061,27 @@ function createMobileLogContainer() {
     title.className = 'text-sm font-medium';
     
     const controls = document.createElement('div');
-    controls.className = 'flex items-center gap-3'; // Increased gap for better touch targets
+    controls.className = 'flex items-center gap-2';
     
     const minimizeBtn = document.createElement('button');
-    minimizeBtn.className = 'text-white p-2 hover:bg-gray-700 rounded text-lg';
-    minimizeBtn.innerHTML = '<i class="fas fa-minus"></i>';
+    minimizeBtn.className = 'text-white p-1 hover:bg-gray-700 rounded text-sm';
+    minimizeBtn.textContent = 'Minimize';
     minimizeBtn.onclick = () => {
         container.style.display = 'none';
         minimizedTag.style.display = 'block';
     };
 
     const clearBtn = document.createElement('button');
-    clearBtn.className = 'text-white p-2 hover:bg-gray-700 rounded text-lg';
-    clearBtn.innerHTML = '<i class="fas fa-trash-alt"></i>';
-    clearBtn.title = 'Clear logs';
+    clearBtn.className = 'text-white p-1 hover:bg-gray-700 rounded text-sm';
+    clearBtn.textContent = 'Clear';
     clearBtn.onclick = () => {
         const logsContainer = container.querySelector('#logs-content');
         if (logsContainer) logsContainer.innerHTML = '';
     };
 
     const exportBtn = document.createElement('button');
-    exportBtn.className = 'text-white p-2 hover:bg-gray-700 rounded text-lg';
-    exportBtn.innerHTML = '<i class="fas fa-file-download"></i>'; // Changed to file-download
-    exportBtn.title = 'Export logs';
+    exportBtn.className = 'text-white p-1 hover:bg-gray-700 rounded text-sm';
+    exportBtn.textContent = 'Export';
     exportBtn.onclick = () => {
         const logsContainer = container.querySelector('#logs-content');
         if (logsContainer) {
@@ -2119,23 +2109,21 @@ function createMobileLogContainer() {
     };
     
     const toggleSize = document.createElement('button');
-    toggleSize.className = 'text-white p-2 hover:bg-gray-700 rounded text-lg';
-    toggleSize.innerHTML = '<i class="fas fa-window-maximize"></i>'; // Changed to window-maximize
+    toggleSize.className = 'text-white p-1 hover:bg-gray-700 rounded';
+    toggleSize.innerHTML = '□';
     toggleSize.onclick = () => {
         if (container.style.height === '200px') {
-            container.style.height = '100vh';
-            container.style.maxHeight = '100vh';
-            toggleSize.innerHTML = '<i class="fas fa-window-restore"></i>'; // Changed to window-restore
+            container.style.height = '80vh';
+            toggleSize.innerHTML = '▢';
         } else {
             container.style.height = '200px';
-            container.style.maxHeight = '50vh';
-            toggleSize.innerHTML = '<i class="fas fa-window-maximize"></i>';
+            toggleSize.innerHTML = '□';
         }
     };
     
     const closeBtn = document.createElement('button');
-    closeBtn.className = 'text-white p-2 hover:bg-gray-700 rounded text-lg';
-    closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+    closeBtn.className = 'text-white p-1 hover:bg-gray-700 rounded';
+    closeBtn.innerHTML = '✕';
     closeBtn.onclick = () => {
         container.style.display = 'none';
         minimizedTag.style.display = 'none';
@@ -2144,6 +2132,12 @@ function createMobileLogContainer() {
         isConsoleLoggingEnabled = false;
     };
 
+    controls.appendChild(minimizeBtn);
+    controls.appendChild(clearBtn);
+    controls.appendChild(exportBtn);
+    controls.appendChild(toggleSize);
+    controls.appendChild(closeBtn);
+    
     const dragHandle = document.createElement('div');
     dragHandle.className = 'absolute -top-1 left-0 right-0 h-1 bg-gray-600 cursor-row-resize';
     dragHandle.style.cursor = 'row-resize';
@@ -2152,27 +2146,18 @@ function createMobileLogContainer() {
     logsContent.id = 'logs-content';
     logsContent.className = 'p-2 overflow-y-auto';
     logsContent.style.height = 'calc(100% - 36px)';
-
-    // Clear existing controls before adding buttons
-    while (controls.firstChild) {
-        controls.removeChild(controls.firstChild);
-    }
-
-    // Add buttons in correct order
+    
     controls.appendChild(clearBtn);
-    controls.appendChild(exportBtn);
-    controls.appendChild(minimizeBtn);
     controls.appendChild(toggleSize);
     controls.appendChild(closeBtn);
-
-    // Assemble header and container
+    
     header.appendChild(title);
     header.appendChild(controls);
     
     container.appendChild(dragHandle);
     container.appendChild(header);
     container.appendChild(logsContent);
-
+    
     let startY = 0;
     let startHeight = 0;
     
