@@ -1,5 +1,4 @@
-
-const VERSION = '20250206-10:23';
+const VERSION = '20250206-10:30';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1919,13 +1918,13 @@ function showCustomAlert(message, title = 'Alert', buttons = [{text: 'OK', prima
         messageElement.className = 'text-gray-700 dark:text-gray-300 whitespace-pre-wrap mb-6';
         messageElement.textContent = message;
         const buttonContainer = document.createElement('div');
-        buttonContainer.className = 'flex justify-end space-x-3';
+        buttonContainer.className = 'flex justify-end space-x-4';
         buttons.forEach(button => {
             const btn = document.createElement('button');
             btn.className = `${button.primary ? 
-                'px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700' :
-                'px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300'} 
-                cursor-pointer touch-manipulation`;
+                'px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700' :
+                'px-6 py-3 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300'} 
+                cursor-pointer touch-manipulation text-base min-w-[100px]`;
             btn.style.WebkitTapHighlightColor = 'transparent';
             btn.style.userSelect = 'none';
             btn.textContent = button.text;
@@ -2062,27 +2061,27 @@ function createMobileLogContainer() {
     title.className = 'text-sm font-medium';
     
     const controls = document.createElement('div');
-    controls.className = 'flex items-center gap-2';
+    controls.className = 'flex items-center gap-3 px-2';
     
     const minimizeBtn = document.createElement('button');
-    minimizeBtn.className = 'text-white p-1 hover:bg-gray-700 rounded text-sm';
-    minimizeBtn.textContent = '-';
+    minimizeBtn.className = 'text-white p-2 hover:bg-gray-700 rounded flex items-center justify-center min-w-[32px] min-h-[32px]';
+    minimizeBtn.innerHTML = '<i class="fas fa-minus"></i>';
     minimizeBtn.onclick = () => {
         container.style.display = 'none';
         minimizedTag.style.display = 'block';
     };
 
     const clearBtn = document.createElement('button');
-    clearBtn.className = 'text-white p-1 hover:bg-gray-700 rounded text-sm';
-    clearBtn.textContent = 'Clear';
+    clearBtn.className = 'text-white p-2 hover:bg-gray-700 rounded flex items-center justify-center min-w-[32px] min-h-[32px]';
+    clearBtn.innerHTML = '<i class="fas fa-trash-alt"></i>';
     clearBtn.onclick = () => {
         const logsContainer = container.querySelector('#logs-content');
         if (logsContainer) logsContainer.innerHTML = '';
     };
 
     const exportBtn = document.createElement('button');
-    exportBtn.className = 'text-white p-1 hover:bg-gray-700 rounded text-sm';
-    exportBtn.textContent = 'Export';
+    exportBtn.className = 'text-white p-2 hover:bg-gray-700 rounded flex items-center justify-center min-w-[32px] min-h-[32px]';
+    exportBtn.innerHTML = '<i class="fas fa-download"></i>';
     exportBtn.onclick = () => {
         const logsContainer = container.querySelector('#logs-content');
         if (logsContainer) {
@@ -2110,21 +2109,62 @@ function createMobileLogContainer() {
     };
     
     const toggleSize = document.createElement('button');
-    toggleSize.className = 'text-white p-1 hover:bg-gray-700 rounded';
-    toggleSize.innerHTML = '□';
+    toggleSize.className = 'text-white p-2 hover:bg-gray-700 rounded flex items-center justify-center min-w-[32px] min-h-[32px]';
+    toggleSize.innerHTML = '<i class="fas fa-expand"></i>';
     toggleSize.onclick = () => {
         if (container.style.height === '200px') {
-            container.style.height = '80vh';
-            toggleSize.innerHTML = '▢';
+            // Expand to full screen
+            container.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                height: 100vh !important;
+                max-height: 100vh !important;
+                width: 100vw;
+                z-index: 9999;
+                background-color: rgba(0, 0, 0, 0.95);
+                display: flex;
+                flex-direction: column;
+                resize: none;
+                overflow: hidden;
+            `;
+            // Adjust the logs content area to fill available space
+            const logsContent = container.querySelector('#logs-content');
+            if (logsContent) {
+                logsContent.style.height = 'calc(100vh - 36px)';
+                logsContent.style.maxHeight = 'calc(100vh - 36px)';
+            }
+            toggleSize.innerHTML = '<i class="fas fa-compress"></i>';
         } else {
-            container.style.height = '200px';
-            toggleSize.innerHTML = '□';
+            // Restore original size
+            container.style.cssText = `
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                height: 200px;
+                max-height: 50vh;
+                display: block;
+                resize: vertical;
+                overflow-y: auto;
+                background-color: rgba(0, 0, 0, 0.75);
+                z-index: 9999;
+            `;
+            // Restore original logs content area
+            const logsContent = container.querySelector('#logs-content');
+            if (logsContent) {
+                logsContent.style.height = 'calc(100% - 36px)';
+                logsContent.style.maxHeight = '';
+            }
+            toggleSize.innerHTML = '<i class="fas fa-expand"></i>';
         }
     };
     
     const closeBtn = document.createElement('button');
-    closeBtn.className = 'text-white p-1 hover:bg-gray-700 rounded';
-    closeBtn.innerHTML = '✕';
+    closeBtn.className = 'text-white p-2 hover:bg-gray-700 rounded flex items-center justify-center min-w-[32px] min-h-[32px]';
+    closeBtn.innerHTML = '<i class="fas fa-times"></i>';
     closeBtn.onclick = () => {
         container.style.display = 'none';
         minimizedTag.style.display = 'none';
