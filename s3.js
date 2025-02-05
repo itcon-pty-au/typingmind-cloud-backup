@@ -1,4 +1,4 @@
-const VERSION = '20250206-07:51';
+const VERSION = '20250206-07:57';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -2039,31 +2039,17 @@ function createMobileLogContainer() {
     // Add header with controls
     const header = document.createElement('div');
     header.className = 'sticky top-0 left-0 right-0 bg-gray-800 p-2 flex justify-between items-center border-b border-gray-700';
-
+    
     // Add title
     const title = document.createElement('span');
     title.textContent = 'Debug Logs';
     title.className = 'text-sm font-medium';
-
+    
     // Add controls container
     const controls = document.createElement('div');
     controls.className = 'flex items-center gap-2';
-
-    // Add minimize/maximize button
-    const toggleSize = document.createElement('button');
-    toggleSize.className = 'text-white p-1 hover:bg-gray-700 rounded';
-    toggleSize.innerHTML = '□';
-    toggleSize.onclick = () => {
-        if (container.style.height === '200px') {
-            container.style.height = '80vh';
-            toggleSize.innerHTML = '▢';
-        } else {
-            container.style.height = '200px';
-            toggleSize.innerHTML = '□';
-        }
-    };
-
-    // Add clear button
+    
+    // Create all control buttons
     const clearBtn = document.createElement('button');
     clearBtn.className = 'text-white p-1 hover:bg-gray-700 rounded text-sm';
     clearBtn.textContent = 'Clear';
@@ -2072,7 +2058,6 @@ function createMobileLogContainer() {
         if (logsContainer) logsContainer.innerHTML = '';
     };
 
-    // Add export button
     const exportBtn = document.createElement('button');
     exportBtn.className = 'text-white p-1 hover:bg-gray-700 rounded text-sm';
     exportBtn.textContent = 'Export';
@@ -2101,13 +2086,19 @@ function createMobileLogContainer() {
         }
     };
 
-    // Update the controls assembly (modify this line in createMobileLogContainer)
-    controls.appendChild(clearBtn);
-    controls.appendChild(exportBtn); // Add this line
-    controls.appendChild(toggleSize);
-    controls.appendChild(closeBtn);
+    const toggleSize = document.createElement('button');
+    toggleSize.className = 'text-white p-1 hover:bg-gray-700 rounded';
+    toggleSize.innerHTML = '□';
+    toggleSize.onclick = () => {
+        if (container.style.height === '200px') {
+            container.style.height = '80vh';
+            toggleSize.innerHTML = '▢';
+        } else {
+            container.style.height = '200px';
+            toggleSize.innerHTML = '□';
+        }
+    };
 
-    // Add close button
     const closeBtn = document.createElement('button');
     closeBtn.className = 'text-white p-1 hover:bg-gray-700 rounded';
     closeBtn.innerHTML = '✕';
@@ -2118,128 +2109,70 @@ function createMobileLogContainer() {
         isConsoleLoggingEnabled = false;
     };
 
-    // Add drag handle for mobile
+    // Assemble controls in correct order
+    controls.appendChild(clearBtn);
+    controls.appendChild(exportBtn);
+    controls.appendChild(toggleSize);
+    controls.appendChild(closeBtn);
+    
+    // Assemble header
+    header.appendChild(title);
+    header.appendChild(controls);
+    
+    // Add drag handle
     const dragHandle = document.createElement('div');
     dragHandle.className = 'absolute -top-1 left-0 right-0 h-1 bg-gray-600 cursor-row-resize';
     dragHandle.style.cursor = 'row-resize';
-
+    
     // Add logs content container
     const logsContent = document.createElement('div');
     logsContent.id = 'logs-content';
     logsContent.className = 'p-2 overflow-y-auto';
     logsContent.style.height = 'calc(100% - 36px)'; // Subtract header height
-
-    // Assemble controls
-    controls.appendChild(clearBtn);
-    controls.appendChild(toggleSize);
-    controls.appendChild(closeBtn);
-
-    // Assemble header
-    header.appendChild(title);
-    header.appendChild(controls);
-
+    
     // Assemble container
     container.appendChild(dragHandle);
     container.appendChild(header);
     container.appendChild(logsContent);
-
+    
     // Add drag functionality
     let startY = 0;
     let startHeight = 0;
-
+    
     function initDrag(e) {
         startY = e.type === 'mousedown' ? e.clientY : e.touches[0].clientY;
         startHeight = parseInt(document.defaultView.getComputedStyle(container).height, 10);
-
+        
         document.documentElement.addEventListener('mousemove', doDrag);
         document.documentElement.addEventListener('mouseup', stopDrag);
         document.documentElement.addEventListener('touchmove', doDrag);
         document.documentElement.addEventListener('touchend', stopDrag);
     }
-
+    
     function doDrag(e) {
         const currentY = e.type === 'mousemove' ? e.clientY : e.touches[0].clientY;
         const newHeight = startHeight - (currentY - startY);
-
-        // Limit minimum and maximum height
+        
         const minHeight = 100;
         const maxHeight = window.innerHeight * 0.8;
-
+        
         if (newHeight > minHeight && newHeight < maxHeight) {
             container.style.height = `${newHeight}px`;
         }
     }
-
+    
     function stopDrag() {
         document.documentElement.removeEventListener('mousemove', doDrag);
         document.documentElement.removeEventListener('mouseup', stopDrag);
         document.documentElement.removeEventListener('touchmove', doDrag);
         document.documentElement.removeEventListener('touchend', stopDrag);
     }
-
+    
     dragHandle.addEventListener('mousedown', initDrag);
     dragHandle.addEventListener('touchstart', initDrag);
-
+    
     document.body.appendChild(container);
     return container;
-}
-
-// Update the logToConsole function to use the new logs content container
-function logToConsole(type, message, data = null) {
-    if (!isConsoleLoggingEnabled) return;
-
-    const timestamp = new Date().toISOString();
-    const icons = {
-        // ... existing icons ...
-    };
-
-    const icon = icons[type] || 'ℹ️';
-    const logMessage = `${icon} [${timestamp}] ${message}`;
-
-    // Add UI logging for mobile devices
-    if (/Mobi|Android/i.test(navigator.userAgent)) {
-        const container = document.getElementById('mobile-log-container') || createMobileLogContainer();
-        const logsContent = container.querySelector('#logs-content');
-        if (logsContent) {
-            const logEntry = document.createElement('div');
-            logEntry.className = 'text-sm mb-1 break-words';
-            logEntry.textContent = logMessage;
-
-            if (data) {
-                const dataEntry = document.createElement('div');
-                dataEntry.className = 'text-xs text-gray-500 ml-4 mb-2';
-                dataEntry.textContent = JSON.stringify(data, null, 2);
-                logEntry.appendChild(dataEntry);
-            }
-
-            // Check if user is scrolled near bottom before inserting new log
-            const isAtBottom = logsContent.scrollHeight - logsContent.scrollTop - logsContent.clientHeight < 50;
-
-            logsContent.insertBefore(logEntry, logsContent.firstChild);
-
-            // Only auto-scroll if user was already at bottom
-            if (isAtBottom) {
-                logsContent.scrollTop = 0;
-            }
-
-            // Keep only last 50 logs
-            while (logsContent.children.length > 50) {
-                logsContent.removeChild(logsContent.lastChild);
-            }
-        }
-    }
-
-    // Existing console logging
-    switch (type) {
-        case 'error':
-            console.error(logMessage, data);
-            break;
-        case 'warning':
-            console.warn(logMessage, data);
-            break;
-        default:
-            console.log(logMessage, data);
-    }
 }
 
 function showInfoModal(title, content) {
