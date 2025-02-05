@@ -1,4 +1,4 @@
-const VERSION = '20250206-10:40';
+const VERSION = '20250206-10:44';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -2048,6 +2048,10 @@ function createMobileLogContainer() {
 
     const header = document.createElement('div');
     header.className = 'sticky top-0 left-0 right-0 bg-gray-800 p-2 flex justify-between items-center border-b border-gray-700';
+    header.style.cssText = `
+        position: relative;
+        background-color: rgb(31, 41, 55);
+    `;
     
     const title = document.createElement('span');
     title.textContent = 'Debug Logs';
@@ -2055,7 +2059,7 @@ function createMobileLogContainer() {
     
     const controls = document.createElement('div');
     controls.className = 'flex items-center gap-3 px-2';
-    controls.style.zIndex = '3';
+    controls.style.position = 'relative';
     
     const minimizeBtn = document.createElement('button');
     minimizeBtn.className = 'text-white p-2 hover:bg-gray-700 rounded flex items-center justify-center min-w-[32px] min-h-[32px]';
@@ -2131,7 +2135,6 @@ function createMobileLogContainer() {
                     display: flex;
                     flex-direction: column;
                     position: relative;
-                    z-index: 1;
                 `;
             }
             toggleSize.innerHTML = '<i class="fas fa-compress"></i>';
@@ -2157,7 +2160,6 @@ function createMobileLogContainer() {
                     display: flex;
                     flex-direction: column;
                     position: relative;
-                    z-index: 1;
                 `;
             }
             toggleSize.innerHTML = '<i class="fas fa-expand"></i>';
@@ -2194,7 +2196,6 @@ function createMobileLogContainer() {
         display: flex;
         flex-direction: column;
         position: relative;
-        z-index: 1;
     `;
 
     header.appendChild(title);
