@@ -1,4 +1,4 @@
-const VERSION = '20250206-10:01';
+const VERSION = '20250206-10:09';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -2032,6 +2032,14 @@ function logToConsole(type, message, data = null) {
 }
 
 function createMobileLogContainer() {
+    // Add Font Awesome if not already present
+    if (!document.querySelector('link[href*="font-awesome"]')) {
+        const fontAwesome = document.createElement('link');
+        fontAwesome.rel = 'stylesheet';
+        fontAwesome.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css';
+        document.head.appendChild(fontAwesome);
+    }
+
     const container = document.createElement('div');
     container.id = 'mobile-log-container';
     container.className = 'fixed bottom-0 left-0 right-0 bg-black bg-opacity-75 text-white z-[9999]';
@@ -2136,12 +2144,6 @@ function createMobileLogContainer() {
         isConsoleLoggingEnabled = false;
     };
 
-    controls.appendChild(clearBtn);
-    controls.appendChild(exportBtn);
-    controls.appendChild(minimizeBtn);
-    controls.appendChild(toggleSize);
-    controls.appendChild(closeBtn);
-    
     const dragHandle = document.createElement('div');
     dragHandle.className = 'absolute -top-1 left-0 right-0 h-1 bg-gray-600 cursor-row-resize';
     dragHandle.style.cursor = 'row-resize';
@@ -2150,14 +2152,27 @@ function createMobileLogContainer() {
     logsContent.id = 'logs-content';
     logsContent.className = 'p-2 overflow-y-auto';
     logsContent.style.height = 'calc(100% - 36px)';
-    
+
+    // Clear existing controls before adding buttons
+    while (controls.firstChild) {
+        controls.removeChild(controls.firstChild);
+    }
+
+    // Add buttons in correct order
+    controls.appendChild(clearBtn);
+    controls.appendChild(exportBtn);
+    controls.appendChild(minimizeBtn);
+    controls.appendChild(toggleSize);
+    controls.appendChild(closeBtn);
+
+    // Assemble header and container
     header.appendChild(title);
     header.appendChild(controls);
     
     container.appendChild(dragHandle);
     container.appendChild(header);
     container.appendChild(logsContent);
-    
+
     let startY = 0;
     let startHeight = 0;
     
