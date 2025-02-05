@@ -1,4 +1,4 @@
-const VERSION = '20250206-09:46';
+const VERSION = '20250206-09:53';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -2061,27 +2061,29 @@ function createMobileLogContainer() {
     title.className = 'text-sm font-medium';
     
     const controls = document.createElement('div');
-    controls.className = 'flex items-center gap-2';
+    controls.className = 'flex items-center gap-3'; // Increased gap for better touch targets
     
     const minimizeBtn = document.createElement('button');
-    minimizeBtn.className = 'text-white p-1 hover:bg-gray-700 rounded text-sm';
-    minimizeBtn.textContent = 'Minimize';
+    minimizeBtn.className = 'text-white p-2 hover:bg-gray-700 rounded text-lg';
+    minimizeBtn.innerHTML = '<i class="fas fa-minus"></i>';
     minimizeBtn.onclick = () => {
         container.style.display = 'none';
         minimizedTag.style.display = 'block';
     };
 
     const clearBtn = document.createElement('button');
-    clearBtn.className = 'text-white p-1 hover:bg-gray-700 rounded text-sm';
-    clearBtn.textContent = 'Clear';
+    clearBtn.className = 'text-white p-2 hover:bg-gray-700 rounded text-lg';
+    clearBtn.innerHTML = '<i class="fas fa-trash-alt"></i>';
+    clearBtn.title = 'Clear logs';
     clearBtn.onclick = () => {
         const logsContainer = container.querySelector('#logs-content');
         if (logsContainer) logsContainer.innerHTML = '';
     };
 
     const exportBtn = document.createElement('button');
-    exportBtn.className = 'text-white p-1 hover:bg-gray-700 rounded text-sm';
-    exportBtn.textContent = 'Export';
+    exportBtn.className = 'text-white p-2 hover:bg-gray-700 rounded text-lg';
+    exportBtn.innerHTML = '<i class="fas fa-file-download"></i>'; // Changed to file-download
+    exportBtn.title = 'Export logs';
     exportBtn.onclick = () => {
         const logsContainer = container.querySelector('#logs-content');
         if (logsContainer) {
@@ -2109,21 +2111,23 @@ function createMobileLogContainer() {
     };
     
     const toggleSize = document.createElement('button');
-    toggleSize.className = 'text-white p-1 hover:bg-gray-700 rounded';
-    toggleSize.innerHTML = '□';
+    toggleSize.className = 'text-white p-2 hover:bg-gray-700 rounded text-lg';
+    toggleSize.innerHTML = '<i class="fas fa-window-maximize"></i>'; // Changed to window-maximize
     toggleSize.onclick = () => {
         if (container.style.height === '200px') {
-            container.style.height = '80vh';
-            toggleSize.innerHTML = '▢';
+            container.style.height = '100vh';
+            container.style.maxHeight = '100vh';
+            toggleSize.innerHTML = '<i class="fas fa-window-restore"></i>'; // Changed to window-restore
         } else {
             container.style.height = '200px';
-            toggleSize.innerHTML = '□';
+            container.style.maxHeight = '50vh';
+            toggleSize.innerHTML = '<i class="fas fa-window-maximize"></i>';
         }
     };
     
     const closeBtn = document.createElement('button');
-    closeBtn.className = 'text-white p-1 hover:bg-gray-700 rounded';
-    closeBtn.innerHTML = '✕';
+    closeBtn.className = 'text-white p-2 hover:bg-gray-700 rounded text-lg';
+    closeBtn.innerHTML = '<i class="fas fa-times"></i>';
     closeBtn.onclick = () => {
         container.style.display = 'none';
         minimizedTag.style.display = 'none';
@@ -2132,9 +2136,9 @@ function createMobileLogContainer() {
         isConsoleLoggingEnabled = false;
     };
 
-    controls.appendChild(minimizeBtn);
     controls.appendChild(clearBtn);
     controls.appendChild(exportBtn);
+    controls.appendChild(minimizeBtn);
     controls.appendChild(toggleSize);
     controls.appendChild(closeBtn);
     
