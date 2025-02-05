@@ -1,4 +1,4 @@
-const VERSION = '20250205-07:06';
+const VERSION = '20250206-07:21';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1403,6 +1403,14 @@ async function importFromS3() {
         return false;
     }
     logToConsole('download', 'Starting import from S3...');
+    
+    // Add device info to logs
+    logToConsole('info', 'Device Info', {
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        isMobile: /Mobi|Android/i.test(navigator.userAgent)
+    });
+    
     try {
         const bucketName = localStorage.getItem('aws-bucket');
         const awsRegion = localStorage.getItem('aws-region');
@@ -1434,14 +1442,24 @@ async function importFromS3() {
             cloudLastModified = s3Data.LastModified;
             logToConsole('success', 'S3 data fetched successfully:', {
                 contentLength: cloudFileSize,
-                lastModified: cloudLastModified
+                lastModified: cloudLastModified,
+                etag: s3Data.ETag
             });
         } catch (fetchError) {
             logToConsole('error', 'Failed to fetch from S3:', fetchError);
             throw fetchError;
         }
+
+        // Add logging for data comparison
         const lastSync = localStorage.getItem('last-cloud-sync');
+        logToConsole('info', 'Last sync time:', lastSync);
+        
         const currentData = await exportBackupData();
+        logToConsole('info', 'Current data stats:', {
+            localStorageKeys: Object.keys(currentData.localStorage).length,
+            indexedDBKeys: Object.keys(currentData.indexedDB).length
+        });
+
         const currentDataStr = JSON.stringify(currentData);
         const localFileSize = new Blob([currentDataStr]).size;
         const sizeDiffPercentage = cloudFileSize && localFileSize ? 
@@ -1960,6 +1978,27 @@ function logToConsole(type, message, data = null) {
     const icon = icons[type] || 'ℹ️';
     const logMessage = `${icon} [${timestamp}] ${message}`;
     
+    // Add UI logging for mobile devices
+    if (/Mobi|Android/i.test(navigator.userAgent)) {
+        const logContainer = document.getElementById('mobile-log-container') || createMobileLogContainer();
+        const logEntry = document.createElement('div');
+        logEntry.className = 'text-sm mb-1 break-words';
+        logEntry.textContent = logMessage;
+        if (data) {
+            const dataEntry = document.createElement('div');
+            dataEntry.className = 'text-xs text-gray-500 ml-4 mb-2';
+            dataEntry.textContent = JSON.stringify(data);
+            logEntry.appendChild(dataEntry);
+        }
+        logContainer.insertBefore(logEntry, logContainer.firstChild);
+        
+        // Keep only last 50 logs
+        while (logContainer.children.length > 50) {
+            logContainer.removeChild(logContainer.lastChild);
+        }
+    }
+    
+    // Existing console logging
     switch (type) {
         case 'error':
             console.error(logMessage, data);
@@ -1971,6 +2010,33 @@ function logToConsole(type, message, data = null) {
             console.log(logMessage, data);
     }
 }
+
+function createMobileLogContainer() {
+    const container = document.createElement('div');
+    container.id = 'mobile-log-container';
+    container.className = 'fixed bottom-0 left-0 right-0 bg-black bg-opacity-75 text-white p-2 max-h-48 overflow-y-auto z-[9999]';
+    container.style.display = isConsoleLoggingEnabled ? 'block' : 'none';
+    
+    // Add close button
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'absolute top-1 right-1 text-white p-1';
+    closeBtn.innerHTML = '✕';
+    closeBtn.onclick = () => container.style.display = 'none';
+    container.appendChild(closeBtn);
+    
+    document.body.appendChild(container);
+    return container;
+}
+
+// Update console logging toggle to also handle mobile log display
+document.getElementById('console-logging-toggle')?.addEventListener('change', function(e) {
+    isConsoleLoggingEnabled = e.target.checked;
+    const mobileLogContainer = document.getElementById('mobile-log-container');
+    if (mobileLogContainer) {
+        mobileLogContainer.style.display = isConsoleLoggingEnabled ? 'block' : 'none';
+    }
+    // ... rest of existing toggle handler code ...
+});
 
 const style = document.createElement('style');
 style.textContent = `
