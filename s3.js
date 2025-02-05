@@ -1,4 +1,4 @@
-const VERSION = '20250206-07:21';
+const VERSION = '20250205-07:26';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1980,21 +1980,26 @@ function logToConsole(type, message, data = null) {
     
     // Add UI logging for mobile devices
     if (/Mobi|Android/i.test(navigator.userAgent)) {
-        const logContainer = document.getElementById('mobile-log-container') || createMobileLogContainer();
-        const logEntry = document.createElement('div');
-        logEntry.className = 'text-sm mb-1 break-words';
-        logEntry.textContent = logMessage;
-        if (data) {
-            const dataEntry = document.createElement('div');
-            dataEntry.className = 'text-xs text-gray-500 ml-4 mb-2';
-            dataEntry.textContent = JSON.stringify(data);
-            logEntry.appendChild(dataEntry);
-        }
-        logContainer.insertBefore(logEntry, logContainer.firstChild);
-        
-        // Keep only last 50 logs
-        while (logContainer.children.length > 50) {
-            logContainer.removeChild(logContainer.lastChild);
+        const container = document.getElementById('mobile-log-container') || createMobileLogContainer();
+        const logsContent = container.querySelector('#logs-content');
+        if (logsContent) {
+            const logEntry = document.createElement('div');
+            logEntry.className = 'text-sm mb-1 break-words';
+            logEntry.textContent = logMessage;
+            
+            if (data) {
+                const dataEntry = document.createElement('div');
+                dataEntry.className = 'text-xs text-gray-500 ml-4 mb-2';
+                dataEntry.textContent = JSON.stringify(data, null, 2);
+                logEntry.appendChild(dataEntry);
+            }
+            
+            logsContent.insertBefore(logEntry, logsContent.firstChild);
+            
+            // Keep only last 50 logs
+            while (logsContent.children.length > 50) {
+                logsContent.removeChild(logsContent.lastChild);
+            }
         }
     }
     
@@ -2014,52 +2019,177 @@ function logToConsole(type, message, data = null) {
 function createMobileLogContainer() {
     const container = document.createElement('div');
     container.id = 'mobile-log-container';
-    container.className = 'fixed bottom-0 left-0 right-0 bg-black bg-opacity-75 text-white p-2 max-h-48 overflow-y-auto z-[9999]';
-    container.style.display = isConsoleLoggingEnabled ? 'block' : 'none';
+    container.className = 'fixed bottom-0 left-0 right-0 bg-black bg-opacity-75 text-white z-[9999]';
+    container.style.cssText = `
+        height: 200px;
+        max-height: 50vh;
+        display: ${isConsoleLoggingEnabled ? 'block' : 'none'};
+        resize: vertical;
+        overflow-y: auto;
+    `;
+
+    // Add header with controls
+    const header = document.createElement('div');
+    header.className = 'sticky top-0 left-0 right-0 bg-gray-800 p-2 flex justify-between items-center border-b border-gray-700';
+    
+    // Add title
+    const title = document.createElement('span');
+    title.textContent = 'Debug Logs';
+    title.className = 'text-sm font-medium';
+    
+    // Add controls container
+    const controls = document.createElement('div');
+    controls.className = 'flex items-center gap-2';
+    
+    // Add minimize/maximize button
+    const toggleSize = document.createElement('button');
+    toggleSize.className = 'text-white p-1 hover:bg-gray-700 rounded';
+    toggleSize.innerHTML = '□';
+    toggleSize.onclick = () => {
+        if (container.style.height === '200px') {
+            container.style.height = '80vh';
+            toggleSize.innerHTML = '▢';
+        } else {
+            container.style.height = '200px';
+            toggleSize.innerHTML = '□';
+        }
+    };
+    
+    // Add clear button
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'text-white p-1 hover:bg-gray-700 rounded text-sm';
+    clearBtn.textContent = 'Clear';
+    clearBtn.onclick = () => {
+        const logsContainer = container.querySelector('#logs-content');
+        if (logsContainer) logsContainer.innerHTML = '';
+    };
     
     // Add close button
     const closeBtn = document.createElement('button');
-    closeBtn.className = 'absolute top-1 right-1 text-white p-1';
+    closeBtn.className = 'text-white p-1 hover:bg-gray-700 rounded';
     closeBtn.innerHTML = '✕';
-    closeBtn.onclick = () => container.style.display = 'none';
-    container.appendChild(closeBtn);
+    closeBtn.onclick = () => {
+        container.style.display = 'none';
+        const toggle = document.getElementById('console-logging-toggle');
+        if (toggle) toggle.checked = false;
+        isConsoleLoggingEnabled = false;
+    };
+    
+    // Add drag handle for mobile
+    const dragHandle = document.createElement('div');
+    dragHandle.className = 'absolute -top-1 left-0 right-0 h-1 bg-gray-600 cursor-row-resize';
+    dragHandle.style.cursor = 'row-resize';
+    
+    // Add logs content container
+    const logsContent = document.createElement('div');
+    logsContent.id = 'logs-content';
+    logsContent.className = 'p-2 overflow-y-auto';
+    logsContent.style.height = 'calc(100% - 36px)'; // Subtract header height
+    
+    // Assemble controls
+    controls.appendChild(clearBtn);
+    controls.appendChild(toggleSize);
+    controls.appendChild(closeBtn);
+    
+    // Assemble header
+    header.appendChild(title);
+    header.appendChild(controls);
+    
+    // Assemble container
+    container.appendChild(dragHandle);
+    container.appendChild(header);
+    container.appendChild(logsContent);
+    
+    // Add drag functionality
+    let startY = 0;
+    let startHeight = 0;
+    
+    function initDrag(e) {
+        startY = e.type === 'mousedown' ? e.clientY : e.touches[0].clientY;
+        startHeight = parseInt(document.defaultView.getComputedStyle(container).height, 10);
+        
+        document.documentElement.addEventListener('mousemove', doDrag);
+        document.documentElement.addEventListener('mouseup', stopDrag);
+        document.documentElement.addEventListener('touchmove', doDrag);
+        document.documentElement.addEventListener('touchend', stopDrag);
+    }
+    
+    function doDrag(e) {
+        const currentY = e.type === 'mousemove' ? e.clientY : e.touches[0].clientY;
+        const newHeight = startHeight - (currentY - startY);
+        
+        // Limit minimum and maximum height
+        const minHeight = 100;
+        const maxHeight = window.innerHeight * 0.8;
+        
+        if (newHeight > minHeight && newHeight < maxHeight) {
+            container.style.height = `${newHeight}px`;
+        }
+    }
+    
+    function stopDrag() {
+        document.documentElement.removeEventListener('mousemove', doDrag);
+        document.documentElement.removeEventListener('mouseup', stopDrag);
+        document.documentElement.removeEventListener('touchmove', doDrag);
+        document.documentElement.removeEventListener('touchend', stopDrag);
+    }
+    
+    dragHandle.addEventListener('mousedown', initDrag);
+    dragHandle.addEventListener('touchstart', initDrag);
     
     document.body.appendChild(container);
     return container;
 }
 
-// Update console logging toggle to also handle mobile log display
-document.getElementById('console-logging-toggle')?.addEventListener('change', function(e) {
-    isConsoleLoggingEnabled = e.target.checked;
-    const mobileLogContainer = document.getElementById('mobile-log-container');
-    if (mobileLogContainer) {
-        mobileLogContainer.style.display = isConsoleLoggingEnabled ? 'block' : 'none';
+// Update the logToConsole function to use the new logs content container
+function logToConsole(type, message, data = null) {
+    if (!isConsoleLoggingEnabled) return;
+    
+    const timestamp = new Date().toISOString();
+    const icons = {
+        // ... existing icons ...
+    };
+    
+    const icon = icons[type] || 'ℹ️';
+    const logMessage = `${icon} [${timestamp}] ${message}`;
+    
+    // Add UI logging for mobile devices
+    if (/Mobi|Android/i.test(navigator.userAgent)) {
+        const container = document.getElementById('mobile-log-container') || createMobileLogContainer();
+        const logsContent = container.querySelector('#logs-content');
+        if (logsContent) {
+            const logEntry = document.createElement('div');
+            logEntry.className = 'text-sm mb-1 break-words';
+            logEntry.textContent = logMessage;
+            
+            if (data) {
+                const dataEntry = document.createElement('div');
+                dataEntry.className = 'text-xs text-gray-500 ml-4 mb-2';
+                dataEntry.textContent = JSON.stringify(data, null, 2);
+                logEntry.appendChild(dataEntry);
+            }
+            
+            logsContent.insertBefore(logEntry, logsContent.firstChild);
+            
+            // Keep only last 50 logs
+            while (logsContent.children.length > 50) {
+                logsContent.removeChild(logsContent.lastChild);
+            }
+        }
     }
-    // ... rest of existing toggle handler code ...
-});
-
-const style = document.createElement('style');
-style.textContent = `
-    .toggle-checkbox {
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: auto;
-        transition: transform 0.2s ease-in;
-        transform: translateX(0);
+    
+    // Existing console logging
+    switch (type) {
+        case 'error':
+            console.error(logMessage, data);
+            break;
+        case 'warning':
+            console.warn(logMessage, data);
+            break;
+        default:
+            console.log(logMessage, data);
     }
-    .toggle-checkbox:checked {
-        transform: translateX(16px);
-        border-color: #68D391;
-    }
-    .toggle-checkbox:checked + .toggle-label {
-        background-color: #68D391;
-    }
-    .toggle-label {
-        transition: background-color 0.2s ease-in;
-    }
-`;
-document.head.appendChild(style);
+}
 
 function showInfoModal(title, content) {
     const infoModal = document.createElement('div');
