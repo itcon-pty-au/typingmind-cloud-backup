@@ -1,4 +1,4 @@
-const VERSION = '20250206-09:35';
+const VERSION = '20250206-09:46';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1435,11 +1435,28 @@ async function importFromS3() {
         try {
             s3Data = await s3.getObject(params).promise();
             cloudFileSize = s3Data.Body.length;
+            
+            if (cloudFileSize === 0) {
+                logToConsole('warning', 'Empty backup file found in S3');
+                wasImportSuccessful = true;
+                const message = 'No valid backup found in cloud storage. This could be because:\n\n' +
+                    '• This is your first time using cloud backup\n' +
+                    '• The backup file is corrupted\n\n' +
+                    'Your current local data will be backed up to the cloud.';
+                await showCustomAlert(message, 'No Backup Found');
+                return false;
+            }
+
             cloudLastModified = s3Data.LastModified;
+            const encryptedContent = new Uint8Array(s3Data.Body);
+            const cloudData = await decryptData(encryptedContent);
+            
             logToConsole('success', 'S3 data fetched successfully:', {
                 contentLength: cloudFileSize,
                 lastModified: cloudLastModified,
-                etag: s3Data.ETag
+                etag: s3Data.ETag,
+                cloudLocalStorageKeys: Object.keys(cloudData.localStorage).length,
+                cloudIndexedDBKeys: Object.keys(cloudData.indexedDB).length
             });
         } catch (fetchError) {
             logToConsole('error', 'Failed to fetch from S3:', fetchError);
