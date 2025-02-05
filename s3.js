@@ -1,4 +1,4 @@
-const VERSION = '20250206-10:30';
+const VERSION = '20250206-10:35';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -2005,17 +2005,8 @@ function logToConsole(type, message, data = null) {
                 logEntry.appendChild(dataEntry);
             }
             
-            const isAtBottom = logsContent.scrollHeight - logsContent.scrollTop - logsContent.clientHeight < 50;
-            
-            logsContent.insertBefore(logEntry, logsContent.firstChild);
-            
-            if (isAtBottom) {
-                logsContent.scrollTop = 0;
-            }
-            
-            // while (logsContent.children.length > 50) {
-            //     logsContent.removeChild(logsContent.lastChild);
-            // }
+            logsContent.appendChild(logEntry);
+            logsContent.scrollTop = logsContent.scrollHeight;
         }
     }
     
@@ -2041,6 +2032,8 @@ function createMobileLogContainer() {
         display: ${isConsoleLoggingEnabled ? 'block' : 'none'};
         resize: vertical;
         overflow-y: auto;
+        display: flex;
+        flex-direction: column;
     `;
 
     const minimizedTag = document.createElement('div');
@@ -2055,6 +2048,7 @@ function createMobileLogContainer() {
 
     const header = document.createElement('div');
     header.className = 'sticky top-0 left-0 right-0 bg-gray-800 p-2 flex justify-between items-center border-b border-gray-700';
+    header.style.zIndex = '1';
     
     const title = document.createElement('span');
     title.textContent = 'Debug Logs';
@@ -2113,7 +2107,6 @@ function createMobileLogContainer() {
     toggleSize.innerHTML = '<i class="fas fa-expand"></i>';
     toggleSize.onclick = () => {
         if (container.style.height === '200px') {
-            // Expand to full screen
             container.style.cssText = `
                 position: fixed;
                 top: 0;
@@ -2128,17 +2121,15 @@ function createMobileLogContainer() {
                 display: flex;
                 flex-direction: column;
                 resize: none;
-                overflow: hidden;
             `;
-            // Adjust the logs content area to fill available space
             const logsContent = container.querySelector('#logs-content');
             if (logsContent) {
                 logsContent.style.height = 'calc(100vh - 36px)';
                 logsContent.style.maxHeight = 'calc(100vh - 36px)';
+                logsContent.style.overflowY = 'auto';
             }
             toggleSize.innerHTML = '<i class="fas fa-compress"></i>';
         } else {
-            // Restore original size
             container.style.cssText = `
                 position: fixed;
                 bottom: 0;
@@ -2146,17 +2137,17 @@ function createMobileLogContainer() {
                 right: 0;
                 height: 200px;
                 max-height: 50vh;
-                display: block;
+                display: flex;
+                flex-direction: column;
                 resize: vertical;
-                overflow-y: auto;
                 background-color: rgba(0, 0, 0, 0.75);
                 z-index: 9999;
             `;
-            // Restore original logs content area
             const logsContent = container.querySelector('#logs-content');
             if (logsContent) {
                 logsContent.style.height = 'calc(100% - 36px)';
                 logsContent.style.maxHeight = '';
+                logsContent.style.overflowY = 'auto';
             }
             toggleSize.innerHTML = '<i class="fas fa-expand"></i>';
         }
@@ -2185,9 +2176,12 @@ function createMobileLogContainer() {
     
     const logsContent = document.createElement('div');
     logsContent.id = 'logs-content';
-    logsContent.className = 'p-2 overflow-y-auto';
+    logsContent.className = 'p-2 overflow-y-auto flex-grow';
     logsContent.style.height = 'calc(100% - 36px)';
-       
+    logsContent.style.overflowY = 'auto';
+    logsContent.style.display = 'flex';
+    logsContent.style.flexDirection = 'column';
+    
     header.appendChild(title);
     header.appendChild(controls);
     
@@ -2233,74 +2227,6 @@ function createMobileLogContainer() {
     document.body.appendChild(container);
 
     return container;
-}
-
-function logToConsole(type, message, data = null) {
-    if (!isConsoleLoggingEnabled) return;
-    
-    const timestamp = new Date().toISOString();
-    const icons = {
-        info: 'ℹ️',
-        success: '✅',
-        warning: '⚠️',
-        error: '❌',
-        start: '🔄',
-        end: '🏁',
-        upload: '⬆️',
-        download: '⬇️',
-        cleanup: '🧹',
-        snapshot: '📸',
-        encrypt: '🔐',
-        decrypt: '🔓',
-        progress: '📊',
-        time: '⏰',
-        wait: '⏳',
-        pause: '⏸️',
-        resume: '▶️',
-        visibility: '👁️',
-        active: '📱',
-        calendar: '📅',
-        tag: '🏷️',
-        stop: '🛑',
-        skip: '⏩'
-    };
-    
-    const icon = icons[type] || 'ℹ️';
-    const logMessage = `${icon} [${timestamp}] ${message}`;
-    
-    if (/Mobi|Android/i.test(navigator.userAgent)) {
-        const container = document.getElementById('mobile-log-container') || createMobileLogContainer();
-        const logsContent = container.querySelector('#logs-content');
-        if (logsContent) {
-            const logEntry = document.createElement('div');
-            logEntry.className = 'text-sm mb-1 break-words';
-            logEntry.textContent = logMessage;
-            
-            if (data) {
-                const dataEntry = document.createElement('div');
-                dataEntry.className = 'text-xs text-gray-500 ml-4 mb-2';
-                dataEntry.textContent = JSON.stringify(data, null, 2);
-                logEntry.appendChild(dataEntry);
-            }
-            
-            logsContent.appendChild(logEntry);
-            
-            // while (logsContent.children.length > 50) {
-            //     logsContent.removeChild(logsContent.firstChild);
-            // }
-        }
-    }
-    
-    switch (type) {
-        case 'error':
-            console.error(logMessage, data);
-            break;
-        case 'warning':
-            console.warn(logMessage, data);
-            break;
-        default:
-            console.log(logMessage, data);
-    }
 }
 
 function showInfoModal(title, content) {
