@@ -1,4 +1,4 @@
-const VERSION = '20250206-20:40';
+const VERSION = '20250206-20:45';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -17,6 +17,15 @@ const hintCssLink = document.createElement('link');
 hintCssLink.rel = 'stylesheet';
 hintCssLink.href = 'https://cdn.jsdelivr.net/npm/hint.css/hint.min.css';
 document.head.appendChild(hintCssLink);
+
+(function removePostImportParam() {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('post_import')) {
+        urlParams.delete('post_import');
+        const newUrl = `${window.location.pathname}${urlParams.toString() ? '?' + urlParams.toString() : ''}`;
+        window.history.replaceState({}, '', newUrl);
+    }
+})();
 
 function getImportThreshold() {
     return parseFloat(localStorage.getItem('import-size-threshold')) || 1;
@@ -1086,7 +1095,7 @@ async function loadJSZip() {
     });
 }
 
-function importDataToStorage(data) {
+async function importDataToStorage(data) {
     return new Promise((resolve, reject) => {
         const preserveKeys = [
             'import-size-threshold',
@@ -1113,7 +1122,15 @@ function importDataToStorage(data) {
             const db = event.target.result;
             const transaction = db.transaction(['keyval'], 'readwrite');
             const objectStore = transaction.objectStore('keyval');
-            transaction.oncomplete = () => resolve();
+            transaction.oncomplete = () => {
+                const urlParams = new URLSearchParams(window.location.search);
+                if (!urlParams.has('post_import')) {
+                    const newUrl = new URL(window.location);
+                    newUrl.searchParams.set('post_import', 'true');
+                    window.location.href = newUrl.toString();
+                }
+                resolve();
+            };
             transaction.onerror = () => reject(transaction.error);
             const deleteRequest = objectStore.clear();
             deleteRequest.onsuccess = function () {
