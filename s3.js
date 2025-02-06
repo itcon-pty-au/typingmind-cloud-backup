@@ -1,4 +1,4 @@
-const VERSION = '20250206-21:45';
+const VERSION = '20250206-12:01';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -17,158 +17,6 @@ const hintCssLink = document.createElement('link');
 hintCssLink.rel = 'stylesheet';
 hintCssLink.href = 'https://cdn.jsdelivr.net/npm/hint.css/hint.min.css';
 document.head.appendChild(hintCssLink);
-
-const syncStatusContainer = document.createElement('div');
-syncStatusContainer.className = 'fixed top-4 right-4 bg-black bg-opacity-40 text-white text-sm rounded-lg px-3 py-1.5 z-50 font-mono cursor-move';
-syncStatusContainer.style.minWidth = '100px';
-document.body.appendChild(syncStatusContainer);
-
-syncStatusContainer.style.display = localStorage.getItem('show-sync-status') === 'true' ? 'block' : 'none';
-
-// Load saved position
-const savedPosition = localStorage.getItem('sync-status-position');
-if (savedPosition) {
-    try {
-        const { left, top } = JSON.parse(savedPosition);
-        syncStatusContainer.style.left = left;
-        syncStatusContainer.style.top = top;
-        syncStatusContainer.style.right = 'auto'; // Clear default right position
-    } catch (e) {
-        console.error('Failed to parse saved position:', e);
-    }
-}
-
-// Make it draggable
-let isDragging = false;
-let currentX;
-let currentY;
-let initialX;
-let initialY;
-let xOffset = 0;
-let yOffset = 0;
-
-syncStatusContainer.addEventListener('mousedown', dragStart);
-document.addEventListener('mousemove', drag);
-document.addEventListener('mouseup', dragEnd);
-
-function dragStart(e) {
-    initialX = e.clientX - xOffset;
-    initialY = e.clientY - yOffset;
-
-    if (e.target === syncStatusContainer) {
-        isDragging = true;
-    }
-}
-
-function drag(e) {
-    if (isDragging) {
-        e.preventDefault();
-        currentX = e.clientX - initialX;
-        currentY = e.clientY - initialY;
-
-        xOffset = currentX;
-        yOffset = currentY;
-
-        setTranslate(currentX, currentY, syncStatusContainer);
-    }
-}
-
-function setTranslate(xPos, yPos, el) {
-    // Ensure the element stays within viewport bounds
-    const rect = el.getBoundingClientRect();
-    const containerWidth = rect.width;
-    const containerHeight = rect.height;
-    
-    xPos = Math.min(Math.max(xPos, 0), window.innerWidth - containerWidth);
-    yPos = Math.min(Math.max(yPos, 0), window.innerHeight - containerHeight);
-
-    el.style.transform = `translate3d(${xPos}px, ${yPos}px, 0)`;
-}
-
-function dragEnd() {
-    if (isDragging) {
-        initialX = currentX;
-        initialY = currentY;
-        isDragging = false;
-
-        // Save position to localStorage
-        const rect = syncStatusContainer.getBoundingClientRect();
-        const position = {
-            left: rect.left + 'px',
-            top: rect.top + 'px'
-        };
-        localStorage.setItem('sync-status-position', JSON.stringify(position));
-    }
-}
-
-let lastImportTime = null;
-let lastExportTime = null;
-let lastImportStatus = null;
-let lastExportStatus = null;
-
-// Modify the updateSyncStatus function to add a class for spinning animation
-function updateSyncStatus() {
-    const now = Date.now();
-    let statusHTML = '';
-
-    if (isImportInProgress) {
-        statusHTML += '⬇️ <span class="sync-spinner">↻</span> Importing...';
-    } else if (lastImportTime) {
-        const timeDiff = Math.floor((now - lastImportTime) / 1000);
-        if (lastImportStatus === 'success') {
-            statusHTML += `⬇️ ${timeDiff}s ago`;
-        } else {
-            statusHTML += '<span class="text-red-400">⬇️ Failed</span>';
-        }
-    }
-
-    if (statusHTML && isExportInProgress) {
-        statusHTML += '<br>';
-    }
-
-    if (isExportInProgress) {
-        statusHTML += '⬆️ <span class="sync-spinner">↻</span> Exporting...';
-    } else if (lastExportTime) {
-        const timeDiff = Math.floor((now - lastExportTime) / 1000);
-        if (lastExportStatus === 'success') {
-            statusHTML += `${statusHTML ? '<br>' : ''}⬆️ ${timeDiff}s ago`;
-        } else {
-            statusHTML += `${statusHTML ? '<br>' : ''}<span class="text-red-400">⬆️ Failed</span>`;
-        }
-    }
-
-    syncStatusContainer.innerHTML = statusHTML || '';
-    
-    // Only update display if we have status to show and it's enabled
-    if (localStorage.getItem('show-sync-status') === 'true') {
-        syncStatusContainer.style.display = statusHTML ? 'block' : 'none';
-    } else {
-        syncStatusContainer.style.display = 'none';
-    }
-}
-
-// Add this after syncStatusContainer creation
-function initializeSyncStatus() {
-    // Reset status container
-    syncStatusContainer.innerHTML = '';
-    syncStatusContainer.style.display = 'none';
-    
-    // Reset status variables
-    lastImportTime = null;
-    lastExportTime = null;
-    lastImportStatus = null;
-    lastExportStatus = null;
-    
-    // Start update interval if enabled
-    if (localStorage.getItem('show-sync-status') === 'true') {
-        updateSyncStatus();
-    }
-}
-
-// Call initializeSyncStatus after creating syncStatusContainer
-initializeSyncStatus();
-
-setInterval(updateSyncStatus, 1000);
 
 function getImportThreshold() {
     return parseFloat(localStorage.getItem('import-size-threshold')) || 1;
@@ -418,12 +266,6 @@ function openSyncModal() {
                                         </label>
                                     </div>
                                 </div>
-                                <div class="flex items-center">
-                                    <input type="checkbox" id="show-sync-status" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                                    <label for="show-sync-status" class="ml-2 block text-sm text-gray-700 dark:text-gray-400">
-                                        Show live sync status
-                                    </label>
-                                </div>
                                 <div class="flex justify-between space-x-2">
                                     <button id="save-aws-details-btn" type="button" class="z-1 inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors" disabled>
                                         Save
@@ -433,11 +275,14 @@ function openSyncModal() {
                         </div>
                     </div>
                      <div class="flex items-center justify-end mb-4 space-x-2">
-                         <label class="flex items-center text-sm text-gray-600 dark:text-gray-400">
-                             <input type="checkbox" id="console-logging-toggle" class="mr-2">
+                         <span class="text-sm text-gray-600 dark:text-gray-400">
                              Console Logging
                              <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="Use this to enable detailed logging in Browser console for troubleshooting purpose. Clicking on this button will instantly start logging. However, earlier events will not be logged. You could add ?log=true to the page URL and reload the page to start logging from the beginning of the page load.">ⓘ</button>
-                         </label>
+                         </span>
+                         <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                             <input type="checkbox" id="console-logging-toggle" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer"/>
+                             <label for="console-logging-toggle" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
+                         </div>
                      </div>
                     <div class="flex justify-between space-x-2 mt-4">
                         <button id="export-to-s3-btn" type="button" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors" disabled>
@@ -808,18 +653,6 @@ function openSyncModal() {
         alertSmallerCloudCheckbox.checked = getShouldAlertOnSmallerCloud();
         alertSmallerCloudCheckbox.addEventListener('change', (e) => {
             localStorage.setItem('alert-smaller-cloud', e.target.checked);
-        });
-    }
-
-    const showSyncStatusCheckbox = document.getElementById('show-sync-status');
-    if (showSyncStatusCheckbox) {
-        showSyncStatusCheckbox.checked = localStorage.getItem('show-sync-status') === 'true';
-        showSyncStatusCheckbox.addEventListener('change', (e) => {
-            localStorage.setItem('show-sync-status', e.target.checked);
-            syncStatusContainer.style.display = e.target.checked ? 'block' : 'none';
-            if (e.target.checked) {
-                updateSyncStatus();
-            }
         });
     }
 }
@@ -1265,9 +1098,7 @@ function importDataToStorage(data) {
             'aws-secret-key',
             'aws-region',
             'aws-endpoint',
-            'backup-interval',
-            'sync-status-position', 
-            'show-sync-status'
+            'backup-interval'
         ];
 
         Object.keys(data.localStorage).forEach((key) => {
@@ -1310,10 +1141,6 @@ function exportBackupData() {
             localStorage: { ...localStorage },
             indexedDB: {},
         };
-        
-        // Remove sync status position from export
-        delete exportData.localStorage['sync-status-position'];
-        
         const request = indexedDB.open('keyval-store', 1);
         request.onerror = () => reject(request.error);
         request.onsuccess = function (event) {
@@ -1345,250 +1172,231 @@ function exportBackupData() {
 
 async function backupToS3() {
     logToConsole('start', 'Starting export to S3...');
-    isExportInProgress = true;
-    updateSyncStatus();
-
+    let data = null;
+    let dataStr = null;
+    let blob = null;
+    const bucketName = localStorage.getItem('aws-bucket');
+    const awsRegion = localStorage.getItem('aws-region');
+    const awsAccessKey = localStorage.getItem('aws-access-key');
+    const awsSecretKey = localStorage.getItem('aws-secret-key');
+    const awsEndpoint = localStorage.getItem('aws-endpoint');
+    if (typeof AWS === 'undefined') {
+        await loadAwsSdk();
+    }
+    const awsConfig = {
+        accessKeyId: awsAccessKey,
+        secretAccessKey: awsSecretKey,
+        region: awsRegion,
+    };
+    if (awsEndpoint) {
+        awsConfig.endpoint = awsEndpoint;
+    }
+    AWS.config.update(awsConfig);
     try {
-        let data = null;
-        let dataStr = null;
-        let blob = null;
-        const bucketName = localStorage.getItem('aws-bucket');
-        const awsRegion = localStorage.getItem('aws-region');
-        const awsAccessKey = localStorage.getItem('aws-access-key');
-        const awsSecretKey = localStorage.getItem('aws-secret-key');
-        const awsEndpoint = localStorage.getItem('aws-endpoint');
-        if (typeof AWS === 'undefined') {
-            await loadAwsSdk();
+        const s3 = new AWS.S3();
+        await cleanupIncompleteMultipartUploads(s3, bucketName);
+        data = await exportBackupData();
+        logToConsole('start', 'Starting backup encryption');
+        const encryptedData = await encryptData(data);
+        blob = new Blob([encryptedData], { type: 'application/octet-stream' });
+        logToConsole('info', 'Blob created');
+        const dataSize = blob.size;
+        if (dataSize < 100) {
+            const error = new Error('Final backup blob is too small or empty');
+            error.code = 'INVALID_BLOB_SIZE';
+            throw error;
         }
-        const awsConfig = {
-            accessKeyId: awsAccessKey,
-            secretAccessKey: awsSecretKey,
-            region: awsRegion,
-        };
-        if (awsEndpoint) {
-            awsConfig.endpoint = awsEndpoint;
-        }
-        AWS.config.update(awsConfig);
+
         try {
-            const s3 = new AWS.S3();
-            await cleanupIncompleteMultipartUploads(s3, bucketName);
-            data = await exportBackupData();
-            logToConsole('start', 'Starting backup encryption');
-            const encryptedData = await encryptData(data);
-            blob = new Blob([encryptedData], { type: 'application/octet-stream' });
-            logToConsole('info', 'Blob created');
-            const dataSize = blob.size;
-            if (dataSize < 100) {
-                const error = new Error('Final backup blob is too small or empty');
-                error.code = 'INVALID_BLOB_SIZE';
-                throw error;
-            }
+            const currentCloudData = await s3.getObject({
+                Bucket: bucketName,
+                Key: 'typingmind-backup.json'
+            }).promise();
 
+            const cloudSize = currentCloudData.Body.length;
+            const localSize = dataSize;
+            const sizeDiffPercentage = Math.abs((localSize - cloudSize) / cloudSize * 100);
+
+            logToConsole('progress', 'Export size comparison:', {
+                cloudSize: `${cloudSize} bytes`,
+                localSize: `${localSize} bytes`,
+                difference: `${localSize - cloudSize} bytes (${sizeDiffPercentage.toFixed(4)}%)`
+            });
+
+            if (sizeDiffPercentage > getExportThreshold()) {
+                isWaitingForUserInput = true;
+                const message = `Warning: The new backup size (${localSize} bytes) differs significantly from the current cloud backup (${cloudSize} bytes) by ${sizeDiffPercentage.toFixed(2)}% (threshold: ${getExportThreshold()}%).\n\nDo you want to proceed with the upload?`;
+                const shouldProceed = await showCustomAlert(message, 'Size Difference Warning', [
+                    { text: 'Cancel', primary: false },
+                    { text: 'Proceed', primary: true }
+                ]);
+                isWaitingForUserInput = false;
+                if (!shouldProceed) {
+                    logToConsole('info', 'Export cancelled due to size difference');
+                    throw new Error('Export cancelled due to significant size difference');
+                }
+            }
+        } catch (err) {
+            if (err.code !== 'NoSuchKey') {
+                throw err;
+            }
+            logToConsole('info', 'No existing backup found, proceeding with upload');
+        }
+
+        localStorage.setItem('backup-size', dataSize.toString());
+        const chunkSize = 5 * 1024 * 1024;
+        if (dataSize > chunkSize) {
             try {
-                const currentCloudData = await s3.getObject({
-                    Bucket: bucketName,
-                    Key: 'typingmind-backup.json'
-                }).promise();
-
-                const cloudSize = currentCloudData.Body.length;
-                const localSize = dataSize;
-                const sizeDiffPercentage = Math.abs((localSize - cloudSize) / cloudSize * 100);
-
-                logToConsole('progress', 'Export size comparison:', {
-                    cloudSize: `${cloudSize} bytes`,
-                    localSize: `${localSize} bytes`,
-                    difference: `${localSize - cloudSize} bytes (${sizeDiffPercentage.toFixed(4)}%)`
-                });
-
-                if (sizeDiffPercentage > getExportThreshold()) {
-                    isWaitingForUserInput = true;
-                    const message = `Warning: The new backup size (${localSize} bytes) differs significantly from the current cloud backup (${cloudSize} bytes) by ${sizeDiffPercentage.toFixed(2)}% (threshold: ${getExportThreshold()}%).\n\nDo you want to proceed with the upload?`;
-                    const shouldProceed = await showCustomAlert(message, 'Size Difference Warning', [
-                        { text: 'Cancel', primary: false },
-                        { text: 'Proceed', primary: true }
-                    ]);
-                    isWaitingForUserInput = false;
-                    if (!shouldProceed) {
-                        logToConsole('info', 'Export cancelled due to size difference');
-                        throw new Error('Export cancelled due to significant size difference');
-                    }
-                }
-            } catch (err) {
-                if (err.code !== 'NoSuchKey') {
-                    throw err;
-                }
-                logToConsole('info', 'No existing backup found, proceeding with upload');
-            }
-
-            localStorage.setItem('backup-size', dataSize.toString());
-            const chunkSize = 5 * 1024 * 1024;
-            if (dataSize > chunkSize) {
-                try {
-                    logToConsole('start', `Starting multipart upload for file size: ${dataSize} bytes`);
-                    const createMultipartParams = {
-                        Bucket: bucketName,
-                        Key: 'typingmind-backup.json',
-                        ContentType: 'application/json',
-                        ServerSideEncryption: 'AES256'
-                    };
-                    const multipart = await s3.createMultipartUpload(createMultipartParams).promise();
-                    logToConsole('success', `Created multipart upload with ID: ${multipart.UploadId}`);
-
-                    const uploadedParts = [];
-                    let partNumber = 1;
-                    const totalParts = Math.ceil(dataSize / chunkSize);
-
-                    for (let start = 0; start < dataSize; start += chunkSize) {
-                        const end = Math.min(start + chunkSize, dataSize);
-                        const chunk = blob.slice(start, end);
-                        logToConsole('info', `Processing part ${partNumber}/${totalParts} (${chunk.size} bytes)`);
-
-                        const arrayBuffer = await new Promise((resolve, reject) => {
-                            const reader = new FileReader();
-                            reader.onload = () => resolve(reader.result);
-                            reader.onerror = () => reject(reader.error);
-                            reader.readAsArrayBuffer(chunk);
-                        });
-
-                        const partParams = {
-                            Body: arrayBuffer,
-                            Bucket: bucketName,
-                            Key: 'typingmind-backup.json',
-                            PartNumber: partNumber,
-                            UploadId: multipart.UploadId,
-                        };
-
-                        let retryCount = 0;
-                        const maxRetries = 3;
-
-                        while (retryCount < maxRetries) {
-                            try {
-                                logToConsole('upload', `Uploading part ${partNumber}/${totalParts}`);
-                                const uploadResult = await s3.uploadPart(partParams).promise();
-                                logToConsole('success', `Successfully uploaded part ${partNumber}/${totalParts} (ETag: ${uploadResult.ETag})`);
-                                uploadedParts.push({
-                                    ETag: uploadResult.ETag,
-                                    PartNumber: partNumber,
-                                });
-                                break;
-                            } catch (error) {
-                                logToConsole('error', `Error uploading part ${partNumber}/${totalParts}:`, error);
-                                retryCount++;
-                                if (retryCount === maxRetries) {
-                                    logToConsole('error', `All retries failed for part ${partNumber}, aborting multipart upload`);
-                                    await s3.abortMultipartUpload({
-                                        Bucket: bucketName,
-                                        Key: 'typingmind-backup.json',
-                                        UploadId: multipart.UploadId,
-                                    }).promise();
-                                    throw error;
-                                }
-                                const waitTime = Math.pow(2, retryCount) * 1000;
-                                logToConsole('start', `Retrying part ${partNumber} in ${waitTime / 1000} seconds (attempt ${retryCount + 1}/${maxRetries})`);
-                                await new Promise((resolve) => setTimeout(resolve, waitTime));
-                            }
-                        }
-                        partNumber++;
-                        const progress = Math.round(((start + chunkSize) / dataSize) * 100);
-                        logToConsole('progress', `Overall upload progress: ${Math.min(progress, 100)}%`);
-                    }
-
-                    logToConsole('success', `All parts uploaded, completing multipart upload`);
-                    const sortedParts = uploadedParts.sort((a, b) => a.PartNumber - b.PartNumber);
-                    logToConsole('success', `Sorted parts for completion:`, sortedParts);
-
-                    const completeParams = {
-                        Bucket: bucketName,
-                        Key: 'typingmind-backup.json',
-                        UploadId: multipart.UploadId,
-                        MultipartUpload: {
-                            Parts: sortedParts.map((part) => ({
-                                ETag: part.ETag,
-                                PartNumber: part.PartNumber,
-                            })),
-                        },
-                    };
-
-                    logToConsole('info', `Complete multipart upload params:`, JSON.stringify(completeParams, null, 2));
-
-                    try {
-                        logToConsole('info', `Sending complete multipart upload request`);
-                        const completeResult = await s3.completeMultipartUpload(completeParams).promise();
-                        logToConsole('info', `Complete multipart upload response:`, completeResult);
-                        logToConsole('success', `Multipart upload completed successfully`);
-                    } catch (completeError) {
-                        logToConsole('error', 'Complete multipart upload failed:', {
-                            error: completeError,
-                            params: completeParams,
-                            uploadId: multipart.UploadId,
-                            partsCount: sortedParts.length,
-                            firstPart: sortedParts[0],
-                            lastPart: sortedParts[sortedParts.length - 1]
-                        });
-                        throw completeError;
-                    }
-                } catch (error) {
-                    logToConsole('error', `Multipart upload failed with error:`, error);
-                    await cleanupIncompleteMultipartUploads(s3, bucketName);
-                    throw error;
-                }
-            } else {
-                logToConsole('start', 'Starting standard upload to S3');
-                const putParams = {
+                logToConsole('start', `Starting multipart upload for file size: ${dataSize} bytes`);
+                const createMultipartParams = {
                     Bucket: bucketName,
                     Key: 'typingmind-backup.json',
-                    Body: encryptedData,
                     ContentType: 'application/json',
                     ServerSideEncryption: 'AES256'
                 };
-                await s3.putObject(putParams).promise();
-            }
-            await handleTimeBasedBackup();
-            const currentTime = new Date().toLocaleString();
-            localStorage.setItem('last-cloud-sync', currentTime);
-            logToConsole('success', `Export completed successfully`);
-            var element = document.getElementById('last-sync-msg');
-            if (element !== null) {
-                element.innerText = `Last sync done at ${currentTime}`;
-            }
-            if (document.querySelector('[data-element-id="sync-modal-dbbackup"]')) {
-                await loadBackupFiles();
-            }
+                const multipart = await s3.createMultipartUpload(createMultipartParams).promise();
+                logToConsole('success', `Created multipart upload with ID: ${multipart.UploadId}`);
 
-        } catch (error) {
-            logToConsole('error', `Export failed:`, error);
-            if (error.code && error.code.startsWith('INVALID_')) {
-                logToConsole('error', `Size validation failed: ${error.message}`);
-                var element = document.getElementById('last-sync-msg');
-                if (element !== null) {
-                    element.innerText = `Backup skipped: ${error.message}`;
+                const uploadedParts = [];
+                let partNumber = 1;
+                const totalParts = Math.ceil(dataSize / chunkSize);
+
+                for (let start = 0; start < dataSize; start += chunkSize) {
+                    const end = Math.min(start + chunkSize, dataSize);
+                    const chunk = blob.slice(start, end);
+                    logToConsole('info', `Processing part ${partNumber}/${totalParts} (${chunk.size} bytes)`);
+
+                    const arrayBuffer = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result);
+                        reader.onerror = () => reject(reader.error);
+                        reader.readAsArrayBuffer(chunk);
+                    });
+
+                    const partParams = {
+                        Body: arrayBuffer,
+                        Bucket: bucketName,
+                        Key: 'typingmind-backup.json',
+                        PartNumber: partNumber,
+                        UploadId: multipart.UploadId,
+                    };
+
+                    let retryCount = 0;
+                    const maxRetries = 3;
+
+                    while (retryCount < maxRetries) {
+                        try {
+                            logToConsole('upload', `Uploading part ${partNumber}/${totalParts}`);
+                            const uploadResult = await s3.uploadPart(partParams).promise();
+                            logToConsole('success', `Successfully uploaded part ${partNumber}/${totalParts} (ETag: ${uploadResult.ETag})`);
+                            uploadedParts.push({
+                                ETag: uploadResult.ETag,
+                                PartNumber: partNumber,
+                            });
+                            break;
+                        } catch (error) {
+                            logToConsole('error', `Error uploading part ${partNumber}/${totalParts}:`, error);
+                            retryCount++;
+                            if (retryCount === maxRetries) {
+                                logToConsole('error', `All retries failed for part ${partNumber}, aborting multipart upload`);
+                                await s3.abortMultipartUpload({
+                                    Bucket: bucketName,
+                                    Key: 'typingmind-backup.json',
+                                    UploadId: multipart.UploadId,
+                                }).promise();
+                                throw error;
+                            }
+                            const waitTime = Math.pow(2, retryCount) * 1000;
+                            logToConsole('start', `Retrying part ${partNumber} in ${waitTime / 1000} seconds (attempt ${retryCount + 1}/${maxRetries})`);
+                            await new Promise((resolve) => setTimeout(resolve, waitTime));
+                        }
+                    }
+                    partNumber++;
+                    const progress = Math.round(((start + chunkSize) / dataSize) * 100);
+                    logToConsole('progress', `Overall upload progress: ${Math.min(progress, 100)}%`);
                 }
-                return;
+
+                logToConsole('success', `All parts uploaded, completing multipart upload`);
+                const sortedParts = uploadedParts.sort((a, b) => a.PartNumber - b.PartNumber);
+                logToConsole('success', `Sorted parts for completion:`, sortedParts);
+
+                const completeParams = {
+                    Bucket: bucketName,
+                    Key: 'typingmind-backup.json',
+                    UploadId: multipart.UploadId,
+                    MultipartUpload: {
+                        Parts: sortedParts.map((part) => ({
+                            ETag: part.ETag,
+                            PartNumber: part.PartNumber,
+                        })),
+                    },
+                };
+
+                logToConsole('info', `Complete multipart upload params:`, JSON.stringify(completeParams, null, 2));
+
+                try {
+                    logToConsole('info', `Sending complete multipart upload request`);
+                    const completeResult = await s3.completeMultipartUpload(completeParams).promise();
+                    logToConsole('info', `Complete multipart upload response:`, completeResult);
+                    logToConsole('success', `Multipart upload completed successfully`);
+                } catch (completeError) {
+                    logToConsole('error', 'Complete multipart upload failed:', {
+                        error: completeError,
+                        params: completeParams,
+                        uploadId: multipart.UploadId,
+                        partsCount: sortedParts.length,
+                        firstPart: sortedParts[0],
+                        lastPart: sortedParts[sortedParts.length - 1]
+                    });
+                    throw completeError;
+                }
+            } catch (error) {
+                logToConsole('error', `Multipart upload failed with error:`, error);
+                await cleanupIncompleteMultipartUploads(s3, bucketName);
+                throw error;
             }
-            var element = document.getElementById('last-sync-msg');
-            if (element !== null) {
-                element.innerText = `Backup failed: ${error.message}`;
-            }
-            throw error;
-        } finally {
-            data = null;
-            dataStr = null;
-            blob = null;
+        } else {
+            logToConsole('start', 'Starting standard upload to S3');
+            const putParams = {
+                Bucket: bucketName,
+                Key: 'typingmind-backup.json',
+                Body: encryptedData,
+                ContentType: 'application/json',
+                ServerSideEncryption: 'AES256'
+            };
+            await s3.putObject(putParams).promise();
         }
-        lastExportTime = Date.now();
-        lastExportStatus = 'success';
+        await handleTimeBasedBackup();
+        const currentTime = new Date().toLocaleString();
+        localStorage.setItem('last-cloud-sync', currentTime);
         logToConsole('success', `Export completed successfully`);
-        updateSyncStatus();
-        return true;
+        var element = document.getElementById('last-sync-msg');
+        if (element !== null) {
+            element.innerText = `Last sync done at ${currentTime}`;
+        }
+        if (document.querySelector('[data-element-id="sync-modal-dbbackup"]')) {
+            await loadBackupFiles();
+        }
+
     } catch (error) {
         logToConsole('error', `Export failed:`, error);
-        lastExportTime = Date.now();
-        lastExportStatus = 'failed';
-        updateSyncStatus();
+        if (error.code && error.code.startsWith('INVALID_')) {
+            logToConsole('error', `Size validation failed: ${error.message}`);
+            var element = document.getElementById('last-sync-msg');
+            if (element !== null) {
+                element.innerText = `Backup skipped: ${error.message}`;
+            }
+            return;
+        }
+        var element = document.getElementById('last-sync-msg');
+        if (element !== null) {
+            element.innerText = `Backup failed: ${error.message}`;
+        }
         throw error;
     } finally {
-        isExportInProgress = false;
-        updateSyncStatus();
+        data = null;
+        dataStr = null;
+        blob = null;
     }
 }
 
@@ -1598,14 +1406,12 @@ async function importFromS3() {
         return false;
     }
     logToConsole('download', 'Starting import from S3...');
- 
+
     logToConsole('info', 'Device Info', {
         userAgent: navigator.userAgent,
         platform: navigator.platform,
         isMobile: /Mobi|Android/i.test(navigator.userAgent)
     });
-    isImportInProgress = true;
-    updateSyncStatus();
 
     try {
         const bucketName = localStorage.getItem('aws-bucket');
@@ -1802,20 +1608,11 @@ async function importFromS3() {
             element.innerText = `Last sync done at ${currentTime}`;
         }
         logToConsole('success', `Import completed successfully`);
-        lastImportTime = Date.now();
-        lastImportStatus = 'success';
         wasImportSuccessful = true;
-        updateSyncStatus();
         return true;
     } catch (error) {
         logToConsole('error', `Import failed with error:`, error);
-        lastImportTime = Date.now();
-        lastImportStatus = 'failed';
-        updateSyncStatus();
         throw error;
-    } finally {
-        isImportInProgress = false;
-        updateSyncStatus();
     }
 }
 
@@ -2584,21 +2381,3 @@ document.head.appendChild(hintCustomStyles);
 function getShouldAlertOnSmallerCloud() {
     return localStorage.getItem('alert-smaller-cloud') === 'true';
 }
-
-// Add spinning animation CSS
-const spinnerStyles = document.createElement('style');
-spinnerStyles.textContent = `
-@keyframes spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
-}
-.sync-spinner {
-    display: inline-block;
-    animation: spin 1s linear infinite;
-    transform-origin: center;
-}`;
-document.head.appendChild(spinnerStyles);
