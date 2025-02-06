@@ -13,12 +13,14 @@
 - A 'T-15 rolling snapshot' keeps a zipped snapshot of the typingmind instance from 15 minutes ago. This gives you a recent version of the backup that you can manually revert to in case of an unintended corruption of the main backup file. However, note that this is a rolling backup that gets overwritten every 15 minutes.
 - Allows you to view all the backups in the cloud and lets you download it or restore from the UI itself. The snapshot backups can be deleted from the UI as well.
 - The backup interval is now configurable (Minimum of 15 seconds).
-- ✨ All backups are now encrypted! The backup system uses AES-GCM encryption with a 256-bit key derived using PBKDF2. All data is encrypted client-side before being uploaded to S3. The encryption key is derived from a user-provided password using 100,000 PBKDF2 iterations with SHA-256, providing strong protection for sensitive data.
-- ✨ The system includes several safeguards to prevent unintended data loss.
+- All backups are now encrypted! The backup system uses AES-GCM encryption with a 256-bit key derived using PBKDF2. All data is encrypted client-side before being uploaded to S3. The encryption key is derived from a user-provided password using 100,000 PBKDF2 iterations with SHA-256, providing strong protection for sensitive data.
+- The system includes several safeguards to prevent unintended data loss.
     - Cloud-vs-local data size comparison with customizable tolerance during import
     - Cloud-vs-local data size comparison with customizable tolerance during export
     - User confirmation if Cloud backup is smaller than the local data
     - User confirmation prompts with detailed information when significant differences are detected
+- ✨ Live sync status indicator in UI
+- ✨ Comprehensive logging system
   
 ## Using this extension
 WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXPORT" before setting up the extension.
