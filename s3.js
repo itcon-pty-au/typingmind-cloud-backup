@@ -1,4 +1,4 @@
-const VERSION = '20250207-05:57';
+const VERSION = '20250207-06:01';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -706,7 +706,7 @@ async function handleDOMReady() {
                 wasImportSuccessful = true;
             } else {
                 wasImportSuccessful = true;
-                logToConsole('warning', 'Import was cancelled by user - starting backup of local data to cloud');
+                logToConsole('info', 'Import was cancelled by user - starting backup of local data to cloud');
             }
 
         } catch (error) {
