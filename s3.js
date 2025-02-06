@@ -1432,6 +1432,7 @@ async function importFromS3() {
         };
 
         let s3Data;
+	let cloudData;
         try {
             s3Data = await s3.getObject(params).promise();
             cloudFileSize = s3Data.Body.length;
@@ -1449,7 +1450,7 @@ async function importFromS3() {
 
             cloudLastModified = s3Data.LastModified;
             const encryptedContent = new Uint8Array(s3Data.Body);
-            const cloudData = await decryptData(encryptedContent);
+            cloudData = await decryptData(encryptedContent);
 
             logToConsole('success', 'Cloud data stats:', {
                 totalSize: `${cloudFileSize} bytes`,
