@@ -1,4 +1,4 @@
-const VERSION = '20250206-20:40';
+const VERSION = '20250206-12:01';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
