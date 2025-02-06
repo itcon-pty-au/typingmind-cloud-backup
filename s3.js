@@ -1,4 +1,4 @@
-const VERSION = '20250207-05:47';
+const VERSION = '20250207-05:57';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -519,7 +519,7 @@ async function backupToS3() {
                         let lastError = null;
                         let retryCount = 0;
                         const maxRetries = 3;
-                        const baseDelay = 2000; // 2 seconds base delay
+                        const baseDelay = 2000;
 
                         while (!uploadSuccess && retryCount < maxRetries) {
                             try {
@@ -569,7 +569,6 @@ async function backupToS3() {
                                     throw new Error(`Failed to upload part ${partNumber} after ${maxRetries} attempts: ${lastError.message}`);
                                 }
 
-                                // Exponential backoff with jitter
                                 const delay = Math.min(baseDelay * Math.pow(2, retryCount) + Math.random() * 1000, 30000);
                                 logToConsole('info', `Retrying part ${partNumber} in ${Math.round(delay/1000)} seconds`);
                                 await new Promise(resolve => setTimeout(resolve, delay));
@@ -705,11 +704,9 @@ async function handleDOMReady() {
                     await handleBackupFiles();
                 }
                 wasImportSuccessful = true;
-                startBackupInterval();
             } else {
                 wasImportSuccessful = true;
                 logToConsole('warning', 'Import was cancelled by user - starting backup of local data to cloud');
-                startBackupInterval();
             }
 
         } catch (error) {
@@ -1413,6 +1410,7 @@ async function checkAndImportBackup() {
         } else {
             logToConsole('info', 'Import was cancelled or skipped');
             wasImportSuccessful = true;
+            startBackupInterval();  
             return false;
         }
     } catch (err) {
