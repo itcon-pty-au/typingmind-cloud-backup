@@ -1,4 +1,4 @@
-const VERSION = '20250206-11:47';
+const VERSION = '20250206-11:51';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1431,39 +1431,32 @@ async function importFromS3() {
             Key: 'typingmind-backup.json',
         };
 
-        let s3Data;
-        try {
-            s3Data = await s3.getObject(params).promise();
-            cloudFileSize = s3Data.Body.length;
+        let cloudData;
+        let s3Data = await s3.getObject(params).promise();
+        cloudFileSize = s3Data.Body.length;
 
-            if (cloudFileSize === 0) {
-                logToConsole('warning', 'Empty backup file found in S3');
-                wasImportSuccessful = true;
-                const message = 'No valid backup found in cloud storage. This could be because:\n\n' +
-                    '• This is your first time using cloud backup\n' +
-                    '• The backup file is corrupted\n\n' +
-                    'Your current local data will be backed up to the cloud.';
-                await showCustomAlert(message, 'No Backup Found');
-                return false;
-            }
-
-            cloudLastModified = s3Data.LastModified;
-            const encryptedContent = new Uint8Array(s3Data.Body);
-            const cloudData = await decryptData(encryptedContent);
-
-            logToConsole('success', 'Cloud data stats:', {
-                totalSize: `${cloudFileSize} bytes`,
-                lastModified: cloudLastModified,
-                localStorageKeys: Object.keys(cloudData.localStorage || {}).length,
-                localStorageSize: JSON.stringify(cloudData.localStorage || {}).length,
-                indexedDBKeys: Object.keys(cloudData.indexedDB || {}).length,
-                indexedDBSize: JSON.stringify(cloudData.indexedDB || {}).length
-            });
-
-        } catch (fetchError) {
-            logToConsole('error', 'Failed to fetch from S3:', fetchError);
-            throw fetchError;
+        if (cloudFileSize === 0) {
+            logToConsole('warning', 'Empty backup file found in S3');
+            wasImportSuccessful = true;
+            const message = 'No valid backup found in cloud storage. This could be because:\n\n' +
+                '• This is your first time using cloud backup\n' +
+                '• The backup file is corrupted\n\n' +
+                'Your current local data will be backed up to the cloud.';
+            await showCustomAlert(message, 'No Backup Found');
+            return false;
         }
+
+        cloudLastModified = s3Data.LastModified;
+        cloudData = await decryptData(new Uint8Array(s3Data.Body));
+
+        logToConsole('success', 'Cloud data stats:', {
+            totalSize: `${cloudFileSize} bytes`,
+            lastModified: cloudLastModified,
+            localStorageKeys: Object.keys(cloudData.localStorage || {}).length,
+            localStorageSize: JSON.stringify(cloudData.localStorage || {}).length,
+            indexedDBKeys: Object.keys(cloudData.indexedDB || {}).length,
+            indexedDBSize: JSON.stringify(cloudData.indexedDB || {}).length
+        });
 
         const lastSync = localStorage.getItem('last-cloud-sync');
         logToConsole('info', 'Last sync time:', lastSync);
@@ -1482,7 +1475,6 @@ async function importFromS3() {
 
         const cloudLocalStorageKeys = new Set(Object.keys(cloudData.localStorage || {}));
         const cloudIndexedDBKeys = new Set(Object.keys(cloudData.indexedDB || {}));
-        const localIndexedDBKeys = new Set(Object.keys(currentData.indexedDB || {}));
 
         const keyDifferences = {
             localStorage: {
