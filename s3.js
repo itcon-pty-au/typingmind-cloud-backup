@@ -1,4 +1,4 @@
-const VERSION = '20250206-11:00';
+const VERSION = '20250206-11:09';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -2118,12 +2118,25 @@ function createMobileLogContainer() {
     toggleSize.innerHTML = '□';
     toggleSize.onclick = () => {
         if (container.style.height === '200px') {
+            container.style.position = 'fixed';
+            container.style.top = '0';
+            container.style.left = '0';
+            container.style.right = '0';
+            container.style.bottom = '0';
             container.style.height = '100vh';
             container.style.maxHeight = '100vh';
+            container.style.zIndex = '99999';
+            logsContent.style.height = 'calc(100vh - 36px)'; // Adjust content height to account for header
             toggleSize.innerHTML = '▢';
         } else {
+            container.style.position = 'fixed';
+            container.style.top = 'auto';
+            container.style.left = '0';
+            container.style.right = '0';
+            container.style.bottom = '0';
             container.style.height = '200px';
             container.style.maxHeight = '50vh';
+            logsContent.style.height = 'calc(100% - 36px)';
             toggleSize.innerHTML = '□';
         }
     };
@@ -2152,7 +2165,7 @@ function createMobileLogContainer() {
     const logsContent = document.createElement('div');
     logsContent.id = 'logs-content';
     logsContent.className = 'p-2 overflow-y-auto';
-    logsContent.style.height = 'calc(100% - 36px)';
+    logsContent.style.height = 'calc(100% - 36px)'; // Keep this for header space
        
     header.appendChild(title);
     header.appendChild(controls);
