@@ -2478,7 +2478,6 @@ function getShouldAlertOnSmallerCloud() {
     return localStorage.getItem('alert-smaller-cloud') === 'true';
 }
 
-// Add spinning animation CSS
 const spinnerStyles = document.createElement('style');
 spinnerStyles.textContent = `
 @keyframes spin {
