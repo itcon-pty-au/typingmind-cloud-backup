@@ -1,4 +1,4 @@
-const VERSION = '20250206-11:09';
+const VERSION = '20250206-11:18';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1451,13 +1451,17 @@ async function importFromS3() {
             const encryptedContent = new Uint8Array(s3Data.Body);
             const cloudData = await decryptData(encryptedContent);
             
-            logToConsole('success', 'S3 data fetched successfully:', {
-                contentLength: cloudFileSize,
+            logToConsole('success', 'Cloud data stats:', {
+                totalSize: `${cloudFileSize} bytes`,
                 lastModified: cloudLastModified,
-                etag: s3Data.ETag,
-                cloudLocalStorageKeys: Object.keys(cloudData.localStorage).length,
-                cloudIndexedDBKeys: Object.keys(cloudData.indexedDB).length
+                localStorageKeys: Object.keys(cloudData.localStorage || {}).length,
+                localStorageSize: JSON.stringify(cloudData.localStorage || {}).length,
+                indexedDBKeys: Object.keys(cloudData.indexedDB || {}).length,
+                indexedDBSize: JSON.stringify(cloudData.indexedDB || {}).length,
+                localStorageKeyNames: Object.keys(cloudData.localStorage || {}),
+                indexedDBKeyNames: Object.keys(cloudData.indexedDB || {})
             });
+
         } catch (fetchError) {
             logToConsole('error', 'Failed to fetch from S3:', fetchError);
             throw fetchError;
@@ -1467,9 +1471,14 @@ async function importFromS3() {
         logToConsole('info', 'Last sync time:', lastSync);
         
         const currentData = await exportBackupData();
-        logToConsole('info', 'Current data stats:', {
-            localStorageKeys: Object.keys(currentData.localStorage).length,
-            indexedDBKeys: Object.keys(currentData.indexedDB).length
+        logToConsole('info', 'Current local data stats:', {
+            totalSize: `${new Blob([JSON.stringify(currentData)]).size} bytes`,
+            localStorageKeys: Object.keys(currentData.localStorage || {}).length,
+            localStorageSize: JSON.stringify(currentData.localStorage || {}).length,
+            indexedDBKeys: Object.keys(currentData.indexedDB || {}).length,
+            indexedDBSize: JSON.stringify(currentData.indexedDB || {}).length,
+            localStorageKeyNames: Object.keys(currentData.localStorage || {}),
+            indexedDBKeyNames: Object.keys(currentData.indexedDB || {})
         });
 
         const currentDataStr = JSON.stringify(currentData);
