@@ -1,4 +1,4 @@
-const VERSION = '20250206-22:24';
+const VERSION = '20250206-22:48';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -175,18 +175,25 @@ function updateSyncStatus() {
     };
 
     const importStatus = isImportInProgress ? 
-        '<span class="sync-spinner">↻</span>' :
+        '⬇️ <span class="sync-spinner">↻</span>' :
         lastImportStatus === 'failed' ? 
             '<span class="sync-failed">⬇️ Failed</span>' : 
             lastImportTime ? `⬇️ ${formatTime(lastImportTime)}` : '';
     
     const exportStatus = isExportInProgress ?
-        '<span class="sync-spinner">↻</span>' :
+        '⬆️ <span class="sync-spinner">↻</span>' :
         lastExportStatus === 'failed' ?
             '<span class="sync-failed">⬆️ Failed</span>' :
             lastExportTime ? `⬆️ ${formatTime(lastExportTime)}` : '';
 
-    syncStatus.innerHTML = `${importStatus} ${exportStatus}`.trim();
+    const statusContent = `${importStatus} ${exportStatus}`.trim();
+    
+    if (statusContent) {
+        syncStatus.innerHTML = statusContent;
+        syncStatus.style.display = 'block';
+    } else {
+        syncStatus.style.display = 'none';
+    }
 }
 
 async function importFromS3() {
@@ -509,51 +516,67 @@ async function backupToS3() {
                         const chunk = blob.slice(start, end);
                         logToConsole('info', `Processing part ${partNumber}/${totalParts} (${chunk.size} bytes)`);
 
-                        const arrayBuffer = await new Promise((resolve, reject) => {
-                            const reader = new FileReader();
-                            reader.onload = () => resolve(reader.result);
-                            reader.onerror = () => reject(reader.error);
-                            reader.readAsArrayBuffer(chunk);
-                        });
-
-                        const partParams = {
-                            Body: arrayBuffer,
-                            Bucket: bucketName,
-                            Key: 'typingmind-backup.json',
-                            PartNumber: partNumber,
-                            UploadId: multipart.UploadId,
-                        };
-
+                        let uploadSuccess = false;
+                        let lastError = null;
                         let retryCount = 0;
                         const maxRetries = 3;
+                        const baseDelay = 2000; // 2 seconds base delay
 
-                        while (retryCount < maxRetries) {
+                        while (!uploadSuccess && retryCount < maxRetries) {
                             try {
-                                logToConsole('upload', `Uploading part ${partNumber}/${totalParts}`);
+                                logToConsole('upload', `Uploading part ${partNumber}/${totalParts} (attempt ${retryCount + 1}/${maxRetries})`);
+                                
+                                const arrayBuffer = await new Promise((resolve, reject) => {
+                                    const reader = new FileReader();
+                                    reader.onload = () => resolve(reader.result);
+                                    reader.onerror = () => reject(reader.error);
+                                    reader.readAsArrayBuffer(chunk);
+                                });
+
+                                const partParams = {
+                                    Body: arrayBuffer,
+                                    Bucket: bucketName,
+                                    Key: 'typingmind-backup.json',
+                                    PartNumber: partNumber,
+                                    UploadId: multipart.UploadId,
+                                };
+
                                 const uploadResult = await s3.uploadPart(partParams).promise();
                                 logToConsole('success', `Successfully uploaded part ${partNumber}/${totalParts} (ETag: ${uploadResult.ETag})`);
+                                
                                 uploadedParts.push({
                                     ETag: uploadResult.ETag,
                                     PartNumber: partNumber,
                                 });
-                                break;
+                                uploadSuccess = true;
+
                             } catch (error) {
-                                logToConsole('error', `Error uploading part ${partNumber}/${totalParts}:`, error);
+                                lastError = error;
                                 retryCount++;
+                                logToConsole('error', `Error uploading part ${partNumber}/${totalParts} (attempt ${retryCount}):`, error);
+
                                 if (retryCount === maxRetries) {
                                     logToConsole('error', `All retries failed for part ${partNumber}, aborting multipart upload`);
-                                    await s3.abortMultipartUpload({
-                                        Bucket: bucketName,
-                                        Key: 'typingmind-backup.json',
-                                        UploadId: multipart.UploadId,
-                                    }).promise();
-                                    throw error;
+                                    try {
+                                        await s3.abortMultipartUpload({
+                                            Bucket: bucketName,
+                                            Key: 'typingmind-backup.json',
+                                            UploadId: multipart.UploadId,
+                                        }).promise();
+                                        logToConsole('info', 'Multipart upload aborted successfully');
+                                    } catch (abortError) {
+                                        logToConsole('error', 'Error aborting multipart upload:', abortError);
+                                    }
+                                    throw new Error(`Failed to upload part ${partNumber} after ${maxRetries} attempts: ${lastError.message}`);
                                 }
-                                const waitTime = Math.pow(2, retryCount) * 1000;
-                                logToConsole('start', `Retrying part ${partNumber} in ${waitTime / 1000} seconds (attempt ${retryCount + 1}/${maxRetries})`);
-                                await new Promise((resolve) => setTimeout(resolve, waitTime));
+
+                                // Exponential backoff with jitter
+                                const delay = Math.min(baseDelay * Math.pow(2, retryCount) + Math.random() * 1000, 30000);
+                                logToConsole('info', `Retrying part ${partNumber} in ${Math.round(delay/1000)} seconds`);
+                                await new Promise(resolve => setTimeout(resolve, delay));
                             }
                         }
+
                         partNumber++;
                         const progress = Math.round(((start + chunkSize) / dataSize) * 100);
                         logToConsole('progress', `Overall upload progress: ${Math.min(progress, 100)}%`);
