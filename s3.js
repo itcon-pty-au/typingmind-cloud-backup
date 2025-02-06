@@ -1,4 +1,4 @@
-const VERSION = '20250206-12:01';
+const VERSION = '20250206-20:34';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -263,6 +263,13 @@ function openSyncModal() {
                                         <input type="checkbox" id="alert-smaller-cloud" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
                                         <label for="alert-smaller-cloud" class="ml-2 block text-sm text-gray-700 dark:text-gray-400">
                                             Alert if cloud backup is smaller during import
+                                        </label>
+                                    </div>
+                                    <div class="mt-2 flex items-center">
+                                        <input type="checkbox" id="force-reload-after-import" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                                        <label for="force-reload-after-import" class="ml-2 block text-sm text-gray-700 dark:text-gray-400">
+                                            Force reload after import
+                                            <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="When enabled, the page will be force reloaded (Ctrl+F5) after importing data from cloud. This ensures all components are properly reinitialized with the imported data.">ⓘ</button>
                                         </label>
                                     </div>
                                 </div>
@@ -653,6 +660,14 @@ function openSyncModal() {
         alertSmallerCloudCheckbox.checked = getShouldAlertOnSmallerCloud();
         alertSmallerCloudCheckbox.addEventListener('change', (e) => {
             localStorage.setItem('alert-smaller-cloud', e.target.checked);
+        });
+    }
+
+    const forceReloadCheckbox = document.getElementById('force-reload-after-import');
+    if (forceReloadCheckbox) {
+        forceReloadCheckbox.checked = getShouldForceReloadAfterImport();
+        forceReloadCheckbox.addEventListener('change', (e) => {
+            localStorage.setItem('force-reload-after-import', e.target.checked);
         });
     }
 }
@@ -1113,7 +1128,12 @@ function importDataToStorage(data) {
             const db = event.target.result;
             const transaction = db.transaction(['keyval'], 'readwrite');
             const objectStore = transaction.objectStore('keyval');
-            transaction.oncomplete = () => resolve();
+            transaction.oncomplete = () => {
+                resolve();
+                if (getShouldForceReloadAfterImport()) {
+                    window.location.reload(true);
+                }
+            };
             transaction.onerror = () => reject(transaction.error);
             const deleteRequest = objectStore.clear();
             deleteRequest.onsuccess = function () {
@@ -2380,4 +2400,8 @@ document.head.appendChild(hintCustomStyles);
 
 function getShouldAlertOnSmallerCloud() {
     return localStorage.getItem('alert-smaller-cloud') === 'true';
+}
+
+function getShouldForceReloadAfterImport() {
+    return localStorage.getItem('force-reload-after-import') === 'true';
 }
