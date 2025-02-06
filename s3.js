@@ -1,4 +1,4 @@
-const VERSION = '20250206-21:42';
+const VERSION = '20250206-21:45';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -137,9 +137,11 @@ function updateSyncStatus() {
         }
     }
 
-    if (statusHTML) {
-        syncStatusContainer.innerHTML = statusHTML;
-        syncStatusContainer.style.display = localStorage.getItem('show-sync-status') === 'true' ? 'block' : 'none';
+    syncStatusContainer.innerHTML = statusHTML || '';
+    
+    // Only update display if we have status to show and it's enabled
+    if (localStorage.getItem('show-sync-status') === 'true') {
+        syncStatusContainer.style.display = statusHTML ? 'block' : 'none';
     } else {
         syncStatusContainer.style.display = 'none';
     }
@@ -1576,22 +1578,13 @@ async function backupToS3() {
         lastExportTime = Date.now();
         lastExportStatus = 'success';
         logToConsole('success', `Export completed successfully`);
+        updateSyncStatus();
+        return true;
     } catch (error) {
         logToConsole('error', `Export failed:`, error);
         lastExportTime = Date.now();
         lastExportStatus = 'failed';
-        if (error.code && error.code.startsWith('INVALID_')) {
-            logToConsole('error', `Size validation failed: ${error.message}`);
-            var element = document.getElementById('last-sync-msg');
-            if (element !== null) {
-                element.innerText = `Backup skipped: ${error.message}`;
-            }
-            return;
-        }
-        var element = document.getElementById('last-sync-msg');
-        if (element !== null) {
-            element.innerText = `Backup failed: ${error.message}`;
-        }
+        updateSyncStatus();
         throw error;
     } finally {
         isExportInProgress = false;
@@ -1812,11 +1805,13 @@ async function importFromS3() {
         lastImportTime = Date.now();
         lastImportStatus = 'success';
         wasImportSuccessful = true;
+        updateSyncStatus();
         return true;
     } catch (error) {
         logToConsole('error', `Import failed with error:`, error);
         lastImportTime = Date.now();
         lastImportStatus = 'failed';
+        updateSyncStatus();
         throw error;
     } finally {
         isImportInProgress = false;
@@ -2604,5 +2599,6 @@ spinnerStyles.textContent = `
 .sync-spinner {
     display: inline-block;
     animation: spin 1s linear infinite;
+    transform-origin: center;
 }`;
 document.head.appendChild(spinnerStyles);
