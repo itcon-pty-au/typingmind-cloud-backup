@@ -1,4 +1,4 @@
-const VERSION = '20250207-06:05';
+const VERSION = '20250207-06:09';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -65,18 +65,29 @@ function getExportThreshold() {
 function initializeLoggingState() {
     const urlParams = new URLSearchParams(window.location.search);
     const logParam = urlParams.get('log');
+    const syncStatusParam = urlParams.get('syncstatus');
+    
     if (logParam === 'true') {
         isConsoleLoggingEnabled = true;
         logToConsole('info', `Typingmind cloud backup version ${VERSION}`);
     }
+    
+    if (syncStatusParam === 'true') {
+        localStorage.setItem('sync-status-hidden', 'false');
+        urlParams.delete('syncstatus');
+        const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+        window.history.replaceState({}, '', newUrl);
+    }
 }
 
 function createSyncStatus() {
-    const isHidden = localStorage.getItem('sync-status-hidden') === 'true';
-    if (isHidden) return;
-
     const syncStatus = document.createElement('div');
     syncStatus.id = 'sync-status';
+    
+    const isHidden = localStorage.getItem('sync-status-hidden') === 'true';
+    if (isHidden) {
+        syncStatus.style.display = 'none';
+    }
     
     const savedPosition = JSON.parse(localStorage.getItem('sync-status-position') || '{"x": "right: 20px", "y": "top: 20px"}');
     Object.entries(savedPosition).forEach(([axis, value]) => {
