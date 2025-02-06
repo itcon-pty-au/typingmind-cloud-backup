@@ -1,4 +1,4 @@
-const VERSION = '20250207-05:22';
+const VERSION = '20250207-05:32';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1638,27 +1638,43 @@ function startBackupInterval() {
         logToConsole('skip', 'Skipping interval start - waiting for user input');
         return;
     }
-    logToConsole('start', 'Starting backup interval...');
     if (backupIntervalRunning) {
-        logToConsole('info', 'Clearing existing interval');
+        logToConsole('skip', 'Backup interval already running, skipping start');
+        return;
+    }
+
+    logToConsole('start', 'Starting backup interval...');
+    
+    if (backupInterval) {
+        logToConsole('cleanup', `Clearing existing interval ${backupInterval}`);
         clearInterval(backupInterval);
-        backupIntervalRunning = false;
         backupInterval = null;
     }
+
     localStorage.setItem('activeTabBackupRunning', 'false');
+    
     setTimeout(() => {
         if (isWaitingForUserInput) {
             return;
         }
+        
+        if (backupIntervalRunning) {
+            logToConsole('skip', 'Another backup interval was started, skipping');
+            return;
+        }
+
         localStorage.setItem('activeTabBackupRunning', 'true');
         const configuredInterval = parseInt(localStorage.getItem('backup-interval')) || 60;
         const intervalInMilliseconds = Math.max(configuredInterval * 1000, 15000);
         logToConsole('info', `Setting backup interval to ${intervalInMilliseconds / 1000} seconds`);
+        
         backupIntervalRunning = true;
         backupInterval = setInterval(() => {
             logToConsole('start', 'Interval triggered');
             performBackup();
         }, intervalInMilliseconds);
+        
+        logToConsole('success', `Backup interval started with ID ${backupInterval}`);
     }, 100);
 }
 
