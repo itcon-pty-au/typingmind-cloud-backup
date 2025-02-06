@@ -1,4 +1,4 @@
-const VERSION = '20250207-06:09';
+const VERSION = '20250207-06:30';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -323,7 +323,8 @@ async function importFromS3() {
             Math.abs((cloudFileSize - localFileSize) / localFileSize * 100) : 0;
 
         const shouldAlertOnSmallerCloud = getShouldAlertOnSmallerCloud();
-        const TOLERANCE_BYTES = 5;
+        // Increase tolerance to 1KB to account for minor size variations
+        const TOLERANCE_BYTES = 1024;
         const isCloudSignificantlySmaller = shouldAlertOnSmallerCloud &&
             cloudFileSize < (localFileSize - TOLERANCE_BYTES);
 
@@ -331,9 +332,11 @@ async function importFromS3() {
             cloudSize: `${cloudFileSize} bytes`,
             localSize: `${localFileSize} bytes`,
             difference: `${cloudFileSize - localFileSize} bytes${sizeDiffPercentage ? ` (${sizeDiffPercentage.toFixed(4)}%)` : ''}`,
-            isCloudSmaller: isCloudSignificantlySmaller
+            isCloudSmaller: isCloudSignificantlySmaller,
+            tolerance: `${TOLERANCE_BYTES} bytes`
         });
 
+        // Only prompt if difference exceeds threshold or cloud is significantly smaller
         const shouldPrompt = (localFileSize > 0 && sizeDiffPercentage > getImportThreshold()) || isCloudSignificantlySmaller;
 
         if (shouldPrompt) {
@@ -1298,50 +1301,74 @@ function openSyncModal() {
         });
     }
 }
+
+let visibilityChangeTimeout = null;
+let isProcessingVisibilityChange = false;
+
 document.addEventListener('visibilitychange', async () => {
     logToConsole('visibility', `Visibility changed: ${document.hidden ? 'hidden' : 'visible'}`);
+    
+    if (visibilityChangeTimeout) {
+        clearTimeout(visibilityChangeTimeout);
+    }
+
     if (!document.hidden) {
-        logToConsole('active', 'Tab became active');
-        if (backupIntervalRunning) {
-            localStorage.setItem('activeTabBackupRunning', 'false');
-            clearInterval(backupInterval);
-            backupIntervalRunning = false;
-        }
-
-        if (isWaitingForUserInput) {
-            logToConsole('skip', 'Tab activation tasks skipped - waiting for user input');
-            return;
-        }
-
-        try {
-            logToConsole('info', 'Checking for updates from S3...');
-            const importSuccessful = await checkAndImportBackup();
-            if (importSuccessful) {
-                const currentTime = new Date().toLocaleString();
-                const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
-                const today = new Date();
-                const currentDateSuffix = `${today.getFullYear()}${String(
-                    today.getMonth() + 1
-                ).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-
-                var element = document.getElementById('last-sync-msg');
-                if (element !== null) {
-                    element.innerText = `Last sync done at ${currentTime}`;
-                    element = null;
-                }
-                if (!storedSuffix || currentDateSuffix > storedSuffix) {
-                    await handleBackupFiles();
-                }
-                logToConsole('success', 'Import successful, starting backup interval');
-                startBackupInterval();
-            } else {
-                logToConsole('warning', 'Import was not successful, not starting backup interval');
+        visibilityChangeTimeout = setTimeout(async () => {
+            if (isProcessingVisibilityChange) {
+                logToConsole('skip', 'Already processing visibility change, skipping');
+                return;
             }
-        } catch (error) {
-            logToConsole('error', 'Error during tab activation:', error);
-        }
+
+            try {
+                isProcessingVisibilityChange = true;
+                logToConsole('active', 'Tab became active');
+
+                if (backupIntervalRunning) {
+                    localStorage.setItem('activeTabBackupRunning', 'false');
+                    clearInterval(backupInterval);
+                    backupIntervalRunning = false;
+                }
+
+                if (isWaitingForUserInput) {
+                    logToConsole('skip', 'Tab activation tasks skipped - waiting for user input');
+                    return;
+                }
+
+                try {
+                    logToConsole('info', 'Checking for updates from S3...');
+                    const importSuccessful = await checkAndImportBackup();
+                    if (importSuccessful) {
+                        const currentTime = new Date().toLocaleString();
+                        const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
+                        const today = new Date();
+                        const currentDateSuffix = `${today.getFullYear()}${String(
+                            today.getMonth() + 1
+                        ).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+
+                        var element = document.getElementById('last-sync-msg');
+                        if (element !== null) {
+                            element.innerText = `Last sync done at ${currentTime}`;
+                            element = null;
+                        }
+                        if (!storedSuffix || currentDateSuffix > storedSuffix) {
+                            await handleBackupFiles();
+                        }
+                        logToConsole('success', 'Import successful, starting backup interval');
+                        startBackupInterval();
+                    } else {
+                        logToConsole('warning', 'Import was not successful, not starting backup interval');
+                    }
+                } catch (error) {
+                    logToConsole('error', 'Error during tab activation:', error);
+                }
+            } finally {
+                isProcessingVisibilityChange = false;
+                visibilityChangeTimeout = null;
+            }
+        }, 300);
     }
 });
+
 async function handleTimeBasedBackup() {
     const bucketName = localStorage.getItem('aws-bucket');
     const lastTimeBackup = parseInt(localStorage.getItem('last-time-based-backup'));
