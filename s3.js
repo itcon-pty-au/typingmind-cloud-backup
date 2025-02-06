@@ -1,4 +1,4 @@
-const VERSION = '20250206-21:33';
+const VERSION = '20250206-21:42';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -19,23 +19,100 @@ hintCssLink.href = 'https://cdn.jsdelivr.net/npm/hint.css/hint.min.css';
 document.head.appendChild(hintCssLink);
 
 const syncStatusContainer = document.createElement('div');
-syncStatusContainer.className = 'fixed top-4 right-4 bg-black bg-opacity-40 text-white text-sm rounded-lg px-3 py-1.5 z-50 font-mono';
+syncStatusContainer.className = 'fixed top-4 right-4 bg-black bg-opacity-40 text-white text-sm rounded-lg px-3 py-1.5 z-50 font-mono cursor-move';
 syncStatusContainer.style.minWidth = '100px';
 document.body.appendChild(syncStatusContainer);
 
 syncStatusContainer.style.display = localStorage.getItem('show-sync-status') === 'true' ? 'block' : 'none';
+
+// Load saved position
+const savedPosition = localStorage.getItem('sync-status-position');
+if (savedPosition) {
+    try {
+        const { left, top } = JSON.parse(savedPosition);
+        syncStatusContainer.style.left = left;
+        syncStatusContainer.style.top = top;
+        syncStatusContainer.style.right = 'auto'; // Clear default right position
+    } catch (e) {
+        console.error('Failed to parse saved position:', e);
+    }
+}
+
+// Make it draggable
+let isDragging = false;
+let currentX;
+let currentY;
+let initialX;
+let initialY;
+let xOffset = 0;
+let yOffset = 0;
+
+syncStatusContainer.addEventListener('mousedown', dragStart);
+document.addEventListener('mousemove', drag);
+document.addEventListener('mouseup', dragEnd);
+
+function dragStart(e) {
+    initialX = e.clientX - xOffset;
+    initialY = e.clientY - yOffset;
+
+    if (e.target === syncStatusContainer) {
+        isDragging = true;
+    }
+}
+
+function drag(e) {
+    if (isDragging) {
+        e.preventDefault();
+        currentX = e.clientX - initialX;
+        currentY = e.clientY - initialY;
+
+        xOffset = currentX;
+        yOffset = currentY;
+
+        setTranslate(currentX, currentY, syncStatusContainer);
+    }
+}
+
+function setTranslate(xPos, yPos, el) {
+    // Ensure the element stays within viewport bounds
+    const rect = el.getBoundingClientRect();
+    const containerWidth = rect.width;
+    const containerHeight = rect.height;
+    
+    xPos = Math.min(Math.max(xPos, 0), window.innerWidth - containerWidth);
+    yPos = Math.min(Math.max(yPos, 0), window.innerHeight - containerHeight);
+
+    el.style.transform = `translate3d(${xPos}px, ${yPos}px, 0)`;
+}
+
+function dragEnd() {
+    if (isDragging) {
+        initialX = currentX;
+        initialY = currentY;
+        isDragging = false;
+
+        // Save position to localStorage
+        const rect = syncStatusContainer.getBoundingClientRect();
+        const position = {
+            left: rect.left + 'px',
+            top: rect.top + 'px'
+        };
+        localStorage.setItem('sync-status-position', JSON.stringify(position));
+    }
+}
 
 let lastImportTime = null;
 let lastExportTime = null;
 let lastImportStatus = null;
 let lastExportStatus = null;
 
+// Modify the updateSyncStatus function to add a class for spinning animation
 function updateSyncStatus() {
     const now = Date.now();
     let statusHTML = '';
 
     if (isImportInProgress) {
-        statusHTML += '⬇️ ↻ Importing...';
+        statusHTML += '⬇️ <span class="sync-spinner">↻</span> Importing...';
     } else if (lastImportTime) {
         const timeDiff = Math.floor((now - lastImportTime) / 1000);
         if (lastImportStatus === 'success') {
@@ -50,7 +127,7 @@ function updateSyncStatus() {
     }
 
     if (isExportInProgress) {
-        statusHTML += '⬆️ ↻ Exporting...';
+        statusHTML += '⬆️ <span class="sync-spinner">↻</span> Exporting...';
     } else if (lastExportTime) {
         const timeDiff = Math.floor((now - lastExportTime) / 1000);
         if (lastExportStatus === 'success') {
@@ -60,8 +137,34 @@ function updateSyncStatus() {
         }
     }
 
-    syncStatusContainer.innerHTML = statusHTML;
+    if (statusHTML) {
+        syncStatusContainer.innerHTML = statusHTML;
+        syncStatusContainer.style.display = localStorage.getItem('show-sync-status') === 'true' ? 'block' : 'none';
+    } else {
+        syncStatusContainer.style.display = 'none';
+    }
 }
+
+// Add this after syncStatusContainer creation
+function initializeSyncStatus() {
+    // Reset status container
+    syncStatusContainer.innerHTML = '';
+    syncStatusContainer.style.display = 'none';
+    
+    // Reset status variables
+    lastImportTime = null;
+    lastExportTime = null;
+    lastImportStatus = null;
+    lastExportStatus = null;
+    
+    // Start update interval if enabled
+    if (localStorage.getItem('show-sync-status') === 'true') {
+        updateSyncStatus();
+    }
+}
+
+// Call initializeSyncStatus after creating syncStatusContainer
+initializeSyncStatus();
 
 setInterval(updateSyncStatus, 1000);
 
@@ -712,6 +815,9 @@ function openSyncModal() {
         showSyncStatusCheckbox.addEventListener('change', (e) => {
             localStorage.setItem('show-sync-status', e.target.checked);
             syncStatusContainer.style.display = e.target.checked ? 'block' : 'none';
+            if (e.target.checked) {
+                updateSyncStatus();
+            }
         });
     }
 }
@@ -1157,7 +1263,9 @@ function importDataToStorage(data) {
             'aws-secret-key',
             'aws-region',
             'aws-endpoint',
-            'backup-interval'
+            'backup-interval',
+            'sync-status-position', 
+            'show-sync-status'
         ];
 
         Object.keys(data.localStorage).forEach((key) => {
@@ -1200,6 +1308,10 @@ function exportBackupData() {
             localStorage: { ...localStorage },
             indexedDB: {},
         };
+        
+        // Remove sync status position from export
+        delete exportData.localStorage['sync-status-position'];
+        
         const request = indexedDB.open('keyval-store', 1);
         request.onerror = () => reject(request.error);
         request.onsuccess = function (event) {
@@ -2478,6 +2590,7 @@ function getShouldAlertOnSmallerCloud() {
     return localStorage.getItem('alert-smaller-cloud') === 'true';
 }
 
+// Add spinning animation CSS
 const spinnerStyles = document.createElement('style');
 spinnerStyles.textContent = `
 @keyframes spin {
