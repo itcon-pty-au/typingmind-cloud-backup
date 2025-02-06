@@ -1,4 +1,4 @@
-const VERSION = '20250207-06:50';
+const VERSION = '20250207-07:07';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1354,7 +1354,7 @@ document.addEventListener('visibilitychange', async () => {
                         logToConsole('success', 'Import successful, starting backup interval');
                         startBackupInterval();
                     } else {
-                        logToConsole('warning', 'Import was not successful, not starting backup interval');
+                        logToConsole('info', 'Import was not successful, not starting backup interval');
                     }
                 } catch (error) {
                     logToConsole('error', 'Error during tab activation:', error);
