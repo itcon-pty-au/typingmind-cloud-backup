@@ -1,4 +1,4 @@
-const VERSION = '20250206-20:37';
+const VERSION = '20250206-20:40';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -265,13 +265,6 @@ function openSyncModal() {
                                             Alert if cloud backup is smaller during import
                                         </label>
                                     </div>
-                                </div>
-                                <div class="mt-2 flex items-center">
-                                    <input type="checkbox" id="force-reload-after-import" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                                    <label for="force-reload-after-import" class="ml-2 block text-sm text-gray-700 dark:text-gray-400">
-                                        Force reload after import
-                                        <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="When enabled, the page will be force reloaded (Ctrl+F5) after importing data from cloud. This ensures all components are properly reinitialized with the imported data.">ⓘ</button>
-                                    </label>
                                 </div>
                                 <div class="flex justify-between space-x-2">
                                     <button id="save-aws-details-btn" type="button" class="z-1 inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors" disabled>
@@ -660,14 +653,6 @@ function openSyncModal() {
         alertSmallerCloudCheckbox.checked = getShouldAlertOnSmallerCloud();
         alertSmallerCloudCheckbox.addEventListener('change', (e) => {
             localStorage.setItem('alert-smaller-cloud', e.target.checked);
-        });
-    }
-
-    const forceReloadCheckbox = document.getElementById('force-reload-after-import');
-    if (forceReloadCheckbox) {
-        forceReloadCheckbox.checked = getShouldForceReloadAfterImport();
-        forceReloadCheckbox.addEventListener('change', (e) => {
-            localStorage.setItem('force-reload-after-import', e.target.checked);
         });
     }
 }
@@ -1128,12 +1113,7 @@ function importDataToStorage(data) {
             const db = event.target.result;
             const transaction = db.transaction(['keyval'], 'readwrite');
             const objectStore = transaction.objectStore('keyval');
-            transaction.oncomplete = () => {
-                resolve();
-                if (getShouldForceReloadAfterImport()) {
-                    window.location.reload(true);
-                }
-            };
+            transaction.oncomplete = () => resolve();
             transaction.onerror = () => reject(transaction.error);
             const deleteRequest = objectStore.clear();
             deleteRequest.onsuccess = function () {
@@ -2400,8 +2380,4 @@ document.head.appendChild(hintCustomStyles);
 
 function getShouldAlertOnSmallerCloud() {
     return localStorage.getItem('alert-smaller-cloud') === 'true';
-}
-
-function getShouldForceReloadAfterImport() {
-    return localStorage.getItem('force-reload-after-import') === 'true';
 }
