@@ -1,4 +1,4 @@
-const VERSION = '20250206-10:54';
+const VERSION = '20250206-11:00';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -2087,24 +2087,29 @@ function createMobileLogContainer() {
         if (logsContainer) {
             const logs = Array.from(logsContainer.children)
                 .map(log => {
-                    const mainText = log.childNodes[0].textContent;
+                    const mainText = log.childNodes[0]?.textContent || '';
                     const dataNode = log.querySelector('.text-xs');
                     return dataNode 
                         ? `${mainText}\n${dataNode.textContent}\n`
                         : `${mainText}\n`;
                 })
-                .reverse()
                 .join('\n');
             
+            // Create blob and trigger download
             const blob = new Blob([logs], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
             a.download = `typingmind-logs-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.txt`;
+            a.style.display = 'none';
             document.body.appendChild(a);
             a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            
+            // Cleanup
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 100);
         }
     };
     
@@ -2113,10 +2118,12 @@ function createMobileLogContainer() {
     toggleSize.innerHTML = '□';
     toggleSize.onclick = () => {
         if (container.style.height === '200px') {
-            container.style.height = '80vh';
+            container.style.height = '100vh';
+            container.style.maxHeight = '100vh';
             toggleSize.innerHTML = '▢';
         } else {
             container.style.height = '200px';
+            container.style.maxHeight = '50vh';
             toggleSize.innerHTML = '□';
         }
     };
@@ -2192,6 +2199,74 @@ function createMobileLogContainer() {
     document.body.appendChild(container);
 
     return container;
+}
+
+function logToConsole(type, message, data = null) {
+    if (!isConsoleLoggingEnabled) return;
+    
+    const timestamp = new Date().toISOString();
+    const icons = {
+        info: 'ℹ️',
+        success: '✅',
+        warning: '⚠️',
+        error: '❌',
+        start: '🔄',
+        end: '🏁',
+        upload: '⬆️',
+        download: '⬇️',
+        cleanup: '🧹',
+        snapshot: '📸',
+        encrypt: '🔐',
+        decrypt: '🔓',
+        progress: '📊',
+        time: '⏰',
+        wait: '⏳',
+        pause: '⏸️',
+        resume: '▶️',
+        visibility: '👁️',
+        active: '📱',
+        calendar: '📅',
+        tag: '🏷️',
+        stop: '🛑',
+        skip: '⏩'
+    };
+    
+    const icon = icons[type] || 'ℹ️';
+    const logMessage = `${icon} [${timestamp}] ${message}`;
+    
+    if (/Mobi|Android/i.test(navigator.userAgent)) {
+        const container = document.getElementById('mobile-log-container') || createMobileLogContainer();
+        const logsContent = container.querySelector('#logs-content');
+        if (logsContent) {
+            const logEntry = document.createElement('div');
+            logEntry.className = 'text-sm mb-1 break-words';
+            logEntry.textContent = logMessage;
+            
+            if (data) {
+                const dataEntry = document.createElement('div');
+                dataEntry.className = 'text-xs text-gray-500 ml-4 mb-2';
+                dataEntry.textContent = JSON.stringify(data, null, 2);
+                logEntry.appendChild(dataEntry);
+            }
+            
+            logsContent.appendChild(logEntry);
+            
+            // while (logsContent.children.length > 50) {
+            //     logsContent.removeChild(logsContent.firstChild);
+            // }
+        }
+    }
+    
+    switch (type) {
+        case 'error':
+            console.error(logMessage, data);
+            break;
+        case 'warning':
+            console.warn(logMessage, data);
+            break;
+        default:
+            console.log(logMessage, data);
+    }
 }
 
 function showInfoModal(title, content) {
