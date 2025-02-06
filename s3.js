@@ -1,4 +1,4 @@
-const VERSION = '20250206-11:32';
+const VERSION = '20250206-11:47';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1432,7 +1432,6 @@ async function importFromS3() {
         };
 
         let s3Data;
-	let cloudData;
         try {
             s3Data = await s3.getObject(params).promise();
             cloudFileSize = s3Data.Body.length;
@@ -1450,7 +1449,7 @@ async function importFromS3() {
 
             cloudLastModified = s3Data.LastModified;
             const encryptedContent = new Uint8Array(s3Data.Body);
-            cloudData = await decryptData(encryptedContent);
+            const cloudData = await decryptData(encryptedContent);
 
             logToConsole('success', 'Cloud data stats:', {
                 totalSize: `${cloudFileSize} bytes`,
@@ -1470,43 +1469,48 @@ async function importFromS3() {
         logToConsole('info', 'Last sync time:', lastSync);
 
         const currentData = await exportBackupData();
+        const currentLocalStorageKeys = new Set(Object.keys(currentData.localStorage || {}));
+        const currentIndexedDBKeys = new Set(Object.keys(currentData.indexedDB || {}));
+
         logToConsole('info', 'Current local data stats:', {
             totalSize: `${new Blob([JSON.stringify(currentData)]).size} bytes`,
             localStorageKeys: Object.keys(currentData.localStorage || {}).length,
             localStorageSize: JSON.stringify(currentData.localStorage || {}).length,
             indexedDBKeys: Object.keys(currentData.indexedDB || {}).length,
-            indexedDBSize: JSON.stringify(currentData.indexedDB || {}).length,
-            localStorageKeyNames: Object.keys(currentData.localStorage || {})
+            indexedDBSize: JSON.stringify(currentData.indexedDB || {}).length
         });
 
         const cloudLocalStorageKeys = new Set(Object.keys(cloudData.localStorage || {}));
-        const localLocalStorageKeys = new Set(Object.keys(currentData.localStorage || {}));
         const cloudIndexedDBKeys = new Set(Object.keys(cloudData.indexedDB || {}));
         const localIndexedDBKeys = new Set(Object.keys(currentData.indexedDB || {}));
 
         const keyDifferences = {
             localStorage: {
-                missingInCloud: [...localLocalStorageKeys].filter(key => !cloudLocalStorageKeys.has(key)),
-                missingInLocal: [...cloudLocalStorageKeys].filter(key => !localLocalStorageKeys.has(key))
+                onlyInCloud: [...cloudLocalStorageKeys].filter(key => !currentLocalStorageKeys.has(key)),
+                onlyInLocal: [...currentLocalStorageKeys].filter(key => !cloudLocalStorageKeys.has(key))
             },
             indexedDB: {
-                missingInCloud: [...localIndexedDBKeys].filter(key => !cloudIndexedDBKeys.has(key)),
-                missingInLocal: [...cloudIndexedDBKeys].filter(key => !localIndexedDBKeys.has(key))
+                onlyInCloud: [...cloudIndexedDBKeys].filter(key => !currentIndexedDBKeys.has(key)),
+                onlyInLocal: [...currentIndexedDBKeys].filter(key => !cloudIndexedDBKeys.has(key))
             }
         };
 
         logToConsole('info', 'Key differences:', {
             localStorage: {
-                missingInCloud: keyDifferences.localStorage.missingInCloud.length > 0 ?
-                    keyDifferences.localStorage.missingInCloud : 'none',
-                missingInLocal: keyDifferences.localStorage.missingInLocal.length > 0 ?
-                    keyDifferences.localStorage.missingInLocal : 'none'
+                onlyInCloud: keyDifferences.localStorage.onlyInCloud.length > 0 ?
+                    keyDifferences.localStorage.onlyInCloud : 'none',
+                onlyInLocal: keyDifferences.localStorage.onlyInLocal.length > 0 ?
+                    keyDifferences.localStorage.onlyInLocal : 'none',
+                totalCloud: cloudLocalStorageKeys.size,
+                totalLocal: currentLocalStorageKeys.size
             },
             indexedDB: {
-                missingInCloud: keyDifferences.indexedDB.missingInCloud.length > 0 ?
-                    keyDifferences.indexedDB.missingInCloud : 'none',
-                missingInLocal: keyDifferences.indexedDB.missingInLocal.length > 0 ?
-                    keyDifferences.indexedDB.missingInLocal : 'none'
+                onlyInCloud: keyDifferences.indexedDB.onlyInCloud.length > 0 ?
+                    keyDifferences.indexedDB.onlyInCloud : 'none',
+                onlyInLocal: keyDifferences.indexedDB.onlyInLocal.length > 0 ?
+                    keyDifferences.indexedDB.onlyInLocal : 'none',
+                totalCloud: cloudIndexedDBKeys.size,
+                totalLocal: currentIndexedDBKeys.size
             }
         });
 
