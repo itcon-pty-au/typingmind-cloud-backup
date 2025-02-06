@@ -1,4 +1,4 @@
-const VERSION = '20250207-06:30';
+const VERSION = '20250207-06:50';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -323,8 +323,7 @@ async function importFromS3() {
             Math.abs((cloudFileSize - localFileSize) / localFileSize * 100) : 0;
 
         const shouldAlertOnSmallerCloud = getShouldAlertOnSmallerCloud();
-        // Increase tolerance to 1KB to account for minor size variations
-        const TOLERANCE_BYTES = 1024;
+        const TOLERANCE_BYTES = 5;
         const isCloudSignificantlySmaller = shouldAlertOnSmallerCloud &&
             cloudFileSize < (localFileSize - TOLERANCE_BYTES);
 
@@ -336,7 +335,6 @@ async function importFromS3() {
             tolerance: `${TOLERANCE_BYTES} bytes`
         });
 
-        // Only prompt if difference exceeds threshold or cloud is significantly smaller
         const shouldPrompt = (localFileSize > 0 && sizeDiffPercentage > getImportThreshold()) || isCloudSignificantlySmaller;
 
         if (shouldPrompt) {
