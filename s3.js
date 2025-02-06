@@ -1,4 +1,4 @@
-const VERSION = '20250207-05:10';
+const VERSION = '20250207-05:22';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -360,6 +360,7 @@ async function importFromS3() {
 
                 if (!shouldProceed) {
                     logToConsole('info', `Import cancelled by user`);
+                    isWaitingForUserInput = false;
                     logToConsole('resume', `Resuming backup interval after user cancelled cloud import`);
                     startBackupInterval();
                     return false;
