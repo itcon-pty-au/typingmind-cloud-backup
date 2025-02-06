@@ -1,4 +1,4 @@
-const VERSION = '20250207-06:01';
+const VERSION = '20250207-06:05';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1408,7 +1408,6 @@ async function checkAndImportBackup() {
             logToConsole('success', 'Import successful, starting backup interval');
             return true;
         } else {
-            logToConsole('info', 'Import was cancelled or skipped');
             wasImportSuccessful = true;
             startBackupInterval();  
             return false;
