@@ -1,4 +1,4 @@
-const VERSION = '20250206-22:13';
+const VERSION = '20250206-22:20';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -18,7 +18,6 @@ hintCssLink.rel = 'stylesheet';
 hintCssLink.href = 'https://cdn.jsdelivr.net/npm/hint.css/hint.min.css';
 document.head.appendChild(hintCssLink);
 
-// Add after the hintCssLink.href line
 const syncStatusStyles = document.createElement('style');
 syncStatusStyles.textContent = `
     #sync-status {
@@ -50,7 +49,6 @@ syncStatusStyles.textContent = `
 `;
 document.head.appendChild(syncStatusStyles);
 
-// Add these variables near the top with other state variables
 let lastImportTime = null;
 let lastExportTime = null;
 let lastImportStatus = null;
@@ -73,7 +71,6 @@ function initializeLoggingState() {
     }
 }
 
-// Add this function to create and manage the sync status display
 function createSyncStatus() {
     const isHidden = localStorage.getItem('sync-status-hidden') === 'true';
     if (isHidden) return;
@@ -81,7 +78,6 @@ function createSyncStatus() {
     const syncStatus = document.createElement('div');
     syncStatus.id = 'sync-status';
     
-    // Load saved position or use default
     const savedPosition = JSON.parse(localStorage.getItem('sync-status-position') || '{"x": "right: 20px", "y": "top: 20px"}');
     Object.entries(savedPosition).forEach(([axis, value]) => {
         const [side, offset] = value.split(':');
@@ -116,7 +112,6 @@ function createSyncStatus() {
         isDragging = false;
         syncStatus.classList.remove('dragging');
         
-        // Save position to localStorage
         const rect = syncStatus.getBoundingClientRect();
         const position = {
             x: rect.left < window.innerWidth / 2 ? `left: ${rect.left}px` : `right: ${window.innerWidth - rect.right}px`,
@@ -160,7 +155,6 @@ function createSyncStatus() {
     updateSyncStatus();
 }
 
-// Add this function to update the sync status display
 function updateSyncStatus() {
     const syncStatus = document.getElementById('sync-status');
     if (!syncStatus) return;
@@ -168,24 +162,33 @@ function updateSyncStatus() {
     const formatTime = (timestamp) => {
         if (!timestamp) return '';
         const seconds = Math.floor((Date.now() - timestamp) / 1000);
-        return `${seconds}s ago`;
+        
+        if (seconds < 60) {
+            return `${seconds}s ago`;
+        } else if (seconds < 3600) {
+            const minutes = Math.floor(seconds / 60);
+            return `${minutes}m ago`;
+        } else {
+            const hours = Math.floor(seconds / 3600);
+            return `${hours}h ago`;
+        }
     };
 
-    const importStatus = lastImportStatus === 'failed' 
-        ? '<span class="sync-failed">⬇️ Failed</span>' 
-        : lastImportTime ? `⬇️ ${formatTime(lastImportTime)}` : '';
+    const importStatus = isImportInProgress ? 
+        '<span class="sync-spinner">↻</span>' :
+        lastImportStatus === 'failed' ? 
+            '<span class="sync-failed">⬇️ Failed</span>' : 
+            lastImportTime ? `⬇️ ${formatTime(lastImportTime)}` : '';
     
-    const exportStatus = lastExportStatus === 'failed'
-        ? '<span class="sync-failed">⬆️ Failed</span>'
-        : lastExportTime ? `⬆️ ${formatTime(lastExportTime)}` : '';
+    const exportStatus = isExportInProgress ?
+        '<span class="sync-spinner">↻</span>' :
+        lastExportStatus === 'failed' ?
+            '<span class="sync-failed">⬆️ Failed</span>' :
+            lastExportTime ? `⬆️ ${formatTime(lastExportTime)}` : '';
 
-    const importSpinner = isImportInProgress ? '<span class="sync-spinner">↻</span>' : '';
-    const exportSpinner = isExportInProgress ? '<span class="sync-spinner">↻</span>' : '';
-
-    syncStatus.innerHTML = `${importStatus}${importSpinner} ${exportStatus}${exportSpinner}`.trim();
+    syncStatus.innerHTML = `${importStatus} ${exportStatus}`.trim();
 }
 
-// Modify the existing importFromS3 function to update status
 async function importFromS3() {
     try {
         lastImportTime = Date.now();
@@ -406,7 +409,6 @@ async function importFromS3() {
     }
 }
 
-// Modify the existing backupToS3 function to update status
 async function backupToS3() {
     try {
         lastExportTime = Date.now();
@@ -651,10 +653,8 @@ async function backupToS3() {
     }
 }
 
-// Add status update interval
 setInterval(updateSyncStatus, 1000);
 
-// Call createSyncStatus after AWS SDK is loaded
 (async function checkDOMOrRunBackup() {
     initializeLoggingState();
     await awsSdkPromise;
@@ -2313,7 +2313,6 @@ function createMobileLogContainer() {
                 })
                 .join('\n');
 
-            // Create blob and trigger download
             const blob = new Blob([logs], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -2322,8 +2321,6 @@ function createMobileLogContainer() {
             a.style.display = 'none';
             document.body.appendChild(a);
             a.click();
-
-            // Cleanup
             setTimeout(() => {
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
@@ -2344,7 +2341,7 @@ function createMobileLogContainer() {
             container.style.height = '100vh';
             container.style.maxHeight = '100vh';
             container.style.zIndex = '99999';
-            logsContent.style.height = 'calc(100vh - 36px)'; // Adjust content height to account for header
+            logsContent.style.height = 'calc(100vh - 36px)';
             toggleSize.innerHTML = '▢';
         } else {
             container.style.position = 'fixed';
@@ -2383,7 +2380,7 @@ function createMobileLogContainer() {
     const logsContent = document.createElement('div');
     logsContent.id = 'logs-content';
     logsContent.className = 'p-2 overflow-y-auto';
-    logsContent.style.height = 'calc(100% - 36px)'; // Keep this for header space
+    logsContent.style.height = 'calc(100% - 36px)';
 
     header.appendChild(title);
     header.appendChild(controls);
