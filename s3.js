@@ -521,7 +521,7 @@ async function backupToS3() {
                         let lastError = null;
                         let retryCount = 0;
                         const maxRetries = 3;
-                        const baseDelay = 2000; // 2 seconds base delay
+                        const baseDelay = 2000;
 
                         while (!uploadSuccess && retryCount < maxRetries) {
                             try {
@@ -571,7 +571,6 @@ async function backupToS3() {
                                     throw new Error(`Failed to upload part ${partNumber} after ${maxRetries} attempts: ${lastError.message}`);
                                 }
 
-                                // Exponential backoff with jitter
                                 const delay = Math.min(baseDelay * Math.pow(2, retryCount) + Math.random() * 1000, 30000);
                                 logToConsole('info', `Retrying part ${partNumber} in ${Math.round(delay/1000)} seconds`);
                                 await new Promise(resolve => setTimeout(resolve, delay));
