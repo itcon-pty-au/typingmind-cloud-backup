@@ -1,4 +1,4 @@
-const VERSION = '20250207-05:32';
+const VERSION = '20250207-05:47';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -361,8 +361,6 @@ async function importFromS3() {
                 if (!shouldProceed) {
                     logToConsole('info', `Import cancelled by user`);
                     isWaitingForUserInput = false;
-                    logToConsole('resume', `Resuming backup interval after user cancelled cloud import`);
-                    startBackupInterval();
                     return false;
                 }
             } catch (error) {
@@ -521,7 +519,7 @@ async function backupToS3() {
                         let lastError = null;
                         let retryCount = 0;
                         const maxRetries = 3;
-                        const baseDelay = 2000;
+                        const baseDelay = 2000; // 2 seconds base delay
 
                         while (!uploadSuccess && retryCount < maxRetries) {
                             try {
@@ -571,6 +569,7 @@ async function backupToS3() {
                                     throw new Error(`Failed to upload part ${partNumber} after ${maxRetries} attempts: ${lastError.message}`);
                                 }
 
+                                // Exponential backoff with jitter
                                 const delay = Math.min(baseDelay * Math.pow(2, retryCount) + Math.random() * 1000, 30000);
                                 logToConsole('info', `Retrying part ${partNumber} in ${Math.round(delay/1000)} seconds`);
                                 await new Promise(resolve => setTimeout(resolve, delay));
