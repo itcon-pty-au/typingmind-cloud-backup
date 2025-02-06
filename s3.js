@@ -1,4 +1,4 @@
-const VERSION = '20250206-11:51';
+const VERSION = '20250206-12:01';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -771,9 +771,15 @@ async function checkAndImportBackup() {
     }
     AWS.config.update(awsConfig);
     try {
-        await importFromS3();
-        wasImportSuccessful = true;
-        return true;
+        const importResult = await importFromS3();
+        if (importResult) {
+            wasImportSuccessful = true;
+            logToConsole('success', 'Import successful, starting backup interval');
+            return true;
+        } else {
+            logToConsole('info', 'Import was cancelled or skipped');
+            return false;
+        }
     } catch (err) {
         if (err.code === 'NoSuchKey') {
             alert("Backup file not found in S3! Run an adhoc 'Export' first.");
