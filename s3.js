@@ -1,4 +1,4 @@
-const VERSION = '20250206-22:54';
+const VERSION = '20250207-05:10';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1413,6 +1413,7 @@ async function checkAndImportBackup() {
             return true;
         } else {
             logToConsole('info', 'Import was cancelled or skipped');
+            wasImportSuccessful = true;
             return false;
         }
     } catch (err) {
