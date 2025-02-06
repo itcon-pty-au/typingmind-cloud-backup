@@ -19,7 +19,7 @@
     - Cloud-vs-local data size comparison with customizable tolerance during export
     - User confirmation if Cloud backup is smaller than the local data
     - User confirmation prompts with detailed information when significant differences are detected
-- ✨ Live sync status indicator in UI (double tap/click to hide permanently, add '?syncstatus=true' to re-enable it)
+- ✨ Live sync status indicator in UI (double tap/click to hide permanently, add '?syncstatus=true' and load the app to re-enable it)
 - ✨ Comprehensive logging system (Activate in config modal or add '?log=true' to start console logging from page load itself)
   
 ## Using this extension
