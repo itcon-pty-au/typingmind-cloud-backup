@@ -1,4 +1,4 @@
-const VERSION = '20250206-21:30';
+const VERSION = '20250206-21:33';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -312,6 +312,12 @@ function openSyncModal() {
                                             Alert if cloud backup is smaller during import
                                         </label>
                                     </div>
+                                </div>
+                                <div class="flex items-center">
+                                    <input type="checkbox" id="show-sync-status" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                                    <label for="show-sync-status" class="ml-2 block text-sm text-gray-700 dark:text-gray-400">
+                                        Show live sync status
+                                    </label>
                                 </div>
                                 <div class="flex justify-between space-x-2">
                                     <button id="save-aws-details-btn" type="button" class="z-1 inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors" disabled>
