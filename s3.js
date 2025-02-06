@@ -1,4 +1,4 @@
-const VERSION = '20250206-20:45';
+const VERSION = '20250206-20:48';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1127,6 +1127,10 @@ async function importDataToStorage(data) {
                 if (!urlParams.has('post_import')) {
                     const newUrl = new URL(window.location);
                     newUrl.searchParams.set('post_import', 'true');
+                    window.location.reload(true);
+                    if (window.performance && window.performance.setResourceTimingBufferSize) {
+                        window.performance.setResourceTimingBufferSize(0);
+                    }
                     window.location.href = newUrl.toString();
                 }
                 resolve();
