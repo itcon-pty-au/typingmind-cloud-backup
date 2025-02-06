@@ -1,4 +1,4 @@
-const VERSION = '20250206-22:20';
+const VERSION = '20250206-22:24';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -191,7 +191,6 @@ function updateSyncStatus() {
 
 async function importFromS3() {
     try {
-        lastImportTime = Date.now();
         lastImportStatus = 'in-progress';
         updateSyncStatus();
         logToConsole('download', 'Starting import from S3...');
@@ -398,9 +397,11 @@ async function importFromS3() {
         logToConsole('success', `Import completed successfully`);
         wasImportSuccessful = true;
         lastImportStatus = 'success';
+        lastImportTime = Date.now();
         return true;
     } catch (error) {
         lastImportStatus = 'failed';
+        lastImportTime = null;
         updateSyncStatus();
         logToConsole('error', `Import failed with error:`, error);
         throw error;
@@ -411,7 +412,6 @@ async function importFromS3() {
 
 async function backupToS3() {
     try {
-        lastExportTime = Date.now();
         lastExportStatus = 'in-progress';
         updateSyncStatus();
         logToConsole('start', 'Starting export to S3...');
@@ -593,6 +593,7 @@ async function backupToS3() {
                         });
                         throw completeError;
                     }
+                    lastExportTime = Date.now();
                 } catch (error) {
                     logToConsole('error', `Multipart upload failed with error:`, error);
                     await cleanupIncompleteMultipartUploads(s3, bucketName);
@@ -608,11 +609,15 @@ async function backupToS3() {
                     ServerSideEncryption: 'AES256'
                 };
                 await s3.putObject(putParams).promise();
+                lastExportTime = Date.now();
             }
+
             await handleTimeBasedBackup();
             const currentTime = new Date().toLocaleString();
             localStorage.setItem('last-cloud-sync', currentTime);
             logToConsole('success', `Export completed successfully`);
+            lastExportStatus = 'success';
+            
             var element = document.getElementById('last-sync-msg');
             if (element !== null) {
                 element.innerText = `Last sync done at ${currentTime}`;
@@ -620,23 +625,12 @@ async function backupToS3() {
             if (document.querySelector('[data-element-id="sync-modal-dbbackup"]')) {
                 await loadBackupFiles();
             }
-            lastExportStatus = 'success';
+            return true;
         } catch (error) {
             lastExportStatus = 'failed';
+            lastExportTime = null;
             updateSyncStatus();
             logToConsole('error', `Export failed:`, error);
-            if (error.code && error.code.startsWith('INVALID_')) {
-                logToConsole('error', `Size validation failed: ${error.message}`);
-                var element = document.getElementById('last-sync-msg');
-                if (element !== null) {
-                    element.innerText = `Backup skipped: ${error.message}`;
-                }
-                return;
-            }
-            var element = document.getElementById('last-sync-msg');
-            if (element !== null) {
-                element.innerText = `Backup failed: ${error.message}`;
-            }
             throw error;
         } finally {
             data = null;
