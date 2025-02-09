@@ -1042,11 +1042,11 @@ function openSyncModal() {
             awsRegionInput?.value?.trim() &&
             awsAccessKeyInput?.value?.trim() &&
             awsSecretKeyInput?.value?.trim() &&
-            backupIntervalInput?.value &&
-            parseInt(backupIntervalInput.value) >= 15 &&
+            (!backupIntervalInput?.value || parseInt(backupIntervalInput.value) >= 15) &&
             encryptionKeyInput?.value?.trim().length >= 8 &&
             (!importThresholdInput?.value || parseFloat(importThresholdInput.value) >= 0) &&
             (!exportThresholdInput?.value || parseFloat(exportThresholdInput.value) >= 0);
+
         const saveButton = document.getElementById('save-aws-details-btn');
         const exportButton = document.getElementById('export-to-s3-btn');
         const importButton = document.getElementById('import-from-s3-btn');
@@ -1228,7 +1228,10 @@ function openSyncModal() {
         });
 
     closeButton.addEventListener('click', function () {
-        modalPopup.remove();
+        const modalPopup = document.querySelector('div[data-element-id="sync-modal-dbbackup"]');
+        if (modalPopup) {
+            modalPopup.remove();
+        }
     });
 
     document
