@@ -78,6 +78,10 @@ function initializeLoggingState() {
         const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
         window.history.replaceState({}, '', newUrl);
     }
+
+    if (!localStorage.getItem('cloud-sync-mode')) {
+        localStorage.setItem('cloud-sync-mode', 'sync');
+    }
 }
 
 function createSyncStatus() {
@@ -700,27 +704,33 @@ async function handleDOMReady() {
     const awsAccessKey = localStorage.getItem('aws-access-key');
     const awsSecretKey = localStorage.getItem('aws-secret-key');
     const encryptionKey = localStorage.getItem('encryption-key');
+    const syncMode = localStorage.getItem('cloud-sync-mode') || 'sync';
 
     if (bucketName && awsAccessKey && awsSecretKey && encryptionKey) {
         try {
-            var importSuccessful = await checkAndImportBackup();
-            isPageFullyLoaded = true;
-            if (importSuccessful) {
-                const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
-                const today = new Date();
-                const currentDateSuffix = `${today.getFullYear()}${String(
-                    today.getMonth() + 1
-                ).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+            if (syncMode === 'sync') {
+                var importSuccessful = await checkAndImportBackup();
+                isPageFullyLoaded = true;
+                if (importSuccessful) {
+                    const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
+                    const today = new Date();
+                    const currentDateSuffix = `${today.getFullYear()}${String(
+                        today.getMonth() + 1
+                    ).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
 
-                if (!storedSuffix || currentDateSuffix > storedSuffix) {
-                    await handleBackupFiles();
+                    if (!storedSuffix || currentDateSuffix > storedSuffix) {
+                        await handleBackupFiles();
+                    }
+                    wasImportSuccessful = true;
+                } else {
+                    wasImportSuccessful = true;
+                    logToConsole('info', 'Import was cancelled by user - starting backup of local data to cloud');
                 }
-                wasImportSuccessful = true;
             } else {
                 wasImportSuccessful = true;
-                logToConsole('info', 'Import was cancelled by user - starting backup of local data to cloud');
+                logToConsole('info', 'Running in backup mode - skipping automatic import');
+                startBackupInterval();
             }
-
         } catch (error) {
             logToConsole('error', 'Failed to initialize backup:', error);
             isPageFullyLoaded = true;
@@ -912,6 +922,19 @@ function openSyncModal() {
                                         </label>
                                     </div>
                                 </div>
+                                <div class="mt-2 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">
+                                        Operation Mode
+                                        <button class="ml-1 text-blue-600 text-lg hint--bottom hint--rounded hint--medium" 
+                                            aria-label="Sync Mode: Automatically syncs data between devices by importing cloud data on startup and periodically backing up.&#10;&#10;Backup Mode: Only performs manual backups - no automatic import of cloud data on startup.">ⓘ</button>
+                                    </label>
+                                    <div class="mt-2 flex items-center">
+                                        <select id="cloud-sync-mode" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700">
+                                            <option value="sync">Sync Mode</option>
+                                            <option value="backup">Backup Mode</option>
+                                        </select>
+                                    </div>
+                                </div>
                                 <div class="flex justify-between space-x-2">
                                     <button id="save-aws-details-btn" type="button" class="z-1 inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors" disabled>
                                         Save
@@ -979,6 +1002,7 @@ function openSyncModal() {
     const savedEncryptionKey = localStorage.getItem('encryption-key');
     const savedImportThreshold = localStorage.getItem('import-size-threshold');
     const savedExportThreshold = localStorage.getItem('export-size-threshold');
+    const savedMode = localStorage.getItem('cloud-sync-mode') || 'sync';
 
     if (savedBucket) awsBucketInput.value = savedBucket;
     if (savedRegion) awsRegionInput.value = savedRegion;
@@ -989,6 +1013,7 @@ function openSyncModal() {
     if (savedEncryptionKey) document.getElementById('encryption-key').value = savedEncryptionKey;
     if (savedImportThreshold) document.getElementById('import-threshold').value = savedImportThreshold;
     if (savedExportThreshold) document.getElementById('export-threshold').value = savedExportThreshold;
+    if (savedMode) document.getElementById('cloud-sync-mode').value = savedMode;
 
     var element = document.getElementById('last-sync-msg');
     if (lastSync) {
@@ -1087,6 +1112,7 @@ function openSyncModal() {
             const encryptionKey = document.getElementById('encryption-key').value.trim();
             const importThreshold = document.getElementById('import-threshold').value;
             const exportThreshold = document.getElementById('export-threshold').value;
+            const syncMode = document.getElementById('cloud-sync-mode').value;
 
             if (importThreshold) {
                 localStorage.setItem('import-size-threshold', importThreshold);
@@ -1112,6 +1138,7 @@ function openSyncModal() {
 
             localStorage.setItem('aws-region', region);
             localStorage.setItem('aws-endpoint', endpoint);
+            localStorage.setItem('cloud-sync-mode', syncMode);
 
             try {
                 await validateAwsCredentials(bucketName, accessKey, secretKey);
@@ -1332,32 +1359,39 @@ document.addEventListener('visibilitychange', async () => {
                     return;
                 }
 
-                try {
-                    logToConsole('info', 'Checking for updates from S3...');
-                    const importSuccessful = await checkAndImportBackup();
-                    if (importSuccessful) {
-                        const currentTime = new Date().toLocaleString();
-                        const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
-                        const today = new Date();
-                        const currentDateSuffix = `${today.getFullYear()}${String(
-                            today.getMonth() + 1
-                        ).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+                const syncMode = localStorage.getItem('cloud-sync-mode') || 'sync';
+                
+                if (syncMode === 'sync') {
+                    try {
+                        logToConsole('info', 'Checking for updates from S3...');
+                        const importSuccessful = await checkAndImportBackup();
+                        if (importSuccessful) {
+                            const currentTime = new Date().toLocaleString();
+                            const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
+                            const today = new Date();
+                            const currentDateSuffix = `${today.getFullYear()}${String(
+                                today.getMonth() + 1
+                            ).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
 
-                        var element = document.getElementById('last-sync-msg');
-                        if (element !== null) {
-                            element.innerText = `Last sync done at ${currentTime}`;
-                            element = null;
+                            var element = document.getElementById('last-sync-msg');
+                            if (element !== null) {
+                                element.innerText = `Last sync done at ${currentTime}`;
+                                element = null;
+                            }
+                            if (!storedSuffix || currentDateSuffix > storedSuffix) {
+                                await handleBackupFiles();
+                            }
+                            logToConsole('success', 'Import successful, starting backup interval');
+                            startBackupInterval();
+                        } else {
+                            logToConsole('info', 'Import was not successful, not starting backup interval');
                         }
-                        if (!storedSuffix || currentDateSuffix > storedSuffix) {
-                            await handleBackupFiles();
-                        }
-                        logToConsole('success', 'Import successful, starting backup interval');
-                        startBackupInterval();
-                    } else {
-                        logToConsole('info', 'Import was not successful, not starting backup interval');
+                    } catch (error) {
+                        logToConsole('error', 'Error during tab activation:', error);
                     }
-                } catch (error) {
-                    logToConsole('error', 'Error during tab activation:', error);
+                } else {
+                    logToConsole('info', 'Running in backup mode - skipping automatic import');
+                    startBackupInterval();
                 }
             } finally {
                 isProcessingVisibilityChange = false;
