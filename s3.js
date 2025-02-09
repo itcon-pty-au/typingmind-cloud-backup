@@ -2273,6 +2273,13 @@ async function cleanupIncompleteMultipartUploads(s3, bucketName) {
 
 function showCustomAlert(message, title = 'Alert', buttons = [{ text: 'OK', primary: true }]) {
     return new Promise((resolve) => {
+        // Store the nav container's original z-index and remove it
+        const navContainer = document.querySelector('[data-element-id="nav-container"]');
+        const originalZIndex = navContainer?.style.zIndex;
+        if (navContainer) {
+            navContainer.style.zIndex = 'unset';
+        }
+
         const modal = document.createElement('div');
         modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[99999] flex items-center justify-center p-4';
         modal.style.touchAction = 'auto';
@@ -2299,6 +2306,7 @@ function showCustomAlert(message, title = 'Alert', buttons = [{ text: 'OK', prim
             const handleClick = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                cleanup();
                 modal.remove();
                 resolve(button.text === 'Proceed' || button.text === 'OK');
             };
@@ -2313,6 +2321,10 @@ function showCustomAlert(message, title = 'Alert', buttons = [{ text: 'OK', prim
         document.body.style.overflow = 'hidden';
         const cleanup = () => {
             document.body.style.overflow = '';
+            // Restore the nav container's original z-index
+            if (navContainer) {
+                navContainer.style.zIndex = originalZIndex || '60';
+            }
         };
         modal.addEventListener('remove', cleanup);
         document.body.appendChild(modal);
