@@ -708,6 +708,14 @@ async function handleDOMReady() {
 
     const encryptionKey = localStorage.getItem('encryption-key');
     try {
+        // Check if we're in backup mode
+        if (localStorage.getItem('sync-mode') === 'backup') {
+            logToConsole('info', 'Running in backup mode - skipping automatic import');
+            wasImportSuccessful = true;
+            startBackupInterval();
+            return;
+        }
+
         var importSuccessful = await checkAndImportBackup();
         isPageFullyLoaded = true;
         if (importSuccessful) {
@@ -851,7 +859,7 @@ function openSyncModal() {
                                 </div>
                             </div>
                         </div>
-                        <div class="my-3 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
+                        <div class="mt-4 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
                             <div class="space-y-2">
                                 <div class="flex space-x-4">
                                     <div class="w-2/3">
@@ -1089,6 +1097,7 @@ function openSyncModal() {
             const encryptionKey = document.getElementById('encryption-key').value.trim();
             const importThreshold = document.getElementById('import-threshold').value;
             const exportThreshold = document.getElementById('export-threshold').value;
+            const selectedMode = document.querySelector('input[name="sync-mode"]:checked').value;
 
             if (importThreshold) {
                 localStorage.setItem('import-size-threshold', importThreshold);
@@ -1114,6 +1123,7 @@ function openSyncModal() {
 
             localStorage.setItem('aws-region', region);
             localStorage.setItem('aws-endpoint', endpoint);
+            localStorage.setItem('sync-mode', selectedMode);
 
             try {
                 await validateAwsCredentials(bucketName, accessKey, secretKey);
@@ -1133,16 +1143,24 @@ function openSyncModal() {
                 updateButtonState();
                 updateBackupButtons();
                 await loadBackupFiles();
-                var importSuccessful = await checkAndImportBackup();
-                const currentTime = new Date().toLocaleString();
-                const lastSync = localStorage.getItem('last-cloud-sync');
-                var element = document.getElementById('last-sync-msg');
-                if (lastSync && importSuccessful) {
-                    if (element !== null) {
-                        element.innerText = `Last sync done at ${currentTime}`;
-                        element = null;
+
+                // Add backup mode check before import
+                if (localStorage.getItem('sync-mode') !== 'backup') {
+                    var importSuccessful = await checkAndImportBackup();
+                    const currentTime = new Date().toLocaleString();
+                    const lastSync = localStorage.getItem('last-cloud-sync');
+                    var element = document.getElementById('last-sync-msg');
+                    if (lastSync && importSuccessful) {
+                        if (element !== null) {
+                            element.innerText = `Last sync done at ${currentTime}`;
+                            element = null;
+                        }
                     }
+                } else {
+                    wasImportSuccessful = true;
+                    logToConsole('info', 'Running in backup mode - skipping automatic import');
                 }
+                
                 startBackupInterval();
             } catch (err) {
                 const actionMsgElement = document.getElementById('action-msg');
@@ -1350,6 +1368,14 @@ document.addEventListener('visibilitychange', async () => {
 
                 if (isWaitingForUserInput) {
                     logToConsole('skip', 'Tab activation tasks skipped - waiting for user input');
+                    return;
+                }
+
+                // Add backup mode check
+                if (localStorage.getItem('sync-mode') === 'backup') {
+                    logToConsole('info', 'Running in backup mode - skipping automatic import');
+                    wasImportSuccessful = true;
+                    startBackupInterval();
                     return;
                 }
 
