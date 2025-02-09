@@ -701,11 +701,6 @@ async function handleDOMReady() {
     const awsSecretKey = localStorage.getItem('aws-secret-key');
     const encryptionKey = localStorage.getItem('encryption-key');
 
-    if (!bucketName || !awsAccessKey || !awsSecretKey) {
-        logToConsole('info', 'Backup not configured, skipping initialization');
-        return;
-    }
-
     if (bucketName && awsAccessKey && awsSecretKey && encryptionKey) {
         try {
             var importSuccessful = await checkAndImportBackup();
