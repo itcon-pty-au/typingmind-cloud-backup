@@ -21,6 +21,7 @@
     - User confirmation prompts with detailed information when significant differences are detected
 - ✨ Live sync status indicator in UI (double tap/click to hide permanently, add '?syncstatus=true' and load the app to re-enable it)
 - ✨ Comprehensive logging system (Activate in config modal or add '?log=true' to start console logging from page load itself)
+- ✨ Now you can choose whether the extension runs in Sync mode (default, ideal if you use typingmind in multiple devices) or in Backup mode (No automatic imports from cloud to app will take place in this mode)
   
 ## Using this extension
 WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXPORT" before setting up the extension.
