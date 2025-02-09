@@ -831,6 +831,20 @@ function openSyncModal() {
                 </div>
                 <div class="space-y-3">
                     <div>
+                        <div class="flex items-center space-x-4 mb-4">
+                            <label class="text-sm font-medium text-gray-700 dark:text-gray-400">Mode:</label>
+                            <label class="inline-flex items-center">
+                                <input type="radio" name="sync-mode" value="sync" class="form-radio text-blue-600" ${localStorage.getItem('sync-mode') !== 'backup' ? 'checked' : ''}>
+                                <span class="ml-2">Sync</span>
+                                <button class="ml-1 text-blue-600 text-lg hint--top-right hint--rounded hint--medium" aria-label="Automatically syncs data between devices. When enabled, data will be imported from cloud on app start.">ⓘ</button>
+                            </label>
+                            <label class="inline-flex items-center">
+                                <input type="radio" name="sync-mode" value="backup" class="form-radio text-blue-600" ${localStorage.getItem('sync-mode') === 'backup' ? 'checked' : ''}>
+                                <span class="ml-2">Backup</span>
+                                <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="Only creates backups. No automatic import from cloud on app start. Use Import button to manually restore data.">ⓘ</button>
+                            </label>
+                        </div>
+
                         <div class="mt-4 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
                             <div class="flex items-center justify-between mb-1">
                                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">Available Backups</label>
@@ -2268,10 +2282,11 @@ async function cleanupIncompleteMultipartUploads(s3, bucketName) {
 function showCustomAlert(message, title = 'Alert', buttons = [{ text: 'OK', primary: true }]) {
     return new Promise((resolve) => {
         const modal = document.createElement('div');
-        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[999] flex items-center justify-center p-4';
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-[99999] flex items-center justify-center p-4';
         modal.style.touchAction = 'auto';
         const dialog = document.createElement('div');
-        dialog.className = 'bg-white dark:bg-zinc-900 rounded-lg max-w-md w-full p-6 shadow-xl relative';
+        dialog.className = 'bg-white dark:bg-zinc-900 rounded-lg max-w-md w-full p-6 shadow-xl relative z-[99999]';
+        
         const titleElement = document.createElement('h3');
         titleElement.className = 'text-lg font-semibold mb-4 text-gray-900 dark:text-white';
         titleElement.textContent = title;
