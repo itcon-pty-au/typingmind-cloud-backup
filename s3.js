@@ -1453,16 +1453,19 @@ async function checkAndImportBackup() {
     const awsAccessKey = localStorage.getItem('aws-access-key');
     const awsSecretKey = localStorage.getItem('aws-secret-key');
     const encryptionKey = localStorage.getItem('encryption-key');
-    const awsEndpoint = localStorage.getItem('aws-endpoint');
-    if (!bucketName || !awsAccessKey || !awsSecretKey || !encryptionKey) {
+
+    if (!bucketName || !awsAccessKey || !awsSecretKey) {
         wasImportSuccessful = false;
-        if (!encryptionKey) {
-            alert('Please configure your encryption key in the backup settings before proceeding.');
-        } else {
-            alert('Please configure all AWS credentials in the backup settings before proceeding.');
-        }
         return false;
     }
+
+    if (!encryptionKey) {
+        wasImportSuccessful = false;
+        alert('Please configure your encryption key in the backup settings before proceeding.');
+        return false;
+    }
+
+    const awsEndpoint = localStorage.getItem('aws-endpoint');
     if (typeof AWS === 'undefined') {
         await loadAwsSdk();
     }
