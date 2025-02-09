@@ -1,4 +1,4 @@
-const VERSION = '20250207-07:07';
+const VERSION = '20250209-23:15';
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -1838,11 +1838,19 @@ function importDataToStorage(data) {
             'alert-smaller-cloud',
             'encryption-key',
             'aws-bucket',
-            'aws-access-key',
+            'aws-access-key', 
             'aws-secret-key',
             'aws-region',
             'aws-endpoint',
-            'backup-interval'
+            'backup-interval',
+            'sync-mode',
+            'sync-status-hidden',
+            'sync-status-position',
+            'activeTabBackupRunning',
+            'last-time-based-backup',
+            'last-daily-backup-in-s3',
+            'last-cloud-sync',
+            'backup-size'
         ];
 
         Object.keys(data.localStorage).forEach((key) => {
