@@ -861,6 +861,23 @@ function openSyncModal() {
                         </div>
                         <div class="my-3 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
                             <div class="space-y-2">
+                                <div class="mb-3 flex items-center space-x-4">
+                                    <label class="text-sm font-medium text-gray-700 dark:text-gray-400">
+                                        Operation Mode
+                                        <button class="ml-1 text-blue-600 text-lg hint--bottom hint--rounded hint--medium" 
+                                            aria-label="Sync Mode: Automatically syncs data between devices by importing cloud data on startup and periodically backing up.&#10;&#10;Backup Mode: Only performs manual backups - no automatic import of cloud data on startup.">ⓘ</button>
+                                    </label>
+                                    <div class="flex items-center space-x-4">
+                                        <label class="inline-flex items-center">
+                                            <input type="radio" name="cloud-sync-mode" value="sync" class="form-radio h-4 w-4 text-blue-600" checked>
+                                            <span class="ml-2 text-sm text-gray-700 dark:text-gray-400">Sync</span>
+                                        </label>
+                                        <label class="inline-flex items-center">
+                                            <input type="radio" name="cloud-sync-mode" value="backup" class="form-radio h-4 w-4 text-blue-600">
+                                            <span class="ml-2 text-sm text-gray-700 dark:text-gray-400">Backup</span>
+                                        </label>
+                                    </div>
+                                </div>
                                 <div class="flex space-x-4">
                                     <div class="w-2/3">
                                         <label for="aws-bucket" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Bucket Name <span class="text-red-500">*</span></label>
@@ -920,19 +937,6 @@ function openSyncModal() {
                                         <label for="alert-smaller-cloud" class="ml-2 block text-sm text-gray-700 dark:text-gray-400">
                                             Alert if cloud backup is smaller during import
                                         </label>
-                                    </div>
-                                </div>
-                                <div class="mt-2 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
-                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">
-                                        Operation Mode
-                                        <button class="ml-1 text-blue-600 text-lg hint--bottom hint--rounded hint--medium" 
-                                            aria-label="Sync Mode: Automatically syncs data between devices by importing cloud data on startup and periodically backing up.&#10;&#10;Backup Mode: Only performs manual backups - no automatic import of cloud data on startup.">ⓘ</button>
-                                    </label>
-                                    <div class="mt-2 flex items-center">
-                                        <select id="cloud-sync-mode" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700">
-                                            <option value="sync">Sync Mode</option>
-                                            <option value="backup">Backup Mode</option>
-                                        </select>
                                     </div>
                                 </div>
                                 <div class="flex justify-between space-x-2">
@@ -1112,7 +1116,7 @@ function openSyncModal() {
             const encryptionKey = document.getElementById('encryption-key').value.trim();
             const importThreshold = document.getElementById('import-threshold').value;
             const exportThreshold = document.getElementById('export-threshold').value;
-            const syncMode = document.getElementById('cloud-sync-mode').value;
+            const syncMode = document.querySelector('input[name="cloud-sync-mode"]:checked').value;
 
             if (importThreshold) {
                 localStorage.setItem('import-size-threshold', importThreshold);
