@@ -699,44 +699,46 @@ async function handleDOMReady() {
     const bucketName = localStorage.getItem('aws-bucket');
     const awsAccessKey = localStorage.getItem('aws-access-key');
     const awsSecretKey = localStorage.getItem('aws-secret-key');
+
+    // Early return if backup is not configured
+    if (!bucketName || !awsAccessKey || !awsSecretKey) {
+        logToConsole('info', 'Backup not configured, skipping initialization');
+        return;
+    }
+
     const encryptionKey = localStorage.getItem('encryption-key');
+    try {
+        var importSuccessful = await checkAndImportBackup();
+        isPageFullyLoaded = true;
+        if (importSuccessful) {
+            const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
+            const today = new Date();
+            const currentDateSuffix = `${today.getFullYear()}${String(
+                today.getMonth() + 1
+            ).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
 
-    if (bucketName && awsAccessKey && awsSecretKey && encryptionKey) {
-        try {
-            var importSuccessful = await checkAndImportBackup();
-            isPageFullyLoaded = true;
-            if (importSuccessful) {
-                const storedSuffix = localStorage.getItem('last-daily-backup-in-s3');
-                const today = new Date();
-                const currentDateSuffix = `${today.getFullYear()}${String(
-                    today.getMonth() + 1
-                ).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-
-                if (!storedSuffix || currentDateSuffix > storedSuffix) {
-                    await handleBackupFiles();
-                }
-                wasImportSuccessful = true;
-            } else {
-                wasImportSuccessful = true;
-                logToConsole('info', 'Import was cancelled by user - starting backup of local data to cloud');
+            if (!storedSuffix || currentDateSuffix > storedSuffix) {
+                await handleBackupFiles();
             }
-
-        } catch (error) {
-            logToConsole('error', 'Failed to initialize backup:', error);
-            isPageFullyLoaded = true;
-            if (error.code === 'NoSuchKey') {
-                wasImportSuccessful = true;
-                logToConsole('start', 'No existing backup found in S3 - starting fresh backup');
-                startBackupInterval();
-            } else if (error.code === 'CredentialsError' || error.code === 'InvalidAccessKeyId') {
-                logToConsole('error', 'AWS credential error, not starting backup');
-            } else if (error.message === 'Encryption key not configured') {
-                logToConsole('error', 'Encryption key missing, not starting backup');
-            } else {
-                logToConsole('error', `Unknown error during import, not starting backup. Error: ${error.message}`);
-            }
-            return;
+            wasImportSuccessful = true;
+        } else {
+            wasImportSuccessful = true;
+            logToConsole('info', 'Import was cancelled by user - starting backup of local data to cloud');
         }
+
+    } catch (error) {
+        logToConsole('error', 'Failed to initialize backup:', error);
+        isPageFullyLoaded = true;
+        if (error.code === 'NoSuchKey') {
+            wasImportSuccessful = true;
+            logToConsole('start', 'No existing backup found in S3 - starting fresh backup');
+            startBackupInterval();
+        } else if (error.code === 'CredentialsError' || error.code === 'InvalidAccessKeyId') {
+            logToConsole('error', 'AWS credential error, not starting backup');
+        } else {
+            logToConsole('error', `Unknown error during import, not starting backup. Error: ${error.message}`);
+        }
+        return;
     }
 }
 
@@ -1305,6 +1307,16 @@ let isProcessingVisibilityChange = false;
 
 document.addEventListener('visibilitychange', async () => {
     logToConsole('visibility', `Visibility changed: ${document.hidden ? 'hidden' : 'visible'}`);
+
+    const bucketName = localStorage.getItem('aws-bucket');
+    const awsAccessKey = localStorage.getItem('aws-access-key');
+    const awsSecretKey = localStorage.getItem('aws-secret-key');
+
+    // Early return if backup is not configured
+    if (!bucketName || !awsAccessKey || !awsSecretKey) {
+        logToConsole('info', 'Backup not configured, skipping initialization');
+        return;
+    }
     
     if (visibilityChangeTimeout) {
         clearTimeout(visibilityChangeTimeout);
@@ -2071,7 +2083,15 @@ async function deriveKey(password) {
 
 async function encryptData(data) {
     const encryptionKey = localStorage.getItem('encryption-key');
+    const bucketName = localStorage.getItem('aws-bucket');
     logToConsole('encrypt', 'Encryption attempt:', { hasKey: !!encryptionKey });
+    
+    // Early return if backup is not configured
+    if (!bucketName) {
+        logToConsole('info', 'Backup not configured, skipping encryption');
+        throw new Error('Backup not configured');
+    }
+
     if (!encryptionKey) {
         logToConsole('warning', 'No encryption key found');
         if (backupIntervalRunning) {
@@ -2114,15 +2134,25 @@ async function encryptData(data) {
 async function decryptData(data) {
     const marker = 'ENCRYPTED:';
     const dataString = new TextDecoder().decode(data.slice(0, marker.length));
+    const bucketName = localStorage.getItem('aws-bucket');
+    
     logToConsole('tag', 'Checking encryption marker:', {
         expectedMarker: marker,
         foundMarker: dataString,
         isEncrypted: dataString === marker
     });
+
     if (dataString !== marker) {
         logToConsole('info', 'Data is not encrypted, returning as-is');
         return JSON.parse(new TextDecoder().decode(data));
     }
+
+    // Early return if backup is not configured
+    if (!bucketName) {
+        logToConsole('info', 'Backup not configured, skipping decryption');
+        throw new Error('Backup not configured');
+    }
+
     const encryptionKey = localStorage.getItem('encryption-key');
     if (!encryptionKey) {
         logToConsole('error', 'Encrypted data found but no key provided');
