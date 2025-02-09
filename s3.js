@@ -861,6 +861,21 @@ function openSyncModal() {
                         </div>
                         <div class="mt-4 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
                             <div class="space-y-2">
+                                <div class="mt-4 bg-gray-100 px-3 py-2 rounded-lg border border-gray-200 dark:bg-zinc-800 dark:border-gray-600">
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-2">Mode</label>
+                                    <div class="flex space-x-4">
+                                        <label class="inline-flex items-center">
+                                            <input type="radio" name="sync-mode" value="sync" class="form-radio text-blue-600" ${localStorage.getItem('sync-mode') !== 'backup' ? 'checked' : ''}>
+                                            <span class="ml-2">Sync</span>
+                                            <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="Automatically syncs data between devices. When enabled, data will be imported from cloud on app start.">ⓘ</button>
+                                        </label>
+                                        <label class="inline-flex items-center">
+                                            <input type="radio" name="sync-mode" value="backup" class="form-radio text-blue-600" ${localStorage.getItem('sync-mode') === 'backup' ? 'checked' : ''}>
+                                            <span class="ml-2">Backup</span>
+                                            <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="Only creates backups. No automatic import from cloud on app start. Use Import button to manually restore data.">ⓘ</button>
+                                        </label>
+                                    </div>
+                                </div>
                                 <div class="flex space-x-4">
                                     <div class="w-2/3">
                                         <label for="aws-bucket" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Bucket Name <span class="text-red-500">*</span></label>
