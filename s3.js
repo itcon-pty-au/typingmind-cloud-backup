@@ -381,9 +381,7 @@ async function importFromS3() {
 
     const shouldPrompt =
       (localFileSize > 0 && sizeDiffPercentage > getImportThreshold()) ||
-      isCloudSignificantlySmaller ||
-      currentLocalStorageKeys.size > cloudLocalStorageKeys.size ||
-      currentIndexedDBKeys.size > cloudIndexedDBKeys.size;
+      isCloudSignificantlySmaller;
 
     if (shouldPrompt) {
       try {
@@ -412,12 +410,6 @@ async function importFromS3() {
         }
         if (isCloudSignificantlySmaller) {
           message += "⚠️ Warning: Cloud backup is smaller than local data\n";
-        }
-        if (currentLocalStorageKeys.size > cloudLocalStorageKeys.size) {
-          message += `⚠️ Warning: Local data has more items (${currentLocalStorageKeys.size}) than cloud backup (${cloudLocalStorageKeys.size})\n`;
-        }
-        if (currentIndexedDBKeys.size > cloudIndexedDBKeys.size) {
-          message += `⚠️ Warning: Local data has more items (${currentIndexedDBKeys.size}) than cloud backup (${cloudIndexedDBKeys.size})\n`;
         }
         message +=
           '\nDo you want to proceed with importing the cloud backup? Clicking "Proceed" will overwrite your local data. If you "Cancel", the local data will overwrite the cloud backup.';
