@@ -1610,10 +1610,12 @@ document.addEventListener("visibilitychange", async () => {
             );
             startBackupInterval();
           } else {
+            wasImportSuccessful = true;
             logToConsole(
               "info",
-              "Import was not successful, not starting backup interval"
+              "Import was cancelled by user - starting backup of local data to cloud"
             );
+            startBackupInterval();
           }
         } catch (error) {
           logToConsole("error", "Error during tab activation:", error);
