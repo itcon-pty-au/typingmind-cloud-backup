@@ -866,12 +866,12 @@ async function handleDOMReady() {
       wasImportSuccessful = true;
       startBackupInterval();
     } else {
-      wasImportSuccessful = true; // Changed: Set to true since we want to allow backups
+      wasImportSuccessful = true;
       logToConsole(
         "info",
-        "Import was cancelled by user - starting backup of local data to cloud" // Changed message
+        "Import was cancelled by user - starting backup of local data to cloud"
       );
-      startBackupInterval(); // Added: Start backup interval to backup local data
+      startBackupInterval();
     }
   } catch (error) {
     logToConsole("error", "Failed to initialize backup:", error);
