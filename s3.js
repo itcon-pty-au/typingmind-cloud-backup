@@ -1519,7 +1519,6 @@ document.addEventListener("visibilitychange", async () => {
     `Visibility changed: ${document.hidden ? "hidden" : "visible"}`
   );
 
-  // Clear any existing intervals when visibility changes
   if (backupInterval) {
     logToConsole("cleanup", `Clearing backup interval ${backupInterval}`);
     clearInterval(backupInterval);
@@ -1528,7 +1527,6 @@ document.addEventListener("visibilitychange", async () => {
     localStorage.setItem("activeTabBackupRunning", "false");
   }
 
-  // If tab is hidden, just clear intervals and return
   if (document.hidden) {
     logToConsole("info", "Tab hidden - clearing backup intervals");
     return;
@@ -1757,18 +1755,24 @@ async function checkAndImportBackup() {
 }
 
 async function loadBackupFiles() {
+  const select = document.getElementById("backup-files");
+  if (!select) {
+    logToConsole("info", "Backup files select element not found - modal may not be open");
+    return;
+  }
+
   const bucketName = localStorage.getItem("aws-bucket");
   const awsRegion = localStorage.getItem("aws-region");
   const awsAccessKey = localStorage.getItem("aws-access-key");
   const awsSecretKey = localStorage.getItem("aws-secret-key");
   const awsEndpoint = localStorage.getItem("aws-endpoint");
-  const select = document.getElementById("backup-files");
+
   if (!bucketName || !awsAccessKey || !awsSecretKey) {
-    select.innerHTML =
-      '<option value="">Please configure AWS credentials first</option>';
+    select.innerHTML = '<option value="">Please configure AWS credentials first</option>';
     updateBackupButtons();
     return;
   }
+
   try {
     if (typeof AWS === "undefined") {
       await loadAwsSdk();
@@ -1788,15 +1792,11 @@ async function loadBackupFiles() {
     if (data.Contents.length === 0) {
       select.innerHTML = '<option value="">No backup files found</option>';
     } else {
-      const files = data.Contents.sort(
-        (a, b) => b.LastModified - a.LastModified
-      );
+      const files = data.Contents.sort((a, b) => b.LastModified - a.LastModified);
       files.forEach((file) => {
         const option = document.createElement("option");
         option.value = file.Key;
-        option.textContent = `${file.Key} (${new Date(
-          file.LastModified
-        ).toLocaleString()})`;
+        option.textContent = `${file.Key} (${new Date(file.LastModified).toLocaleString()})`;
         select.appendChild(option);
       });
     }
@@ -3054,6 +3054,14 @@ hintCustomStyles.textContent = `
     }
     .hint--bottom:after {
         margin-top: 6px;
+    }
+`;
+document.head.appendChild(hintCustomStyles);
+
+function getShouldAlertOnSmallerCloud() {
+  return localStorage.getItem("alert-smaller-cloud") === "true";
+}
+
     }
 `;
 document.head.appendChild(hintCustomStyles);
