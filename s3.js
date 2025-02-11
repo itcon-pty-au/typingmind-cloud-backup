@@ -1613,10 +1613,6 @@ document.addEventListener("visibilitychange", async () => {
           startBackupInterval();
         } else {
           wasImportSuccessful = true;
-          logToConsole(
-            "info",
-            "Import cancelled by user - starting backup of local data to cloud"
-          );
           startBackupInterval();
         }
       } catch (error) {
@@ -1723,10 +1719,7 @@ async function checkAndImportBackup() {
       return true;
     } else {
       wasImportSuccessful = true;
-      logToConsole(
-        "info",
-        "Import cancelled by user - starting backup of local data to cloud"
-      );
+      logToConsole("info", "Starting backup of local data to cloud");
       return false;
     }
   } catch (err) {
