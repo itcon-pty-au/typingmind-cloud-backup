@@ -866,12 +866,8 @@ async function handleDOMReady() {
       wasImportSuccessful = true;
       startBackupInterval();
     } else {
-      wasImportSuccessful = true; // Changed: Set to true since we want to allow backups
-      logToConsole(
-        "info",
-        "Import was cancelled by user - starting backup of local data to cloud" // Changed message
-      );
-      startBackupInterval(); // Added: Start backup interval to backup local data
+      wasImportSuccessful = true;
+      startBackupInterval();
     }
   } catch (error) {
     logToConsole("error", "Failed to initialize backup:", error);
@@ -1613,7 +1609,7 @@ document.addEventListener("visibilitychange", async () => {
             wasImportSuccessful = true;
             logToConsole(
               "info",
-              "Import was cancelled by user - starting backup of local data to cloud"
+              "Import cancelled by user - starting backup of local data to cloud"
             );
             startBackupInterval();
           }
@@ -1722,7 +1718,10 @@ async function checkAndImportBackup() {
       return true;
     } else {
       wasImportSuccessful = true;
-      logToConsole("info", "Import cancelled by user");
+      logToConsole(
+        "info",
+        "Import cancelled by user - starting backup of local data to cloud"
+      );
       return false;
     }
   } catch (err) {
