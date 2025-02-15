@@ -135,7 +135,7 @@ iDrive E2 provides S3 compatible API with a generous 10GB free storage per month
 
 ### New Chats Disappearing
 > - **Have you checked the setting**: "Alert if cloud backup is smaller during import"? 
-> - **Implication of not checking this**: Assuming you have the extension in "Sync" mode.
+> **Implication of not checking this**: Assuming you have the extension in "Sync" mode.
 >   - You create a new chat.
 >   - You immediately swap to a different tab/window (Backup to S3 did not happen yet).
 >   - You come back to the app - At this point, data has been freshly imported from S3 and your new chat is now disappeared.
