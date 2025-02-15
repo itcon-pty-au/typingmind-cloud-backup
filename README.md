@@ -135,7 +135,9 @@ Implication of not checking this assuming you have extension in "Sync" mode
 - You create a new chat
 - You immediately swap to different tab/window (Backup to S3 did not happen yet)
 - You come back to the app - At this point data has been freshly imported from S3 and your new chat is now disappeared
-The way to prevent it - Make extension work in Backup mode (Not an option if you are using the app in multiple devices), Check the setting "Alert if cloud backup is smaller during import". This will prompt user for a confirmation if cloud backup size is less than local backup size. In the above scenario, the prompt will appear. You should click cancel as you are certain that the local data is newer and it will skip the cloud import.
+
+### Resolution
+Make extension work in Backup mode (Not an option if you are using the app in multiple devices), Check the setting "Alert if cloud backup is smaller during import". This will prompt user for a confirmation if cloud backup size is less than local backup size. In the above scenario, the prompt will appear. You should click cancel as you are certain that the local data is newer and it will skip the cloud import.
 
 ## Warning
 The extension stores the storage provider credentials in the browser storage (like the original typingmind app) and this is not a secure method. The only option you have is to minimize damage caused if someone gets access to the credentials. i.e. Provide minimum permissions to the credentials. For Amazon S3, I have provided access policy above. However, for other S3 compatible providers, its up to you to setup proper access policies. 
