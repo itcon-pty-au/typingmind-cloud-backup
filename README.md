@@ -129,15 +129,19 @@ Cloudflare R2 provides S3 compatible API with a generous 10GB free storage per m
 iDrive E2 provides S3 compatible API with a generous 10GB free storage per month. Refer [How to setup iDrive E2 and use with this extension](https://github.com/itcon-pty-au/typingmind-cloud-backup/blob/main/iDrive_E2_HowTo.docx)
 
 ## Troubleshooting
-1. The extension will work reliably only when one device is active at a time. So if you are facing issues, ensure the app is active only in once device at a time.
-2. New chats are disappearing - Have you checked the setting "Alert if cloud backup is smaller during import"?
-Implication of not checking this assuming you have extension in "Sync" mode
-- You create a new chat
-- You immediately swap to different tab/window (Backup to S3 did not happen yet)
-- You come back to the app - At this point data has been freshly imported from S3 and your new chat is now disappeared
 
-### Resolution
-Make extension work in Backup mode (Not an option if you are using the app in multiple devices), Check the setting "Alert if cloud backup is smaller during import". This will prompt user for a confirmation if cloud backup size is less than local backup size. In the above scenario, the prompt will appear. You should click cancel as you are certain that the local data is newer and it will skip the cloud import.
+### Single Device Usage
+The extension will work reliably only when one device is active at a time. So if you are facing issues, ensure the app is active only on one device at a time.
+
+### New Chats Disappearing
+- **Have you checked the setting**: "Alert if cloud backup is smaller during import"? 
+- **Implication of not checking this**: Assuming you have the extension in "Sync" mode.
+  - You create a new chat.
+  - You immediately swap to a different tab/window (Backup to S3 did not happen yet).
+  - You come back to the app - At this point, data has been freshly imported from S3 and your new chat is now disappeared.
+
+#### Resolution
+Make the extension work in **Backup mode** (Not an option if you are using the app on multiple devices), then check the setting "Alert if cloud backup is smaller during import". This will prompt the user for confirmation if the cloud backup size is less than the local backup size. In the above scenario, the prompt will appear. You should click **Cancel** as you are certain that the local data is newer, and it will skip the cloud import.
 
 ## Warning
 The extension stores the storage provider credentials in the browser storage (like the original typingmind app) and this is not a secure method. The only option you have is to minimize damage caused if someone gets access to the credentials. i.e. Provide minimum permissions to the credentials. For Amazon S3, I have provided access policy above. However, for other S3 compatible providers, its up to you to setup proper access policies. 
