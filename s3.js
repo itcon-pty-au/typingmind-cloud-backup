@@ -16,6 +16,7 @@ let cloudOperationQueue = [];
 let isProcessingQueue = false;
 let cloudFileSize = 0;
 let localFileSize = 0;
+let isLocalDataModified = false;
 
 const hintCssLink = document.createElement("link");
 hintCssLink.rel = "stylesheet";
@@ -214,7 +215,7 @@ function updateSyncStatus() {
       if (localStorage.getItem("sync-mode") === "backup") return '';
            
       if (cloudFileSize === 0 || localFileSize === 0) return '';
-      const isSynced = Math.abs(cloudFileSize - localFileSize) === 0;
+      const isSynced = !isLocalDataModified && Math.abs(cloudFileSize - localFileSize) === 0;
       return `<span class="sync-indicator">
         <span class="sync-dot" style="background-color: ${isSynced ? '#10B981' : '#EF4444'}"></span>
         <span>${isSynced ? 'Synced' : 'Not synced'}</span>
@@ -614,6 +615,7 @@ async function backupToS3() {
       cloudFileSize = 0;
     }
     cloudFileSize = dataSize;
+    isLocalDataModified = false;
     updateSyncStatus();
     
     if (dataSize < 100) {
@@ -2193,6 +2195,7 @@ function importDataToStorage(data) {
     Object.keys(data.localStorage).forEach((key) => {
       if (!preserveKeys.includes(key)) {
         localStorage.setItem(key, data.localStorage[key]);
+        isLocalDataModified = true;
       }
     });
 
@@ -3157,3 +3160,32 @@ function resetSizes() {
   cloudFileSize = 0;
   localFileSize = 0;
 }
+
+const originalSetItem = localStorage.setItem;
+localStorage.setItem = function(key, value) {
+  const preserveKeys = [
+    "import-size-threshold",
+    "export-size-threshold",
+    "alert-smaller-cloud",
+    "encryption-key",
+    "aws-bucket",
+    "aws-access-key",
+    "aws-secret-key",
+    "aws-region",
+    "aws-endpoint",
+    "backup-interval",
+    "sync-mode",
+    "sync-status-hidden",
+    "sync-status-position",
+    "activeTabBackupRunning",
+    "last-time-based-backup",
+    "last-daily-backup-in-s3",
+    "last-cloud-sync",
+  ];
+  
+  if (!preserveKeys.includes(key)) {
+    isLocalDataModified = true;
+    updateSyncStatus();
+  }
+  originalSetItem.apply(this, arguments);
+};
