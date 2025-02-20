@@ -185,6 +185,20 @@ function updateSyncStatus() {
     const syncStatus = document.getElementById("sync-status");
     if (!syncStatus) return;
 
+    // Add debug logging    
+    logToConsole("info", "Sync status variables:", {
+        cloudFileSize,
+        localFileSize,
+        isDefined: {
+            cloud: typeof cloudFileSize !== 'undefined',
+            local: typeof localFileSize !== 'undefined'
+        },
+        isNumber: {
+            cloud: typeof cloudFileSize === 'number',
+            local: typeof localFileSize === 'number'
+        }
+    });
+
     const formatTime = (timestamp) => {
         if (!timestamp) return "";
         const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -322,6 +336,7 @@ async function importFromS3() {
     let cloudData;
     let s3Data = await s3.getObject(params).promise();
     cloudFileSize = s3Data.Body.length;
+    logToConsole("info", "Updated cloudFileSize during import:", { cloudFileSize });
 
     if (cloudFileSize === 0) {
       logToConsole("warning", "Empty backup file found in S3");
@@ -419,6 +434,7 @@ async function importFromS3() {
 
     const currentDataStr = JSON.stringify(currentData);
     localFileSize = new Blob([currentDataStr]).size;
+    logToConsole("info", "Updated localFileSize during import:", { localFileSize });
     const sizeDiffPercentage =
       cloudFileSize && localFileSize
         ? Math.abs(((cloudFileSize - localFileSize) / localFileSize) * 100)
