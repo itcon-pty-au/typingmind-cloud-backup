@@ -531,6 +531,12 @@ async function importFromS3() {
 }
 
 async function backupToS3() {
+  if (isExportInProgress) {
+    logToConsole("skip", "Export already in progress, queueing this export");
+    queueCloudOperation("export", backupToS3);
+    return;
+  }
+
   isExportInProgress = true;
   let data = null;
   let dataStr = null;
