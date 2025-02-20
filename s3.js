@@ -14,6 +14,8 @@ let backupInterval = null;
 let isWaitingForUserInput = false;
 let cloudOperationQueue = [];
 let isProcessingQueue = false;
+let cloudFileSize = 0;
+let localFileSize = 0;
 
 const hintCssLink = document.createElement("link");
 hintCssLink.rel = "stylesheet";
@@ -198,6 +200,17 @@ function updateSyncStatus() {
     }
   };
 
+  const getSyncStatus = () => {
+    logToConsole("info", `cloudFileSize: ${cloudFileSize}`);
+    logToConsole("info", `localFileSize: ${localFileSize}`);
+    if (cloudFileSize === 0 || localFileSize === 0) return '';
+    const isSynced = Math.abs(cloudFileSize - localFileSize) == 0;
+    return `<span class="mr-2">
+      <span class="inline-block w-2 h-2 rounded-full ${isSynced ? 'bg-green-500' : 'bg-red-500'}"></span>
+      <span class="ml-1">${isSynced ? 'Synced' : 'Not synced'}</span>
+    </span>`;
+  };
+  const syncIndicator = getSyncStatus();
   const importStatus = isImportInProgress
     ? '⬇️ <span class="sync-spinner">↻</span>'
     : lastImportStatus === "failed"
@@ -214,7 +227,7 @@ function updateSyncStatus() {
     ? `⬆️ ${formatTime(lastExportTime)}`
     : "";
 
-  const statusContent = `${importStatus} ${exportStatus}`.trim();
+  const statusContent = `${syncIndicator} ${importStatus} ${exportStatus}`.trim();
 
   if (statusContent) {
     syncStatus.innerHTML = statusContent;
@@ -403,7 +416,7 @@ async function importFromS3() {
     });
 
     const currentDataStr = JSON.stringify(currentData);
-    const localFileSize = new Blob([currentDataStr]).size;
+    localFileSize = new Blob([currentDataStr]).size;
     const sizeDiffPercentage =
       cloudFileSize && localFileSize
         ? Math.abs(((cloudFileSize - localFileSize) / localFileSize) * 100)
@@ -2164,7 +2177,6 @@ function importDataToStorage(data) {
       "last-time-based-backup",
       "last-daily-backup-in-s3",
       "last-cloud-sync",
-      "backup-size",
     ];
 
     Object.keys(data.localStorage).forEach((key) => {
