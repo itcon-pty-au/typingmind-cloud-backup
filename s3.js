@@ -180,48 +180,59 @@ function createSyncStatus() {
 }
 
 function updateSyncStatus() {
-  const syncStatus = document.getElementById("sync-status");
-  if (!syncStatus) return;
+    const syncStatus = document.getElementById("sync-status");
+    if (!syncStatus) return;
 
-  const formatTime = (timestamp) => {
-    if (!timestamp) return "";
-    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    const formatTime = (timestamp) => {
+        if (!timestamp) return "";
+        const seconds = Math.floor((Date.now() - timestamp) / 1000);
 
-    if (seconds < 60) {
-      return `${seconds}s ago`;
-    } else if (seconds < 3600) {
-      const minutes = Math.floor(seconds / 60);
-      return `${minutes}m ago`;
-    } else {
-      const hours = Math.floor(seconds / 3600);
-      return `${hours}h ago`;
+        if (seconds < 60) {
+            return `${seconds}s ago`;
+        } else if (seconds < 3600) {
+            const minutes = Math.floor(seconds / 60);
+            return `${minutes}m ago`;
+        } else {
+            const hours = Math.floor(seconds / 3600);
+            return `${hours}h ago`;
+        }
+    };
+
+    const importStatus = isImportInProgress
+        ? '⬇️ <span class="sync-spinner">↻</span>'
+        : lastImportStatus === "failed"
+        ? '<span class="sync-failed">⬇️ Failed</span>'
+        : lastImportTime
+        ? `⬇️ ${formatTime(lastImportTime)}`
+        : "";
+
+    const exportStatus = isExportInProgress
+        ? '⬆️ <span class="sync-spinner">↻</span>'
+        : lastExportStatus === "failed"
+        ? '<span class="sync-failed">⬆️ Failed</span>'
+        : lastExportTime
+        ? `⬆️ ${formatTime(lastExportTime)}`
+        : "";
+
+    let syncIndicator = "";
+    if (cloudFileSize && localFileSize) {
+        const TOLERANCE_BYTES = 0;
+        const isInSync = Math.abs(cloudFileSize - localFileSize) <= TOLERANCE_BYTES;
+        const dotColor = isInSync ? "#22c55e" : "#ef4444";
+        syncIndicator = `<span style="display: inline-flex; align-items: center; margin-right: 4px;">
+            <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: ${dotColor}; margin-right: 4px;"></span>
+            ${isInSync ? "Sync" : "Not in sync"}
+        </span>`;
     }
-  };
 
-  const importStatus = isImportInProgress
-    ? '⬇️ <span class="sync-spinner">↻</span>'
-    : lastImportStatus === "failed"
-    ? '<span class="sync-failed">⬇️ Failed</span>'
-    : lastImportTime
-    ? `⬇️ ${formatTime(lastImportTime)}`
-    : "";
+    const statusContent = `${syncIndicator}${importStatus} ${exportStatus}`.trim();
 
-  const exportStatus = isExportInProgress
-    ? '⬆️ <span class="sync-spinner">↻</span>'
-    : lastExportStatus === "failed"
-    ? '<span class="sync-failed">⬆️ Failed</span>'
-    : lastExportTime
-    ? `⬆️ ${formatTime(lastExportTime)}`
-    : "";
-
-  const statusContent = `${importStatus} ${exportStatus}`.trim();
-
-  if (statusContent) {
-    syncStatus.innerHTML = statusContent;
-    syncStatus.style.display = "block";
-  } else {
-    syncStatus.style.display = "none";
-  }
+    if (statusContent) {
+        syncStatus.innerHTML = statusContent;
+        syncStatus.style.display = "block";
+    } else {
+        syncStatus.style.display = "none";
+    }
 }
 
 async function processCloudOperationQueue() {
