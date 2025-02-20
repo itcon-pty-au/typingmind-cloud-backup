@@ -3,8 +3,6 @@ let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
 let isImportInProgress = false;
-let cloudFileSize = undefined;
-let localFileSize = undefined;
 let isConsoleLoggingEnabled =
   new URLSearchParams(window.location.search).get("log") === "true";
 const TIME_BACKUP_INTERVAL = 15;
@@ -182,75 +180,48 @@ function createSyncStatus() {
 }
 
 function updateSyncStatus() {
-    const syncStatus = document.getElementById("sync-status");
-    if (!syncStatus) return;
+  const syncStatus = document.getElementById("sync-status");
+  if (!syncStatus) return;
 
-    // Add debug logging    
-    logToConsole("info", "Sync status variables:", {
-        cloudFileSize,
-        localFileSize,
-        isDefined: {
-            cloud: typeof cloudFileSize !== 'undefined',
-            local: typeof localFileSize !== 'undefined'
-        },
-        isNumber: {
-            cloud: typeof cloudFileSize === 'number',
-            local: typeof localFileSize === 'number'
-        }
-    });
+  const formatTime = (timestamp) => {
+    if (!timestamp) return "";
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
 
-    const formatTime = (timestamp) => {
-        if (!timestamp) return "";
-        const seconds = Math.floor((Date.now() - timestamp) / 1000);
-
-        if (seconds < 60) {
-            return `${seconds}s ago`;
-        } else if (seconds < 3600) {
-            const minutes = Math.floor(seconds / 60);
-            return `${minutes}m ago`;
-        } else {
-            const hours = Math.floor(seconds / 3600);
-            return `${hours}h ago`;
-        }
-    };
-
-    const importStatus = isImportInProgress
-        ? '⬇️ <span class="sync-spinner">↻</span>'
-        : lastImportStatus === "failed"
-        ? '<span class="sync-failed">⬇️ Failed</span>'
-        : lastImportTime
-        ? `⬇️ ${formatTime(lastImportTime)}`
-        : "";
-
-    const exportStatus = isExportInProgress
-        ? '⬆️ <span class="sync-spinner">↻</span>'
-        : lastExportStatus === "failed"
-        ? '<span class="sync-failed">⬆️ Failed</span>'
-        : lastExportTime
-        ? `⬆️ ${formatTime(lastExportTime)}`
-        : "";
-
-    let syncIndicator = "";
-    if (typeof cloudFileSize !== 'undefined' && typeof localFileSize !== 'undefined') {
-        const TOLERANCE_BYTES = 0;
-        const isSynced = Math.abs(cloudFileSize - localFileSize) <= TOLERANCE_BYTES;
-        const dotColor = isSynced ? "#22c55e" : "#ef4444"; // green-500 or red-500
-        syncIndicator = `
-            <span style="display: inline-flex; align-items: center; margin-right: 4px;">
-                <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: ${dotColor}; margin-right: 4px;"></span>
-                ${isSynced ? "Sync" : "Not in sync"}
-            </span>
-        `;
-    }
-
-    const statusContent = `${syncIndicator}${importStatus} ${exportStatus}`.trim();
-
-    if (statusContent) {
-        syncStatus.innerHTML = statusContent;
-        syncStatus.style.display = "block";
+    if (seconds < 60) {
+      return `${seconds}s ago`;
+    } else if (seconds < 3600) {
+      const minutes = Math.floor(seconds / 60);
+      return `${minutes}m ago`;
     } else {
-        syncStatus.style.display = "none";
+      const hours = Math.floor(seconds / 3600);
+      return `${hours}h ago`;
     }
+  };
+
+  const importStatus = isImportInProgress
+    ? '⬇️ <span class="sync-spinner">↻</span>'
+    : lastImportStatus === "failed"
+    ? '<span class="sync-failed">⬇️ Failed</span>'
+    : lastImportTime
+    ? `⬇️ ${formatTime(lastImportTime)}`
+    : "";
+
+  const exportStatus = isExportInProgress
+    ? '⬆️ <span class="sync-spinner">↻</span>'
+    : lastExportStatus === "failed"
+    ? '<span class="sync-failed">⬆️ Failed</span>'
+    : lastExportTime
+    ? `⬆️ ${formatTime(lastExportTime)}`
+    : "";
+
+  const statusContent = `${importStatus} ${exportStatus}`.trim();
+
+  if (statusContent) {
+    syncStatus.innerHTML = statusContent;
+    syncStatus.style.display = "block";
+  } else {
+    syncStatus.style.display = "none";
+  }
 }
 
 async function processCloudOperationQueue() {
@@ -336,7 +307,6 @@ async function importFromS3() {
     let cloudData;
     let s3Data = await s3.getObject(params).promise();
     cloudFileSize = s3Data.Body.length;
-    logToConsole("info", "Updated cloudFileSize during import:", { cloudFileSize });
 
     if (cloudFileSize === 0) {
       logToConsole("warning", "Empty backup file found in S3");
@@ -433,8 +403,7 @@ async function importFromS3() {
     });
 
     const currentDataStr = JSON.stringify(currentData);
-    localFileSize = new Blob([currentDataStr]).size;
-    logToConsole("info", "Updated localFileSize during import:", { localFileSize });
+    const localFileSize = new Blob([currentDataStr]).size;
     const sizeDiffPercentage =
       cloudFileSize && localFileSize
         ? Math.abs(((cloudFileSize - localFileSize) / localFileSize) * 100)
@@ -607,7 +576,6 @@ async function backupToS3() {
     logToConsole("info", "Blob created");
     
     const dataSize = blob.size;
-    localFileSize = dataSize;
     if (dataSize < 100) {
       throw new Error("Final backup blob is too small or empty");
     }
@@ -620,13 +588,11 @@ async function backupToS3() {
         Key: "typingmind-backup.json",
       }).promise();
       currentCloudSize = currentCloudData.Body.length;
-      cloudFileSize = currentCloudSize;
       logToConsole("info", "Current cloud backup size:", { size: currentCloudSize });
     } catch (error) {
       if (error.code !== 'NoSuchKey') {
         throw error;
       }
-      cloudFileSize = undefined;
     }
 
     const cloudSize = currentCloudSize;
