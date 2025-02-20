@@ -45,6 +45,17 @@ syncStatusStyles.textContent = `
     .sync-failed {
         color: #ff4444;
     }
+    .sync-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .sync-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+    }
     @keyframes spin {
         from { transform: rotate(0deg); }
         to { transform: rotate(360deg); }
@@ -90,6 +101,8 @@ function initializeLoggingState() {
 }
 
 function createSyncStatus() {
+  if (document.getElementById("sync-status")) return;
+  
   const syncStatus = document.createElement("div");
   syncStatus.id = "sync-status";
 
@@ -192,29 +205,20 @@ function updateSyncStatus() {
     const formatTime = (timestamp) => {
       if (!timestamp) return "";
       const seconds = Math.floor((Date.now() - timestamp) / 1000);
-  
-      if (seconds < 60) {
-        return `${seconds}s ago`;
-      } else if (seconds < 3600) {
-        const minutes = Math.floor(seconds / 60);
-        return `${minutes}m ago`;
-      } else {
-        const hours = Math.floor(seconds / 3600);
-        return `${hours}h ago`;
-      }
+      return seconds < 60 ? `${seconds}s ago` 
+           : seconds < 3600 ? `${Math.floor(seconds / 60)}m ago`
+           : `${Math.floor(seconds / 3600)}h ago`;
     };
-  
-    logToConsole("info", `cloudFileSize: ${cloudFileSize}`);
-    logToConsole("info", `localFileSize: ${localFileSize}`);
-  
+
     const getSyncStatus = () => {
       if (cloudFileSize === 0 || localFileSize === 0) return '';
-      const isSynced = Math.abs(cloudFileSize - localFileSize) == 0;
-      return `<span class="mr-2">
-        <span class="inline-block w-2 h-2 rounded-full ${isSynced ? 'bg-green-500' : 'bg-red-500'}"></span>
-        <span class="ml-1">${isSynced ? 'Synced' : 'Not synced'}</span>
+      const isSynced = Math.abs(cloudFileSize - localFileSize) === 0;
+      return `<span class="sync-indicator">
+        <span class="sync-dot" style="background-color: ${isSynced ? '#10B981' : '#EF4444'}"></span>
+        <span>${isSynced ? 'Synced' : 'Not synced'}</span>
       </span>`;
     };
+
     const syncIndicator = getSyncStatus();
     const importStatus = isImportInProgress
       ? '⬇️ <span class="sync-spinner">↻</span>'
@@ -223,7 +227,7 @@ function updateSyncStatus() {
       : lastImportTime
       ? `⬇️ ${formatTime(lastImportTime)}`
       : "";
-  
+
     const exportStatus = isExportInProgress
       ? '⬆️ <span class="sync-spinner">↻</span>'
       : lastExportStatus === "failed"
@@ -231,9 +235,9 @@ function updateSyncStatus() {
       : lastExportTime
       ? `⬆️ ${formatTime(lastExportTime)}`
       : "";
-  
-    const statusContent = `${syncIndicator} ${importStatus} ${exportStatus}`.trim();
-  
+
+    const statusContent = [syncIndicator, importStatus, exportStatus].filter(Boolean).join(' ');
+
     if (statusContent) {
       syncStatus.innerHTML = statusContent;
       syncStatus.style.display = "block";
