@@ -213,6 +213,12 @@ function updateSyncStatus() {
     const getSyncStatus = () => {
       if (localStorage.getItem("sync-mode") === "backup") return '';
       
+      logToConsole("info", "Size check:", {
+        cloudFileSize,
+        localFileSize,
+        isSynced: Math.abs(cloudFileSize - localFileSize) === 0
+      });
+      
       if (cloudFileSize === 0 || localFileSize === 0) return '';
       const isSynced = Math.abs(cloudFileSize - localFileSize) === 0;
       return `<span class="sync-indicator">
@@ -246,7 +252,7 @@ function updateSyncStatus() {
     } else {
       syncStatus.style.display = "none";
     }
-  }, 100);
+  }, 500);
 }
 
 async function processCloudOperationQueue() {
@@ -599,9 +605,6 @@ async function backupToS3() {
     logToConsole("info", "Blob created");
     
     const dataSize = blob.size;
-    if (dataSize < 100) {
-      throw new Error("Final backup blob is too small or empty");
-    }
     localFileSize = dataSize;
 
     try {
@@ -610,12 +613,17 @@ async function backupToS3() {
         Key: "typingmind-backup.json",
       }).promise();
       cloudFileSize = currentCloudData.Body.length;
-      logToConsole("info", "Current cloud backup size:", { size: cloudFileSize });
     } catch (error) {
       if (error.code !== 'NoSuchKey') {
         throw error;
       }
       cloudFileSize = 0;
+    }
+    cloudFileSize = dataSize;
+    updateSyncStatus();
+    
+    if (dataSize < 100) {
+      throw new Error("Final backup blob is too small or empty");
     }
 
     const localSize = dataSize;
