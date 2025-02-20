@@ -3,7 +3,6 @@ let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
 let isImportInProgress = false;
-let isSnapshotInProgress = false;
 let isConsoleLoggingEnabled =
   new URLSearchParams(window.location.search).get("log") === "true";
 const TIME_BACKUP_INTERVAL = 15;
@@ -197,6 +196,22 @@ function updateSyncStatus() {
     }
   };
 
+  const localSize = localStorage.getItem("backup-size");
+  const cloudFileSize = window.cloudFileSize; 
+
+  let syncStatusHtml = '';
+  if (localSize && cloudFileSize) {
+    const sizeDiffPercentage = Math.abs(((cloudFileSize - localSize) / localSize) * 100);
+    const isInSync = sizeDiffPercentage <= getImportThreshold();
+    
+    syncStatusHtml = `
+      <span class="mr-2">
+        <span class="inline-block w-2 h-2 rounded-full ${isInSync ? 'bg-green-500' : 'bg-red-500'}"></span>
+        <span class="ml-1">${isInSync ? 'Sync' : 'Not in sync'}</span>
+      </span>
+    `;
+  }
+
   const importStatus = isImportInProgress
     ? '⬇️ <span class="sync-spinner">↻</span>'
     : lastImportStatus === "failed"
@@ -213,7 +228,7 @@ function updateSyncStatus() {
     ? `⬆️ ${formatTime(lastExportTime)}`
     : "";
 
-  const statusContent = `${importStatus} ${exportStatus}`.trim();
+  const statusContent = `${syncStatusHtml} ${importStatus} ${exportStatus}`.trim();
 
   if (statusContent) {
     syncStatus.innerHTML = statusContent;
@@ -224,6 +239,12 @@ function updateSyncStatus() {
 }
 
 async function importFromS3() {
+  if (isImportInProgress) {
+    logToConsole("skip", "Import already in progress, queueing this import");
+    queueCloudOperation("import", importFromS3);
+    return;
+  }
+
   try {
     lastImportStatus = "in-progress";
     updateSyncStatus();
@@ -484,6 +505,12 @@ async function importFromS3() {
 }
 
 async function backupToS3() {
+  if (isExportInProgress) {
+    logToConsole("skip", "Export already in progress, queueing this backup");
+    queueCloudOperation("backup", backupToS3);
+    return;
+  }
+
   try {
     lastExportStatus = "in-progress";
     updateSyncStatus();
@@ -1513,114 +1540,120 @@ function openSyncModal() {
 let visibilityChangeTimeout = null;
 let isProcessingVisibilityChange = false;
 
-document.addEventListener("visibilitychange", async () => {
-  logToConsole(
-    "visibility",
-    `Visibility changed: ${document.hidden ? "hidden" : "visible"}`
-  );
-
-  if (backupInterval) {
-    logToConsole("cleanup", `Clearing backup interval ${backupInterval}`);
-    clearInterval(backupInterval);
-    backupInterval = null;
-    backupIntervalRunning = false;
-    localStorage.setItem("activeTabBackupRunning", "false");
-  }
-
-  if (document.hidden) {
-    logToConsole("info", "Tab hidden - clearing backup intervals");
-    return;
-  }
-
-  const bucketName = localStorage.getItem("aws-bucket");
-  const awsAccessKey = localStorage.getItem("aws-access-key");
-  const awsSecretKey = localStorage.getItem("aws-secret-key");
-
-  if (!bucketName || !awsAccessKey || !awsSecretKey) {
-    logToConsole("info", "Backup not configured, skipping initialization");
-    return;
-  }
-
-  if (visibilityChangeTimeout) {
-    clearTimeout(visibilityChangeTimeout);
-  }
-
-  visibilityChangeTimeout = setTimeout(async () => {
-    if (isProcessingVisibilityChange) {
-      logToConsole("skip", "Already processing visibility change, skipping");
-      return;
+async function processCloudOperationQueue() {
+    if (isProcessingQueue || cloudOperationQueue.length === 0) {
+        return;
     }
 
-    try {
-      isProcessingVisibilityChange = true;
-      logToConsole("active", "Tab became active");
+    isProcessingQueue = true;
+    logToConsole("info", `Processing cloud operation queue (${cloudOperationQueue.length} items)`);
 
-      const bucketName = localStorage.getItem("aws-bucket");
-      const awsAccessKey = localStorage.getItem("aws-access-key");
-      const awsSecretKey = localStorage.getItem("aws-secret-key");
-
-      if (!bucketName || !awsAccessKey || !awsSecretKey) {
-        logToConsole(
-          "info",
-          "Backup not configured, skipping visibility change handling"
-        );
-        return;
-      }
-
-      if (isWaitingForUserInput) {
-        logToConsole(
-          "skip",
-          "Tab activation tasks skipped - waiting for user input"
-        );
-        return;
-      }
-
-      if (localStorage.getItem("sync-mode") === "backup") {
-        logToConsole(
-          "info",
-          "Running in backup mode - skipping automatic import"
-        );
-        wasImportSuccessful = true;
-        startBackupInterval();
-        return;
-      }
-
-      try {
-        logToConsole("info", "Checking for updates from S3...");
-        const importSuccessful = await checkAndImportBackup();
-        if (importSuccessful) {
-          const currentTime = new Date().toLocaleString();
-          const storedSuffix = localStorage.getItem("last-daily-backup-in-s3");
-          const today = new Date();
-          const currentDateSuffix = `${today.getFullYear()}${String(
-            today.getMonth() + 1
-          ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-
-          var element = document.getElementById("last-sync-msg");
-          if (element !== null) {
-            element.innerText = `Last sync done at ${currentTime}`;
-            element = null;
-          }
-          if (!storedSuffix || currentDateSuffix > storedSuffix) {
-            await handleBackupFiles();
-          }
-          logToConsole(
-            "success",
-            "Import successful, starting backup interval"
-          );
-          startBackupInterval();
-        } else {
-          wasImportSuccessful = true;
-          startBackupInterval();
+    while (cloudOperationQueue.length > 0) {
+        const nextOperation = cloudOperationQueue[0];
+        try {
+            logToConsole("info", `Executing queued operation: ${nextOperation.name}`);
+            await nextOperation.operation();
+        } catch (error) {
+            logToConsole("error", `Error executing queued operation ${nextOperation.name}:`, error);
+        } finally {
+            cloudOperationQueue.shift(); 
         }
-      } catch (error) {
-        logToConsole("error", "Error during tab activation:", error);
-      }
-    } finally {
-      isProcessingVisibilityChange = false;
-      visibilityChangeTimeout = null;
     }
-  }, 300);
+
+    isProcessingQueue = false;
+    logToConsole("info", "Cloud operation queue processing completed");
+}
+
+function queueCloudOperation(name, operation) {
+    cloudOperationQueue.push({ name, operation });
+    logToConsole("info", `Added ${name} to cloud operation queue`);
+    processCloudOperationQueue();
+}
+
+document.addEventListener("visibilitychange", async () => {
+    logToConsole("visibility", `Visibility changed: ${document.hidden ? "hidden" : "visible"}`);
+
+    if (backupInterval) {
+        logToConsole("cleanup", `Clearing backup interval ${backupInterval}`);
+        clearInterval(backupInterval);
+        backupInterval = null;
+        backupIntervalRunning = false;
+        localStorage.setItem("activeTabBackupRunning", "false");
+    }
+
+    if (document.hidden) {
+        logToConsole("info", "Tab hidden - clearing backup intervals");
+        return;
+    }
+
+    const bucketName = localStorage.getItem("aws-bucket");
+    const awsAccessKey = localStorage.getItem("aws-access-key");
+    const awsSecretKey = localStorage.getItem("aws-secret-key");
+
+    if (!bucketName || !awsAccessKey || !awsSecretKey) {
+        logToConsole("info", "Backup not configured, skipping initialization");
+        return;
+    }
+
+    if (visibilityChangeTimeout) {
+        clearTimeout(visibilityChangeTimeout);
+    }
+
+    visibilityChangeTimeout = setTimeout(() => {
+        if (isProcessingVisibilityChange) {
+            logToConsole("skip", "Already processing visibility change, skipping");
+            return;
+        }
+
+        isProcessingVisibilityChange = true;
+        try {
+            logToConsole("active", "Tab became active");
+
+            if (isWaitingForUserInput) {
+                logToConsole("skip", "Tab activation tasks skipped - waiting for user input");
+                return;
+            }
+
+            if (localStorage.getItem("sync-mode") === "backup") {
+                logToConsole("info", "Running in backup mode - skipping automatic import");
+                wasImportSuccessful = true;
+                startBackupInterval();
+                return;
+            }
+
+            queueCloudOperation("visibility-change-import", async () => {
+                try {
+                    logToConsole("info", "Checking for updates from S3...");
+                    const importSuccessful = await checkAndImportBackup();
+                    if (importSuccessful) {
+                        const currentTime = new Date().toLocaleString();
+                        const storedSuffix = localStorage.getItem("last-daily-backup-in-s3");
+                        const today = new Date();
+                        const currentDateSuffix = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+
+                        var element = document.getElementById("last-sync-msg");
+                        if (element !== null) {
+                            element.innerText = `Last sync done at ${currentTime}`;
+                            element = null;
+                        }
+                        if (!storedSuffix || currentDateSuffix > storedSuffix) {
+                            await handleBackupFiles();
+                        }
+                        logToConsole("success", "Import successful, starting backup interval");
+                        startBackupInterval();
+                    } else {
+                        wasImportSuccessful = true;
+                        startBackupInterval();
+                    }
+                } catch (error) {
+                    logToConsole("error", "Error during tab activation:", error);
+                }
+            });
+        } finally {
+            isProcessingVisibilityChange = false;
+            visibilityChangeTimeout = null;
+        }
+    }, 300);
 });
 
 async function handleTimeBasedBackup() {
