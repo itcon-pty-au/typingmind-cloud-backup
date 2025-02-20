@@ -3,6 +3,8 @@ let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
 let isImportInProgress = false;
+let cloudFileSize = undefined;
+let localFileSize = undefined;
 let isConsoleLoggingEnabled =
   new URLSearchParams(window.location.search).get("log") === "true";
 const TIME_BACKUP_INTERVAL = 15;
@@ -215,14 +217,16 @@ function updateSyncStatus() {
         : "";
 
     let syncIndicator = "";
-    if (cloudFileSize && localFileSize) {
+    if (typeof cloudFileSize !== 'undefined' && typeof localFileSize !== 'undefined') {
         const TOLERANCE_BYTES = 0;
-        const isInSync = Math.abs(cloudFileSize - localFileSize) <= TOLERANCE_BYTES;
-        const dotColor = isInSync ? "#22c55e" : "#ef4444";
-        syncIndicator = `<span style="display: inline-flex; align-items: center; margin-right: 4px;">
-            <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: ${dotColor}; margin-right: 4px;"></span>
-            ${isInSync ? "Sync" : "Not in sync"}
-        </span>`;
+        const isSynced = Math.abs(cloudFileSize - localFileSize) <= TOLERANCE_BYTES;
+        const dotColor = isSynced ? "#22c55e" : "#ef4444"; // green-500 or red-500
+        syncIndicator = `
+            <span style="display: inline-flex; align-items: center; margin-right: 4px;">
+                <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: ${dotColor}; margin-right: 4px;"></span>
+                ${isSynced ? "Sync" : "Not in sync"}
+            </span>
+        `;
     }
 
     const statusContent = `${syncIndicator}${importStatus} ${exportStatus}`.trim();
@@ -414,7 +418,7 @@ async function importFromS3() {
     });
 
     const currentDataStr = JSON.stringify(currentData);
-    const localFileSize = new Blob([currentDataStr]).size;
+    localFileSize = new Blob([currentDataStr]).size;
     const sizeDiffPercentage =
       cloudFileSize && localFileSize
         ? Math.abs(((cloudFileSize - localFileSize) / localFileSize) * 100)
@@ -587,6 +591,7 @@ async function backupToS3() {
     logToConsole("info", "Blob created");
     
     const dataSize = blob.size;
+    localFileSize = dataSize;
     if (dataSize < 100) {
       throw new Error("Final backup blob is too small or empty");
     }
@@ -599,11 +604,13 @@ async function backupToS3() {
         Key: "typingmind-backup.json",
       }).promise();
       currentCloudSize = currentCloudData.Body.length;
+      cloudFileSize = currentCloudSize;
       logToConsole("info", "Current cloud backup size:", { size: currentCloudSize });
     } catch (error) {
       if (error.code !== 'NoSuchKey') {
         throw error;
       }
+      cloudFileSize = undefined;
     }
 
     const cloudSize = currentCloudSize;
