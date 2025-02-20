@@ -126,8 +126,20 @@ Update "https://*.hostname.com" with your specific hostname in case you are self
 
 ## S3 compatible storage services setup
 Cloudflare R2 provides S3 compatible API with a generous 10GB free storage per month. Refer [How to setup Cloudflare R2 and use with this extension](https://github.com/itcon-pty-au/typingmind-cloud-backup/blob/main/Cloudflare_R2_HowTo.docx)
-
 iDrive E2 provides S3 compatible API with a generous 10GB free storage per month. Refer [How to setup iDrive E2 and use with this extension](https://github.com/itcon-pty-au/typingmind-cloud-backup/blob/main/iDrive_E2_HowTo.docx)
+
+## Troubleshooting
+
+### Using app in multiple devices simultaneously
+> The extension will work reliably only when one device is active at a time. So if you are facing issues, ensure the app is active only on one device at a time.
+
+### New Chats Disappearing
+> - **Have you checked the setting**: "Alert if cloud backup is smaller during import"? 
+> **Implication of not checking this**: Assuming you have the extension in "Sync" mode.
+>   - You create a new chat.
+>   - You immediately swap to a different tab/window (Backup to S3 did not happen yet).
+>   - You come back to the app - At this point, data has been freshly imported from S3 and your new chat is now disappeared.
+> - **Resolution**: Make the extension work in **Backup mode** (Not an option if you are using the app on multiple devices), then check the setting "Alert if cloud backup is smaller during import". This will prompt the user for confirmation if the cloud backup size is less than the local backup size. In the above scenario, the prompt will appear. You should click **Cancel** as you are certain that the local data is newer, and it will skip the cloud import.
 
 ## Warning
 The extension stores the storage provider credentials in the browser storage (like the original typingmind app) and this is not a secure method. The only option you have is to minimize damage caused if someone gets access to the credentials. i.e. Provide minimum permissions to the credentials. For Amazon S3, I have provided access policy above. However, for other S3 compatible providers, its up to you to setup proper access policies. 
