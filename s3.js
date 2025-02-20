@@ -35,6 +35,9 @@ syncStatusStyles.textContent = `
         cursor: move;
         user-select: none;
         transition: opacity 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 8px;
     }
     #sync-status.dragging {
         opacity: 0.7;
@@ -609,19 +612,18 @@ async function backupToS3() {
       cloudFileSize = 0;
     }
 
-    const cloudSize = currentCloudSize;
     const localSize = dataSize;
-    const sizeDiffPercentage = Math.abs(((localSize - cloudSize) / cloudSize) * 100);
+    const sizeDiffPercentage = Math.abs(((localSize - cloudFileSize) / cloudFileSize) * 100);
 
     logToConsole("progress", "Export size comparison:", {
-      cloudSize: `${cloudSize} bytes`,
+      cloudSize: `${cloudFileSize} bytes`,
       localSize: `${localSize} bytes`,
-      difference: `${localSize - cloudSize} bytes (${sizeDiffPercentage.toFixed(4)}%)`,
+      difference: `${localSize - cloudFileSize} bytes (${sizeDiffPercentage.toFixed(4)}%)`,
     });
 
     if (sizeDiffPercentage > getExportThreshold()) {
       isWaitingForUserInput = true;
-      const message = `Warning: The new backup size (${localSize} bytes) differs significantly from the current cloud backup (${cloudSize} bytes) by ${sizeDiffPercentage.toFixed(
+      const message = `Warning: The new backup size (${localSize} bytes) differs significantly from the current cloud backup (${cloudFileSize} bytes) by ${sizeDiffPercentage.toFixed(
         2
       )}% (threshold: ${getExportThreshold()}%).\n\nDo you want to proceed with the upload?`;
       const shouldProceed = await showCustomAlert(
