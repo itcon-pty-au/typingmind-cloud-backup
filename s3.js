@@ -55,6 +55,8 @@ let lastImportTime = null;
 let lastExportTime = null;
 let lastImportStatus = null;
 let lastExportStatus = null;
+let currentLocalSize = null;
+let currentCloudSize = null;
 
 function getImportThreshold() {
   return parseFloat(localStorage.getItem("import-size-threshold")) || 1;
@@ -198,18 +200,15 @@ function updateSyncStatus() {
     }
   };
 
-  const localSize = localStorage.getItem("backup-size");
-  const cloudFileSize = window.cloudFileSize; 
-
   let syncStatusHtml = '';
-  if (localSize && cloudFileSize) {
-    const sizeDiffPercentage = Math.abs(((cloudFileSize - localSize) / localSize) * 100);
+  if (currentLocalSize && currentCloudSize) {
+    const sizeDiffPercentage = Math.abs(((currentCloudSize - currentLocalSize) / currentLocalSize) * 100);
     const isInSync = sizeDiffPercentage <= getImportThreshold();
     
     syncStatusHtml = `
       <span class="mr-2">
-        <span class="inline-block w-2 h-2 rounded-full ${isInSync ? 'bg-green-500' : 'bg-red-500'}"></span>
-        <span class="ml-1">${isInSync ? 'Sync' : 'Not in sync'}</span>
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background-color:${isInSync ? '#10B981' : '#EF4444'};margin-right:4px"></span>
+        <span>${isInSync ? 'Sync' : 'Not in sync'}</span>
       </span>
     `;
   }
@@ -322,9 +321,10 @@ async function importFromS3() {
 
     let cloudData;
     let s3Data = await s3.getObject(params).promise();
-    cloudFileSize = s3Data.Body.length;
+    currentCloudSize = s3Data.Body.length;
+    currentLocalSize = parseInt(localStorage.getItem("backup-size")) || 0;
 
-    if (cloudFileSize === 0) {
+    if (currentCloudSize === 0) {
       logToConsole("warning", "Empty backup file found in S3");
       wasImportSuccessful = true;
       const message =
@@ -596,7 +596,6 @@ async function backupToS3() {
       throw new Error("Final backup blob is too small or empty");
     }
 
-    // Get current cloud data size for comparison
     let currentCloudSize = 0;
     try {
       const currentCloudData = await s3.getObject({
@@ -2132,7 +2131,7 @@ async function performBackup() {
   }
   if (isExportInProgress) {
     logToConsole("skip", "Previous backup still in progress, queueing this iteration");
-    queueCloudOperation("backup", performBackup);  // Changed from backupToS3 to performBackup
+    queueCloudOperation("backup", performBackup);
     return;
   }
   if (!wasImportSuccessful) {
@@ -2268,7 +2267,6 @@ function exportBackupData() {
       const transaction = db.transaction(["keyval"], "readonly");
       const store = transaction.objectStore("keyval");
 
-      // Create a promise that resolves when all data is collected
       const collectData = new Promise((resolveData) => {
         store.getAllKeys().onsuccess = function (keyEvent) {
           const keys = keyEvent.target.result;
@@ -2286,7 +2284,6 @@ function exportBackupData() {
         };
       });
 
-      // Wait for both transaction completion and data collection
       Promise.all([
         collectData,
         new Promise((resolveTransaction) => {
