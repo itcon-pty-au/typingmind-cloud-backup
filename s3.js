@@ -212,13 +212,7 @@ function updateSyncStatus() {
 
     const getSyncStatus = () => {
       if (localStorage.getItem("sync-mode") === "backup") return '';
-      
-      logToConsole("info", "Size check:", {
-        cloudFileSize,
-        localFileSize,
-        isSynced: Math.abs(cloudFileSize - localFileSize) === 0
-      });
-      
+           
       if (cloudFileSize === 0 || localFileSize === 0) return '';
       const isSynced = Math.abs(cloudFileSize - localFileSize) === 0;
       return `<span class="sync-indicator">
