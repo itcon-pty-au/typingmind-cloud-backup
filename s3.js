@@ -200,8 +200,22 @@ function createSyncStatus() {
 function updateSyncStatus() {
   setTimeout(() => {
     const syncStatus = document.getElementById("sync-status");
-    if (!syncStatus) return;
+    if (!syncStatus) {
+      logToConsole("info", "No sync status element found");
+      return;
+    }
     
+    logToConsole("info", "Updating sync status", {
+      cloudFileSize,
+      localFileSize,
+      isImportInProgress,
+      isExportInProgress,
+      lastImportStatus,
+      lastExportStatus,
+      lastImportTime,
+      lastExportTime
+    });
+
     const formatTime = (timestamp) => {
       if (!timestamp) return "";
       const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -211,8 +225,12 @@ function updateSyncStatus() {
     };
 
     const getSyncStatus = () => {
-      if (cloudFileSize === 0 || localFileSize === 0) return '';
+      if (cloudFileSize === 0 || localFileSize === 0) {
+        logToConsole("info", "Skipping sync indicator - sizes not set", { cloudFileSize, localFileSize });
+        return '';
+      }
       const isSynced = Math.abs(cloudFileSize - localFileSize) === 0;
+      logToConsole("info", "Sync status calculated", { isSynced, cloudFileSize, localFileSize });
       return `<span class="sync-indicator">
         <span class="sync-dot" style="background-color: ${isSynced ? '#10B981' : '#EF4444'}"></span>
         <span>${isSynced ? 'Synced' : 'Not synced'}</span>
@@ -237,12 +255,15 @@ function updateSyncStatus() {
       : "";
 
     const statusContent = [syncIndicator, importStatus, exportStatus].filter(Boolean).join(' ');
+    logToConsole("info", "Final status content", { statusContent });
 
     if (statusContent) {
       syncStatus.innerHTML = statusContent;
       syncStatus.style.display = "block";
+      logToConsole("info", "Sync status updated and shown");
     } else {
       syncStatus.style.display = "none";
+      logToConsole("info", "Sync status hidden - no content");
     }
   }, 100);
 }
@@ -897,7 +918,7 @@ setInterval(updateSyncStatus, 1000);
 (async function checkDOMOrRunBackup() {
   initializeLoggingState();
   await awsSdkPromise;
-  createSyncStatus();
+  createSyncStatus();  // Make sure this line is here
   if (document.readyState !== "loading") {
     await handleDOMReady();
   } else {
