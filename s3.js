@@ -103,7 +103,7 @@ function initializeLoggingState() {
 
 function createSyncStatus() {
   if (document.getElementById("sync-status")) return;
-  
+
   const syncStatus = document.createElement("div");
   syncStatus.id = "sync-status";
 
@@ -202,23 +202,28 @@ function updateSyncStatus() {
   setTimeout(() => {
     const syncStatus = document.getElementById("sync-status");
     if (!syncStatus) return;
-    
+
     const formatTime = (timestamp) => {
       if (!timestamp) return "";
       const seconds = Math.floor((Date.now() - timestamp) / 1000);
-      return seconds < 60 ? `${seconds}s ago` 
-           : seconds < 3600 ? `${Math.floor(seconds / 60)}m ago`
-           : `${Math.floor(seconds / 3600)}h ago`;
+      return seconds < 60
+        ? `${seconds}s ago`
+        : seconds < 3600
+        ? `${Math.floor(seconds / 60)}m ago`
+        : `${Math.floor(seconds / 3600)}h ago`;
     };
 
     const getSyncStatus = () => {
-      if (localStorage.getItem("sync-mode") === "backup") return '';
-           
-      if (cloudFileSize === 0 || localFileSize === 0) return '';
-      const isSynced = !isLocalDataModified && Math.abs(cloudFileSize - localFileSize) === 0;
+      if (localStorage.getItem("sync-mode") === "backup") return "";
+
+      if (cloudFileSize === 0 || localFileSize === 0) return "";
+      const isSynced =
+        !isLocalDataModified && Math.abs(cloudFileSize - localFileSize) === 0;
       return `<span class="sync-indicator">
-        <span class="sync-dot" style="background-color: ${isSynced ? '#10B981' : '#EF4444'}"></span>
-        <span>${isSynced ? 'Synced' : 'Not synced'}</span>
+        <span class="sync-dot" style="background-color: ${
+          isSynced ? "#10B981" : "#EF4444"
+        }"></span>
+        <span>${isSynced ? "Synced" : "Not synced"}</span>
       </span>`;
     };
 
@@ -239,7 +244,9 @@ function updateSyncStatus() {
       ? `⬆️ ${formatTime(lastExportTime)}`
       : "";
 
-    const statusContent = [syncIndicator, importStatus, exportStatus].filter(Boolean).join(' ');
+    const statusContent = [syncIndicator, importStatus, exportStatus]
+      .filter(Boolean)
+      .join(" ");
 
     if (statusContent) {
       syncStatus.innerHTML = statusContent;
@@ -251,41 +258,56 @@ function updateSyncStatus() {
 }
 
 async function processCloudOperationQueue() {
-    if (isProcessingQueue || cloudOperationQueue.length === 0) {
-        return;
+  if (isProcessingQueue || cloudOperationQueue.length === 0) {
+    return;
+  }
+
+  isProcessingQueue = true;
+  logToConsole(
+    "info",
+    `Processing cloud operation queue (${cloudOperationQueue.length} items)`
+  );
+
+  while (cloudOperationQueue.length > 0) {
+    const nextOperation = cloudOperationQueue[0];
+    try {
+      logToConsole("info", `Executing queued operation: ${nextOperation.name}`);
+      await nextOperation.operation();
+
+      // Add a small delay after each operation to ensure proper completion
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      logToConsole("success", `Completed operation: ${nextOperation.name}`);
+      cloudOperationQueue.shift();
+    } catch (error) {
+      logToConsole(
+        "error",
+        `Error executing queued operation ${nextOperation.name}:`,
+        error
+      );
+      cloudOperationQueue.shift();
+
+      // Add a delay after errors to prevent rapid retries
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
+  }
 
-    isProcessingQueue = true;
-    logToConsole("info", `Processing cloud operation queue (${cloudOperationQueue.length} items)`);
-
-    while (cloudOperationQueue.length > 0) {
-        const nextOperation = cloudOperationQueue[0];
-        try {
-            logToConsole("info", `Executing queued operation: ${nextOperation.name}`);
-            await nextOperation.operation();
-            cloudOperationQueue.shift();
-        } catch (error) {
-            logToConsole("error", `Error executing queued operation ${nextOperation.name}:`, error);
-            cloudOperationQueue.shift();
-        }
-    }
-
-    isProcessingQueue = false;
-    logToConsole("info", "Cloud operation queue processing completed");
+  isProcessingQueue = false;
+  logToConsole("info", "Cloud operation queue processing completed");
 }
 
 function queueCloudOperation(name, operation) {
-    if (cloudOperationQueue.length > 0) {
-        const lastOperation = cloudOperationQueue[cloudOperationQueue.length - 1];
-        if (lastOperation.name === name) {
-            logToConsole("skip", `Skipping duplicate operation: ${name}`);
-            return;
-        }
+  if (cloudOperationQueue.length > 0) {
+    const lastOperation = cloudOperationQueue[cloudOperationQueue.length - 1];
+    if (lastOperation.name === name) {
+      logToConsole("skip", `Skipping duplicate operation: ${name}`);
+      return;
     }
+  }
 
-    cloudOperationQueue.push({ name, operation });
-    logToConsole("info", `Added ${name} to cloud operation queue`);
-    processCloudOperationQueue();
+  cloudOperationQueue.push({ name, operation });
+  logToConsole("info", `Added ${name} to cloud operation queue`);
+  processCloudOperationQueue();
 }
 
 async function importFromS3() {
@@ -575,7 +597,7 @@ async function backupToS3() {
     const awsAccessKey = localStorage.getItem("aws-access-key");
     const awsSecretKey = localStorage.getItem("aws-secret-key");
     const awsEndpoint = localStorage.getItem("aws-endpoint");
-    
+
     if (typeof AWS === "undefined") {
       await loadAwsSdk();
     }
@@ -592,24 +614,26 @@ async function backupToS3() {
 
     const s3 = new AWS.S3();
     await cleanupIncompleteMultipartUploads(s3, bucketName);
-    
+
     data = await exportBackupData();
     logToConsole("start", "Starting backup encryption");
     const encryptedData = await encryptData(data);
     blob = new Blob([encryptedData], { type: "application/octet-stream" });
     logToConsole("info", "Blob created");
-    
+
     const dataSize = blob.size;
     localFileSize = dataSize;
 
     try {
-      const currentCloudData = await s3.getObject({
-        Bucket: bucketName,
-        Key: "typingmind-backup.json",
-      }).promise();
+      const currentCloudData = await s3
+        .getObject({
+          Bucket: bucketName,
+          Key: "typingmind-backup.json",
+        })
+        .promise();
       cloudFileSize = currentCloudData.Body.length;
     } catch (error) {
-      if (error.code !== 'NoSuchKey') {
+      if (error.code !== "NoSuchKey") {
         throw error;
       }
       cloudFileSize = 0;
@@ -617,18 +641,22 @@ async function backupToS3() {
     cloudFileSize = dataSize;
     isLocalDataModified = false;
     updateSyncStatus();
-    
+
     if (dataSize < 100) {
       throw new Error("Final backup blob is too small or empty");
     }
 
     const localSize = dataSize;
-    const sizeDiffPercentage = Math.abs(((localSize - cloudFileSize) / cloudFileSize) * 100);
+    const sizeDiffPercentage = Math.abs(
+      ((localSize - cloudFileSize) / cloudFileSize) * 100
+    );
 
     logToConsole("progress", "Export size comparison:", {
       cloudSize: `${cloudFileSize} bytes`,
       localSize: `${localSize} bytes`,
-      difference: `${localSize - cloudFileSize} bytes (${sizeDiffPercentage.toFixed(4)}%)`,
+      difference: `${
+        localSize - cloudFileSize
+      } bytes (${sizeDiffPercentage.toFixed(4)}%)`,
     });
 
     if (sizeDiffPercentage > getExportThreshold()) {
@@ -647,9 +675,7 @@ async function backupToS3() {
       isWaitingForUserInput = false;
       if (!shouldProceed) {
         logToConsole("info", "Export cancelled due to size difference");
-        throw new Error(
-          "Export cancelled due to significant size difference"
-        );
+        throw new Error("Export cancelled due to significant size difference");
       }
     }
 
@@ -748,10 +774,7 @@ async function backupToS3() {
                       UploadId: multipart.UploadId,
                     })
                     .promise();
-                  logToConsole(
-                    "info",
-                    "Multipart upload aborted successfully"
-                  );
+                  logToConsole("info", "Multipart upload aborted successfully");
                 } catch (abortError) {
                   logToConsole(
                     "error",
@@ -779,7 +802,9 @@ async function backupToS3() {
           }
 
           partNumber++;
-          const progress = Math.round(((start + 5 * 1024 * 1024) / dataSize) * 100);
+          const progress = Math.round(
+            ((start + 5 * 1024 * 1024) / dataSize) * 100
+          );
           logToConsole(
             "progress",
             `Overall upload progress: ${Math.min(progress, 100)}%`
@@ -840,25 +865,29 @@ async function backupToS3() {
         logToConsole("error", `Multipart upload failed with error:`, error);
         await cleanupIncompleteMultipartUploads(s3, bucketName);
         logToConsole("info", "Falling back to standard upload...");
-        await s3.putObject({
-          Bucket: bucketName,
-          Key: "typingmind-backup.json",
-          Body: encryptedData,
-          ContentType: "application/json",
-          ServerSideEncryption: "AES256",
-        }).promise();
+        await s3
+          .putObject({
+            Bucket: bucketName,
+            Key: "typingmind-backup.json",
+            Body: encryptedData,
+            ContentType: "application/json",
+            ServerSideEncryption: "AES256",
+          })
+          .promise();
 
         logToConsole("success", `Multipart upload completed successfully`);
       }
     } else {
       logToConsole("start", "Starting standard upload to S3");
-      await s3.putObject({
-        Bucket: bucketName,
-        Key: "typingmind-backup.json",
-        Body: encryptedData,
-        ContentType: "application/json",
-        ServerSideEncryption: "AES256",
-      }).promise();
+      await s3
+        .putObject({
+          Bucket: bucketName,
+          Key: "typingmind-backup.json",
+          Body: encryptedData,
+          ContentType: "application/json",
+          ServerSideEncryption: "AES256",
+        })
+        .promise();
 
       logToConsole("success", `Multipart upload completed successfully`);
     }
@@ -866,29 +895,27 @@ async function backupToS3() {
     await handleTimeBasedBackup();
     const currentTime = new Date().toLocaleString();
     localStorage.setItem("last-cloud-sync", currentTime);
-    
+
     lastExportStatus = "success";
     lastExportTime = Date.now();
-    
+
     const element = document.getElementById("last-sync-msg");
     if (element) {
       element.innerText = `Last sync done at ${currentTime}`;
     }
-    
+
     if (document.querySelector('[data-element-id="sync-modal-dbbackup"]')) {
       await loadBackupFiles();
     }
 
     logToConsole("success", "Export completed successfully");
     return true;
-
   } catch (error) {
     lastExportStatus = "failed";
     lastExportTime = null;
     updateSyncStatus();
     logToConsole("error", "Export failed:", error);
     throw error;
-
   } finally {
     data = null;
     dataStr = null;
@@ -1598,89 +1625,125 @@ let visibilityChangeTimeout = null;
 let isProcessingVisibilityChange = false;
 
 document.addEventListener("visibilitychange", async () => {
-    logToConsole("visibility", `Visibility changed: ${document.hidden ? "hidden" : "visible"}`);
+  logToConsole(
+    "visibility",
+    `Visibility changed: ${document.hidden ? "hidden" : "visible"}`
+  );
 
-    if (backupInterval) {
-        logToConsole("cleanup", `Clearing backup interval ${backupInterval}`);
-        clearInterval(backupInterval);
-        backupInterval = null;
-        backupIntervalRunning = false;
-        localStorage.setItem("activeTabBackupRunning", "false");
+  if (backupInterval) {
+    logToConsole("cleanup", `Clearing backup interval ${backupInterval}`);
+    clearInterval(backupInterval);
+    backupInterval = null;
+    backupIntervalRunning = false;
+    localStorage.setItem("activeTabBackupRunning", "false");
+  }
+
+  if (document.hidden) {
+    logToConsole("info", "Tab hidden - clearing backup intervals");
+    return;
+  }
+
+  const bucketName = localStorage.getItem("aws-bucket");
+  const awsAccessKey = localStorage.getItem("aws-access-key");
+  const awsSecretKey = localStorage.getItem("aws-secret-key");
+
+  if (!bucketName || !awsAccessKey || !awsSecretKey) {
+    logToConsole("info", "Backup not configured, skipping initialization");
+    return;
+  }
+
+  if (visibilityChangeTimeout) {
+    clearTimeout(visibilityChangeTimeout);
+  }
+
+  // Increase the delay before processing visibility change
+  visibilityChangeTimeout = setTimeout(() => {
+    if (isProcessingVisibilityChange) {
+      logToConsole("skip", "Already processing visibility change, skipping");
+      return;
     }
 
-    if (document.hidden) {
-        logToConsole("info", "Tab hidden - clearing backup intervals");
+    isProcessingVisibilityChange = true;
+    try {
+      logToConsole("active", "Tab became active");
+
+      if (isWaitingForUserInput) {
+        logToConsole(
+          "skip",
+          "Tab activation tasks skipped - waiting for user input"
+        );
         return;
-    }
+      }
 
-    const bucketName = localStorage.getItem("aws-bucket");
-    const awsAccessKey = localStorage.getItem("aws-access-key");
-    const awsSecretKey = localStorage.getItem("aws-secret-key");
-
-    if (!bucketName || !awsAccessKey || !awsSecretKey) {
-        logToConsole("info", "Backup not configured, skipping initialization");
+      if (localStorage.getItem("sync-mode") === "backup") {
+        logToConsole(
+          "info",
+          "Running in backup mode - skipping automatic import"
+        );
+        wasImportSuccessful = true;
+        startBackupInterval();
         return;
-    }
+      }
 
-    if (visibilityChangeTimeout) {
-        clearTimeout(visibilityChangeTimeout);
-    }
+      // Check if we recently completed an export
+      const timeSinceLastExport = lastExportTime
+        ? Date.now() - lastExportTime
+        : Infinity;
+      const backupIntervalMs =
+        parseInt(localStorage.getItem("backup-interval") || "60") * 1000 * 2;
+      if (timeSinceLastExport < backupIntervalMs) {
+        // Within 2x the backup interval
+        logToConsole(
+          "skip",
+          `Skipping import as export was completed ${Math.round(
+            timeSinceLastExport / 1000
+          )}s ago (threshold: ${backupIntervalMs / 1000}s)`
+        );
+        wasImportSuccessful = true;
+        startBackupInterval();
+        return;
+      }
 
-    visibilityChangeTimeout = setTimeout(() => {
-        if (isProcessingVisibilityChange) {
-            logToConsole("skip", "Already processing visibility change, skipping");
-            return;
-        }
-
-        isProcessingVisibilityChange = true;
+      queueCloudOperation("visibility-change-import", async () => {
         try {
-            logToConsole("active", "Tab became active");
+          logToConsole("info", "Checking for updates from S3...");
+          const importSuccessful = await checkAndImportBackup();
+          if (importSuccessful) {
+            const currentTime = new Date().toLocaleString();
+            const storedSuffix = localStorage.getItem(
+              "last-daily-backup-in-s3"
+            );
+            const today = new Date();
+            const currentDateSuffix = `${today.getFullYear()}${String(
+              today.getMonth() + 1
+            ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
 
-            if (isWaitingForUserInput) {
-                logToConsole("skip", "Tab activation tasks skipped - waiting for user input");
-                return;
+            var element = document.getElementById("last-sync-msg");
+            if (element !== null) {
+              element.innerText = `Last sync done at ${currentTime}`;
+              element = null;
             }
-
-            if (localStorage.getItem("sync-mode") === "backup") {
-                logToConsole("info", "Running in backup mode - skipping automatic import");
-                wasImportSuccessful = true;
-                startBackupInterval();
-                return;
+            if (!storedSuffix || currentDateSuffix > storedSuffix) {
+              await handleBackupFiles();
             }
-
-            queueCloudOperation("visibility-change-import", async () => {
-                try {
-                    logToConsole("info", "Checking for updates from S3...");
-                    const importSuccessful = await checkAndImportBackup();
-                    if (importSuccessful) {
-                        const currentTime = new Date().toLocaleString();
-                        const storedSuffix = localStorage.getItem("last-daily-backup-in-s3");
-                        const today = new Date();
-                        const currentDateSuffix = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-
-                        var element = document.getElementById("last-sync-msg");
-                        if (element !== null) {
-                            element.innerText = `Last sync done at ${currentTime}`;
-                            element = null;
-                        }
-                        if (!storedSuffix || currentDateSuffix > storedSuffix) {
-                            await handleBackupFiles();
-                        }
-                        logToConsole("success", "Import successful, starting backup interval");
-                        startBackupInterval();
-                    } else {
-                        wasImportSuccessful = true;
-                        startBackupInterval();
-                    }
-                } catch (error) {
-                    logToConsole("error", "Error during tab activation:", error);
-                }
-            });
-        } finally {
-            isProcessingVisibilityChange = false;
-            visibilityChangeTimeout = null;
+            logToConsole(
+              "success",
+              "Import successful, starting backup interval"
+            );
+            startBackupInterval();
+          } else {
+            wasImportSuccessful = true;
+            startBackupInterval();
+          }
+        } catch (error) {
+          logToConsole("error", "Error during tab activation:", error);
         }
-    }, 300);
+      });
+    } finally {
+      isProcessingVisibilityChange = false;
+      visibilityChangeTimeout = null;
+    }
+  }, 300);
 });
 
 async function handleTimeBasedBackup() {
@@ -2111,8 +2174,11 @@ async function performBackup() {
     return;
   }
   if (isExportInProgress) {
-    logToConsole("skip", "Previous backup still in progress, queueing this iteration");
-    queueCloudOperation("backup", performBackup);  // Changed from backupToS3 to performBackup
+    logToConsole(
+      "skip",
+      "Previous backup still in progress, queueing this iteration"
+    );
+    queueCloudOperation("backup", performBackup); // Changed from backupToS3 to performBackup
     return;
   }
   if (!wasImportSuccessful) {
@@ -2238,7 +2304,7 @@ function exportBackupData() {
     };
 
     logToConsole("info", "Starting data export", {
-      localStorageKeys: Object.keys(exportData.localStorage).length
+      localStorageKeys: Object.keys(exportData.localStorage).length,
     });
 
     const request = indexedDB.open("keyval-store", 1);
@@ -2253,7 +2319,7 @@ function exportBackupData() {
         store.getAllKeys().onsuccess = function (keyEvent) {
           const keys = keyEvent.target.result;
           logToConsole("info", "IndexedDB keys found", {
-            count: keys.length
+            count: keys.length,
           });
 
           store.getAll().onsuccess = function (valueEvent) {
@@ -2271,26 +2337,29 @@ function exportBackupData() {
         collectData,
         new Promise((resolveTransaction) => {
           transaction.oncomplete = resolveTransaction;
+        }),
+      ])
+        .then(() => {
+          const hasLocalStorageData =
+            Object.keys(exportData.localStorage).length > 0;
+          const hasIndexedDBData = Object.keys(exportData.indexedDB).length > 0;
+
+          logToConsole("info", "Export data summary", {
+            localStorageKeys: Object.keys(exportData.localStorage).length,
+            indexedDBKeys: Object.keys(exportData.indexedDB).length,
+            localStorageSize: JSON.stringify(exportData.localStorage).length,
+            indexedDBSize: JSON.stringify(exportData.indexedDB).length,
+            hasLocalStorageData,
+            hasIndexedDBData,
+          });
+
+          if (!hasLocalStorageData && !hasIndexedDBData) {
+            reject(new Error("No data found in localStorage or IndexedDB"));
+            return;
+          }
+          resolve(exportData);
         })
-      ]).then(() => {
-        const hasLocalStorageData = Object.keys(exportData.localStorage).length > 0;
-        const hasIndexedDBData = Object.keys(exportData.indexedDB).length > 0;
-
-        logToConsole("info", "Export data summary", {
-          localStorageKeys: Object.keys(exportData.localStorage).length,
-          indexedDBKeys: Object.keys(exportData.indexedDB).length,
-          localStorageSize: JSON.stringify(exportData.localStorage).length,
-          indexedDBSize: JSON.stringify(exportData.indexedDB).length,
-          hasLocalStorageData,
-          hasIndexedDBData
-        });
-
-        if (!hasLocalStorageData && !hasIndexedDBData) {
-          reject(new Error("No data found in localStorage or IndexedDB"));
-          return;
-        }
-        resolve(exportData);
-      }).catch(reject);
+        .catch(reject);
 
       transaction.onerror = () => reject(transaction.error);
     };
@@ -3162,7 +3231,7 @@ function resetSizes() {
 }
 
 const originalSetItem = localStorage.setItem;
-localStorage.setItem = function(key, value) {
+localStorage.setItem = function (key, value) {
   const preserveKeys = [
     "import-size-threshold",
     "export-size-threshold",
@@ -3182,7 +3251,7 @@ localStorage.setItem = function(key, value) {
     "last-daily-backup-in-s3",
     "last-cloud-sync",
   ];
-  
+
   if (!preserveKeys.includes(key)) {
     isLocalDataModified = true;
     updateSyncStatus();
