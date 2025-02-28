@@ -2137,6 +2137,9 @@ function startBackupInterval() {
       `Setting backup interval to ${intervalInMilliseconds / 1000} seconds`
     );
 
+    // Add immediate backup when starting the interval
+    queueCloudOperation("immediate-backup", performBackup);
+
     backupIntervalRunning = true;
     backupInterval = setInterval(() => {
       if (!backupIntervalRunning) {
