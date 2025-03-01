@@ -29,16 +29,19 @@ syncStatusStyles.textContent = `
         position: fixed;
         background: rgba(0, 0, 0, 0.7);
         color: white;
-        padding: 8px 12px;
-        border-radius: 6px;
-        font-size: 13px;
+        padding: 10px 14px;
+        border-radius: 8px;
+        font-size: 14px;
         z-index: 1000;
         cursor: move;
         user-select: none;
         transition: opacity 0.2s;
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 12px;
+        max-width: 80%;
+        flex-wrap: nowrap;
+        overflow-x: auto;
     }
     #sync-status.dragging {
         opacity: 0.7;
@@ -49,13 +52,30 @@ syncStatusStyles.textContent = `
     .sync-indicator {
         display: inline-flex;
         align-items: center;
-        gap: 4px;
+        gap: 8px;
+        flex-shrink: 0;
+        padding: 4px 0;
+    }
+    .import-indicator, .export-indicator {
+        white-space: nowrap;
+        flex-shrink: 0;
+        cursor: pointer;
+        padding: 6px 8px;
+        border-radius: 4px;
+        transition: background-color 0.2s;
+        min-height: 32px;
+        display: inline-flex;
+        align-items: center;
+    }
+    .import-indicator:active, .export-indicator:active {
+        background-color: rgba(255, 255, 255, 0.2);
     }
     .sync-dot {
-        width: 8px;
-        height: 8px;
+        width: 10px;
+        height: 10px;
         border-radius: 50%;
         display: inline-block;
+        flex-shrink: 0;
     }
     @keyframes spin {
         from { transform: rotate(0deg); }
@@ -64,14 +84,17 @@ syncStatusStyles.textContent = `
     .sync-spinner {
         display: inline-block;
         animation: spin 1s linear infinite;
+        font-size: 16px;
     }
     .mode-switch {
         display: inline-flex;
         align-items: center;
         position: relative;
-        margin-left: 4px;
-        height: 16px; /* Match the height of the switch */
-        vertical-align: middle; /* Add this to align with surrounding text */
+        margin-left: 8px;
+        height: 20px;
+        vertical-align: middle;
+        flex-shrink: 0;
+        padding: 4px;
     }
     .mode-switch-input {
         height: 0;
@@ -81,25 +104,25 @@ syncStatusStyles.textContent = `
     }
     .mode-switch-label {
         cursor: pointer;
-        width: 32px;
-        height: 16px;
+        width: 40px;
+        height: 20px;
         background: #444;
-        display: inline-flex; /* Change to inline-flex */
-        align-items: center; /* Center contents vertically */
-        border-radius: 16px;
+        display: inline-flex;
+        align-items: center;
+        border-radius: 20px;
         position: relative;
-        flex-shrink: 0; /* Prevent shrinking */
-        vertical-align: middle; /* Add this to align with text */
+        flex-shrink: 0;
+        vertical-align: middle;
     }
     .mode-switch-label:after {
         content: '';
         position: absolute;
         top: 2px;
         left: 2px;
-        width: 12px;
-        height: 12px;
+        width: 16px;
+        height: 16px;
         background: #fff;
-        border-radius: 12px;
+        border-radius: 16px;
         transition: 0.2s;
     }
     .mode-switch-input:checked + .mode-switch-label {
@@ -110,12 +133,13 @@ syncStatusStyles.textContent = `
         transform: translateX(-100%);
     }
     .mode-switch-text {
-        font-size: 10px;
-        margin-left: 4px;
-        line-height: 1; /* Reset line height */
-        display: inline-flex; /* Change to inline-flex */
+        font-size: 12px;
+        margin-left: 6px;
+        line-height: 1;
+        display: inline-flex;
         align-items: center;
-        vertical-align: middle; /* Add this to align with switch */
+        vertical-align: middle;
+        flex-shrink: 0;
     }
 `;
 document.head.appendChild(syncStatusStyles);
