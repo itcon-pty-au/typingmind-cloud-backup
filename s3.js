@@ -677,6 +677,10 @@ async function importFromS3() {
         if (!shouldProceed) {
           logToConsole("info", `Import cancelled by user`);
           isWaitingForUserInput = false;
+
+          // Add this line to restart the backup interval when import is cancelled
+          startBackupInterval();
+
           return false;
         }
       } catch (error) {
@@ -729,6 +733,12 @@ async function importFromS3() {
     resetSizes();
     updateSyncStatus();
     logToConsole("error", `Import failed with error:`, error);
+
+    // Also ensure backup interval is restarted on error
+    if (!backupIntervalRunning) {
+      startBackupInterval();
+    }
+
     throw error;
   } finally {
     isImportInProgress = false;
