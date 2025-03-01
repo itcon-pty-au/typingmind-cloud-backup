@@ -65,6 +65,49 @@ syncStatusStyles.textContent = `
         display: inline-block;
         animation: spin 1s linear infinite;
     }
+    .mode-switch {
+        display: inline-flex;
+        align-items: center;
+        position: relative;
+        margin-left: 4px;
+    }
+    .mode-switch-input {
+        height: 0;
+        width: 0;
+        visibility: hidden;
+        position: absolute;
+    }
+    .mode-switch-label {
+        cursor: pointer;
+        width: 32px;
+        height: 16px;
+        background: #444;
+        display: block;
+        border-radius: 16px;
+        position: relative;
+    }
+    .mode-switch-label:after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 12px;
+        height: 12px;
+        background: #fff;
+        border-radius: 12px;
+        transition: 0.2s;
+    }
+    .mode-switch-input:checked + .mode-switch-label {
+        background: #10B981;
+    }
+    .mode-switch-input:checked + .mode-switch-label:after {
+        left: calc(100% - 2px);
+        transform: translateX(-100%);
+    }
+    .mode-switch-text {
+        font-size: 10px;
+        margin-left: 4px;
+    }
 `;
 document.head.appendChild(syncStatusStyles);
 
@@ -244,13 +287,51 @@ function updateSyncStatus() {
       ? `⬆️ ${formatTime(lastExportTime)}`
       : "";
 
-    const statusContent = [syncIndicator, importStatus, exportStatus]
+    const currentMode =
+      localStorage.getItem("sync-mode") === "backup" ? "backup" : "sync";
+    const modeSwitch = `
+      <div class="mode-switch" title="Toggle between Sync and Backup modes">
+        <input type="checkbox" id="mode-switch-input" class="mode-switch-input" ${
+          currentMode === "sync" ? "checked" : ""
+        }>
+        <label for="mode-switch-input" class="mode-switch-label"></label>
+        <span class="mode-switch-text">${
+          currentMode === "sync" ? "Sync" : "Backup"
+        }</span>
+      </div>
+    `;
+
+    const statusContent = [
+      syncIndicator,
+      importStatus,
+      exportStatus,
+      modeSwitch,
+    ]
       .filter(Boolean)
       .join(" ");
 
     if (statusContent) {
       syncStatus.innerHTML = statusContent;
       syncStatus.style.display = "block";
+
+      // Add event listener to the mode switch
+      const modeSwitchInput = document.getElementById("mode-switch-input");
+      if (modeSwitchInput) {
+        modeSwitchInput.addEventListener("change", function () {
+          const newMode = this.checked ? "sync" : "backup";
+          localStorage.setItem("sync-mode", newMode);
+          const modeText = document.querySelector(".mode-switch-text");
+          if (modeText) {
+            modeText.textContent = newMode === "sync" ? "Sync" : "Backup";
+          }
+          logToConsole("info", `Mode changed to: ${newMode}`);
+
+          // If switching to sync mode, trigger an import
+          if (newMode === "sync" && !isImportInProgress) {
+            queueCloudOperation("mode-change-import", importFromS3);
+          }
+        });
+      }
     } else {
       syncStatus.style.display = "none";
     }
