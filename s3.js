@@ -241,11 +241,6 @@ function createSyncStatus() {
   document.addEventListener("mouseup", dragEnd);
   document.addEventListener("touchend", dragEnd);
 
-  syncStatus.addEventListener("dblclick", () => {
-    localStorage.setItem("sync-status-hidden", "true");
-    syncStatus.remove();
-  });
-
   document.body.appendChild(syncStatus);
   updateSyncStatus();
 }
@@ -285,7 +280,9 @@ function updateSyncStatus() {
       : lastImportStatus === "failed"
       ? '<span class="sync-failed">⬇️ Failed</span>'
       : lastImportTime
-      ? `⬇️ ${formatTime(lastImportTime)}`
+      ? `<span class="import-indicator" data-action="import">⬇️ ${formatTime(
+          lastImportTime
+        )}</span>`
       : "";
 
     const exportStatus = isExportInProgress
@@ -293,7 +290,9 @@ function updateSyncStatus() {
       : lastExportStatus === "failed"
       ? '<span class="sync-failed">⬆️ Failed</span>'
       : lastExportTime
-      ? `⬆️ ${formatTime(lastExportTime)}`
+      ? `<span class="export-indicator" data-action="export">⬆️ ${formatTime(
+          lastExportTime
+        )}</span>`
       : "";
 
     const currentMode =
@@ -341,10 +340,57 @@ function updateSyncStatus() {
           }
         });
       }
+
+      // Add double-tap event listeners for import/export indicators
+      setupDoubleTapListener(
+        syncStatus.querySelector(".import-indicator"),
+        () => {
+          if (!isImportInProgress) {
+            logToConsole(
+              "info",
+              "Double-tap detected on import indicator, triggering import"
+            );
+            queueCloudOperation("manual-import", importFromS3);
+          }
+        }
+      );
+
+      setupDoubleTapListener(
+        syncStatus.querySelector(".export-indicator"),
+        () => {
+          if (!isExportInProgress) {
+            logToConsole(
+              "info",
+              "Double-tap detected on export indicator, triggering export"
+            );
+            queueCloudOperation("manual-export", backupToS3);
+          }
+        }
+      );
     } else {
       syncStatus.style.display = "none";
     }
   }, 500);
+}
+
+// Helper function to set up double-tap detection
+function setupDoubleTapListener(element, callback) {
+  if (!element) return;
+
+  let lastTap = 0;
+  const tapDelay = 300; // milliseconds
+
+  element.addEventListener("click", function (e) {
+    const currentTime = new Date().getTime();
+    const tapLength = currentTime - lastTap;
+
+    if (tapLength < tapDelay && tapLength > 0) {
+      e.preventDefault();
+      callback();
+    }
+
+    lastTap = currentTime;
+  });
 }
 
 async function processCloudOperationQueue() {
