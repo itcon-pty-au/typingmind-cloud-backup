@@ -71,6 +71,7 @@ syncStatusStyles.textContent = `
         position: relative;
         margin-left: 4px;
         height: 16px; /* Match the height of the switch */
+        vertical-align: middle; /* Add this to align with surrounding text */
     }
     .mode-switch-input {
         height: 0;
@@ -83,10 +84,12 @@ syncStatusStyles.textContent = `
         width: 32px;
         height: 16px;
         background: #444;
-        display: block;
+        display: inline-flex; /* Change to inline-flex */
+        align-items: center; /* Center contents vertically */
         border-radius: 16px;
         position: relative;
         flex-shrink: 0; /* Prevent shrinking */
+        vertical-align: middle; /* Add this to align with text */
     }
     .mode-switch-label:after {
         content: '';
@@ -109,9 +112,10 @@ syncStatusStyles.textContent = `
     .mode-switch-text {
         font-size: 10px;
         margin-left: 4px;
-        line-height: 16px; /* Match the height of the switch */
-        display: flex;
+        line-height: 1; /* Reset line height */
+        display: inline-flex; /* Change to inline-flex */
         align-items: center;
+        vertical-align: middle; /* Add this to align with switch */
     }
 `;
 document.head.appendChild(syncStatusStyles);
