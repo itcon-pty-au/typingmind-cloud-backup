@@ -70,6 +70,7 @@ syncStatusStyles.textContent = `
         align-items: center;
         position: relative;
         margin-left: 4px;
+        height: 16px; /* Match the height of the switch */
     }
     .mode-switch-input {
         height: 0;
@@ -85,6 +86,7 @@ syncStatusStyles.textContent = `
         display: block;
         border-radius: 16px;
         position: relative;
+        flex-shrink: 0; /* Prevent shrinking */
     }
     .mode-switch-label:after {
         content: '';
@@ -107,6 +109,9 @@ syncStatusStyles.textContent = `
     .mode-switch-text {
         font-size: 10px;
         margin-left: 4px;
+        line-height: 16px; /* Match the height of the switch */
+        display: flex;
+        align-items: center;
     }
 `;
 document.head.appendChild(syncStatusStyles);
