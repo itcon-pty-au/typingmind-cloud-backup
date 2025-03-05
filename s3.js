@@ -141,6 +141,22 @@ syncStatusStyles.textContent = `
         vertical-align: middle;
         flex-shrink: 0;
     }
+    .sync-status-container {
+        display: flex;
+        align-items: center;
+        background-color: #1a1a1a;
+        border-radius: 8px;
+        padding: 8px 16px;
+        margin: 8px 0;
+        width: fit-content;
+        max-width: 100%;
+        flex-wrap: nowrap;
+    }
+    @media (max-width: 768px) {
+        .sync-status-container {
+            width: 100%;
+        }
+    }
 `;
 document.head.appendChild(syncStatusStyles);
 
