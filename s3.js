@@ -384,8 +384,7 @@ function updateSyncStatus() {
 
       // Add click handler for minimized state
       syncStatus.addEventListener("click", (e) => {
-        if (syncStatus.classList.contains("minimized") && 
-            !e.target.classList.contains("sync-dot")) {
+        if (syncStatus.classList.contains("minimized")) {
           syncStatus.classList.remove("minimized");
         }
       });
