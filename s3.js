@@ -141,6 +141,35 @@ syncStatusStyles.textContent = `
         vertical-align: middle;
         flex-shrink: 0;
     }
+    .sync-status-eye {
+      cursor: pointer;
+      padding: 4px;
+      color: var(--text-color);
+    }
+
+    .sync-status-tag {
+      position: fixed;
+      background: var(--background-color);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 4px;
+      cursor: pointer;
+      z-index: 1000;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .sync-status-tag.hidden {
+      display: none;
+    }
+
+    .sync-status.hidden {
+      display: none;
+    }
 `;
 document.head.appendChild(syncStatusStyles);
 
@@ -178,14 +207,25 @@ function initializeLoggingState() {
 }
 
 function createSyncStatus() {
-  if (document.getElementById("sync-status")) return;
+  const container = document.createElement('div')
+  container.id = 'sync-status'
+  container.className = 'sync-status'
 
-  const syncStatus = document.createElement("div");
-  syncStatus.id = "sync-status";
+  const eyeIcon = document.createElement('div')
+  eyeIcon.className = 'sync-status-eye'
+  eyeIcon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+  </svg>`
+  container.appendChild(eyeIcon)
+
+  const minimizedTag = document.createElement('div')
+  minimizedTag.className = 'sync-status-tag hidden'
+  minimizedTag.innerHTML = '<div class="sync-indicator"></div>'
+  document.body.appendChild(minimizedTag)
 
   const isHidden = localStorage.getItem("sync-status-hidden") === "true";
   if (isHidden) {
-    syncStatus.style.display = "none";
+    container.style.display = "none";
   }
 
   const savedPosition = JSON.parse(
@@ -194,7 +234,7 @@ function createSyncStatus() {
   );
   Object.entries(savedPosition).forEach(([axis, value]) => {
     const [side, offset] = value.split(":");
-    syncStatus.style[side.trim()] = offset.trim();
+    container.style[side.trim()] = offset.trim();
   });
 
   let isDragging = false;
@@ -213,9 +253,9 @@ function createSyncStatus() {
       initialX = e.clientX - xOffset;
       initialY = e.clientY - yOffset;
     }
-    if (e.target === syncStatus) {
+    if (e.target === container) {
       isDragging = true;
-      syncStatus.classList.add("dragging");
+      container.classList.add("dragging");
     }
   }
 
@@ -223,9 +263,9 @@ function createSyncStatus() {
     if (!isDragging) return;
 
     isDragging = false;
-    syncStatus.classList.remove("dragging");
+    container.classList.remove("dragging");
 
-    const rect = syncStatus.getBoundingClientRect();
+    const rect = container.getBoundingClientRect();
     const position = {
       x:
         rect.left < window.innerWidth / 2
@@ -255,21 +295,35 @@ function createSyncStatus() {
     xOffset = currentX;
     yOffset = currentY;
 
-    syncStatus.style.transform = `translate(${currentX}px, ${currentY}px)`;
+    container.style.transform = `translate(${currentX}px, ${currentY}px)`;
   }
 
-  syncStatus.addEventListener("mousedown", dragStart);
-  syncStatus.addEventListener("touchstart", dragStart, { passive: true });
+  container.addEventListener("mousedown", dragStart);
+  container.addEventListener("touchstart", dragStart, { passive: true });
   document.addEventListener("mousemove", drag);
   document.addEventListener("touchmove", drag, { passive: false });
   document.addEventListener("mouseup", dragEnd);
   document.addEventListener("touchend", dragEnd);
 
-  document.body.appendChild(syncStatus);
-  updateSyncStatus();
+  eyeIcon.addEventListener('click', toggleMinimizedView)
+  minimizedTag.addEventListener('click', toggleMinimizedView)
+  setupDoubleTapListener(minimizedTag, toggleMinimizedView)
+
+  return container;
 }
 
 function updateSyncStatus() {
+  const container = document.getElementById('sync-status')
+  const minimizedTag = document.querySelector('.sync-status-tag')
+  if (!container || !minimizedTag) return
+
+  const status = getSyncStatus()
+  const indicator = container.querySelector('.sync-indicator')
+  const minimizedIndicator = minimizedTag.querySelector('.sync-indicator')
+
+  indicator.className = `sync-indicator ${status.class}`
+  minimizedIndicator.className = `sync-indicator ${status.class}`
+
   setTimeout(() => {
     const syncStatus = document.getElementById("sync-status");
     if (!syncStatus) return;
@@ -1172,6 +1226,18 @@ async function handleDOMReady() {
       );
     }
     return;
+  }
+
+  const syncStatusHidden = localStorage.getItem('sync-status-hidden') === 'true'
+  const container = document.getElementById('sync-status')
+  const minimizedTag = document.querySelector('.sync-status-tag')
+
+  if (syncStatusHidden) {
+    container.classList.add('hidden')
+    minimizedTag.classList.remove('hidden')
+  } else {
+    container.classList.remove('hidden')
+    minimizedTag.classList.add('hidden')
   }
 }
 
@@ -3431,3 +3497,19 @@ localStorage.setItem = function (key, value) {
   }
   originalSetItem.apply(this, arguments);
 };
+
+function toggleMinimizedView() {
+  const container = document.getElementById('sync-status')
+  const minimizedTag = document.querySelector('.sync-status-tag')
+  const isMinimized = container.classList.contains('hidden')
+
+  if (isMinimized) {
+    container.classList.remove('hidden')
+    minimizedTag.classList.add('hidden')
+    localStorage.setItem('sync-status-hidden', 'false')
+  } else {
+    container.classList.add('hidden')
+    minimizedTag.classList.remove('hidden')
+    localStorage.setItem('sync-status-hidden', 'true')
+  }
+}
