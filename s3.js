@@ -74,7 +74,7 @@ syncStatusStyles.textContent = `
     }
     .minimize-btn {
         cursor: pointer;
-        padding: 2px;
+        padding: 8px 12px;
         line-height: 1;
         border-radius: 4px;
         margin-left: auto;
@@ -83,9 +83,16 @@ syncStatusStyles.textContent = `
         position: absolute;
         right: 8px;
         top: 4px;
+        min-width: 32px;
+        min-height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        touch-action: manipulation;
     }
     .minimize-btn:hover {
         opacity: 1;
+        background: rgba(255, 255, 255, 0.1);
     }
     #sync-status.minimized .minimize-btn {
         transform: rotate(180deg);
