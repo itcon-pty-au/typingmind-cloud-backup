@@ -263,10 +263,11 @@ function createSyncStatus() {
   let initialY;
   let xOffset = 0;
   let yOffset = 0;
-  let lastTapTime = 0;
   let dragStarted = false;
   let touchStartX = 0;
   let touchStartY = 0;
+  let lastTapTime = 0;
+  const DOUBLE_TAP_DELAY = 300; // milliseconds
 
   function dragStart(e) {
     if (e.type === "touchstart") {
@@ -354,12 +355,14 @@ function createSyncStatus() {
     const now = Date.now();
     const timeSinceLastTap = now - lastTapTime;
     
-    if (timeSinceLastTap < 300) {
+    if (timeSinceLastTap < DOUBLE_TAP_DELAY) {
       // Double tap detected
       if (syncStatus.classList.contains("minimized")) {
         syncStatus.classList.remove("minimized");
+        isDragging = false; // Prevent drag on double tap
+        e.preventDefault();
+        e.stopPropagation();
       }
-      e.preventDefault();
     } else {
       dragStart(e);
     }
