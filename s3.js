@@ -47,6 +47,11 @@ syncStatusStyles.textContent = `
         max-width: 40px;
         padding: 8px;
         overflow: hidden;
+        justify-content: center;
+    }
+    #sync-status.minimized .sync-indicator {
+        margin: 0;
+        padding: 0;
     }
     #sync-status.minimized .sync-indicator span:not(.sync-dot),
     #sync-status.minimized .import-indicator,
@@ -62,6 +67,8 @@ syncStatusStyles.textContent = `
         margin-left: auto;
         opacity: 0.7;
         transition: opacity 0.2s;
+        position: absolute;
+        right: 8px;
     }
     .minimize-btn:hover {
         opacity: 1;
@@ -374,11 +381,18 @@ function updateSyncStatus() {
 
       const minimizeButton = syncStatus.querySelector(".minimize-btn");
       if (minimizeButton) {
+        // Set initial state
+        if (syncStatus.classList.contains("minimized")) {
+          minimizeButton.textContent = "+";
+          minimizeButton.title = "Expand";
+        }
+
         minimizeButton.addEventListener("click", (e) => {
           e.stopPropagation();
+          const willMinimize = !syncStatus.classList.contains("minimized");
           syncStatus.classList.toggle("minimized");
-          minimizeButton.textContent = syncStatus.classList.contains("minimized") ? "+" : "—";
-          minimizeButton.title = syncStatus.classList.contains("minimized") ? "Expand" : "Minimize";
+          minimizeButton.textContent = willMinimize ? "+" : "—";
+          minimizeButton.title = willMinimize ? "Expand" : "Minimize";
         });
       }
 
