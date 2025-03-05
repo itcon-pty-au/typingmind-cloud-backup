@@ -43,44 +43,6 @@ syncStatusStyles.textContent = `
         flex-wrap: nowrap;
         overflow-x: auto;
     }
-    #sync-status.minimized {
-        padding: 8px;
-        max-width: 40px;
-        height: 40px;
-        border-radius: 8px;
-        overflow: hidden;
-        gap: 6px;
-    }
-    #sync-status .eye-icon {
-        cursor: pointer;
-        width: 16px;
-        height: 16px;
-        flex-shrink: 0;
-        transition: transform 0.2s;
-    }
-    #sync-status .eye-icon:hover {
-        transform: scale(1.1);
-    }
-    #sync-status.minimized .eye-icon {
-        display: none;
-    }
-    #sync-status .sync-content {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        transition: opacity 0.2s;
-    }
-    #sync-status.minimized .sync-content {
-        opacity: 0;
-        width: 0;
-        gap: 0;
-    }
-    #sync-status.minimized .sync-dot {
-        margin: 0;
-    }
-    #sync-status.minimized .sync-spinner {
-        margin: 0;
-    }
     #sync-status.dragging {
         opacity: 0.7;
     }
@@ -222,28 +184,9 @@ function createSyncStatus() {
   syncStatus.id = "sync-status";
 
   const isHidden = localStorage.getItem("sync-status-hidden") === "true";
-  const isMinimized = localStorage.getItem("sync-status-minimized") === "true";
-  
   if (isHidden) {
     syncStatus.style.display = "none";
   }
-  if (isMinimized) {
-    syncStatus.classList.add("minimized");
-  }
-
-  const eyeIcon = document.createElement("div");
-  eyeIcon.className = "eye-icon";
-  eyeIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-eye-slash" viewBox="0 0 16 16">
-    <path d="M13.359 11.238C15.06 9.72 16 8 16 8s-3-5.5-8-5.5a7 7 0 0 0-2.79.588l.77.771A6 6 0 0 1 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8q-.086.13-.195.288c-.335.48-.83 1.12-1.465 1.755q-.247.248-.517.486z"/>
-    <path d="M11.297 9.176a3.5 3.5 0 0 0-4.474-4.474l.823.823a2.5 2.5 0 0 1 2.829 2.829zm-2.943 1.299.822.822a3.5 3.5 0 0 1-4.474-4.474l.823.823a2.5 2.5 0 0 0 2.829 2.829"/>
-    <path d="M3.35 5.47q-.27.24-.518.487A13 13 0 0 0 1.172 8l.195.288c.335.48.83 1.12 1.465 1.755C4.121 11.332 5.881 12.5 8 12.5c.716 0 1.39-.133 2.02-.36l.77.772A7 7 0 0 1 8 13.5C3 13.5 0 8 0 8s.939-1.721 2.641-3.238l.708.709zm10.296 8.884-12-12 .708-.708 12 12z"/>
-  </svg>`;
-  
-  const contentDiv = document.createElement("div");
-  contentDiv.className = "sync-content";
-
-  syncStatus.appendChild(eyeIcon);
-  syncStatus.appendChild(contentDiv);
 
   const savedPosition = JSON.parse(
     localStorage.getItem("sync-status-position") ||
@@ -261,92 +204,47 @@ function createSyncStatus() {
   let initialY;
   let xOffset = 0;
   let yOffset = 0;
-  let longPressTimer;
-  let isLongPress = false;
 
   function dragStart(e) {
     if (e.type === "touchstart") {
       initialX = e.touches[0].clientX - xOffset;
       initialY = e.touches[0].clientY - yOffset;
-      
-      // Start long press timer for touch
-      longPressTimer = setTimeout(() => {
-        isLongPress = true;
-        isDragging = true;
-        syncStatus.classList.add("dragging");
-      }, 500);
     } else {
       initialX = e.clientX - xOffset;
       initialY = e.clientY - yOffset;
-      if (e.target === syncStatus || e.target.closest("#sync-status")) {
-        isDragging = true;
-        syncStatus.classList.add("dragging");
-      }
+    }
+    if (e.target === syncStatus) {
+      isDragging = true;
+      syncStatus.classList.add("dragging");
     }
   }
 
-  function dragEnd(e) {
-    clearTimeout(longPressTimer);
-    
-    if (!isDragging) {
-      // Handle click/tap when not dragging
-      if (e.target === eyeIcon || e.target.closest(".eye-icon")) {
-        syncStatus.classList.toggle("minimized");
-        localStorage.setItem("sync-status-minimized", syncStatus.classList.contains("minimized"));
-      }
-      return;
-    }
+  function dragEnd() {
+    if (!isDragging) return;
 
     isDragging = false;
-    isLongPress = false;
     syncStatus.classList.remove("dragging");
 
     const rect = syncStatus.getBoundingClientRect();
-    const snapThreshold = 50;
-    let newX, newY;
-
-    // Snap to edges
-    if (rect.left < snapThreshold) {
-      newX = "left: 0px";
-    } else if (window.innerWidth - rect.right < snapThreshold) {
-      newX = `right: 0px`;
-    } else {
-      newX = rect.left < window.innerWidth / 2
-        ? `left: ${rect.left}px`
-        : `right: ${window.innerWidth - rect.right}px`;
-    }
-
-    if (rect.top < snapThreshold) {
-      newY = "top: 0px";
-    } else if (window.innerHeight - rect.bottom < snapThreshold) {
-      newY = `bottom: 0px`;
-    } else {
-      newY = rect.top < window.innerHeight / 2
-        ? `top: ${rect.top}px`
-        : `bottom: ${window.innerHeight - rect.bottom}px`;
-    }
-
-    const position = { x: newX, y: newY };
+    const position = {
+      x:
+        rect.left < window.innerWidth / 2
+          ? `left: ${rect.left}px`
+          : `right: ${window.innerWidth - rect.right}px`,
+      y:
+        rect.top < window.innerHeight / 2
+          ? `top: ${rect.top}px`
+          : `bottom: ${window.innerHeight - rect.bottom}px`,
+    };
     localStorage.setItem("sync-status-position", JSON.stringify(position));
-    
-    // Apply new position
-    Object.entries(position).forEach(([axis, value]) => {
-      const [side, offset] = value.split(":");
-      syncStatus.style[side.trim()] = offset.trim();
-    });
-    
-    // Reset transform
-    syncStatus.style.transform = "";
-    xOffset = 0;
-    yOffset = 0;
   }
 
   function drag(e) {
     if (!isDragging) return;
-    
+
+    e.preventDefault();
+
     if (e.type === "touchmove") {
-      if (!isLongPress) return;
-      e.preventDefault();
       currentX = e.touches[0].clientX - initialX;
       currentY = e.touches[0].clientY - initialY;
     } else {
@@ -360,20 +258,12 @@ function createSyncStatus() {
     syncStatus.style.transform = `translate(${currentX}px, ${currentY}px)`;
   }
 
-  function touchCancel() {
-    clearTimeout(longPressTimer);
-    isLongPress = false;
-    isDragging = false;
-    syncStatus.classList.remove("dragging");
-  }
-
   syncStatus.addEventListener("mousedown", dragStart);
   syncStatus.addEventListener("touchstart", dragStart, { passive: true });
   document.addEventListener("mousemove", drag);
   document.addEventListener("touchmove", drag, { passive: false });
   document.addEventListener("mouseup", dragEnd);
   document.addEventListener("touchend", dragEnd);
-  document.addEventListener("touchcancel", touchCancel);
 
   document.body.appendChild(syncStatus);
   updateSyncStatus();
@@ -383,9 +273,6 @@ function updateSyncStatus() {
   setTimeout(() => {
     const syncStatus = document.getElementById("sync-status");
     if (!syncStatus) return;
-
-    const contentDiv = syncStatus.querySelector(".sync-content");
-    if (!contentDiv) return;
 
     const formatTime = (timestamp) => {
       if (!timestamp) return "";
@@ -407,7 +294,7 @@ function updateSyncStatus() {
         <span class="sync-dot" style="background-color: ${
           isSynced ? "#10B981" : "#EF4444"
         }"></span>
-        <span class="sync-text">${isSynced ? "Synced" : "Not synced"}</span>
+        <span>${isSynced ? "Synced" : "Not synced"}</span>
       </span>`;
     };
 
@@ -456,7 +343,7 @@ function updateSyncStatus() {
       .join(" ");
 
     if (statusContent) {
-      contentDiv.innerHTML = statusContent;
+      syncStatus.innerHTML = statusContent;
       syncStatus.style.display = "block";
 
       // Add event listener to the mode switch
@@ -480,7 +367,7 @@ function updateSyncStatus() {
 
       // Add double-tap event listeners for import/export indicators
       setupDoubleTapListener(
-        contentDiv.querySelector(".import-indicator"),
+        syncStatus.querySelector(".import-indicator"),
         () => {
           if (!isImportInProgress) {
             logToConsole(
@@ -493,7 +380,7 @@ function updateSyncStatus() {
       );
 
       setupDoubleTapListener(
-        contentDiv.querySelector(".export-indicator"),
+        syncStatus.querySelector(".export-indicator"),
         () => {
           if (!isExportInProgress) {
             logToConsole(
@@ -2538,7 +2425,6 @@ function importDataToStorage(data) {
       "sync-mode",
       "sync-status-hidden",
       "sync-status-position",
-      "sync-status-minimized",
       "activeTabBackupRunning",
       "last-time-based-backup",
       "last-daily-backup-in-s3",
@@ -3533,7 +3419,6 @@ localStorage.setItem = function (key, value) {
     "sync-mode",
     "sync-status-hidden",
     "sync-status-position",
-    "sync-status-minimized",
     "activeTabBackupRunning",
     "last-time-based-backup",
     "last-daily-backup-in-s3",
