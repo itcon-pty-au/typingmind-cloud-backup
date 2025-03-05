@@ -269,6 +269,7 @@ function createSyncStatus() {
     if (e.target === syncStatus || syncStatus.contains(e.target)) {
       isDragging = true;
       syncStatus.style.opacity = "0.7";
+      syncStatus.style.transition = "none";
     }
   }
 
@@ -277,17 +278,16 @@ function createSyncStatus() {
 
     isDragging = false;
     syncStatus.style.opacity = "1";
+    syncStatus.style.transition = "all 0.3s ease";
 
     const rect = syncStatus.getBoundingClientRect();
     const position = {
-      x:
-        rect.left < window.innerWidth / 2
-          ? `left: ${rect.left}px`
-          : `right: ${window.innerWidth - rect.right}px`,
-      y:
-        rect.top < window.innerHeight / 2
-          ? `top: ${rect.top}px`
-          : `bottom: ${window.innerHeight - rect.bottom}px`,
+      x: rect.left < window.innerWidth / 2
+        ? `left: ${rect.left}px`
+        : `right: ${window.innerWidth - rect.right}px`,
+      y: rect.top < window.innerHeight / 2
+        ? `top: ${rect.top}px`
+        : `bottom: ${window.innerHeight - rect.bottom}px`,
     };
     localStorage.setItem("sync-status-position", JSON.stringify(position));
   }
@@ -311,12 +311,30 @@ function createSyncStatus() {
     syncStatus.style.transform = `translate(${currentX}px, ${currentY}px)`;
   }
 
+  let touchStartTime = 0;
+  let touchTimeout;
+
   syncStatus.addEventListener("mousedown", dragStart);
-  syncStatus.addEventListener("touchstart", dragStart, { passive: true });
+  syncStatus.addEventListener("touchstart", (e) => {
+    touchStartTime = Date.now();
+    touchTimeout = setTimeout(() => {
+      dragStart(e);
+    }, 100);
+  }, { passive: true });
+
   document.addEventListener("mousemove", drag);
   document.addEventListener("touchmove", drag, { passive: false });
   document.addEventListener("mouseup", dragEnd);
-  document.addEventListener("touchend", dragEnd);
+  document.addEventListener("touchend", () => {
+    clearTimeout(touchTimeout);
+    const touchDuration = Date.now() - touchStartTime;
+    if (touchDuration < 100 && !isDragging) {
+      if (syncStatus.classList.contains("minimized")) {
+        syncStatus.classList.remove("minimized");
+      }
+    }
+    dragEnd();
+  });
 
   document.body.appendChild(syncStatus);
   updateSyncStatus();
