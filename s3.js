@@ -1,4 +1,4 @@
-const VERSION = "20250305-21:43";
+const VERSION = "20250305-22:10";
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -29,7 +29,7 @@ syncStatusStyles.textContent = `
         position: fixed;
         background: rgba(0, 0, 0, 0.7);
         color: white;
-        padding: 6px 14px;
+        padding: 10px 14px;
         border-radius: 8px;
         font-size: 14px;
         z-index: 1000;
@@ -44,44 +44,15 @@ syncStatusStyles.textContent = `
         overflow-x: auto;
     }
     #sync-status.minimized {
-        max-width: 48px;
-        min-width: 48px;
-        height: 48px;
-        padding: 0;
+        max-width: 40px;
+        padding: 8px;
         overflow: hidden;
-        display: flex;
         justify-content: center;
-        align-items: center;
-        border-radius: 24px;
-        touch-action: none;
-        transform-origin: right center;
-    }
-    #sync-status.expand-left {
-        transform-origin: right center;
-        right: 20px;
-        left: auto !important;
-    }
-    #sync-status.minimized.expand-left {
-        transform-origin: right center;
-    }
-    #sync-status.expand-left:not(.minimized) {
-        max-width: min(400px, calc(100vw - 40px));
+        cursor: pointer;
     }
     #sync-status.minimized .sync-indicator {
         margin: 0;
         padding: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 100%;
-        height: 100%;
-        cursor: move;
-    }
-    #sync-status.minimized .sync-dot {
-        width: 14px;
-        height: 14px;
-        margin: 0;
-        cursor: move;
     }
     #sync-status.minimized .sync-indicator span:not(.sync-dot),
     #sync-status.minimized .import-indicator,
@@ -92,22 +63,18 @@ syncStatusStyles.textContent = `
     }
     .minimize-btn {
         cursor: pointer;
-        padding: 8px;
+        padding: 2px;
         line-height: 1;
         border-radius: 4px;
+        margin-left: auto;
         opacity: 0.7;
         transition: opacity 0.2s;
-        min-width: 32px;
-        min-height: 32px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        touch-action: manipulation;
-        margin-left: 4px;
+        position: absolute;
+        right: 8px;
+        top: 4px;
     }
     .minimize-btn:hover {
         opacity: 1;
-        background: rgba(255, 255, 255, 0.1);
     }
     #sync-status.minimized .minimize-btn {
         transform: rotate(180deg);
@@ -248,20 +215,15 @@ function createSyncStatus() {
 
   const syncStatus = document.createElement("div");
   syncStatus.id = "sync-status";
-  syncStatus.classList.add("minimized");
 
   const isHidden = localStorage.getItem("sync-status-hidden") === "true";
   if (isHidden) {
     syncStatus.style.display = "none";
   }
 
-  // Set default position to top right if no position is saved
-  const defaultPosition = {
-    x: "right: 20px",
-    y: "top: 20px"
-  };
   const savedPosition = JSON.parse(
-    localStorage.getItem("sync-status-position") || JSON.stringify(defaultPosition)
+    localStorage.getItem("sync-status-position") ||
+      '{"x": "right: 20px", "y": "top: 20px"}'
   );
   Object.entries(savedPosition).forEach(([axis, value]) => {
     const [side, offset] = value.split(":");
@@ -275,24 +237,18 @@ function createSyncStatus() {
   let initialY;
   let xOffset = 0;
   let yOffset = 0;
-  let dragStarted = false;
-  let touchStartX = 0;
-  let touchStartY = 0;
-  let lastTapTime = 0;
-  let touchStartTime = 0;
-  const DOUBLE_TAP_DELAY = 300; // milliseconds
-  const LONG_PRESS_DELAY = 200; // milliseconds for starting drag
 
   function dragStart(e) {
     if (e.type === "touchstart") {
       initialX = e.touches[0].clientX - xOffset;
       initialY = e.touches[0].clientY - yOffset;
-      touchStartX = e.touches[0].clientX;
-      touchStartY = e.touches[0].clientY;
-      touchStartTime = Date.now();
     } else {
       initialX = e.clientX - xOffset;
       initialY = e.clientY - yOffset;
+    }
+    if (e.target === syncStatus) {
+      isDragging = true;
+      syncStatus.classList.add("dragging");
     }
   }
 
@@ -300,67 +256,34 @@ function createSyncStatus() {
     if (!isDragging) return;
 
     isDragging = false;
-    dragStarted = false;
-    syncStatus.style.transition = "all 0.3s ease";
-    syncStatus.style.opacity = "1";
+    syncStatus.classList.remove("dragging");
 
     const rect = syncStatus.getBoundingClientRect();
-    const isNearRight = rect.right > window.innerWidth - 100;
-    
-    if (isNearRight) {
-      syncStatus.classList.add("expand-left");
-    } else {
-      syncStatus.classList.remove("expand-left");
-    }
-
     const position = {
-      x: rect.left < window.innerWidth / 2
-        ? `left: ${rect.left}px`
-        : `right: ${window.innerWidth - rect.right}px`,
-      y: rect.top < window.innerHeight / 2
-        ? `top: ${rect.top}px`
-        : `bottom: ${window.innerHeight - rect.bottom}px`,
+      x:
+        rect.left < window.innerWidth / 2
+          ? `left: ${rect.left}px`
+          : `right: ${window.innerWidth - rect.right}px`,
+      y:
+        rect.top < window.innerHeight / 2
+          ? `top: ${rect.top}px`
+          : `bottom: ${window.innerHeight - rect.bottom}px`,
     };
     localStorage.setItem("sync-status-position", JSON.stringify(position));
   }
 
   function drag(e) {
-    if (!isDragging && e.type === "touchmove") {
-      const touchDuration = Date.now() - touchStartTime;
-      if (touchDuration > LONG_PRESS_DELAY) {
-        isDragging = true;
-        syncStatus.style.transition = "none";
-      }
-    }
-
     if (!isDragging) return;
 
     e.preventDefault();
-    
-    let currentClientX, currentClientY;
-    
+
     if (e.type === "touchmove") {
-      currentClientX = e.touches[0].clientX;
-      currentClientY = e.touches[0].clientY;
+      currentX = e.touches[0].clientX - initialX;
+      currentY = e.touches[0].clientY - initialY;
     } else {
-      currentClientX = e.clientX;
-      currentClientY = e.clientY;
+      currentX = e.clientX - initialX;
+      currentY = e.clientY - initialY;
     }
-
-    // Only start showing drag feedback if moved more than 3px
-    if (!dragStarted) {
-      const moveX = Math.abs(currentClientX - touchStartX);
-      const moveY = Math.abs(currentClientY - touchStartY);
-      if (moveX > 3 || moveY > 3) {
-        dragStarted = true;
-        syncStatus.style.opacity = "0.7";
-      } else {
-        return;
-      }
-    }
-
-    currentX = currentClientX - initialX;
-    currentY = currentClientY - initialY;
 
     xOffset = currentX;
     yOffset = currentY;
@@ -368,58 +291,12 @@ function createSyncStatus() {
     syncStatus.style.transform = `translate(${currentX}px, ${currentY}px)`;
   }
 
-  // Remove any existing click handlers
-  syncStatus.removeEventListener("click", () => {});
-  
-  // Handle mouse events
-  syncStatus.addEventListener("mousedown", (e) => {
-    if (!syncStatus.classList.contains("minimized")) {
-      dragStart(e);
-    }
-  });
-
-  // Handle touch events with double tap detection
-  syncStatus.addEventListener("touchstart", (e) => {
-    const now = Date.now();
-    const timeSinceLastTap = now - lastTapTime;
-    
-    if (timeSinceLastTap < DOUBLE_TAP_DELAY) {
-      // Double tap detected
-      if (syncStatus.classList.contains("minimized")) {
-        const rect = syncStatus.getBoundingClientRect();
-        const isNearRight = rect.right > window.innerWidth - 100;
-        
-        if (isNearRight) {
-          const rightOffset = window.innerWidth - rect.right;
-          syncStatus.style.right = rightOffset + "px";
-          syncStatus.style.left = "auto";
-          syncStatus.classList.add("expand-left");
-        } else {
-          syncStatus.classList.remove("expand-left");
-        }
-        
-        syncStatus.classList.remove("minimized");
-        isDragging = false;
-        dragStarted = false;
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    } else {
-      dragStart(e);
-    }
-    lastTapTime = now;
-  }, { passive: false });
-
+  syncStatus.addEventListener("mousedown", dragStart);
+  syncStatus.addEventListener("touchstart", dragStart, { passive: true });
   document.addEventListener("mousemove", drag);
   document.addEventListener("touchmove", drag, { passive: false });
   document.addEventListener("mouseup", dragEnd);
-  document.addEventListener("touchend", (e) => {
-    const touchDuration = Date.now() - touchStartTime;
-    if (touchDuration < LONG_PRESS_DELAY && !dragStarted) {
-      isDragging = false;
-    }
-    dragEnd();
-  });
+  document.addEventListener("touchend", dragEnd);
 
   document.body.appendChild(syncStatus);
   updateSyncStatus();
@@ -434,10 +311,10 @@ function updateSyncStatus() {
       if (!timestamp) return "";
       const seconds = Math.floor((Date.now() - timestamp) / 1000);
       return seconds < 60
-        ? `${seconds}s`
+        ? `${seconds}s ago`
         : seconds < 3600
-        ? `${Math.floor(seconds / 60)}m`
-        : `${Math.floor(seconds / 3600)}h`;
+        ? `${Math.floor(seconds / 60)}m ago`
+        : `${Math.floor(seconds / 3600)}h ago`;
     };
 
     const getSyncStatus = () => {
@@ -450,6 +327,7 @@ function updateSyncStatus() {
         <span class="sync-dot" style="background-color: ${
           isSynced ? "#10B981" : "#EF4444"
         }"></span>
+        <span>${isSynced ? "Synced" : "Not synced"}</span>
       </span>`;
     };
 
@@ -485,15 +363,17 @@ function updateSyncStatus() {
         <span class="mode-switch-text">${
           localStorage.getItem("sync-mode") === "backup" ? "Backup" : "Sync"
         }</span>
-        <button class="minimize-btn" title="Minimize">—</button>
       </div>
     `;
+
+    const minimizeBtn = '<button class="minimize-btn" title="Minimize">—</button>';
 
     const statusContent = [
       syncIndicator,
       importStatus,
       exportStatus,
-      modeSwitch
+      modeSwitch,
+      minimizeBtn
     ]
       .filter(Boolean)
       .join(" ");
