@@ -215,6 +215,7 @@ function createSyncStatus() {
 
   const syncStatus = document.createElement("div");
   syncStatus.id = "sync-status";
+  syncStatus.classList.add("minimized");
 
   const isHidden = localStorage.getItem("sync-status-hidden") === "true";
   if (isHidden) {
@@ -381,6 +382,7 @@ function updateSyncStatus() {
     if (statusContent) {
       syncStatus.innerHTML = statusContent;
       syncStatus.style.display = "block";
+      syncStatus.classList.add("minimized");
 
       // Add click handler for minimized state
       syncStatus.addEventListener("click", (e) => {
