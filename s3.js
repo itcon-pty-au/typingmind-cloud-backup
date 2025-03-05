@@ -54,6 +54,18 @@ syncStatusStyles.textContent = `
         align-items: center;
         border-radius: 24px;
         touch-action: none;
+        transform-origin: right center;
+    }
+    #sync-status.expand-left {
+        transform-origin: right center;
+        right: 20px;
+        left: auto !important;
+    }
+    #sync-status.minimized.expand-left {
+        transform-origin: right center;
+    }
+    #sync-status.expand-left:not(.minimized) {
+        max-width: min(400px, calc(100vw - 40px));
     }
     #sync-status.minimized .sync-indicator {
         margin: 0;
@@ -293,6 +305,15 @@ function createSyncStatus() {
     syncStatus.style.opacity = "1";
 
     const rect = syncStatus.getBoundingClientRect();
+    const isNearRight = rect.right > window.innerWidth - 100;
+    
+    // Determine if we should expand to the left
+    if (isNearRight) {
+      syncStatus.classList.add("expand-left");
+    } else {
+      syncStatus.classList.remove("expand-left");
+    }
+
     const position = {
       x: rect.left < window.innerWidth / 2
         ? `left: ${rect.left}px`
@@ -357,6 +378,21 @@ function createSyncStatus() {
     if (timeSinceLastTap < DOUBLE_TAP_DELAY) {
       // Double tap detected
       if (syncStatus.classList.contains("minimized")) {
+        // Before removing minimized class, check position and adjust if needed
+        const rect = syncStatus.getBoundingClientRect();
+        const isNearRight = rect.right > window.innerWidth - 100;
+        
+        if (isNearRight) {
+          // Set right position explicitly before expanding
+          const rightOffset = window.innerWidth - rect.right;
+          syncStatus.style.right = rightOffset + "px";
+          syncStatus.style.left = "auto";
+          // Add class for right-aligned expansion
+          syncStatus.classList.add("expand-left");
+        } else {
+          syncStatus.classList.remove("expand-left");
+        }
+        
         syncStatus.classList.remove("minimized");
         isDragging = false;
         e.preventDefault();
