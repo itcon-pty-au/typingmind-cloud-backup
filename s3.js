@@ -1244,6 +1244,10 @@ async function handleDOMReady() {
     return;
   }
 
+  insertCloudSyncButton()
+  const syncStatus = createSyncStatus()
+  document.body.appendChild(syncStatus)
+
   const syncStatusHidden = localStorage.getItem('sync-status-hidden') === 'true'
   const container = document.getElementById('sync-status')
   const minimizedTag = document.querySelector('.sync-status-tag')
