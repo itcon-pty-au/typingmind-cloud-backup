@@ -387,9 +387,8 @@ function updateSyncStatus() {
     if (statusContent) {
       syncStatus.innerHTML = statusContent;
       syncStatus.style.display = "block";
-      syncStatus.classList.add("minimized");
 
-      // Add click handler for minimized state 
+      // Add click handler for minimized state
       syncStatus.addEventListener("click", (e) => {
         if (syncStatus.classList.contains("minimized")) {
           syncStatus.classList.remove("minimized");
