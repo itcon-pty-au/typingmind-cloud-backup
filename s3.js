@@ -307,7 +307,6 @@ function createSyncStatus() {
     const rect = syncStatus.getBoundingClientRect();
     const isNearRight = rect.right > window.innerWidth - 100;
     
-    // Determine if we should expand to the left
     if (isNearRight) {
       syncStatus.classList.add("expand-left");
     } else {
@@ -327,7 +326,6 @@ function createSyncStatus() {
 
   function drag(e) {
     if (!isDragging && e.type === "touchmove") {
-      // Check if it's a long press
       const touchDuration = Date.now() - touchStartTime;
       if (touchDuration > LONG_PRESS_DELAY) {
         isDragging = true;
@@ -370,7 +368,17 @@ function createSyncStatus() {
     syncStatus.style.transform = `translate(${currentX}px, ${currentY}px)`;
   }
 
-  syncStatus.addEventListener("mousedown", dragStart);
+  // Remove any existing click handlers
+  syncStatus.removeEventListener("click", () => {});
+  
+  // Handle mouse events
+  syncStatus.addEventListener("mousedown", (e) => {
+    if (!syncStatus.classList.contains("minimized")) {
+      dragStart(e);
+    }
+  });
+
+  // Handle touch events with double tap detection
   syncStatus.addEventListener("touchstart", (e) => {
     const now = Date.now();
     const timeSinceLastTap = now - lastTapTime;
@@ -378,16 +386,13 @@ function createSyncStatus() {
     if (timeSinceLastTap < DOUBLE_TAP_DELAY) {
       // Double tap detected
       if (syncStatus.classList.contains("minimized")) {
-        // Before removing minimized class, check position and adjust if needed
         const rect = syncStatus.getBoundingClientRect();
         const isNearRight = rect.right > window.innerWidth - 100;
         
         if (isNearRight) {
-          // Set right position explicitly before expanding
           const rightOffset = window.innerWidth - rect.right;
           syncStatus.style.right = rightOffset + "px";
           syncStatus.style.left = "auto";
-          // Add class for right-aligned expansion
           syncStatus.classList.add("expand-left");
         } else {
           syncStatus.classList.remove("expand-left");
@@ -395,6 +400,7 @@ function createSyncStatus() {
         
         syncStatus.classList.remove("minimized");
         isDragging = false;
+        dragStarted = false;
         e.preventDefault();
         e.stopPropagation();
       }
@@ -409,7 +415,6 @@ function createSyncStatus() {
   document.addEventListener("mouseup", dragEnd);
   document.addEventListener("touchend", (e) => {
     const touchDuration = Date.now() - touchStartTime;
-    // If it was a short tap and we haven't started dragging, don't do anything
     if (touchDuration < LONG_PRESS_DELAY && !dragStarted) {
       isDragging = false;
     }
