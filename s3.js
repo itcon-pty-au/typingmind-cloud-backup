@@ -44,15 +44,26 @@ syncStatusStyles.textContent = `
         overflow-x: auto;
     }
     #sync-status.minimized {
-        max-width: 40px;
-        padding: 8px;
+        max-width: 48px;
+        min-width: 48px;
+        height: 48px;
+        padding: 12px;
         overflow: hidden;
         justify-content: center;
-        cursor: pointer;
+        align-items: center;
+        border-radius: 24px;
+        touch-action: none;
     }
     #sync-status.minimized .sync-indicator {
         margin: 0;
         padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    #sync-status.minimized .sync-dot {
+        width: 14px;
+        height: 14px;
     }
     #sync-status.minimized .sync-indicator span:not(.sync-dot),
     #sync-status.minimized .import-indicator,
@@ -215,6 +226,7 @@ function createSyncStatus() {
 
   const syncStatus = document.createElement("div");
   syncStatus.id = "sync-status";
+  syncStatus.classList.add("minimized");
 
   const isHidden = localStorage.getItem("sync-status-hidden") === "true";
   if (isHidden) {
@@ -246,9 +258,9 @@ function createSyncStatus() {
       initialX = e.clientX - xOffset;
       initialY = e.clientY - yOffset;
     }
-    if (e.target === syncStatus) {
+    if (e.target === syncStatus || syncStatus.contains(e.target)) {
       isDragging = true;
-      syncStatus.classList.add("dragging");
+      syncStatus.style.opacity = "0.7";
     }
   }
 
@@ -256,7 +268,7 @@ function createSyncStatus() {
     if (!isDragging) return;
 
     isDragging = false;
-    syncStatus.classList.remove("dragging");
+    syncStatus.style.opacity = "1";
 
     const rect = syncStatus.getBoundingClientRect();
     const position = {
