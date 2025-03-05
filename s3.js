@@ -1,4 +1,4 @@
-const VERSION = "20250217-10:20";
+const VERSION = "20250305-21:43";
 let backupIntervalRunning = false;
 let wasImportSuccessful = false;
 let isExportInProgress = false;
@@ -63,11 +63,13 @@ syncStatusStyles.textContent = `
         justify-content: center;
         width: 100%;
         height: 100%;
+        cursor: move;
     }
     #sync-status.minimized .sync-dot {
         width: 14px;
         height: 14px;
         margin: 0;
+        cursor: move;
     }
     #sync-status.minimized .sync-indicator span:not(.sync-dot),
     #sync-status.minimized .import-indicator,
@@ -277,10 +279,17 @@ function createSyncStatus() {
       initialY = e.clientY - yOffset;
     }
     
+    // Make sure the sync-dot is draggable in minimized state
+    const isMinimized = syncStatus.classList.contains("minimized");
+    const isSyncDot = e.target.classList.contains("sync-dot");
+    const isSyncIndicator = e.target.classList.contains("sync-indicator");
+    
     if (e.target === syncStatus || syncStatus.contains(e.target)) {
-      isDragging = true;
-      dragStarted = false;
-      syncStatus.style.transition = "none";
+      if (!isMinimized || (isMinimized && (isSyncDot || isSyncIndicator))) {
+        isDragging = true;
+        dragStarted = false;
+        syncStatus.style.transition = "none";
+      }
     }
   }
 
