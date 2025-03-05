@@ -241,9 +241,13 @@ function createSyncStatus() {
     syncStatus.style.display = "none";
   }
 
+  // Set default position to top right if no position is saved
+  const defaultPosition = {
+    x: "right: 20px",
+    y: "top: 20px"
+  };
   const savedPosition = JSON.parse(
-    localStorage.getItem("sync-status-position") ||
-      '{"x": "right: 20px", "y": "top: 20px"}'
+    localStorage.getItem("sync-status-position") || JSON.stringify(defaultPosition)
   );
   Object.entries(savedPosition).forEach(([axis, value]) => {
     const [side, offset] = value.split(":");
@@ -257,18 +261,25 @@ function createSyncStatus() {
   let initialY;
   let xOffset = 0;
   let yOffset = 0;
+  let lastTapTime = 0;
+  let dragStarted = false;
+  let touchStartX = 0;
+  let touchStartY = 0;
 
   function dragStart(e) {
     if (e.type === "touchstart") {
       initialX = e.touches[0].clientX - xOffset;
       initialY = e.touches[0].clientY - yOffset;
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
     } else {
       initialX = e.clientX - xOffset;
       initialY = e.clientY - yOffset;
     }
+    
     if (e.target === syncStatus || syncStatus.contains(e.target)) {
       isDragging = true;
-      syncStatus.style.opacity = "0.7";
+      dragStarted = false;
       syncStatus.style.transition = "none";
     }
   }
@@ -277,8 +288,9 @@ function createSyncStatus() {
     if (!isDragging) return;
 
     isDragging = false;
-    syncStatus.style.opacity = "1";
+    dragStarted = false;
     syncStatus.style.transition = "all 0.3s ease";
+    syncStatus.style.opacity = "1";
 
     const rect = syncStatus.getBoundingClientRect();
     const position = {
@@ -296,14 +308,31 @@ function createSyncStatus() {
     if (!isDragging) return;
 
     e.preventDefault();
-
+    
+    let currentClientX, currentClientY;
+    
     if (e.type === "touchmove") {
-      currentX = e.touches[0].clientX - initialX;
-      currentY = e.touches[0].clientY - initialY;
+      currentClientX = e.touches[0].clientX;
+      currentClientY = e.touches[0].clientY;
     } else {
-      currentX = e.clientX - initialX;
-      currentY = e.clientY - initialY;
+      currentClientX = e.clientX;
+      currentClientY = e.clientY;
     }
+
+    // Only start actual dragging if moved more than 5px
+    if (!dragStarted) {
+      const moveX = Math.abs(currentClientX - touchStartX);
+      const moveY = Math.abs(currentClientY - touchStartY);
+      if (moveX > 5 || moveY > 5) {
+        dragStarted = true;
+        syncStatus.style.opacity = "0.7";
+      } else {
+        return;
+      }
+    }
+
+    currentX = currentClientX - initialX;
+    currentY = currentClientY - initialY;
 
     xOffset = currentX;
     yOffset = currentY;
@@ -311,30 +340,27 @@ function createSyncStatus() {
     syncStatus.style.transform = `translate(${currentX}px, ${currentY}px)`;
   }
 
-  let touchStartTime = 0;
-  let touchTimeout;
-
   syncStatus.addEventListener("mousedown", dragStart);
   syncStatus.addEventListener("touchstart", (e) => {
-    touchStartTime = Date.now();
-    touchTimeout = setTimeout(() => {
+    const now = Date.now();
+    const timeSinceLastTap = now - lastTapTime;
+    
+    if (timeSinceLastTap < 300) {
+      // Double tap detected
+      if (syncStatus.classList.contains("minimized")) {
+        syncStatus.classList.remove("minimized");
+      }
+      e.preventDefault();
+    } else {
       dragStart(e);
-    }, 100);
-  }, { passive: true });
+    }
+    lastTapTime = now;
+  }, { passive: false });
 
   document.addEventListener("mousemove", drag);
   document.addEventListener("touchmove", drag, { passive: false });
   document.addEventListener("mouseup", dragEnd);
-  document.addEventListener("touchend", () => {
-    clearTimeout(touchTimeout);
-    const touchDuration = Date.now() - touchStartTime;
-    if (touchDuration < 100 && !isDragging) {
-      if (syncStatus.classList.contains("minimized")) {
-        syncStatus.classList.remove("minimized");
-      }
-    }
-    dragEnd();
-  });
+  document.addEventListener("touchend", dragEnd);
 
   document.body.appendChild(syncStatus);
   updateSyncStatus();
@@ -349,10 +375,10 @@ function updateSyncStatus() {
       if (!timestamp) return "";
       const seconds = Math.floor((Date.now() - timestamp) / 1000);
       return seconds < 60
-        ? `${seconds}s ago`
+        ? `${seconds}s`
         : seconds < 3600
-        ? `${Math.floor(seconds / 60)}m ago`
-        : `${Math.floor(seconds / 3600)}h ago`;
+        ? `${Math.floor(seconds / 60)}m`
+        : `${Math.floor(seconds / 3600)}h`;
     };
 
     const getSyncStatus = () => {
@@ -365,7 +391,6 @@ function updateSyncStatus() {
         <span class="sync-dot" style="background-color: ${
           isSynced ? "#10B981" : "#EF4444"
         }"></span>
-        <span>${isSynced ? "Synced" : "Not synced"}</span>
       </span>`;
     };
 
