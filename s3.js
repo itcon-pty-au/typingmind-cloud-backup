@@ -29,7 +29,7 @@ syncStatusStyles.textContent = `
         position: fixed;
         background: rgba(0, 0, 0, 0.7);
         color: white;
-        padding: 10px 14px;
+        padding: 6px 14px;
         border-radius: 8px;
         font-size: 14px;
         z-index: 1000;
@@ -47,8 +47,9 @@ syncStatusStyles.textContent = `
         max-width: 48px;
         min-width: 48px;
         height: 48px;
-        padding: 12px;
+        padding: 0;
         overflow: hidden;
+        display: flex;
         justify-content: center;
         align-items: center;
         border-radius: 24px;
@@ -60,10 +61,13 @@ syncStatusStyles.textContent = `
         display: flex;
         align-items: center;
         justify-content: center;
+        width: 100%;
+        height: 100%;
     }
     #sync-status.minimized .sync-dot {
         width: 14px;
         height: 14px;
+        margin: 0;
     }
     #sync-status.minimized .sync-indicator span:not(.sync-dot),
     #sync-status.minimized .import-indicator,
@@ -74,21 +78,18 @@ syncStatusStyles.textContent = `
     }
     .minimize-btn {
         cursor: pointer;
-        padding: 8px 12px;
+        padding: 8px;
         line-height: 1;
         border-radius: 4px;
-        margin-left: auto;
         opacity: 0.7;
         transition: opacity 0.2s;
-        position: absolute;
-        right: 8px;
-        top: 4px;
         min-width: 32px;
         min-height: 32px;
         display: flex;
         align-items: center;
         justify-content: center;
         touch-action: manipulation;
+        margin-left: 4px;
     }
     .minimize-btn:hover {
         opacity: 1;
@@ -382,17 +383,15 @@ function updateSyncStatus() {
         <span class="mode-switch-text">${
           localStorage.getItem("sync-mode") === "backup" ? "Backup" : "Sync"
         }</span>
+        <button class="minimize-btn" title="Minimize">—</button>
       </div>
     `;
-
-    const minimizeBtn = '<button class="minimize-btn" title="Minimize">—</button>';
 
     const statusContent = [
       syncIndicator,
       importStatus,
       exportStatus,
-      modeSwitch,
-      minimizeBtn
+      modeSwitch
     ]
       .filter(Boolean)
       .join(" ");
