@@ -46,15 +46,54 @@ syncStatusStyles.textContent = `
     #sync-status.dragging {
         opacity: 0.7;
     }
+    #sync-status.minimized {
+        padding: 8px;
+        width: 30px;
+        height: 30px;
+        border-radius: 6px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        overflow: hidden;
+    }
+    #sync-status.minimized .sync-dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+    }
+    #sync-status.minimized .sync-spinner {
+        font-size: 16px;
+        height: 16px;
+        width: 16px;
+        animation: spin 1s linear infinite;
+        display: inline-block;
+    }
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
     .sync-failed {
         color: #ff4444;
     }
     .sync-indicator {
         display: inline-flex;
         align-items: center;
-        gap: 8px;
+        gap: 5px;
         flex-shrink: 0;
         padding: 4px 0;
+    }
+    .sync-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+    .sync-spinner {
+        display: inline-block;
+        animation: spin 1s linear infinite;
+    }
+    .sync-text {
+        white-space: nowrap;
     }
     .import-indicator, .export-indicator {
         white-space: nowrap;
@@ -69,22 +108,6 @@ syncStatusStyles.textContent = `
     }
     .import-indicator:active, .export-indicator:active {
         background-color: rgba(255, 255, 255, 0.2);
-    }
-    .sync-dot {
-        width: 10px;
-        height: 10px;
-        border-radius: 50%;
-        display: inline-block;
-        flex-shrink: 0;
-    }
-    @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-    }
-    .sync-spinner {
-        display: inline-block;
-        animation: spin 1s linear infinite;
-        font-size: 16px;
     }
     .mode-switch {
         display: inline-flex;
@@ -187,6 +210,14 @@ function createSyncStatus() {
   if (isHidden) {
     syncStatus.style.display = "none";
   }
+  
+  const isMinimized = localStorage.getItem("sync-status-minimized") === null 
+    ? true 
+    : localStorage.getItem("sync-status-minimized") !== "false";
+    
+  if (isMinimized) {
+    syncStatus.classList.add("minimized");
+  }
 
   const savedPosition = JSON.parse(
     localStorage.getItem("sync-status-position") ||
@@ -204,6 +235,9 @@ function createSyncStatus() {
   let initialY;
   let xOffset = 0;
   let yOffset = 0;
+  let dragStartTime = 0;
+  let longPressTimeout;
+  let lastTapTime = 0;
 
   function dragStart(e) {
     if (e.type === "touchstart") {
@@ -213,29 +247,96 @@ function createSyncStatus() {
       initialX = e.clientX - xOffset;
       initialY = e.clientY - yOffset;
     }
-    if (e.target === syncStatus) {
+    
+    dragStartTime = Date.now();
+    
+    // Handle long press for minimized mode
+    if (syncStatus.classList.contains("minimized")) {
+      longPressTimeout = setTimeout(() => {
+        isDragging = true;
+        syncStatus.classList.add("dragging");
+      }, 500); // 500ms for long press
+    } else if (e.target === syncStatus || syncStatus.contains(e.target)) {
       isDragging = true;
       syncStatus.classList.add("dragging");
     }
   }
 
-  function dragEnd() {
-    if (!isDragging) return;
+  function dragEnd(e) {
+    clearTimeout(longPressTimeout);
+    
+    if (!isDragging) {
+      // Handle tap/click when not dragging
+      const now = Date.now();
+      
+      if (syncStatus.classList.contains("minimized")) {
+        // Expand on tap
+        syncStatus.classList.remove("minimized");
+        localStorage.setItem("sync-status-minimized", "false");
+      } else if (now - dragStartTime < 200) { // Short tap/click
+        // Minimize on tap
+        syncStatus.classList.add("minimized");
+        localStorage.setItem("sync-status-minimized", "true");
+      }
+      
+      return;
+    }
 
     isDragging = false;
     syncStatus.classList.remove("dragging");
 
     const rect = syncStatus.getBoundingClientRect();
-    const position = {
-      x:
-        rect.left < window.innerWidth / 2
-          ? `left: ${rect.left}px`
-          : `right: ${window.innerWidth - rect.right}px`,
-      y:
-        rect.top < window.innerHeight / 2
-          ? `top: ${rect.top}px`
-          : `bottom: ${window.innerHeight - rect.bottom}px`,
-    };
+    
+    // Snap to corners
+    const snapDistance = 30; // pixels from edge to trigger snap
+    const padding = 5; // padding from screen edge
+    
+    let x, y;
+    
+    // Determine horizontal position (snap to left or right)
+    if (rect.left < snapDistance) {
+      x = `left: ${padding}px`;
+      syncStatus.style.left = `${padding}px`;
+      syncStatus.style.right = "auto";
+    } else if (window.innerWidth - rect.right < snapDistance) {
+      x = `right: ${padding}px`;
+      syncStatus.style.right = `${padding}px`;
+      syncStatus.style.left = "auto";
+    } else if (rect.left < window.innerWidth / 2) {
+      x = `left: ${rect.left}px`;
+      syncStatus.style.left = `${rect.left}px`;
+      syncStatus.style.right = "auto";
+    } else {
+      x = `right: ${window.innerWidth - rect.right}px`;
+      syncStatus.style.right = `${window.innerWidth - rect.right}px`;
+      syncStatus.style.left = "auto";
+    }
+    
+    // Determine vertical position (snap to top or bottom)
+    if (rect.top < snapDistance) {
+      y = `top: ${padding}px`;
+      syncStatus.style.top = `${padding}px`;
+      syncStatus.style.bottom = "auto";
+    } else if (window.innerHeight - rect.bottom < snapDistance) {
+      y = `bottom: ${padding}px`;
+      syncStatus.style.bottom = `${padding}px`;
+      syncStatus.style.top = "auto";
+    } else if (rect.top < window.innerHeight / 2) {
+      y = `top: ${rect.top}px`;
+      syncStatus.style.top = `${rect.top}px`;
+      syncStatus.style.bottom = "auto";
+    } else {
+      y = `bottom: ${window.innerHeight - rect.bottom}px`;
+      syncStatus.style.bottom = `${window.innerHeight - rect.bottom}px`;
+      syncStatus.style.top = "auto";
+    }
+    
+    // Reset transform
+    syncStatus.style.transform = "none";
+    xOffset = 0;
+    yOffset = 0;
+    
+    const position = { x, y };
     localStorage.setItem("sync-status-position", JSON.stringify(position));
   }
 
@@ -294,7 +395,7 @@ function updateSyncStatus() {
         <span class="sync-dot" style="background-color: ${
           isSynced ? "#10B981" : "#EF4444"
         }"></span>
-        <span>${isSynced ? "Synced" : "Not synced"}</span>
+        <span class="sync-text">${isSynced ? "Synced" : "Not synced"}</span>
       </span>`;
     };
 
@@ -333,66 +434,81 @@ function updateSyncStatus() {
       </div>
     `;
 
-    const statusContent = [
-      syncIndicator,
-      importStatus,
-      exportStatus,
-      modeSwitch,
-    ]
-      .filter(Boolean)
-      .join(" ");
-
-    if (statusContent) {
-      syncStatus.innerHTML = statusContent;
-      syncStatus.style.display = "block";
-
-      // Add event listener to the mode switch
-      const modeSwitchInput = document.getElementById("mode-switch-input");
-      if (modeSwitchInput) {
-        modeSwitchInput.addEventListener("change", function () {
-          const newMode = this.checked ? "sync" : "backup";
-          localStorage.setItem("sync-mode", newMode);
-          const modeText = document.querySelector(".mode-switch-text");
-          if (modeText) {
-            modeText.textContent = newMode === "sync" ? "Sync" : "Backup";
-          }
-          logToConsole("info", `Mode changed to: ${newMode}`);
-
-          // If switching to sync mode, trigger an import
-          if (newMode === "sync" && !isImportInProgress) {
-            queueCloudOperation("mode-change-import", importFromS3);
-          }
-        });
+    const isMinimized = syncStatus.classList.contains("minimized");
+    
+    if (isMinimized) {
+      // For minimized state, only show sync indicator or sync spinner
+      if (isImportInProgress || isExportInProgress) {
+        syncStatus.innerHTML = '<span class="sync-spinner">↻</span>';
+      } else {
+        // Extract just the sync dot from the syncIndicator
+        const match = syncIndicator.match(/background-color: (#[0-9A-Fa-f]+)/);
+        const dotColor = match ? match[1] : "#EF4444"; // Default to red if no match
+        syncStatus.innerHTML = `<span class="sync-dot" style="background-color: ${dotColor}"></span>`;
       }
-
-      // Add double-tap event listeners for import/export indicators
-      setupDoubleTapListener(
-        syncStatus.querySelector(".import-indicator"),
-        () => {
-          if (!isImportInProgress) {
-            logToConsole(
-              "info",
-              "Double-tap detected on import indicator, triggering import"
-            );
-            queueCloudOperation("manual-import", importFromS3);
-          }
-        }
-      );
-
-      setupDoubleTapListener(
-        syncStatus.querySelector(".export-indicator"),
-        () => {
-          if (!isExportInProgress) {
-            logToConsole(
-              "info",
-              "Double-tap detected on export indicator, triggering export"
-            );
-            queueCloudOperation("manual-export", backupToS3);
-          }
-        }
-      );
     } else {
-      syncStatus.style.display = "none";
+      // Full status content for expanded state
+      const statusContent = [
+        syncIndicator,
+        importStatus,
+        exportStatus,
+        modeSwitch,
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      if (statusContent) {
+        syncStatus.innerHTML = statusContent;
+        syncStatus.style.display = "block";
+
+        // Add event listener to the mode switch
+        const modeSwitchInput = document.getElementById("mode-switch-input");
+        if (modeSwitchInput) {
+          modeSwitchInput.addEventListener("change", function () {
+            const newMode = this.checked ? "sync" : "backup";
+            localStorage.setItem("sync-mode", newMode);
+            const modeText = document.querySelector(".mode-switch-text");
+            if (modeText) {
+              modeText.textContent = newMode === "sync" ? "Sync" : "Backup";
+            }
+            logToConsole("info", `Mode changed to: ${newMode}`);
+
+            // If switching to sync mode, trigger an import
+            if (newMode === "sync" && !isImportInProgress) {
+              queueCloudOperation("mode-change-import", importFromS3);
+            }
+          });
+        }
+
+        // Add double-tap event listeners for import/export indicators
+        setupDoubleTapListener(
+          syncStatus.querySelector(".import-indicator"),
+          () => {
+            if (!isImportInProgress) {
+              logToConsole(
+                "info",
+                "Double-tap detected on import indicator, triggering import"
+              );
+              queueCloudOperation("manual-import", importFromS3);
+            }
+          }
+        );
+
+        setupDoubleTapListener(
+          syncStatus.querySelector(".export-indicator"),
+          () => {
+            if (!isExportInProgress) {
+              logToConsole(
+                "info",
+                "Double-tap detected on export indicator, triggering export"
+              );
+              queueCloudOperation("manual-export", backupToS3);
+            }
+          }
+        );
+      } else {
+        syncStatus.style.display = "none";
+      }
     }
   }, 500);
 }
