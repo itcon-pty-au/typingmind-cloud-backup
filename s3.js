@@ -211,17 +211,17 @@ function createSyncStatus() {
   container.id = 'sync-status'
   container.className = 'sync-status'
 
+  const minimizedTag = document.createElement('div')
+  minimizedTag.className = 'sync-status-tag'
+  minimizedTag.innerHTML = '<div class="sync-indicator"></div>'
+  document.body.appendChild(minimizedTag)
+
   const eyeIcon = document.createElement('div')
   eyeIcon.className = 'sync-status-eye'
   eyeIcon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
     <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
   </svg>`
   container.appendChild(eyeIcon)
-
-  const minimizedTag = document.createElement('div')
-  minimizedTag.className = 'sync-status-tag hidden'
-  minimizedTag.innerHTML = '<div class="sync-indicator"></div>'
-  document.body.appendChild(minimizedTag)
 
   const isHidden = localStorage.getItem("sync-status-hidden") === "true";
   if (isHidden) {
@@ -309,7 +309,23 @@ function createSyncStatus() {
   minimizedTag.addEventListener('click', toggleMinimizedView)
   setupDoubleTapListener(minimizedTag, toggleMinimizedView)
 
-  return container;
+  minimizedTag.style.top = '20px'
+  minimizedTag.style.right = '20px'
+
+  if (!localStorage.getItem('sync-status-hidden')) {
+    localStorage.setItem('sync-status-hidden', 'true')
+  }
+
+  const syncStatusHidden = localStorage.getItem('sync-status-hidden') === 'true'
+  if (syncStatusHidden) {
+    container.classList.add('hidden')
+    minimizedTag.classList.remove('hidden')
+  } else {
+    container.classList.remove('hidden')
+    minimizedTag.classList.add('hidden')
+  }
+
+  return container
 }
 
 function updateSyncStatus() {
