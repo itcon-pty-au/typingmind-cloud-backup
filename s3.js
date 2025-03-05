@@ -48,6 +48,7 @@ syncStatusStyles.textContent = `
         padding: 8px;
         overflow: hidden;
         justify-content: center;
+        cursor: pointer;
     }
     #sync-status.minimized .sync-indicator {
         margin: 0;
@@ -56,7 +57,8 @@ syncStatusStyles.textContent = `
     #sync-status.minimized .sync-indicator span:not(.sync-dot),
     #sync-status.minimized .import-indicator,
     #sync-status.minimized .export-indicator,
-    #sync-status.minimized .mode-switch {
+    #sync-status.minimized .mode-switch,
+    #sync-status.minimized .minimize-btn {
         display: none;
     }
     .minimize-btn {
@@ -69,6 +71,7 @@ syncStatusStyles.textContent = `
         transition: opacity 0.2s;
         position: absolute;
         right: 8px;
+        top: 4px;
     }
     .minimize-btn:hover {
         opacity: 1;
@@ -328,37 +331,37 @@ function updateSyncStatus() {
       </span>`;
     };
 
-    const syncIndicator = getSyncStatus();
-    const importStatus = isImportInProgress
-      ? '⬇️ <span class="sync-spinner">↻</span>'
-      : lastImportStatus === "failed"
-      ? '<span class="sync-failed">⬇️ Failed</span>'
-      : lastImportTime
+    const getOperationStatus = () => {
+      if (isImportInProgress || isExportInProgress) {
+        return `<span class="sync-indicator">
+          <span class="sync-dot" style="background-color: #3B82F6"></span>
+          <span class="sync-spinner">↻</span>
+        </span>`;
+      }
+      return "";
+    };
+
+    const importStatus = !isImportInProgress && lastImportTime
       ? `<span class="import-indicator" data-action="import">⬇️ ${formatTime(
           lastImportTime
         )}</span>`
       : "";
 
-    const exportStatus = isExportInProgress
-      ? '⬆️ <span class="sync-spinner">↻</span>'
-      : lastExportStatus === "failed"
-      ? '<span class="sync-failed">⬆️ Failed</span>'
-      : lastExportTime
+    const exportStatus = !isExportInProgress && lastExportTime
       ? `<span class="export-indicator" data-action="export">⬆️ ${formatTime(
           lastExportTime
         )}</span>`
       : "";
 
-    const currentMode =
-      localStorage.getItem("sync-mode") === "backup" ? "backup" : "sync";
+    const syncIndicator = getOperationStatus() || getSyncStatus();
     const modeSwitch = `
       <div class="mode-switch" title="Toggle between Sync and Backup modes">
         <input type="checkbox" id="mode-switch-input" class="mode-switch-input" ${
-          currentMode === "sync" ? "checked" : ""
+          localStorage.getItem("sync-mode") !== "backup" ? "checked" : ""
         }>
         <label for="mode-switch-input" class="mode-switch-label"></label>
         <span class="mode-switch-text">${
-          currentMode === "sync" ? "Sync" : "Backup"
+          localStorage.getItem("sync-mode") === "backup" ? "Backup" : "Sync"
         }</span>
       </div>
     `;
@@ -379,20 +382,19 @@ function updateSyncStatus() {
       syncStatus.innerHTML = statusContent;
       syncStatus.style.display = "block";
 
+      // Add click handler for minimized state
+      syncStatus.addEventListener("click", (e) => {
+        if (syncStatus.classList.contains("minimized") && 
+            !e.target.classList.contains("sync-dot")) {
+          syncStatus.classList.remove("minimized");
+        }
+      });
+
       const minimizeButton = syncStatus.querySelector(".minimize-btn");
       if (minimizeButton) {
-        // Set initial state
-        if (syncStatus.classList.contains("minimized")) {
-          minimizeButton.textContent = "+";
-          minimizeButton.title = "Expand";
-        }
-
         minimizeButton.addEventListener("click", (e) => {
           e.stopPropagation();
-          const willMinimize = !syncStatus.classList.contains("minimized");
-          syncStatus.classList.toggle("minimized");
-          minimizeButton.textContent = willMinimize ? "+" : "—";
-          minimizeButton.title = willMinimize ? "Expand" : "Minimize";
+          syncStatus.classList.add("minimized");
         });
       }
 
