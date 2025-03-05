@@ -35,7 +35,7 @@ syncStatusStyles.textContent = `
         z-index: 1000;
         cursor: move;
         user-select: none;
-        transition: opacity 0.2s;
+        transition: all 0.3s ease;
         display: flex;
         align-items: center;
         gap: 12px;
@@ -43,8 +43,31 @@ syncStatusStyles.textContent = `
         flex-wrap: nowrap;
         overflow-x: auto;
     }
-    #sync-status.dragging {
+    #sync-status.minimized {
+        max-width: 40px;
+        padding: 8px;
+        overflow: hidden;
+    }
+    #sync-status.minimized .sync-indicator span:not(.sync-dot),
+    #sync-status.minimized .import-indicator,
+    #sync-status.minimized .export-indicator,
+    #sync-status.minimized .mode-switch {
+        display: none;
+    }
+    .minimize-btn {
+        cursor: pointer;
+        padding: 2px;
+        line-height: 1;
+        border-radius: 4px;
+        margin-left: auto;
         opacity: 0.7;
+        transition: opacity 0.2s;
+    }
+    .minimize-btn:hover {
+        opacity: 1;
+    }
+    #sync-status.minimized .minimize-btn {
+        transform: rotate(180deg);
     }
     .sync-failed {
         color: #ff4444;
@@ -333,11 +356,14 @@ function updateSyncStatus() {
       </div>
     `;
 
+    const minimizeBtn = '<button class="minimize-btn" title="Minimize">—</button>';
+
     const statusContent = [
       syncIndicator,
       importStatus,
       exportStatus,
       modeSwitch,
+      minimizeBtn
     ]
       .filter(Boolean)
       .join(" ");
@@ -345,6 +371,16 @@ function updateSyncStatus() {
     if (statusContent) {
       syncStatus.innerHTML = statusContent;
       syncStatus.style.display = "block";
+
+      const minimizeButton = syncStatus.querySelector(".minimize-btn");
+      if (minimizeButton) {
+        minimizeButton.addEventListener("click", (e) => {
+          e.stopPropagation();
+          syncStatus.classList.toggle("minimized");
+          minimizeButton.textContent = syncStatus.classList.contains("minimized") ? "+" : "—";
+          minimizeButton.title = syncStatus.classList.contains("minimized") ? "Expand" : "Minimize";
+        });
+      }
 
       // Add event listener to the mode switch
       const modeSwitchInput = document.getElementById("mode-switch-input");
