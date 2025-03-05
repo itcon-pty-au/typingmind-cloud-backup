@@ -248,7 +248,8 @@ function createSyncStatus() {
   const LONG_PRESS_DURATION = 500; // 500ms for long press
 
   function dragStart(e) {
-    if (syncStatus.classList.contains("minimized")) {
+    // Only apply long press for direct clicks on the minimized sync status container
+    if (syncStatus.classList.contains("minimized") && e.target === syncStatus) {
       // For minimized state, start a timer for long press
       longPressTimer = setTimeout(() => {
         initiateDrag(e);
@@ -267,7 +268,7 @@ function createSyncStatus() {
       document.addEventListener("touchmove", cancelLongPress, { once: true });
       document.addEventListener("touchend", cancelLongPress, { once: true });
     } else {
-      // For non-minimized state, start drag immediately
+      // For non-minimized state or child elements, start drag immediately
       initiateDrag(e);
     }
   }
