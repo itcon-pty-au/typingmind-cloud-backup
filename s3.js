@@ -222,9 +222,14 @@ function createSyncStatus() {
     syncStatus.style.display = "none";
   }
 
+  const isMobile = window.innerWidth <= 768;
+  const defaultPosition = isMobile 
+    ? { x: "left: 20px", y: "top: 60px" }
+    : { x: "right: 20px", y: "top: 20px" };
+
   const savedPosition = JSON.parse(
-    localStorage.getItem("sync-status-position") ||
-      '{"x": "right: 20px", "y": "top: 20px"}'
+    localStorage.getItem("sync-status-position") || 
+    JSON.stringify(defaultPosition)
   );
   Object.entries(savedPosition).forEach(([axis, value]) => {
     const [side, offset] = value.split(":");
