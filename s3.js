@@ -209,6 +209,9 @@ function createSyncStatus() {
   const isHidden = localStorage.getItem("sync-status-hidden") === "true";
   if (isHidden) {
     syncStatus.style.display = "none";
+  } else {
+    // Initialize with a default visible state
+    syncStatus.style.display = "flex";
   }
   
   const isMinimized = localStorage.getItem("sync-status-minimized") === null 
@@ -217,6 +220,8 @@ function createSyncStatus() {
     
   if (isMinimized) {
     syncStatus.classList.add("minimized");
+    // Set a default dot for initial display before first updateSyncStatus
+    syncStatus.innerHTML = `<span class="sync-dot" style="background-color: #EF4444"></span>`;
   }
 
   const savedPosition = JSON.parse(
@@ -446,6 +451,8 @@ function updateSyncStatus() {
         const dotColor = match ? match[1] : "#EF4444"; // Default to red if no match
         syncStatus.innerHTML = `<span class="sync-dot" style="background-color: ${dotColor}"></span>`;
       }
+      // Always show the minimized tag
+      syncStatus.style.display = "flex";
     } else {
       // Full status content for expanded state
       const statusContent = [
@@ -507,7 +514,9 @@ function updateSyncStatus() {
           }
         );
       } else {
-        syncStatus.style.display = "none";
+        // Even if there's no status content, still show the panel when not minimized
+        syncStatus.innerHTML = modeSwitch;
+        syncStatus.style.display = "block";
       }
     }
   }, 500);
