@@ -244,15 +244,43 @@ function createSyncStatus() {
   let initialY;
   let xOffset = 0;
   let yOffset = 0;
+  let longPressTimer = null;
+  const LONG_PRESS_DURATION = 500; // 500ms for long press
 
   function dragStart(e) {
-    if (e.type === "touchstart") {
+    if (syncStatus.classList.contains("minimized")) {
+      // For minimized state, start a timer for long press
+      longPressTimer = setTimeout(() => {
+        initiateDrag(e);
+      }, LONG_PRESS_DURATION);
+
+      // Add event listeners to cancel long press if mouse/touch moves or ends
+      const cancelLongPress = () => {
+        if (longPressTimer) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+      };
+
+      document.addEventListener("mousemove", cancelLongPress, { once: true });
+      document.addEventListener("mouseup", cancelLongPress, { once: true });
+      document.addEventListener("touchmove", cancelLongPress, { once: true });
+      document.addEventListener("touchend", cancelLongPress, { once: true });
+    } else {
+      // For non-minimized state, start drag immediately
+      initiateDrag(e);
+    }
+  }
+
+  function initiateDrag(e) {
+    if (e.type === "touchstart" || e.type.includes("touch")) {
       initialX = e.touches[0].clientX - xOffset;
       initialY = e.touches[0].clientY - yOffset;
     } else {
       initialX = e.clientX - xOffset;
       initialY = e.clientY - yOffset;
     }
+
     if (e.target === syncStatus) {
       isDragging = true;
       syncStatus.classList.add("dragging");
@@ -260,6 +288,11 @@ function createSyncStatus() {
   }
 
   function dragEnd() {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+
     if (!isDragging) return;
 
     isDragging = false;
