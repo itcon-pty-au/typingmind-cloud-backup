@@ -44,7 +44,7 @@ syncStatusStyles.textContent = `
         overflow-x: auto;
     }
     #sync-status.minimized {
-        max-width: 40px;
+        max-width: 80px;
         padding: 8px;
         overflow: hidden;
         justify-content: center;
@@ -223,13 +223,13 @@ function createSyncStatus() {
   }
 
   const isMobile = window.innerWidth <= 768;
-  const defaultPosition = isMobile 
+  const defaultPosition = isMobile
     ? { x: "left: 20px", y: "top: 60px" }
     : { x: "right: 20px", y: "top: 20px" };
 
   const savedPosition = JSON.parse(
-    localStorage.getItem("sync-status-position") || 
-    JSON.stringify(defaultPosition)
+    localStorage.getItem("sync-status-position") ||
+      JSON.stringify(defaultPosition)
   );
   Object.entries(savedPosition).forEach(([axis, value]) => {
     const [side, offset] = value.split(":");
@@ -347,17 +347,19 @@ function updateSyncStatus() {
       return "";
     };
 
-    const importStatus = !isImportInProgress && lastImportTime
-      ? `<span class="import-indicator" data-action="import">⬇️ ${formatTime(
-          lastImportTime
-        )}</span>`
-      : "";
+    const importStatus =
+      !isImportInProgress && lastImportTime
+        ? `<span class="import-indicator" data-action="import">⬇️ ${formatTime(
+            lastImportTime
+          )}</span>`
+        : "";
 
-    const exportStatus = !isExportInProgress && lastExportTime
-      ? `<span class="export-indicator" data-action="export">⬆️ ${formatTime(
-          lastExportTime
-        )}</span>`
-      : "";
+    const exportStatus =
+      !isExportInProgress && lastExportTime
+        ? `<span class="export-indicator" data-action="export">⬆️ ${formatTime(
+            lastExportTime
+          )}</span>`
+        : "";
 
     const syncIndicator = getOperationStatus() || getSyncStatus();
     const modeSwitch = `
@@ -372,14 +374,15 @@ function updateSyncStatus() {
       </div>
     `;
 
-    const minimizeBtn = '<button class="minimize-btn" title="Minimize">—</button>';
+    const minimizeBtn =
+      '<button class="minimize-btn" title="Minimize">—</button>';
 
     const statusContent = [
       syncIndicator,
       importStatus,
       exportStatus,
       modeSwitch,
-      minimizeBtn
+      minimizeBtn,
     ]
       .filter(Boolean)
       .join(" ");
