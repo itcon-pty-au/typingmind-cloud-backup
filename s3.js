@@ -267,7 +267,9 @@ function createSyncStatus() {
   let touchStartX = 0;
   let touchStartY = 0;
   let lastTapTime = 0;
+  let touchStartTime = 0;
   const DOUBLE_TAP_DELAY = 300; // milliseconds
+  const LONG_PRESS_DELAY = 200; // milliseconds for starting drag
 
   function dragStart(e) {
     if (e.type === "touchstart") {
@@ -275,22 +277,10 @@ function createSyncStatus() {
       initialY = e.touches[0].clientY - yOffset;
       touchStartX = e.touches[0].clientX;
       touchStartY = e.touches[0].clientY;
+      touchStartTime = Date.now();
     } else {
       initialX = e.clientX - xOffset;
       initialY = e.clientY - yOffset;
-    }
-    
-    // Make sure the sync-dot is draggable in minimized state
-    const isMinimized = syncStatus.classList.contains("minimized");
-    const isSyncDot = e.target.classList.contains("sync-dot");
-    const isSyncIndicator = e.target.classList.contains("sync-indicator");
-    
-    if (e.target === syncStatus || syncStatus.contains(e.target)) {
-      if (!isMinimized || (isMinimized && (isSyncDot || isSyncIndicator))) {
-        isDragging = true;
-        dragStarted = false;
-        syncStatus.style.transition = "none";
-      }
     }
   }
 
@@ -315,6 +305,15 @@ function createSyncStatus() {
   }
 
   function drag(e) {
+    if (!isDragging && e.type === "touchmove") {
+      // Check if it's a long press
+      const touchDuration = Date.now() - touchStartTime;
+      if (touchDuration > LONG_PRESS_DELAY) {
+        isDragging = true;
+        syncStatus.style.transition = "none";
+      }
+    }
+
     if (!isDragging) return;
 
     e.preventDefault();
@@ -329,11 +328,11 @@ function createSyncStatus() {
       currentClientY = e.clientY;
     }
 
-    // Only start actual dragging if moved more than 5px
+    // Only start showing drag feedback if moved more than 3px
     if (!dragStarted) {
       const moveX = Math.abs(currentClientX - touchStartX);
       const moveY = Math.abs(currentClientY - touchStartY);
-      if (moveX > 5 || moveY > 5) {
+      if (moveX > 3 || moveY > 3) {
         dragStarted = true;
         syncStatus.style.opacity = "0.7";
       } else {
@@ -359,7 +358,7 @@ function createSyncStatus() {
       // Double tap detected
       if (syncStatus.classList.contains("minimized")) {
         syncStatus.classList.remove("minimized");
-        isDragging = false; // Prevent drag on double tap
+        isDragging = false;
         e.preventDefault();
         e.stopPropagation();
       }
@@ -372,7 +371,14 @@ function createSyncStatus() {
   document.addEventListener("mousemove", drag);
   document.addEventListener("touchmove", drag, { passive: false });
   document.addEventListener("mouseup", dragEnd);
-  document.addEventListener("touchend", dragEnd);
+  document.addEventListener("touchend", (e) => {
+    const touchDuration = Date.now() - touchStartTime;
+    // If it was a short tap and we haven't started dragging, don't do anything
+    if (touchDuration < LONG_PRESS_DELAY && !dragStarted) {
+      isDragging = false;
+    }
+    dragEnd();
+  });
 
   document.body.appendChild(syncStatus);
   updateSyncStatus();
