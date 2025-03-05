@@ -44,8 +44,8 @@ syncStatusStyles.textContent = `
         overflow-x: auto;
     }
     #sync-status.minimized {
-        max-width: 60px;
-        height: 60px;
+        max-width: 40px;
+        height: 40px;
         padding: 8px;
         overflow: hidden;
         justify-content: center;
