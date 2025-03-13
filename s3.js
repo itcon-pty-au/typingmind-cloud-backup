@@ -110,6 +110,8 @@ syncStatusStyles.textContent = `
         border-radius: 50%;
         display: inline-block;
         flex-shrink: 0;
+        box-shadow: 0 0 2px rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.2);
     }
     @keyframes spin {
         from { transform: rotate(0deg); }
@@ -1630,7 +1632,7 @@ function openSyncModal() {
       );
       if (!extensionURLs.some((url) => url.endsWith("s3.js"))) {
         extensionURLs.push(
-          "https://itcon-pty-au.github.io/typingmind-cloud-backup-bugfix/s3.js"
+          "https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js"
         );
         localStorage.setItem(
           "TM_useExtensionURLs",
@@ -2554,7 +2556,7 @@ function importDataToStorage(data) {
     );
     if (!extensionURLs.some((url) => url.endsWith("s3.js"))) {
       extensionURLs.push(
-        "https://itcon-pty-au.github.io/typingmind-cloud-backup-bugfix/s3.js"
+        "https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js"
       );
       localStorage.setItem(
         "TM_useExtensionURLs",
