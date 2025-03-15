@@ -1,5 +1,5 @@
 // TypingMind Cloud Sync & Backup v2.0.0
-// Combines features from s3.js and s3-cope.js for comprehensive sync and backup
+// Combines features from YATSE and s3.js for comprehensive sync and backup
 
 // ==================== CONSTANTS & STATE ====================
 
@@ -1618,6 +1618,9 @@ async function performDailyBackup() {
   backupState.isBackupInProgress = true;
 
   try {
+    // Ensure JSZip is loaded before creating backup
+    await loadJSZip();
+
     const timestamp = new Date().toISOString().split("T")[0];
     const key = `${config.dailyBackupPrefix}-${timestamp}.zip`;
 
@@ -1762,6 +1765,12 @@ async function createBackup(key, type) {
   //logToConsole("start", `Creating ${type} backup: ${key}`);
 
   try {
+    // Ensure JSZip is loaded
+    const JSZip = await loadJSZip();
+    if (!JSZip) {
+      throw new Error("Failed to load JSZip library");
+    }
+
     // Get all chats
     const chats = await getAllChatsFromIndexedDB();
     if (!chats || chats.length === 0) {
