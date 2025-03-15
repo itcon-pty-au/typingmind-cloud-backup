@@ -2444,7 +2444,10 @@ async function syncToCloud() {
             : new TextDecoder().decode(cloudMetadataObj.data)
         );
       } catch (error) {
-        logToConsole("warning", "Failed to parse existing cloud metadata, creating new");
+        logToConsole(
+          "warning",
+          "Failed to parse existing cloud metadata, creating new"
+        );
       }
     }
 
@@ -2479,9 +2482,11 @@ async function syncToCloud() {
       // 1. Chat doesn't exist in cloud
       // 2. Local hash is different from cloud hash
       // 3. Local version is newer than cloud version
-      if (!cloudChatMeta || 
-          localChatMeta.hash !== cloudChatMeta.hash || 
-          (localChatMeta.lastModified || 0) > (cloudChatMeta.lastModified || 0)) {
+      if (
+        !cloudChatMeta ||
+        localChatMeta.hash !== cloudChatMeta.hash ||
+        (localChatMeta.lastModified || 0) > (cloudChatMeta.lastModified || 0)
+      ) {
         chatsToUpload.add(chatId);
       }
     }
@@ -2489,7 +2494,7 @@ async function syncToCloud() {
     // Only load chats from IndexedDB if we have something to upload
     if (chatsToUpload.size > 0) {
       const chats = await getAllChatsFromIndexedDB();
-      const chatsMap = new Map(chats.map(chat => [chat.id, chat]));
+      const chatsMap = new Map(chats.map((chat) => [chat.id, chat]));
 
       // Upload each chat that needs updating
       for (const chatId of chatsToUpload) {
@@ -4290,11 +4295,6 @@ async function deleteChatFromCloud(chatId) {
 
     logToConsole("success", `Successfully deleted chat ${chatId} from cloud`);
   } catch (error) {
-    logToConsole("error", `Failed to delete chat ${chatId} from cloud:`, error);
-    throw error;
-  }
-}
-
     logToConsole("error", `Failed to delete chat ${chatId} from cloud:`, error);
     throw error;
   }
