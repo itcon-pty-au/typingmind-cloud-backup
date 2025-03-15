@@ -1981,8 +1981,7 @@ async function restoreFromBackup(key) {
     const currentTime = new Date().toLocaleString();
     localStorage.setItem("last-cloud-sync", currentTime);
 
-    // Update metadata
-    await updateChatMetadata(null, true, false);
+    // Save metadata directly instead of calling updateChatMetadata with null
     await saveLocalMetadata();
 
     logToConsole("success", "Backup restored successfully");
