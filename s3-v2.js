@@ -338,6 +338,12 @@ async function initializeExtension() {
       queueOperation("initial-sync", performInitialSync);
     }
 
+    // Check for daily backup regardless of sync mode
+    // This ensures we create a daily backup if one hasn't been created today
+    if (isAwsConfigured()) {
+      queueOperation("daily-backup-check", checkAndPerformDailyBackup);
+    }
+
     // Start periodic change check
     startPeriodicChangeCheck();
 
@@ -1577,17 +1583,33 @@ async function decryptData(data) {
 
 // Start backup intervals
 function startBackupIntervals() {
-  if (config.syncMode !== "backup") return;
+  // We've removed the sync mode check since daily backups should run regardless of mode
+  // Daily backups are now only triggered during initialization
 
-  // Daily backup interval
-  const msPerDay = 24 * 60 * 60 * 1000;
-  setInterval(async () => {
-    if (!backupState.isBackupInProgress) {
+  logToConsole("info", "Backup system initialized");
+}
+
+// Check if daily backup is needed and perform it if necessary
+async function checkAndPerformDailyBackup() {
+  try {
+    const storedSuffix = localStorage.getItem("last-daily-backup-in-s3");
+    const today = new Date();
+    const currentDateSuffix = `${today.getFullYear()}${String(
+      today.getMonth() + 1
+    ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+
+    // Only perform backup if we haven't done one today
+    if (!storedSuffix || currentDateSuffix > storedSuffix) {
+      logToConsole("start", "Starting daily backup check...");
       await performDailyBackup();
+      // Store today's date as the last backup date
+      localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
+    } else {
+      logToConsole("info", "Daily backup already performed today, skipping");
     }
-  }, msPerDay);
-
-  logToConsole("info", "Backup intervals started");
+  } catch (error) {
+    logToConsole("error", "Daily backup check failed:", error);
+  }
 }
 
 // Perform daily backup
@@ -2575,8 +2597,14 @@ function setupVisibilityChangeHandler() {
       `Page visibility changed: ${isVisible ? "visible" : "hidden"}`
     );
 
-    if (isVisible && config.syncMode === "sync") {
-      queueOperation("visibility-sync", syncFromCloud);
+    if (isVisible) {
+      // For sync mode, queue a sync operation
+      if (config.syncMode === "sync") {
+        queueOperation("visibility-sync", syncFromCloud);
+      }
+
+      // We've removed the daily backup check on visibility change
+      // Daily backups are now only triggered during initialization
     }
   });
 }
