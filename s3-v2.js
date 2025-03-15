@@ -549,8 +549,13 @@ async function initializeMetadataFromExistingData() {
 
 // Save local metadata
 async function saveLocalMetadata() {
-  await setIndexedDBKey("sync-metadata", JSON.stringify(localMetadata));
-  logToConsole("success", "Local metadata saved");
+  try {
+    await setIndexedDBKey("sync-metadata", JSON.stringify(localMetadata));
+    logToConsole("success", "Local metadata saved");
+  } catch (error) {
+    logToConsole("error", "Failed to save local metadata:", error);
+    throw error;
+  }
 }
 
 // Generate hash for a chat
@@ -2126,10 +2131,26 @@ function startSyncInterval() {
   if (config.syncMode !== "sync" || !isAwsConfigured()) return;
 
   const interval = Math.max(config.syncInterval * 1000, 15000);
-  setInterval(() => {
-    if (!operationState.isImporting && !operationState.isExporting) {
-      queueOperation("periodic-sync", syncFromCloud);
+  setInterval(async () => {
+    if (operationState.isImporting || operationState.isExporting) {
+      logToConsole("skip", "Operation in progress - skipping sync");
+      return;
     }
+
+    // Load latest metadata before checking for changes
+    await loadLocalMetadata();
+
+    // Check if we need to sync based on last sync time
+    const timeSinceLastSync = Date.now() - (localMetadata.lastSyncTime || 0);
+    if (timeSinceLastSync < interval) {
+      logToConsole(
+        "skip",
+        `Last sync was ${Math.round(timeSinceLastSync / 1000)}s ago - skipping`
+      );
+      return;
+    }
+
+    queueOperation("periodic-sync", syncFromCloud);
   }, interval);
 
   logToConsole("info", `Sync interval started (${interval}ms)`);
@@ -2290,6 +2311,11 @@ async function syncFromCloud() {
       const localChat = localChatsMap.get(chatId);
       const localMeta = localMetadata.chats[chatId];
 
+      // Skip if we've already synced this version
+      if (localMeta && localMeta.syncedAt >= cloudChatMeta.lastModified) {
+        continue;
+      }
+
       // Download if:
       // 1. Chat doesn't exist locally
       // 2. Cloud version is newer than our last synced version
@@ -2418,9 +2444,13 @@ async function syncFromCloud() {
       }
     }
 
+    // Always update lastSyncTime, even if no changes
+    localMetadata.lastSyncTime = Date.now();
+
+    // Save updated local metadata
+    await saveLocalMetadata();
+
     if (hasChanges) {
-      // Save updated local metadata
-      await saveLocalMetadata();
       logToConsole("success", "Sync from cloud completed with changes");
     } else {
       logToConsole("success", "Sync from cloud completed (no changes)");
