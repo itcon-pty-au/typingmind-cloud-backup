@@ -2278,53 +2278,43 @@ async function syncFromCloud() {
       };
     }
 
-    // Get all local chats for comparison
-    const localChats = await getAllChatsFromIndexedDB();
-    const localChatsMap = {};
-    for (const chat of localChats) {
-      if (chat.id) {
-        localChatsMap[chat.id] = chat;
-      }
-    }
-
     // Initialize local metadata for chats if needed
     if (!localMetadata.chats) localMetadata.chats = {};
 
     let hasChanges = false;
     const chatDownloadPromises = [];
 
-    // Check each chat in cloud metadata
+    // First compare metadata to find chats that need syncing
+    const chatsToSync = new Set();
+
     for (const [chatId, cloudChatMeta] of Object.entries(cloudMetadata.chats)) {
-      // Skip if chat doesn't exist in cloud metadata
       if (!cloudChatMeta) continue;
 
-      const localChat = localChatsMap[chatId];
       const localChatMeta = localMetadata.chats[chatId];
 
-      // Skip if we already have this chat and its metadata matches
-      if (
-        localChat &&
-        localChatMeta &&
-        localChatMeta.hash === cloudChatMeta.hash
-      ) {
-        // Update syncedAt timestamp
+      // If we don't have local metadata or the hash doesn't match, we need to sync
+      if (!localChatMeta || localChatMeta.hash !== cloudChatMeta.hash) {
+        chatsToSync.add(chatId);
+      } else {
+        // Update syncedAt timestamp for chats that are up to date
         localChatMeta.syncedAt = Date.now();
-        continue;
+      }
+    }
+
+    // If we have chats to sync, get all local chats for comparison
+    if (chatsToSync.size > 0) {
+      const localChats = await getAllChatsFromIndexedDB();
+      const localChatsMap = {};
+      for (const chat of localChats) {
+        if (chat.id) {
+          localChatsMap[chat.id] = chat;
+        }
       }
 
-      // Generate hash for local chat if it exists
-      const localHash = localChat ? await generateChatHash(localChat) : null;
+      // Download chats that need syncing
+      for (const chatId of chatsToSync) {
+        const cloudChatMeta = cloudMetadata.chats[chatId];
 
-      // Download if:
-      // 1. Chat doesn't exist locally
-      // 2. Local hash doesn't match cloud hash
-      // 3. Local metadata is missing or has different hash
-      if (
-        !localChat ||
-        !localHash ||
-        !localChatMeta ||
-        localHash !== cloudChatMeta.hash
-      ) {
         chatDownloadPromises.push(
           (async () => {
             try {
