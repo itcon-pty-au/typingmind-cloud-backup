@@ -4123,6 +4123,7 @@ async function handleSettingChange(key, value, source) {
     queueOperation("settings-sync", async () => {
       // Only sync settings, not chats
       try {
+        // Download cloud metadata (only needed for updating metadata)
         const cloudMetadataObj = await downloadFromS3("metadata.json");
         if (!cloudMetadataObj) return;
 
@@ -4132,13 +4133,42 @@ async function handleSettingChange(key, value, source) {
             : new TextDecoder().decode(cloudMetadataObj.data)
         );
 
-        // Upload changed settings
+        // Prepare a complete collection of all monitored settings
         const settingsToUpload = {};
-        settingsToUpload[key] = {
-          data: value,
-          source: source,
-          lastModified: Date.now(),
-        };
+
+        // Collect all monitored settings (both localStorage and IndexedDB)
+        // This is similar to the initial settings sync approach
+
+        // Add monitored localStorage settings
+        for (const settingKey of MONITORED_ITEMS.localStorage) {
+          const settingValue = localStorage.getItem(settingKey);
+          if (settingValue !== null) {
+            settingsToUpload[settingKey] = {
+              data: settingValue,
+              source: "localStorage",
+              lastModified: Date.now(),
+            };
+          }
+        }
+
+        // Add monitored IndexedDB settings
+        for (const settingKey of MONITORED_ITEMS.indexedDB) {
+          const settingValue = await getIndexedDBValue(settingKey);
+          if (settingValue !== undefined) {
+            settingsToUpload[settingKey] = {
+              data: settingValue,
+              source: "indexeddb",
+              lastModified: Date.now(),
+            };
+          }
+        }
+
+        logToConsole(
+          "info",
+          `Performing complete settings sync to cloud (${
+            Object.keys(settingsToUpload).length
+          } settings)`
+        );
 
         const settingsData = JSON.stringify(settingsToUpload);
         let uploadData;
@@ -4152,12 +4182,6 @@ async function handleSettingChange(key, value, source) {
         // Always encrypt settings data
         const encryptedResult = await encryptData(settingsData);
         uploadData = encryptedResult;
-        uploadMetadata = {
-          version: EXTENSION_VERSION,
-          timestamp: String(Date.now()),
-          type: "settings",
-          encrypted: "true",
-        };
 
         await uploadToS3("settings.json", uploadData, uploadMetadata);
 
@@ -4175,14 +4199,28 @@ async function handleSettingChange(key, value, source) {
           new TextEncoder().encode(JSON.stringify(cloudMetadata))
         );
 
-        // Update local sync status
-        localMetadata.settings.items[key].lastSynced = Date.now();
+        // Update local sync status for all settings
+        for (const settingKey in settingsToUpload) {
+          if (localMetadata.settings.items[settingKey]) {
+            localMetadata.settings.items[settingKey].lastSynced = Date.now();
+          }
+        }
+
         localMetadata.settings.syncedAt = Date.now();
         await saveLocalMetadata();
 
-        logToConsole("success", `Setting ${key} synced to cloud`);
+        logToConsole(
+          "success",
+          `Complete settings sync to cloud successful (${
+            Object.keys(settingsToUpload).length
+          } settings)`
+        );
       } catch (error) {
-        logToConsole("error", `Failed to sync setting ${key}:`, error);
+        logToConsole(
+          "error",
+          `Failed to sync settings: ${error.message}`,
+          error
+        );
       }
     });
   }
