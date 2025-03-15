@@ -2288,15 +2288,16 @@ async function syncFromCloud() {
     const chatsToDownload = [];
     for (const [chatId, cloudChatMeta] of Object.entries(cloudMetadata.chats)) {
       const localChat = localChatsMap.get(chatId);
+      const localMeta = localMetadata.chats[chatId];
 
       // Download if:
       // 1. Chat doesn't exist locally
-      // 2. Cloud version is newer
-      // 3. Local chat exists but hash doesn't match
+      // 2. Cloud version is newer than our last synced version
+      // 3. We haven't synced this chat before
       if (
         !localChat ||
-        cloudChatMeta.lastModified > (localChat.lastModified || 0) ||
-        cloudChatMeta.hash !== (localChat.hash || "")
+        !localMeta ||
+        cloudChatMeta.lastModified > (localMeta.syncedAt || 0)
       ) {
         chatsToDownload.push(chatId);
       }
@@ -2335,10 +2336,10 @@ async function syncFromCloud() {
 
             // Ensure the chat has an ID - if missing, use the one from metadata
             if (!chat.id) {
-              // logToConsole(
-              //   "info",
-              //   `Chat ${chatId} missing ID in data, using ID from metadata`
-              // );
+              logToConsole(
+                "info",
+                `Chat ${chatId} missing ID in data, using ID from metadata`
+              );
               chat.id = chatId;
             } else if (chat.id !== chatId) {
               // If chat has an ID but it doesn't match the metadata, that's a real problem
@@ -2350,6 +2351,17 @@ async function syncFromCloud() {
             }
 
             await saveChatToIndexedDB(chat);
+
+            // Update local metadata for this chat
+            if (!localMetadata.chats[chatId]) {
+              localMetadata.chats[chatId] = {};
+            }
+            localMetadata.chats[chatId] = {
+              ...cloudMetadata.chats[chatId],
+              syncedAt: Date.now(),
+              hash: await generateChatHash(chat),
+            };
+
             logToConsole("success", `Downloaded and saved chat ${chatId}`);
           } catch (error) {
             logToConsole("error", `Failed to process chat ${chatId}:`, error);
@@ -2392,6 +2404,12 @@ async function syncFromCloud() {
             }
           }
 
+          // Update settings metadata
+          localMetadata.settings = {
+            ...cloudMetadata.settings,
+            syncedAt: Date.now(),
+          };
+
           hasChanges = true;
           logToConsole("success", "Settings synced from cloud");
         }
@@ -2401,9 +2419,7 @@ async function syncFromCloud() {
     }
 
     if (hasChanges) {
-      // Update local metadata
-      localMetadata = { ...cloudMetadata };
-      localMetadata.lastSyncTime = Date.now();
+      // Save updated local metadata
       await saveLocalMetadata();
       logToConsole("success", "Sync from cloud completed with changes");
     } else {
