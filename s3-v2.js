@@ -4233,3 +4233,54 @@ async function uploadSettingsToCloud() {
     throw error;
   }
 }
+
+async function downloadCloudMetadata() {
+  try {
+    const { s3, bucketName } = getS3Client();
+
+    // Download metadata file
+    const params = {
+      Bucket: bucketName,
+      Key: "metadata.json",
+    };
+
+    try {
+      const data = await s3.getObject(params).promise();
+      const encryptedContent = new Uint8Array(data.Body);
+      const metadata = await decryptData(encryptedContent);
+
+      logToConsole("success", "Downloaded cloud metadata");
+      return metadata;
+    } catch (error) {
+      if (error.code === "NoSuchKey") {
+        logToConsole(
+          "info",
+          "No cloud metadata found, creating initial metadata"
+        );
+        // Create initial metadata
+        const initialMetadata = {
+          version: "1.0",
+          lastSyncTime: Date.now(),
+          chats: {},
+          settings: {
+            lastModified: Date.now(),
+            syncedAt: Date.now(),
+          },
+        };
+
+        // Encrypt and upload initial metadata
+        const encryptedData = await encryptData(initialMetadata);
+        await uploadToS3("metadata.json", encryptedData, {
+          ContentType: "application/json",
+          ServerSideEncryption: "AES256",
+        });
+
+        return initialMetadata;
+      }
+      throw error;
+    }
+  } catch (error) {
+    logToConsole("error", "Error downloading cloud metadata", error);
+    throw error;
+  }
+}
