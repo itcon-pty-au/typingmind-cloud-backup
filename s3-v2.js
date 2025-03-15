@@ -1189,15 +1189,6 @@ async function downloadFromS3(key) {
       cleanMetadata[cleanKey] = value;
     }
 
-    //logToConsole("info", "S3 response raw metadata:", response.Metadata);
-    //logToConsole("info", "S3 response cleaned metadata:", cleanMetadata);
-    //logToConsole("info", "S3 response data type:", typeof response.Body);
-    //logToConsole(
-    //  "info",
-    //  "S3 response data instanceof:",
-    //  response.Body.constructor.name
-    //);
-
     return {
       data: response.Body,
       metadata: cleanMetadata,
@@ -1523,60 +1514,42 @@ async function decryptData(data) {
   const marker = "ENCRYPTED:";
   const markerBytes = new TextEncoder().encode(marker);
 
-  // Check if data starts with the encryption marker
+  // Check if data is too short to be encrypted
   if (data.length < markerBytes.length) {
-    logToConsole("info", "Data too short to be encrypted, returning as-is");
-    try {
-      const textData = new TextDecoder().decode(data);
-      return textData; // Return the string, not parsed JSON
-    } catch (error) {
-      logToConsole("error", "Failed to decode unencrypted data:", error);
-      return "{}";
-    }
+    return new TextDecoder().decode(data);
   }
 
   // Check for encryption marker
   const dataPrefix = new TextDecoder().decode(
     data.slice(0, markerBytes.length)
   );
+
+  // If not encrypted, return as-is
   if (dataPrefix !== marker) {
-    logToConsole("info", "Data is not encrypted, returning as-is");
-    try {
-      const textData = new TextDecoder().decode(data);
-      return textData; // Return the string, not parsed JSON
-    } catch (error) {
-      logToConsole("error", "Failed to decode unencrypted data:", error);
-      return "{}";
-    }
+    return new TextDecoder().decode(data);
   }
 
+  // Data is encrypted, get the encryption key
   const encryptionKey = localStorage.getItem("encryption-key");
   if (!encryptionKey) {
-    logToConsole("error", "Encrypted data found but no key provided");
     throw new Error("Encryption key not configured");
   }
 
-  try {
-    const key = await deriveKey(encryptionKey);
-    const iv = data.slice(markerBytes.length, markerBytes.length + 12);
-    const content = data.slice(markerBytes.length + 12);
+  // Decrypt the data
+  const key = await deriveKey(encryptionKey);
+  const iv = data.slice(markerBytes.length, markerBytes.length + 12);
+  const content = data.slice(markerBytes.length + 12);
 
-    const decryptedContent = await window.crypto.subtle.decrypt(
-      {
-        name: "AES-GCM",
-        iv: iv,
-      },
-      key,
-      content
-    );
+  const decryptedContent = await window.crypto.subtle.decrypt(
+    {
+      name: "AES-GCM",
+      iv: iv,
+    },
+    key,
+    content
+  );
 
-    const dec = new TextDecoder();
-    const decryptedString = dec.decode(decryptedContent);
-    return decryptedString; // Return the string, not parsed JSON
-  } catch (error) {
-    logToConsole("error", "Decryption failed:", error);
-    throw error;
-  }
+  return new TextDecoder().decode(decryptedContent);
 }
 
 // ==================== BACKUP SYSTEM ====================
@@ -1953,39 +1926,45 @@ async function restoreFromBackup(key) {
       throw new Error("Failed to load JSZip library");
     }
 
+    // Download the backup file
     const backup = await downloadFromS3(key);
-    if (!backup) {
-      throw new Error("Backup not found");
+    if (!backup || !backup.data) {
+      throw new Error("Backup not found or empty");
     }
 
-    // Load and extract ZIP first
+    // Load and extract ZIP
     logToConsole("info", "Loading ZIP file...");
     const zip = await JSZip.loadAsync(backup.data);
     const files = Object.keys(zip.files);
+
     if (files.length === 0) {
       throw new Error("Backup ZIP file is empty");
     }
 
-    // Find the first file in the ZIP (should be the backup data)
-    const dataFile = files[0];
-    if (!dataFile) {
-      throw new Error("No data file found in backup");
+    // Find the JSON file in the ZIP (should be the first file)
+    const jsonFile = files.find((file) => file.endsWith(".json"));
+    if (!jsonFile) {
+      throw new Error("No JSON file found in backup");
     }
 
-    // Get the backup content as binary data
-    logToConsole("info", `Extracting data from ${dataFile}...`);
-    const backupContent = await zip.file(dataFile).async("uint8array");
+    // Extract the content
+    logToConsole("info", `Extracting data from ${jsonFile}...`);
+    const backupContent = await zip.file(jsonFile).async("uint8array");
 
-    // Decrypt the backup content
-    logToConsole("info", "Decrypting backup content...");
+    // Decrypt if needed
+    logToConsole("info", "Processing backup content...");
     const decryptedContent = await decryptData(backupContent);
-    logToConsole("success", "Backup content decrypted successfully");
 
-    // Parse the decrypted content
+    // Parse the JSON data
     logToConsole("info", "Parsing backup data...");
     const backupData = JSON.parse(decryptedContent);
 
-    // Import the data to storage (both localStorage and IndexedDB)
+    if (!backupData) {
+      throw new Error("Invalid backup data format");
+    }
+
+    // Import the data to storage
+    logToConsole("info", "Importing data to storage...");
     await importDataToStorage(backupData);
 
     // Update last sync time
@@ -2042,23 +2021,37 @@ function importDataToStorage(data) {
     if (data.indexedDB) {
       logToConsole("info", "Importing IndexedDB data...");
       const request = indexedDB.open("keyval-store");
-      request.onerror = () => reject(request.error);
+
+      request.onerror = () => reject(new Error("Failed to open IndexedDB"));
+
       request.onsuccess = function (event) {
         const db = event.target.result;
         const transaction = db.transaction(["keyval"], "readwrite");
         const objectStore = transaction.objectStore("keyval");
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => reject(transaction.error);
+
+        transaction.oncomplete = () => {
+          logToConsole("success", "IndexedDB import completed");
+          resolve();
+        };
+
+        transaction.onerror = () =>
+          reject(new Error("IndexedDB transaction failed"));
 
         // Clear existing data
         const deleteRequest = objectStore.clear();
         deleteRequest.onsuccess = function () {
           // Import new data
-          const indexedDBData = data.indexedDB;
-          Object.keys(indexedDBData).forEach((key) => {
-            objectStore.put(indexedDBData[key], key);
+          Object.keys(data.indexedDB).forEach((key) => {
+            objectStore.put(data.indexedDB[key], key);
           });
         };
+      };
+
+      request.onupgradeneeded = function (event) {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains("keyval")) {
+          db.createObjectStore("keyval");
+        }
       };
     } else {
       // If there's no IndexedDB data, resolve immediately
@@ -3614,7 +3607,7 @@ async function loadBackupList() {
 
     // Function to update button states
     const updateButtonStates = () => {
-      const selectedValue = oldBackupList.value;
+      const selectedValue = oldBackupList.value || "";
       const downloadButton = document.getElementById("download-backup-btn");
       const restoreButton = document.getElementById("restore-backup-btn");
       const deleteButton = document.getElementById("delete-backup-btn");
@@ -3623,8 +3616,8 @@ async function loadBackupList() {
       logToConsole("info", `Selected backup file: ${selectedValue}`);
 
       // Check file types
-      const isSnapshot = selectedValue?.startsWith("s-");
-      const isDailyBackup = selectedValue?.startsWith("typingmind-backup-");
+      const isSnapshot = selectedValue.startsWith("s-");
+      const isDailyBackup = selectedValue.startsWith("typingmind-backup-");
       const isChatsFolder = selectedValue === "chats/";
       const isSettingsFile = selectedValue === "settings.json";
       const isMetadataFile = selectedValue === "metadata.json";
