@@ -2615,6 +2615,11 @@ async function syncToCloud() {
       version: EXTENSION_VERSION,
       timestamp: Date.now(),
       chats: {},
+      settings: {
+        items: {},
+        lastModified: Date.now(),
+        syncedAt: Date.now(),
+      },
     };
 
     // Add metadata for each chat
@@ -2627,12 +2632,90 @@ async function syncToCloud() {
       };
     }
 
+    // Upload settings to cloud during initial sync
+    const settingsToUpload = {};
+    let hasSettings = false;
+
+    // Add monitored localStorage settings
+    for (const key of MONITORED_ITEMS.localStorage) {
+      const value = localStorage.getItem(key);
+      if (value !== null) {
+        settingsToUpload[key] = {
+          data: value,
+          source: "localStorage",
+          lastModified: Date.now(),
+        };
+        hasSettings = true;
+
+        // Also update local metadata
+        if (!localMetadata.settings.items[key]) {
+          localMetadata.settings.items[key] = {
+            hash: await generateContentHash(value),
+            lastModified: Date.now(),
+            lastSynced: Date.now(),
+            source: "localStorage",
+          };
+        }
+      }
+    }
+
+    // Add monitored IndexedDB settings
+    for (const key of MONITORED_ITEMS.indexedDB) {
+      const value = await getIndexedDBValue(key);
+      if (value !== undefined) {
+        settingsToUpload[key] = {
+          data: value,
+          source: "indexeddb",
+          lastModified: Date.now(),
+        };
+        hasSettings = true;
+
+        // Also update local metadata
+        if (!localMetadata.settings.items[key]) {
+          localMetadata.settings.items[key] = {
+            hash: await generateContentHash(value),
+            lastModified: Date.now(),
+            lastSynced: Date.now(),
+            source: "indexeddb",
+          };
+        }
+      }
+    }
+
+    // Upload settings if any were found
+    if (hasSettings) {
+      logToConsole(
+        "info",
+        "Uploading monitored settings to cloud during initial sync"
+      );
+      const settingsData = JSON.stringify(settingsToUpload);
+      let uploadData;
+      let uploadMetadata = {
+        version: EXTENSION_VERSION,
+        timestamp: String(Date.now()),
+        type: "settings",
+        encrypted: "true",
+      };
+
+      // Always encrypt settings data
+      const encryptedResult = await encryptData(settingsData);
+      uploadData = encryptedResult;
+
+      await uploadToS3("settings.json", uploadData, uploadMetadata);
+
+      // Update metadata with settings info
+      metadata.settings.lastModified = Date.now();
+      metadata.settings.syncedAt = Date.now();
+    }
+
     await uploadToS3(
       "metadata.json",
       new TextEncoder().encode(JSON.stringify(metadata))
     );
 
     localMetadata.lastSyncTime = Date.now();
+    localMetadata.settings.lastModified = Date.now();
+    localMetadata.settings.syncedAt = Date.now();
     await saveLocalMetadata();
 
     logToConsole("success", "Sync to cloud completed");
