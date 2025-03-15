@@ -4315,3 +4315,200 @@ async function downloadCloudMetadata() {
     throw error;
   }
 }
+
+async function downloadChatFromCloud(chatId) {
+  logToConsole("download", `Downloading chat ${chatId} from cloud`);
+
+  try {
+    const s3 = initializeS3Client();
+
+    // Download chat file
+    const params = {
+      Bucket: config.bucketName,
+      Key: `chats/${chatId}.json`,
+    };
+
+    try {
+      const data = await s3.getObject(params).promise();
+      const encryptedContent = new Uint8Array(data.Body);
+      const chatData = await decryptData(encryptedContent);
+
+      logToConsole("success", `Downloaded chat ${chatId} from cloud`, {
+        messageCount: (chatData.messagesArray || []).length,
+        title: chatData.chatTitle,
+      });
+
+      return chatData;
+    } catch (error) {
+      if (error.code === "NoSuchKey") {
+        logToConsole("info", `Chat ${chatId} not found in cloud`);
+        return null;
+      }
+      throw error;
+    }
+  } catch (error) {
+    logToConsole("error", `Error downloading chat ${chatId}`, error);
+    throw error;
+  }
+}
+
+// Upload a chat to cloud
+async function uploadChatToCloud(chatId) {
+  logToConsole("upload", `Uploading chat ${chatId} to cloud`);
+
+  try {
+    const s3 = initializeS3Client();
+
+    // First, check if there's a tombstone for this chat in cloud metadata
+    // to prevent uploading a chat that was deleted on another device
+    const cloudMetadata = await downloadCloudMetadata();
+    if (
+      cloudMetadata.chats &&
+      cloudMetadata.chats[chatId] &&
+      cloudMetadata.chats[chatId].deleted === true
+    ) {
+      // Check if our local version is newer (might be a restoration)
+      const localChatInfo = localMetadata.chats[chatId];
+      const cloudDeletion = cloudMetadata.chats[chatId];
+
+      if (!localChatInfo || localChatInfo.deleted === true) {
+        // This chat is also deleted locally or not in our metadata, respect the cloud tombstone
+        logToConsole(
+          "info",
+          `Skipping upload of chat ${chatId} as it has a cloud tombstone`
+        );
+        return false;
+      }
+
+      // If the local chat was modified after the cloud deletion, we might be restoring it
+      if (localChatInfo.lastModified > cloudDeletion.deletedAt) {
+        logToConsole(
+          "info",
+          `Local chat ${chatId} appears to be newer than cloud tombstone, proceeding with upload as restoration`
+        );
+        // Continue with upload - will overwrite the tombstone
+      } else {
+        // Local chat is older than cloud deletion, respect the tombstone
+        logToConsole(
+          "info",
+          `Local chat ${chatId} is older than cloud tombstone, will be deleted locally instead`
+        );
+        await deleteChatFromIndexedDB(chatId);
+        return false;
+      }
+    }
+
+    // Get chat data
+    const chatData = await getChatFromIndexedDB(chatId);
+    if (!chatData) {
+      logToConsole(
+        "warning",
+        `Chat ${chatId} not found in IndexedDB, skipping upload`
+      );
+      return false;
+    }
+
+    // Check if this is an empty or invalid chat
+    const messagesCount = chatData.messagesArray?.length || 0;
+    if (messagesCount === 0 && !chatData.chatTitle) {
+      logToConsole("warning", `Skipping upload of empty chat ${chatId}`);
+      return false;
+    }
+
+    // Generate a new hash for the chat
+    const newHash = await generateContentHash(JSON.stringify(chatData));
+
+    // Check if the chat already exists in cloud metadata and has the same hash
+    // This prevents unnecessary uploads of unchanged chats
+    if (
+      cloudMetadata.chats &&
+      cloudMetadata.chats[chatId] &&
+      cloudMetadata.chats[chatId].hash === newHash &&
+      !cloudMetadata.chats[chatId].deleted
+    ) {
+      logToConsole("info", `Chat ${chatId} hasn't changed, skipping upload`);
+
+      // Still update local metadata to mark it as synced
+      if (localMetadata.chats[chatId]) {
+        localMetadata.chats[chatId].syncedAt = Date.now();
+        localMetadata.chats[chatId].hash = newHash;
+        saveLocalMetadata();
+      }
+
+      return true;
+    }
+
+    // Encrypt chat data
+    const encryptedData = await encryptData(chatData);
+
+    // Upload to S3
+    const params = {
+      Bucket: config.bucketName,
+      Key: `chats/${chatId}.json`,
+      Body: encryptedData,
+      ContentType: "application/json",
+      ServerSideEncryption: "AES256",
+    };
+
+    await s3.putObject(params).promise();
+
+    logToConsole("success", `Uploaded chat ${chatId} to cloud`, {
+      messageCount: messagesCount,
+      title: chatData.chatTitle || "(Untitled)",
+      size: encryptedData.length,
+    });
+
+    // Update local metadata
+    if (!localMetadata.chats[chatId]) {
+      localMetadata.chats[chatId] = {};
+    }
+
+    localMetadata.chats[chatId].lastModified = chatData.updatedAt || Date.now();
+    localMetadata.chats[chatId].syncedAt = Date.now();
+    localMetadata.chats[chatId].hash = newHash;
+
+    // Clear any deleted flag if it existed (this is a restoration)
+    if (localMetadata.chats[chatId].deleted) {
+      delete localMetadata.chats[chatId].deleted;
+      delete localMetadata.chats[chatId].deletedAt;
+      delete localMetadata.chats[chatId].tombstoneVersion;
+      logToConsole("info", `Restored previously deleted chat ${chatId}`);
+    }
+
+    saveLocalMetadata();
+
+    // Update cloud metadata
+    if (!cloudMetadata.chats) cloudMetadata.chats = {};
+
+    // Remove any tombstone and update metadata
+    cloudMetadata.chats[chatId] = {
+      lastModified: chatData.updatedAt || Date.now(),
+      syncedAt: Date.now(),
+      hash: newHash,
+    };
+
+    await uploadToS3(
+      "metadata.json",
+      new TextEncoder().encode(JSON.stringify(cloudMetadata)),
+      {
+        ContentType: "application/json",
+        ServerSideEncryption: "AES256",
+      }
+    );
+
+    return true;
+  } catch (error) {
+    logToConsole("error", `Error uploading chat ${chatId}`, error);
+
+    // Update metadata to mark this chat for retry later
+    if (localMetadata.chats[chatId]) {
+      localMetadata.chats[chatId].uploadError = error.message;
+      localMetadata.chats[chatId].uploadErrorTime = Date.now();
+      localMetadata.chats[chatId].uploadRetryCount =
+        (localMetadata.chats[chatId].uploadRetryCount || 0) + 1;
+      saveLocalMetadata();
+    }
+
+    throw error;
+  }
+}
