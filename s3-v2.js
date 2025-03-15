@@ -2139,17 +2139,6 @@ function startSyncInterval() {
 
     // Load latest metadata before checking for changes
     await loadLocalMetadata();
-
-    // Check if we need to sync based on last sync time
-    const timeSinceLastSync = Date.now() - (localMetadata.lastSyncTime || 0);
-    if (timeSinceLastSync < interval) {
-      logToConsole(
-        "skip",
-        `Last sync was ${Math.round(timeSinceLastSync / 1000)}s ago - skipping`
-      );
-      return;
-    }
-
     queueOperation("periodic-sync", syncFromCloud);
   }, interval);
 
@@ -2311,8 +2300,12 @@ async function syncFromCloud() {
       const localChat = localChatsMap.get(chatId);
       const localMeta = localMetadata.chats[chatId];
 
-      // Skip if we've already synced this version
-      if (localMeta && localMeta.syncedAt >= cloudChatMeta.lastModified) {
+      // Skip if we've already synced this version and hashes match
+      if (
+        localMeta &&
+        localMeta.syncedAt >= cloudChatMeta.lastModified &&
+        localMeta.hash === cloudChatMeta.hash
+      ) {
         continue;
       }
 
@@ -2320,10 +2313,12 @@ async function syncFromCloud() {
       // 1. Chat doesn't exist locally
       // 2. Cloud version is newer than our last synced version
       // 3. We haven't synced this chat before
+      // 4. Hashes don't match (content is different)
       if (
         !localChat ||
         !localMeta ||
-        cloudChatMeta.lastModified > (localMeta.syncedAt || 0)
+        cloudChatMeta.lastModified > (localMeta.syncedAt || 0) ||
+        localMeta.hash !== cloudChatMeta.hash
       ) {
         chatsToDownload.push(chatId);
       }
@@ -2444,7 +2439,7 @@ async function syncFromCloud() {
       }
     }
 
-    // Always update lastSyncTime, even if no changes
+    // Always update lastSyncTime
     localMetadata.lastSyncTime = Date.now();
 
     // Save updated local metadata
