@@ -1928,6 +1928,9 @@ async function restoreFromBackup(key) {
   logToConsole("start", `Starting restore from backup: ${key}`);
 
   try {
+    // Temporarily disable sync
+    operationState.isImporting = true;
+
     // Download the backup file
     const backup = await downloadFromS3(key);
     if (!backup || !backup.data) {
@@ -1956,8 +1959,22 @@ async function restoreFromBackup(key) {
     // Decrypt the content
     const decryptedContent = await decryptData(backupContent);
 
+    // Validate the decrypted content before importing
+    if (typeof decryptedContent !== "object" || !decryptedContent) {
+      throw new Error("Invalid backup data format");
+    }
+
     // Import the data to storage
     await importDataToStorage(decryptedContent);
+
+    // Validate imported chats
+    const chats = await getAllChatsFromIndexedDB();
+    for (const chat of chats) {
+      if (!chat.id) {
+        logToConsole("warning", "Found chat without ID, skipping", chat);
+        continue;
+      }
+    }
 
     // Update last sync time
     const currentTime = new Date().toLocaleString();
@@ -1966,10 +1983,15 @@ async function restoreFromBackup(key) {
     // Save metadata
     await saveLocalMetadata();
 
+    // Re-enable sync
+    operationState.isImporting = false;
+
     logToConsole("success", "Backup restored successfully");
     return true;
   } catch (error) {
     logToConsole("error", "Restore failed:", error);
+    // Ensure sync is re-enabled even if restoration fails
+    operationState.isImporting = false;
     throw error;
   }
 }
@@ -4309,5 +4331,22 @@ async function cleanupMetadataVersions() {
         `Error code: ${error.code}, Message: ${error.message}`
       );
     }
+  }
+}
+
+async function deleteChatFromCloud(chatId) {
+  try {
+    if (!isAwsConfigured()) {
+      throw new Error("AWS is not configured");
+    }
+
+    // Delete the chat data from S3
+    const chatKey = `chats/${chatId}.json`;
+    await deleteFromS3(chatKey);
+
+    logToConsole("success", `Successfully deleted chat ${chatId} from cloud`);
+  } catch (error) {
+    logToConsole("error", `Failed to delete chat ${chatId} from cloud:`, error);
+    throw error;
   }
 }
