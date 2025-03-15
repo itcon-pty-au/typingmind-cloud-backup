@@ -2287,6 +2287,9 @@ async function syncFromCloud() {
       }
     }
 
+    // Initialize local metadata for chats if needed
+    if (!localMetadata.chats) localMetadata.chats = {};
+
     let hasChanges = false;
     const chatDownloadPromises = [];
 
@@ -2298,13 +2301,24 @@ async function syncFromCloud() {
       const localChat = localChatsMap[chatId];
       const localChatMeta = localMetadata.chats[chatId];
 
+      // Skip if we already have this chat and its metadata matches
+      if (
+        localChat &&
+        localChatMeta &&
+        localChatMeta.hash === cloudChatMeta.hash
+      ) {
+        // Update syncedAt timestamp
+        localChatMeta.syncedAt = Date.now();
+        continue;
+      }
+
       // Generate hash for local chat if it exists
       const localHash = localChat ? await generateChatHash(localChat) : null;
 
       // Download if:
       // 1. Chat doesn't exist locally
       // 2. Local hash doesn't match cloud hash
-      // 3. Local metadata is missing
+      // 3. Local metadata is missing or has different hash
       if (
         !localChat ||
         !localHash ||
@@ -2332,6 +2346,7 @@ async function syncFromCloud() {
                 chat.id = chatId;
               }
 
+              // Save chat and update metadata
               await saveChatToIndexedDB(chat);
               hasChanges = true;
 
@@ -2355,11 +2370,6 @@ async function syncFromCloud() {
             }
           })()
         );
-      } else {
-        // Even if we skip download, update the syncedAt timestamp
-        if (localChatMeta) {
-          localChatMeta.syncedAt = Date.now();
-        }
       }
     }
 
