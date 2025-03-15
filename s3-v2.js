@@ -4091,11 +4091,11 @@ async function downloadSettingsFromCloud() {
   logToConsole("download", "Downloading settings.json from cloud");
 
   try {
-    const { s3, bucketName } = getS3Client();
+    const s3 = initializeS3Client();
 
     // Download settings file
     const params = {
-      Bucket: bucketName,
+      Bucket: config.bucketName,
       Key: "settings.json",
     };
 
@@ -4142,7 +4142,7 @@ async function uploadSettingsToCloud() {
   logToConsole("upload", "Uploading settings.json to cloud");
 
   try {
-    const { s3, bucketName } = getS3Client();
+    const s3 = initializeS3Client();
     const settingsData = {};
 
     // Exclude security-related keys
@@ -4201,7 +4201,7 @@ async function uploadSettingsToCloud() {
 
     // Upload to S3
     const params = {
-      Bucket: bucketName,
+      Bucket: config.bucketName,
       Key: "settings.json",
       Body: encryptedData,
       ContentType: "application/json",
@@ -4225,7 +4225,10 @@ async function uploadSettingsToCloud() {
       syncedAt: Date.now(),
     };
 
-    await uploadCloudMetadata(cloudMetadata);
+    await uploadToS3("metadata.json", await encryptData(cloudMetadata), {
+      ContentType: "application/json",
+      ServerSideEncryption: "AES256",
+    });
 
     return true;
   } catch (error) {
@@ -4236,11 +4239,11 @@ async function uploadSettingsToCloud() {
 
 async function downloadCloudMetadata() {
   try {
-    const { s3, bucketName } = getS3Client();
+    const s3 = initializeS3Client();
 
     // Download metadata file
     const params = {
-      Bucket: bucketName,
+      Bucket: config.bucketName,
       Key: "metadata.json",
     };
 
