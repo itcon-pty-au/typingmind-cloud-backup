@@ -2333,8 +2333,19 @@ async function syncFromCloud() {
                 : new TextDecoder().decode(rawData)
             );
 
+            // Ensure the chat has an ID - if missing, use the one from metadata
             if (!chat.id) {
-              logToConsole("warning", `Chat ${chatId} has no ID, skipping`);
+              // logToConsole(
+              //   "info",
+              //   `Chat ${chatId} missing ID in data, using ID from metadata`
+              // );
+              chat.id = chatId;
+            } else if (chat.id !== chatId) {
+              // If chat has an ID but it doesn't match the metadata, that's a real problem
+              logToConsole(
+                "warning",
+                `Chat ${chatId} has mismatched ID in data: ${chat.id}, skipping`
+              );
               continue;
             }
 
