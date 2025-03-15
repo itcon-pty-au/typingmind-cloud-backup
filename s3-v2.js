@@ -1693,8 +1693,6 @@ function exportBackupData() {
           logToConsole("info", "Export data summary", {
             localStorageKeys: Object.keys(exportData.localStorage).length,
             indexedDBKeys: Object.keys(exportData.indexedDB).length,
-            localStorageSize: JSON.stringify(exportData.localStorage).length,
-            indexedDBSize: JSON.stringify(exportData.indexedDB).length,
             hasLocalStorageData,
             hasIndexedDBData,
           });
@@ -1995,7 +1993,6 @@ async function restoreFromBackup(key) {
 // Import data to storage (both localStorage and IndexedDB)
 function importDataToStorage(data) {
   return new Promise((resolve, reject) => {
-    // Keys to preserve during import
     const preserveKeys = [
       "import-size-threshold",
       "export-size-threshold",
@@ -2018,107 +2015,37 @@ function importDataToStorage(data) {
 
     // Import localStorage data
     if (data.localStorage) {
-      logToConsole("info", "Importing localStorage data...");
       Object.keys(data.localStorage).forEach((key) => {
-        // Skip numeric keys and ensure key is a valid string
-        if (
-          !preserveKeys.includes(key) &&
-          isNaN(parseInt(key)) &&
-          typeof key === "string" &&
-          key.trim() !== ""
-        ) {
-          // Only set if the value is defined
-          if (
-            data.localStorage[key] !== undefined &&
-            data.localStorage[key] !== null
-          ) {
-            localStorage.setItem(key, data.localStorage[key]);
-            logToConsole("debug", `Imported localStorage key: ${key}`);
-          } else {
-            logToConsole("warn", `Skipping undefined value for key: ${key}`);
-          }
-        } else if (preserveKeys.includes(key)) {
-          logToConsole("debug", `Preserving existing value for key: ${key}`);
-        } else {
-          logToConsole("warn", `Skipping invalid localStorage key: ${key}`);
+        if (!preserveKeys.includes(key)) {
+          // Store the value exactly as it was in the backup
+          localStorage.setItem(key, data.localStorage[key]);
         }
       });
     }
 
     // Import IndexedDB data
     if (data.indexedDB) {
-      logToConsole("info", "Importing IndexedDB data...");
       const request = indexedDB.open("keyval-store");
-
-      request.onerror = () => reject(new Error("Failed to open IndexedDB"));
-
+      request.onerror = () => reject(request.error);
       request.onsuccess = function (event) {
         const db = event.target.result;
         const transaction = db.transaction(["keyval"], "readwrite");
         const objectStore = transaction.objectStore("keyval");
 
-        transaction.oncomplete = () => {
-          logToConsole("success", "IndexedDB import completed");
-          resolve();
-        };
-
-        transaction.onerror = () =>
-          reject(new Error("IndexedDB transaction failed"));
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
 
         // Clear existing data
         const deleteRequest = objectStore.clear();
         deleteRequest.onsuccess = function () {
-          // Import new data
+          // Import new data directly
           Object.keys(data.indexedDB).forEach((key) => {
-            // Skip numeric keys and ensure key is a valid string
-            if (
-              isNaN(parseInt(key)) &&
-              typeof key === "string" &&
-              key.trim() !== ""
-            ) {
-              // Only import if the value is defined
-              if (
-                data.indexedDB[key] !== undefined &&
-                data.indexedDB[key] !== null
-              ) {
-                objectStore.put(data.indexedDB[key], key);
-                logToConsole("debug", `Imported IndexedDB key: ${key}`);
-              } else {
-                logToConsole(
-                  "warn",
-                  `Skipping undefined value for IndexedDB key: ${key}`
-                );
-              }
-            } else {
-              logToConsole("warn", `Skipping invalid IndexedDB key: ${key}`);
-            }
+            objectStore.put(data.indexedDB[key], key);
           });
         };
       };
-
-      request.onupgradeneeded = function (event) {
-        const db = event.target.result;
-        if (!db.objectStoreNames.contains("keyval")) {
-          db.createObjectStore("keyval");
-        }
-      };
     } else {
-      // If there's no IndexedDB data, resolve immediately
       resolve();
-    }
-
-    // Ensure the extension URL is in the list
-    let extensionURLs = JSON.parse(
-      localStorage.getItem("TM_useExtensionURLs") || "[]"
-    );
-    if (!extensionURLs.some((url) => url.endsWith("s3-v2.js"))) {
-      extensionURLs.push(
-        "https://itcon-pty-au.github.io/typingmind-cloud-backup-bugfix/s3-v2.js"
-      );
-      localStorage.setItem(
-        "TM_useExtensionURLs",
-        JSON.stringify(extensionURLs)
-      );
     }
   });
 }
