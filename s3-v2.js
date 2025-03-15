@@ -1,5 +1,5 @@
 // TypingMind Cloud Sync & Backup v2.0.0
-// Combines features from s3.js and s3-cope.js for comprehensive sync and backup
+// Combines features from s3.js and YATSE for comprehensive sync and backup
 
 // ==================== CONSTANTS & STATE ====================
 
@@ -88,8 +88,18 @@ let config = {
   compressionLevel: 9, // ZIP compression level
 
   // File prefixes
-  dailyBackupPrefix: "daily",
-  snapshotPrefix: "s",
+  dailyBackupPrefix: "typingmind-backup-",
+  snapshotPrefix: "s-",
+
+  // AWS configuration
+  accessKey: "",
+  secretKey: "",
+  region: "",
+  bucketName: "",
+  endpoint: "",
+
+  // Encryption configuration
+  encryptionKey: "",
 };
 
 // Track last seen updates for change detection
