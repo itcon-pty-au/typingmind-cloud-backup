@@ -1601,9 +1601,14 @@ async function checkAndPerformDailyBackup() {
     // Only perform backup if we haven't done one today
     if (!storedSuffix || currentDateSuffix > storedSuffix) {
       logToConsole("start", "Starting daily backup check...");
-      await performDailyBackup();
-      // Store today's date as the last backup date
-      localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
+      const success = await performDailyBackup();
+
+      // Only update localStorage if backup was successful
+      if (success) {
+        // Store today's date as the last backup date
+        localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
+        logToConsole("success", "Daily backup completed and recorded");
+      }
     } else {
       logToConsole("info", "Daily backup already performed today, skipping");
     }
@@ -1621,16 +1626,30 @@ async function performDailyBackup() {
     // Ensure JSZip is loaded before creating backup
     await loadJSZip();
 
-    const timestamp = new Date().toISOString().split("T")[0];
-    const key = `${config.dailyBackupPrefix}-${timestamp}.zip`;
+    // Format date as YYYYMMDD for the filename
+    const today = new Date();
+    const dateString = `${today.getFullYear()}${String(
+      today.getMonth() + 1
+    ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
 
-    await createBackup(key, "daily");
-    await cleanupOldBackups("daily");
+    // Use the correct filename format: typingmind-backup-YYYYMMDD.zip
+    const key = `typingmind-backup-${dateString}.zip`;
 
-    backupState.lastDailyBackup = Date.now();
-    logToConsole("success", "Daily backup completed");
+    // Create and upload the backup
+    const success = await createBackup(key, "daily");
+
+    if (success) {
+      await cleanupOldBackups("daily");
+      backupState.lastDailyBackup = Date.now();
+      logToConsole("success", "Daily backup created successfully");
+      return true;
+    } else {
+      logToConsole("error", "Daily backup creation failed");
+      return false;
+    }
   } catch (error) {
     logToConsole("error", "Daily backup failed:", error);
+    return false;
   } finally {
     backupState.isBackupInProgress = false;
   }
@@ -1771,6 +1790,15 @@ async function createBackup(key, type) {
       throw new Error("Failed to load JSZip library");
     }
 
+    // Check if encryption key is available
+    const encryptionKey = localStorage.getItem("encryption-key");
+    if (!encryptionKey) {
+      logToConsole(
+        "warning",
+        "No encryption key found, backup will not be encrypted"
+      );
+    }
+
     // Get all chats
     const chats = await getAllChatsFromIndexedDB();
     if (!chats || chats.length === 0) {
@@ -1795,7 +1823,7 @@ async function createBackup(key, type) {
     const backupFileName = `backup-${Date.now()}.json`;
 
     // Add the JSON data as a file in the ZIP
-    if (config.encryptionKey) {
+    if (encryptionKey) {
       // Encrypt the JSON data
       const encryptedResult = await encryptData(backupJson);
       // Store the encrypted data directly
@@ -1845,7 +1873,7 @@ async function createBackup(key, type) {
       type: type,
       originalSize: String(rawSize),
       compressedSize: String(compressedSize),
-      encrypted: config.encryptionKey ? "true" : "false",
+      encrypted: encryptionKey ? "true" : "false",
     };
 
     // Upload to S3 - we upload the ZIP file directly, not encrypting it again
