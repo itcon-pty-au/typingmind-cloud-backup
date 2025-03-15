@@ -771,12 +771,22 @@ async function getAllChatsFromIndexedDB() {
         store.getAll().onsuccess = (valueEvent) => {
           const values = valueEvent.target.result;
           for (let i = 0; i < keys.length; i++) {
-            if (keys[i].startsWith("CHAT_")) {
-              chats.push(values[i]);
+            const key = keys[i];
+            if (key.startsWith("CHAT_")) {
+              const chat = values[i];
+              // Ensure chat has an id, removing CHAT_ prefix if present
+              if (!chat.id) {
+                chat.id = key.startsWith("CHAT_") ? key.slice(5) : key;
+              }
+              chats.push(chat);
             }
           }
           resolve(chats);
         };
+      };
+
+      transaction.oncomplete = () => {
+        db.close();
       };
     };
 
