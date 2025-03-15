@@ -2337,45 +2337,86 @@ async function syncFromCloud() {
       }
     }
 
-    // Process chat changes
-    for (const [chatId, cloudChatMeta] of Object.entries(cloudMetadata.chats)) {
-      // Skip if this is a tombstone entry
+    // Get all local chats
+    const localChats = await getAllChatsFromIndexedDB();
+    const localChatIds = new Set(localChats.map((chat) => chat.id));
+    const cloudChatIds = new Set(Object.keys(cloudMetadata.chats));
+
+    // Process cloud chats that don't exist locally or have changes
+    for (const chatId of cloudChatIds) {
+      const cloudChatMeta = cloudMetadata.chats[chatId];
+      const localChatMeta = localMetadata.chats[chatId];
+
+      // Skip if this is a cloud tombstone and we've already processed it
       if (cloudChatMeta.deleted === true) {
-        if (!localMetadata.chats[chatId]?.deleted) {
-          await deleteLocalChat(chatId);
+        if (
+          localChatMeta?.deleted === true &&
+          localChatMeta.deletedAt >= cloudChatMeta.deletedAt
+        ) {
+          continue;
+        }
+
+        // Delete local chat if it exists
+        if (localChatIds.has(chatId)) {
+          await deleteChatFromIndexedDB(chatId);
           hasChanges = true;
         }
+
+        // Update local metadata with tombstone
+        localMetadata.chats[chatId] = {
+          deleted: true,
+          deletedAt: cloudChatMeta.deletedAt,
+          lastModified: cloudChatMeta.lastModified,
+          syncedAt: Date.now(),
+        };
+        saveLocalMetadata();
         continue;
       }
 
-      const localChatMeta = localMetadata.chats[chatId];
-
       // Download if:
-      // 1. No local metadata
+      // 1. Chat doesn't exist locally
       // 2. Different hash
       // 3. Never synced
+      // 4. Cloud changes not synced
       if (
         !localChatMeta ||
         cloudChatMeta.hash !== localChatMeta.hash ||
-        !localChatMeta.syncedAt
+        !localChatMeta.syncedAt ||
+        cloudChatMeta.lastModified > localChatMeta.syncedAt
       ) {
         const cloudChat = await downloadChatFromCloud(chatId);
         if (cloudChat) {
           await saveChatToIndexedDB(cloudChat);
-          await updateChatMetadata(chatId, false);
           hasChanges = true;
+
+          // Update local metadata
+          if (!localMetadata.chats[chatId]) {
+            localMetadata.chats[chatId] = {};
+          }
+          localMetadata.chats[chatId].lastModified = cloudChatMeta.lastModified;
+          localMetadata.chats[chatId].syncedAt = Date.now();
+          localMetadata.chats[chatId].hash = cloudChatMeta.hash;
+          saveLocalMetadata();
         }
       }
     }
 
-    // Check for local chats that don't exist in cloud (might be deleted)
-    for (const [chatId, localChatMeta] of Object.entries(localMetadata.chats)) {
-      if (!cloudMetadata.chats[chatId] && !localChatMeta.deleted) {
-        // Chat exists locally but not in cloud - might be deleted
-        // Only delete if it's not a new local chat
-        if (localChatMeta.syncedAt > 0) {
-          await deleteLocalChat(chatId);
+    // Process local chats that don't exist in cloud
+    for (const chatId of localChatIds) {
+      if (!cloudChatIds.has(chatId)) {
+        // If we've synced before and this chat isn't in the cloud, it was deleted
+        if (localMetadata.lastSyncTime > 0) {
+          await deleteChatFromIndexedDB(chatId);
           hasChanges = true;
+
+          // Add tombstone to local metadata
+          localMetadata.chats[chatId] = {
+            deleted: true,
+            deletedAt: Date.now(),
+            lastModified: Date.now(),
+            syncedAt: Date.now(),
+          };
+          saveLocalMetadata();
         }
       }
     }
