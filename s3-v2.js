@@ -2260,6 +2260,9 @@ async function syncFromCloud() {
   logToConsole("start", "Starting sync from cloud...");
   operationState.isImporting = true;
 
+  // Track if any changes were made during sync
+  let hasChanges = false;
+
   try {
     // First get cloud metadata
     const cloudMetadataObj = await downloadFromS3("metadata.json");
@@ -2373,6 +2376,9 @@ async function syncFromCloud() {
 
         await saveChatToIndexedDB(chatData);
         logToConsole("success", `Downloaded and saved chat ${chatId}`);
+
+        // Mark that changes occurred
+        hasChanges = true;
       } catch (error) {
         logToConsole("error", `Failed to download chat ${chatId}:`, error);
       }
@@ -2408,6 +2414,11 @@ async function syncFromCloud() {
           hash: await generateChatHash(chat),
           syncedAt: Date.now(),
         };
+
+        // Mark that changes occurred
+        hasChanges = true;
+
+        logToConsole("success", `Uploaded chat ${chatId}`);
       } catch (error) {
         logToConsole("error", `Failed to upload chat ${chatId}:`, error);
       }
@@ -2442,6 +2453,9 @@ async function syncFromCloud() {
               localStorage.setItem(key, value.data);
             }
           }
+
+          // Mark that changes occurred
+          hasChanges = true;
         }
       } catch (error) {
         logToConsole("error", "Failed to sync settings:", error);
@@ -2505,10 +2519,9 @@ async function syncFromCloud() {
           };
         }
         cloudMetadata.settings.lastModified = Date.now();
-        await uploadToS3(
-          "metadata.json",
-          new TextEncoder().encode(JSON.stringify(cloudMetadata))
-        );
+
+        // Mark that changes occurred
+        hasChanges = true;
 
         // Update local sync status
         for (const key of Object.keys(settingsToUpload)) {
@@ -2526,10 +2539,19 @@ async function syncFromCloud() {
     }
 
     // Update cloud metadata with any changes
-    await uploadToS3(
-      "metadata.json",
-      new TextEncoder().encode(JSON.stringify(cloudMetadata))
-    );
+    if (
+      hasChanges ||
+      changes.toDownload.length > 0 ||
+      changes.toUpload.length > 0
+    ) {
+      await uploadToS3(
+        "metadata.json",
+        new TextEncoder().encode(JSON.stringify(cloudMetadata))
+      );
+      logToConsole("info", "Updated cloud metadata");
+    } else {
+      logToConsole("info", "No changes detected, skipping metadata upload");
+    }
 
     // Update local metadata
     localMetadata.lastSyncTime = Date.now();
@@ -2586,6 +2608,7 @@ async function syncToCloud() {
 
   try {
     const chats = await getAllChatsFromIndexedDB();
+    let hasChanges = false;
 
     // Upload each chat individually
     for (const chat of chats) {
@@ -2608,6 +2631,7 @@ async function syncToCloud() {
       }
 
       await uploadToS3(`chats/${chat.id}.json`, uploadData, uploadMetadata);
+      hasChanges = true;
     }
 
     // Update metadata
@@ -2702,16 +2726,23 @@ async function syncToCloud() {
       uploadData = encryptedResult;
 
       await uploadToS3("settings.json", uploadData, uploadMetadata);
+      hasChanges = true;
 
       // Update metadata with settings info
       metadata.settings.lastModified = Date.now();
       metadata.settings.syncedAt = Date.now();
     }
 
-    await uploadToS3(
-      "metadata.json",
-      new TextEncoder().encode(JSON.stringify(metadata))
-    );
+    // Only upload metadata if we have changes
+    if (hasChanges) {
+      await uploadToS3(
+        "metadata.json",
+        new TextEncoder().encode(JSON.stringify(metadata))
+      );
+      logToConsole("success", "Sync to cloud completed with changes");
+    } else {
+      logToConsole("info", "No changes detected, skipping metadata upload");
+    }
 
     localMetadata.lastSyncTime = Date.now();
     localMetadata.settings.lastModified = Date.now();
@@ -4163,6 +4194,12 @@ async function handleSettingChange(key, value, source) {
           }
         }
 
+        // Check if we have any settings to upload
+        if (Object.keys(settingsToUpload).length === 0) {
+          logToConsole("info", "No settings to upload, skipping sync");
+          return;
+        }
+
         logToConsole(
           "info",
           `Performing complete settings sync to cloud (${
@@ -4193,7 +4230,11 @@ async function handleSettingChange(key, value, source) {
             syncedAt: Date.now(),
           };
         }
+
+        // Update cloud metadata timestamp
         cloudMetadata.settings.lastModified = Date.now();
+
+        // Upload updated metadata to cloud
         await uploadToS3(
           "metadata.json",
           new TextEncoder().encode(JSON.stringify(cloudMetadata))
