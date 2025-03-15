@@ -549,8 +549,13 @@ async function initializeMetadataFromExistingData() {
 
 // Save local metadata
 async function saveLocalMetadata() {
-  await setIndexedDBKey("sync-metadata", JSON.stringify(localMetadata));
-  logToConsole("success", "Local metadata saved");
+  try {
+    await setIndexedDBKey("sync-metadata", JSON.stringify(localMetadata));
+    logToConsole("success", "Local metadata saved");
+  } catch (error) {
+    logToConsole("error", "Failed to save local metadata:", error);
+    throw error;
+  }
 }
 
 // Generate hash for a chat
@@ -605,10 +610,13 @@ async function checkForChanges() {
   }
 
   if (hasChanges) {
-    logToConsole("info", "Changes detected - queueing sync operation");
-    queueOperation("sync", syncFromCloud);
+    logToConsole("info", "Local changes detected - queueing sync to cloud");
+    // First sync to cloud to save our changes
+    queueOperation("local-changes-sync", syncToCloud);
+    // Then sync from cloud to ensure we have latest data
+    queueOperation("post-upload-sync", syncFromCloud);
   } else {
-    logToConsole("skip", "No changes detected");
+    logToConsole("skip", "No local changes detected");
   }
 }
 
@@ -624,7 +632,7 @@ function setupLocalStorageChangeListener() {
 
       logToConsole("info", `Chat storage change detected for chat ${chatId}`);
       await updateChatMetadata(chatId, true);
-      queueOperation("sync", syncFromCloud);
+      queueOperation("sync", syncToCloud);
       return;
     }
 
@@ -1693,8 +1701,6 @@ function exportBackupData() {
           logToConsole("info", "Export data summary", {
             localStorageKeys: Object.keys(exportData.localStorage).length,
             indexedDBKeys: Object.keys(exportData.indexedDB).length,
-            localStorageSize: JSON.stringify(exportData.localStorage).length,
-            indexedDBSize: JSON.stringify(exportData.indexedDB).length,
             hasLocalStorageData,
             hasIndexedDBData,
           });
@@ -1930,11 +1936,8 @@ async function restoreFromBackup(key) {
   logToConsole("start", `Starting restore from backup: ${key}`);
 
   try {
-    // Load JSZip first
-    const JSZip = await loadJSZip();
-    if (!JSZip) {
-      throw new Error("Failed to load JSZip library");
-    }
+    // Temporarily disable sync
+    operationState.isImporting = true;
 
     // Download the backup file
     const backup = await downloadFromS3(key);
@@ -1942,52 +1945,61 @@ async function restoreFromBackup(key) {
       throw new Error("Backup not found or empty");
     }
 
-    // Load and extract ZIP
-    logToConsole("info", "Loading ZIP file...");
-    const zip = await JSZip.loadAsync(backup.data);
-    const files = Object.keys(zip.files);
+    let backupContent;
+    if (key.endsWith(".zip")) {
+      // Handle ZIP files
+      const JSZip = await loadJSZip();
+      const zip = await JSZip.loadAsync(backup.data);
 
-    if (files.length === 0) {
-      throw new Error("Backup ZIP file is empty");
+      // Find the JSON file in the ZIP
+      const jsonFile = Object.keys(zip.files).find((f) => f.endsWith(".json"));
+      if (!jsonFile) {
+        throw new Error("No JSON file found in backup");
+      }
+
+      // Extract the content
+      backupContent = await zip.file(jsonFile).async("uint8array");
+    } else {
+      // Handle regular files
+      backupContent = backup.data;
     }
 
-    // Find the JSON file in the ZIP (should be the first file)
-    const jsonFile = files.find((file) => file.endsWith(".json"));
-    if (!jsonFile) {
-      throw new Error("No JSON file found in backup");
-    }
-
-    // Extract the content
-    logToConsole("info", `Extracting data from ${jsonFile}...`);
-    const backupContent = await zip.file(jsonFile).async("uint8array");
-
-    // Decrypt if needed
-    logToConsole("info", "Processing backup content...");
+    // Decrypt the content
     const decryptedContent = await decryptData(backupContent);
 
-    // Parse the JSON data
-    logToConsole("info", "Parsing backup data...");
-    const backupData = JSON.parse(decryptedContent);
-
-    if (!backupData) {
+    // Validate the decrypted content before importing
+    if (typeof decryptedContent !== "object" || !decryptedContent) {
       throw new Error("Invalid backup data format");
     }
 
     // Import the data to storage
-    logToConsole("info", "Importing data to storage...");
-    await importDataToStorage(backupData);
+    await importDataToStorage(decryptedContent);
+
+    // Validate imported chats
+    const chats = await getAllChatsFromIndexedDB();
+    for (const chat of chats) {
+      if (!chat.id) {
+        logToConsole("warning", "Found chat without ID, skipping", chat);
+        continue;
+      }
+    }
 
     // Update last sync time
     const currentTime = new Date().toLocaleString();
     localStorage.setItem("last-cloud-sync", currentTime);
 
-    // Save metadata directly instead of calling updateChatMetadata with null
+    // Save metadata
     await saveLocalMetadata();
+
+    // Re-enable sync
+    operationState.isImporting = false;
 
     logToConsole("success", "Backup restored successfully");
     return true;
   } catch (error) {
-    logToConsole("error", `Failed to restore backup: ${error.message}`);
+    logToConsole("error", "Restore failed:", error);
+    // Ensure sync is re-enabled even if restoration fails
+    operationState.isImporting = false;
     throw error;
   }
 }
@@ -1995,7 +2007,6 @@ async function restoreFromBackup(key) {
 // Import data to storage (both localStorage and IndexedDB)
 function importDataToStorage(data) {
   return new Promise((resolve, reject) => {
-    // Keys to preserve during import
     const preserveKeys = [
       "import-size-threshold",
       "export-size-threshold",
@@ -2018,9 +2029,9 @@ function importDataToStorage(data) {
 
     // Import localStorage data
     if (data.localStorage) {
-      logToConsole("info", "Importing localStorage data...");
       Object.keys(data.localStorage).forEach((key) => {
         if (!preserveKeys.includes(key)) {
+          // Store the value exactly as it was in the backup
           localStorage.setItem(key, data.localStorage[key]);
         }
       });
@@ -2028,57 +2039,27 @@ function importDataToStorage(data) {
 
     // Import IndexedDB data
     if (data.indexedDB) {
-      logToConsole("info", "Importing IndexedDB data...");
       const request = indexedDB.open("keyval-store");
-
-      request.onerror = () => reject(new Error("Failed to open IndexedDB"));
-
+      request.onerror = () => reject(request.error);
       request.onsuccess = function (event) {
         const db = event.target.result;
         const transaction = db.transaction(["keyval"], "readwrite");
         const objectStore = transaction.objectStore("keyval");
 
-        transaction.oncomplete = () => {
-          logToConsole("success", "IndexedDB import completed");
-          resolve();
-        };
-
-        transaction.onerror = () =>
-          reject(new Error("IndexedDB transaction failed"));
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
 
         // Clear existing data
         const deleteRequest = objectStore.clear();
         deleteRequest.onsuccess = function () {
-          // Import new data
+          // Import new data directly
           Object.keys(data.indexedDB).forEach((key) => {
             objectStore.put(data.indexedDB[key], key);
           });
         };
       };
-
-      request.onupgradeneeded = function (event) {
-        const db = event.target.result;
-        if (!db.objectStoreNames.contains("keyval")) {
-          db.createObjectStore("keyval");
-        }
-      };
     } else {
-      // If there's no IndexedDB data, resolve immediately
       resolve();
-    }
-
-    // Ensure the extension URL is in the list
-    let extensionURLs = JSON.parse(
-      localStorage.getItem("TM_useExtensionURLs") || "[]"
-    );
-    if (!extensionURLs.some((url) => url.endsWith("s3-v2.js"))) {
-      extensionURLs.push(
-        "https://itcon-pty-au.github.io/typingmind-cloud-backup-bugfix/s3-v2.js"
-      );
-      localStorage.setItem(
-        "TM_useExtensionURLs",
-        JSON.stringify(extensionURLs)
-      );
     }
   });
 }
@@ -2153,10 +2134,16 @@ function startSyncInterval() {
   if (config.syncMode !== "sync" || !isAwsConfigured()) return;
 
   const interval = Math.max(config.syncInterval * 1000, 15000);
-  setInterval(() => {
-    if (!operationState.isImporting && !operationState.isExporting) {
-      queueOperation("periodic-sync", syncFromCloud);
+  setInterval(async () => {
+    if (operationState.isImporting || operationState.isExporting) {
+      logToConsole("skip", "Operation in progress - skipping sync");
+      return;
     }
+
+    // Load latest metadata before checking for changes
+    await loadLocalMetadata();
+    // First sync from cloud to get any remote changes
+    queueOperation("periodic-cloud-sync", syncFromCloud);
   }, interval);
 
   logToConsole("info", `Sync interval started (${interval}ms)`);
@@ -2178,16 +2165,17 @@ async function performInitialSync() {
       return;
     }
 
-    // Get local chats first
-    const localChats = await getAllChatsFromIndexedDB();
-    logToConsole("info", `Found ${localChats.length} local chats`);
+    // Load local metadata first
+    await loadLocalMetadata();
+    const localChatCount = Object.keys(localMetadata.chats || {}).length;
+    logToConsole("info", `Found ${localChatCount} chats in local metadata`);
 
     // Download cloud metadata
     const cloudMetadata = await downloadFromS3("metadata.json");
 
     if (!cloudMetadata || !cloudMetadata.data) {
       // No cloud data exists yet
-      if (localChats.length > 0) {
+      if (localChatCount > 0) {
         // We have local data, create initial backup
         logToConsole(
           "info",
@@ -2220,7 +2208,7 @@ async function performInitialSync() {
       const chatCount = Object.keys(metadata.chats).length;
       logToConsole("info", `Found ${chatCount} chats in cloud metadata`);
 
-      if (chatCount === 0 && localChats.length > 0) {
+      if (chatCount === 0 && localChatCount > 0) {
         // Cloud metadata exists but no chats - create fresh backup
         logToConsole("info", "Creating fresh backup with local data");
         await syncToCloud();
@@ -2235,7 +2223,7 @@ async function performInitialSync() {
       await syncFromCloud();
     } catch (error) {
       logToConsole("error", "Invalid cloud metadata:", error);
-      if (localChats.length > 0) {
+      if (localChatCount > 0) {
         logToConsole(
           "info",
           "Creating fresh backup with local data due to invalid cloud metadata"
@@ -2253,346 +2241,148 @@ async function performInitialSync() {
 // Sync from cloud
 async function syncFromCloud() {
   if (operationState.isImporting || operationState.isExporting) {
-    logToConsole("skip", "Sync in progress - skipping");
+    logToConsole("skip", "Sync already in progress, queueing this sync");
+    operationState.isPendingSync = true;
     return;
   }
 
-  logToConsole("start", "Starting sync from cloud...");
   operationState.isImporting = true;
 
-  // Track if any changes were made during sync
-  let hasChanges = false;
-
   try {
-    // First get cloud metadata
-    const cloudMetadataObj = await downloadFromS3("metadata.json");
-    if (!cloudMetadataObj) {
-      logToConsole("info", "No cloud metadata found");
+    logToConsole("start", "Starting sync from cloud...");
+
+    // Download cloud metadata
+    const cloudMetadata = await downloadCloudMetadata();
+    if (!cloudMetadata || !cloudMetadata.chats) {
+      logToConsole("info", "No cloud metadata found or invalid format");
       return;
     }
 
-    let cloudMetadata;
-    try {
-      cloudMetadata = JSON.parse(
-        typeof cloudMetadataObj.data === "string"
-          ? cloudMetadataObj.data
-          : new TextDecoder().decode(cloudMetadataObj.data)
-      );
-    } catch (error) {
-      logToConsole("error", "Failed to parse cloud metadata:", error);
-      throw new Error("Invalid cloud metadata format");
-    }
+    let hasChanges = false;
 
-    // Initialize metadata structure if needed
-    if (!cloudMetadata || typeof cloudMetadata !== "object") {
-      cloudMetadata = {
-        version: EXTENSION_VERSION,
-        timestamp: Date.now(),
-        chats: {},
-        settings: {
-          items: {},
-          lastModified: 0,
-          syncedAt: 0,
-        },
-      };
-    }
+    // Check for settings changes first
+    if (
+      cloudMetadata.settings &&
+      cloudMetadata.settings.lastModified > localMetadata.settings.syncedAt
+    ) {
+      logToConsole("info", "Settings changes detected in cloud");
+      const cloudSettings = await downloadSettingsFromCloud();
+      if (cloudSettings) {
+        // Apply settings while preserving security keys
+        const preserveKeys = [
+          "aws-bucket",
+          "aws-access-key",
+          "aws-secret-key",
+          "aws-region",
+          "aws-endpoint",
+          "encryption-key",
+          "chat-sync-metadata",
+        ];
 
-    // Ensure required objects exist
-    if (!cloudMetadata.chats) cloudMetadata.chats = {};
-    if (!cloudMetadata.settings) {
-      cloudMetadata.settings = {
-        items: {},
-        lastModified: 0,
-        syncedAt: 0,
-      };
-    }
-
-    // Get local chats for comparison
-    const localChats = await getAllChatsFromIndexedDB();
-    const localChatsMap = new Map(localChats.map((chat) => [chat.id, chat]));
-
-    // Track changes
-    const changes = {
-      toDownload: [],
-      toUpload: [],
-      toDelete: [],
-      settingsToSync: false,
-    };
-
-    // Check cloud chats against local
-    for (const [chatId, cloudChatMeta] of Object.entries(cloudMetadata.chats)) {
-      const localChat = localChatsMap.get(chatId);
-
-      if (!localChat) {
-        // Chat exists in cloud but not locally - download it
-        changes.toDownload.push(chatId);
-      } else {
-        // Chat exists in both places - check if changed
-        const localHash = await generateChatHash(localChat);
-        if (localHash !== cloudChatMeta.hash) {
-          // Different content - check timestamps to decide direction
-          if (cloudChatMeta.lastModified > (localChat.updatedAt || 0)) {
-            changes.toDownload.push(chatId);
-          } else {
-            changes.toUpload.push(chatId);
-          }
-        }
-      }
-    }
-
-    // Check local chats against cloud
-    for (const [chatId, localChat] of localChatsMap) {
-      if (!cloudMetadata.chats[chatId]) {
-        // Chat exists locally but not in cloud
-        changes.toUpload.push(chatId);
-      }
-    }
-
-    // Check settings changes
-    if (cloudMetadata.settings.lastModified > localMetadata.settings.syncedAt) {
-      changes.settingsToSync = true;
-    }
-
-    // Process downloads
-    for (const chatId of changes.toDownload) {
-      try {
-        const cloudChat = await downloadFromS3(`chats/${chatId}.json`);
-        if (!cloudChat) continue;
-
-        let decryptedContent = await decryptData(cloudChat.data);
-
-        // Parse the decrypted JSON
-        let chatData;
-        try {
-          chatData = JSON.parse(decryptedContent);
-        } catch (parseError) {
-          logToConsole(
-            "error",
-            `Failed to parse chat ${chatId} JSON:`,
-            parseError
-          );
-          continue;
-        }
-
-        await saveChatToIndexedDB(chatData);
-        logToConsole("success", `Downloaded and saved chat ${chatId}`);
-
-        // Mark that changes occurred
-        hasChanges = true;
-      } catch (error) {
-        logToConsole("error", `Failed to download chat ${chatId}:`, error);
-      }
-    }
-
-    // Process uploads
-    for (const chatId of changes.toUpload) {
-      try {
-        const chat = localChatsMap.get(chatId);
-        if (!chat) continue;
-
-        const chatData = JSON.stringify(chat);
-        let uploadData;
-        let uploadMetadata = {
-          version: EXTENSION_VERSION,
-          timestamp: String(Date.now()),
-          chatId: chat.id,
-          messageCount: String(chat.messagesArray?.length || 0),
-          encrypted: config.encryptionKey ? "true" : "false",
-        };
-
-        if (config.encryptionKey) {
-          uploadData = await encryptData(chatData);
-        } else {
-          uploadData = new TextEncoder().encode(chatData);
-        }
-
-        await uploadToS3(`chats/${chat.id}.json`, uploadData, uploadMetadata);
-
-        // Update metadata
-        cloudMetadata.chats[chatId] = {
-          lastModified: chat.updatedAt || Date.now(),
-          hash: await generateChatHash(chat),
-          syncedAt: Date.now(),
-        };
-
-        // Mark that changes occurred
-        hasChanges = true;
-
-        logToConsole("success", `Uploaded chat ${chatId}`);
-      } catch (error) {
-        logToConsole("error", `Failed to upload chat ${chatId}:`, error);
-      }
-    }
-
-    // Process settings sync
-    if (changes.settingsToSync) {
-      try {
-        const cloudSettings = await downloadFromS3("settings.json");
-        if (cloudSettings) {
-          let settingsData;
-          const decryptedData = await decryptData(cloudSettings.data);
-          logToConsole("info", "Decrypted settings data:", {
-            length: decryptedData.length,
-            preview: decryptedData.substring(0, 100),
-          });
-          try {
-            settingsData = JSON.parse(decryptedData);
-          } catch (parseError) {
-            logToConsole("error", "Failed to parse settings JSON:", {
-              error: parseError,
-              decryptedData: decryptedData.substring(0, 100),
-            });
-            throw parseError;
-          }
-
-          // Apply settings
-          for (const [key, value] of Object.entries(settingsData)) {
-            if (value.source === "indexeddb") {
-              await setIndexedDBKey(key, value.data);
+        for (const [key, value] of Object.entries(cloudSettings)) {
+          if (!preserveKeys.includes(key)) {
+            if (key.startsWith("TM_use")) {
+              try {
+                // Parse serialized complex objects
+                let valueToStore = value;
+                if (
+                  typeof value === "string" &&
+                  (value.startsWith("{") || value.startsWith("["))
+                ) {
+                  try {
+                    valueToStore = JSON.parse(value);
+                    logToConsole(
+                      "info",
+                      `Successfully deserialized complex object for ${key}`
+                    );
+                  } catch (parseError) {
+                    logToConsole(
+                      "warning",
+                      `Failed to parse ${key} as JSON, using as-is`,
+                      parseError
+                    );
+                  }
+                }
+                await setIndexedDBKey(key, valueToStore);
+              } catch (error) {
+                logToConsole(
+                  "error",
+                  `Error setting IndexedDB key ${key}`,
+                  error
+                );
+              }
             } else {
-              localStorage.setItem(key, value.data);
+              localStorage.setItem(key, value);
             }
           }
+        }
+        localMetadata.settings.syncedAt = cloudMetadata.settings.lastModified;
+        saveLocalMetadata();
+        hasChanges = true;
+      }
+    }
 
-          // Mark that changes occurred
+    // Process chat changes
+    for (const [chatId, cloudChatMeta] of Object.entries(cloudMetadata.chats)) {
+      // Skip if this is a tombstone entry
+      if (cloudChatMeta.deleted === true) {
+        if (!localMetadata.chats[chatId]?.deleted) {
+          await deleteLocalChat(chatId);
           hasChanges = true;
         }
-      } catch (error) {
-        logToConsole("error", "Failed to sync settings:", error);
+        continue;
       }
-    }
 
-    // Check if any settings need to be uploaded
-    const settingsToUpload = {};
-    let hasSettingsChanges = false;
+      const localChatMeta = localMetadata.chats[chatId];
 
-    for (const [key, metadata] of Object.entries(
-      localMetadata.settings.items || {}
-    )) {
-      if (metadata.lastModified > metadata.lastSynced) {
-        hasSettingsChanges = true;
-        const value =
-          metadata.source === "indexeddb"
-            ? await getIndexedDBValue(key)
-            : localStorage.getItem(key);
-
-        if (value !== undefined && value !== null) {
-          settingsToUpload[key] = {
-            data: value,
-            source: metadata.source,
-            lastModified: metadata.lastModified,
-          };
+      // Download if:
+      // 1. No local metadata
+      // 2. Different hash
+      // 3. Never synced
+      if (
+        !localChatMeta ||
+        cloudChatMeta.hash !== localChatMeta.hash ||
+        !localChatMeta.syncedAt
+      ) {
+        const cloudChat = await downloadChatFromCloud(chatId);
+        if (cloudChat) {
+          await saveChatToIndexedDB(cloudChat);
+          await updateChatMetadata(chatId, false);
+          hasChanges = true;
         }
       }
     }
 
-    // Upload settings if changed
-    if (hasSettingsChanges) {
-      try {
-        const settingsData = JSON.stringify(settingsToUpload);
-        let uploadData;
-        let uploadMetadata = {
-          version: EXTENSION_VERSION,
-          timestamp: String(Date.now()),
-          type: "settings",
-          encrypted: "true",
-        };
-
-        // Always encrypt settings data
-        const encryptedResult = await encryptData(settingsData);
-        uploadData = encryptedResult;
-        uploadMetadata = {
-          version: EXTENSION_VERSION,
-          timestamp: String(Date.now()),
-          type: "settings",
-          encrypted: "true",
-        };
-
-        await uploadToS3("settings.json", uploadData, uploadMetadata);
-
-        // Update metadata
-        if (!cloudMetadata.settings) {
-          cloudMetadata.settings = {
-            items: {},
-            lastModified: Date.now(),
-            syncedAt: Date.now(),
-          };
+    // Check for local chats that don't exist in cloud (might be deleted)
+    for (const [chatId, localChatMeta] of Object.entries(localMetadata.chats)) {
+      if (!cloudMetadata.chats[chatId] && !localChatMeta.deleted) {
+        // Chat exists locally but not in cloud - might be deleted
+        // Only delete if it's not a new local chat
+        if (localChatMeta.syncedAt > 0) {
+          await deleteLocalChat(chatId);
+          hasChanges = true;
         }
-        cloudMetadata.settings.lastModified = Date.now();
-
-        // Mark that changes occurred
-        hasChanges = true;
-
-        // Update local sync status
-        for (const key of Object.keys(settingsToUpload)) {
-          if (localMetadata.settings.items[key]) {
-            localMetadata.settings.items[key].lastSynced = Date.now();
-          }
-        }
-        localMetadata.settings.syncedAt = Date.now();
-        await saveLocalMetadata();
-
-        logToConsole("success", "Settings synced to cloud");
-      } catch (error) {
-        logToConsole("error", "Failed to sync settings:", error);
       }
     }
 
-    // Update cloud metadata with any changes
-    if (
-      hasChanges ||
-      changes.toDownload.length > 0 ||
-      changes.toUpload.length > 0
-    ) {
-      await uploadToS3(
-        "metadata.json",
-        new TextEncoder().encode(JSON.stringify(cloudMetadata))
-      );
-      logToConsole("info", "Updated cloud metadata");
+    if (hasChanges) {
+      localMetadata.lastSyncTime = Date.now();
+      saveLocalMetadata();
+      logToConsole("success", "Sync from cloud completed with changes");
     } else {
-      logToConsole("info", "No changes detected, skipping metadata upload");
-    }
-
-    // Update local metadata
-    localMetadata.lastSyncTime = Date.now();
-    await saveLocalMetadata();
-
-    // Prepare sync status message
-    const syncStatus = {
-      downloaded: changes.toDownload.length,
-      uploaded: changes.toUpload.length,
-      settingsSynced: changes.settingsToSync || hasSettingsChanges,
-      //lastSettingsSync: localMetadata.settings.syncedAt,
-      //timeSinceLastSettingsSync: Date.now() - localMetadata.settings.syncedAt,
-    };
-
-    // Log appropriate message based on sync status
-    if (
-      syncStatus.downloaded > 0 ||
-      syncStatus.uploaded > 0 ||
-      syncStatus.settingsSynced
-    ) {
-      logToConsole("success", "Sync completed with changes", syncStatus);
-    } else if (syncStatus.timeSinceLastSettingsSync < 60000) {
-      // Within last minute
-      logToConsole(
-        "success",
-        "Sync completed (settings were synced recently)",
-        {
-          ...syncStatus,
-          lastSettingsSync: new Date(
-            syncStatus.lastSettingsSync
-          ).toLocaleTimeString(),
-        }
-      );
-    } else {
-      logToConsole("success", "Sync completed (no changes needed)", syncStatus);
+      logToConsole("info", "No changes detected during sync from cloud");
     }
   } catch (error) {
     logToConsole("error", "Sync from cloud failed:", error);
     throw error;
   } finally {
     operationState.isImporting = false;
+
+    // Check if another sync was requested while this one was running
+    if (operationState.isPendingSync) {
+      operationState.isPendingSync = false;
+      queueOperation("pending-sync", syncFromCloud);
+    }
   }
 }
 
@@ -2607,149 +2397,71 @@ async function syncToCloud() {
   operationState.isExporting = true;
 
   try {
-    const chats = await getAllChatsFromIndexedDB();
+    // Get current cloud metadata
+    const cloudMetadata = await downloadCloudMetadata();
     let hasChanges = false;
 
-    // Upload each chat individually
-    for (const chat of chats) {
-      if (!chat.id) continue;
-
-      const chatData = JSON.stringify(chat);
-      let uploadData;
-      let uploadMetadata = {
-        version: EXTENSION_VERSION,
-        timestamp: String(Date.now()),
-        chatId: chat.id,
-        messageCount: String(chat.messagesArray?.length || 0),
-        encrypted: config.encryptionKey ? "true" : "false",
-      };
-
-      if (config.encryptionKey) {
-        uploadData = await encryptData(chatData);
-      } else {
-        uploadData = new TextEncoder().encode(chatData);
-      }
-
-      await uploadToS3(`chats/${chat.id}.json`, uploadData, uploadMetadata);
+    // Upload settings if they've changed
+    if (localMetadata.settings.lastModified > localMetadata.settings.syncedAt) {
+      await uploadSettingsToCloud();
       hasChanges = true;
     }
 
-    // Update metadata
-    const metadata = {
-      version: EXTENSION_VERSION,
-      timestamp: Date.now(),
-      chats: {},
-      settings: {
-        items: {},
-        lastModified: Date.now(),
-        syncedAt: Date.now(),
-      },
-    };
-
-    // Add metadata for each chat
+    // Get all local chats that need to be uploaded
+    const chats = await getAllChatsFromIndexedDB();
     for (const chat of chats) {
       if (!chat.id) continue;
-      metadata.chats[chat.id] = {
-        lastModified: chat.updatedAt || Date.now(),
-        hash: await generateChatHash(chat),
-        syncedAt: Date.now(),
-      };
-    }
 
-    // Upload settings to cloud during initial sync
-    const settingsToUpload = {};
-    let hasSettings = false;
+      const localChatMeta = localMetadata.chats[chat.id];
+      const cloudChatMeta = cloudMetadata.chats[chat.id];
 
-    // Add monitored localStorage settings
-    for (const key of MONITORED_ITEMS.localStorage) {
-      const value = localStorage.getItem(key);
-      if (value !== null) {
-        settingsToUpload[key] = {
-          data: value,
-          source: "localStorage",
-          lastModified: Date.now(),
-        };
-        hasSettings = true;
-
-        // Also update local metadata
-        if (!localMetadata.settings.items[key]) {
-          localMetadata.settings.items[key] = {
-            hash: await generateContentHash(value),
-            lastModified: Date.now(),
-            lastSynced: Date.now(),
-            source: "localStorage",
-          };
+      // Skip if this chat has a cloud tombstone
+      if (cloudChatMeta?.deleted === true) {
+        // If our local version is newer, we might be restoring it
+        if (
+          !localChatMeta ||
+          localChatMeta.lastModified <= cloudChatMeta.deletedAt
+        ) {
+          continue;
         }
+      }
+
+      // Upload if:
+      // 1. No cloud metadata
+      // 2. Different hash
+      // 3. Never synced
+      // 4. Local changes not synced
+      if (
+        !cloudChatMeta ||
+        (localChatMeta && cloudChatMeta.hash !== localChatMeta.hash) ||
+        !localChatMeta?.syncedAt ||
+        localChatMeta.lastModified > localChatMeta.syncedAt
+      ) {
+        await uploadChatToCloud(chat.id);
+        hasChanges = true;
       }
     }
 
-    // Add monitored IndexedDB settings
-    for (const key of MONITORED_ITEMS.indexedDB) {
-      const value = await getIndexedDBValue(key);
-      if (value !== undefined) {
-        settingsToUpload[key] = {
-          data: value,
-          source: "indexeddb",
-          lastModified: Date.now(),
-        };
-        hasSettings = true;
-
-        // Also update local metadata
-        if (!localMetadata.settings.items[key]) {
-          localMetadata.settings.items[key] = {
-            hash: await generateContentHash(value),
-            lastModified: Date.now(),
-            lastSynced: Date.now(),
-            source: "indexeddb",
-          };
-        }
+    // Process local deletions
+    for (const [chatId, localChatMeta] of Object.entries(localMetadata.chats)) {
+      if (
+        localChatMeta.deleted === true &&
+        (!cloudMetadata.chats[chatId]?.deleted ||
+          localChatMeta.tombstoneVersion >
+            (cloudMetadata.chats[chatId]?.tombstoneVersion || 0))
+      ) {
+        await deleteChatFromCloud(chatId);
+        hasChanges = true;
       }
     }
 
-    // Upload settings if any were found
-    if (hasSettings) {
-      logToConsole(
-        "info",
-        "Uploading monitored settings to cloud during initial sync"
-      );
-      const settingsData = JSON.stringify(settingsToUpload);
-      let uploadData;
-      let uploadMetadata = {
-        version: EXTENSION_VERSION,
-        timestamp: String(Date.now()),
-        type: "settings",
-        encrypted: "true",
-      };
-
-      // Always encrypt settings data
-      const encryptedResult = await encryptData(settingsData);
-      uploadData = encryptedResult;
-
-      await uploadToS3("settings.json", uploadData, uploadMetadata);
-      hasChanges = true;
-
-      // Update metadata with settings info
-      metadata.settings.lastModified = Date.now();
-      metadata.settings.syncedAt = Date.now();
-    }
-
-    // Only upload metadata if we have changes
     if (hasChanges) {
-      await uploadToS3(
-        "metadata.json",
-        new TextEncoder().encode(JSON.stringify(metadata))
-      );
+      localMetadata.lastSyncTime = Date.now();
+      saveLocalMetadata();
       logToConsole("success", "Sync to cloud completed with changes");
     } else {
-      logToConsole("info", "No changes detected, skipping metadata upload");
+      logToConsole("info", "No changes detected during sync to cloud");
     }
-
-    localMetadata.lastSyncTime = Date.now();
-    localMetadata.settings.lastModified = Date.now();
-    localMetadata.settings.syncedAt = Date.now();
-    await saveLocalMetadata();
-
-    logToConsole("success", "Sync to cloud completed");
   } catch (error) {
     logToConsole("error", "Sync to cloud failed:", error);
     throw error;
@@ -2843,9 +2555,6 @@ function setupVisibilityChangeHandler() {
       if (config.syncMode === "sync") {
         queueOperation("visibility-sync", syncFromCloud);
       }
-
-      // We've removed the daily backup check on visibility change
-      // Daily backups are now only triggered during initialization
     }
   });
 }
@@ -3859,40 +3568,24 @@ function setupButtonHandlers(backupList) {
 
 // Helper functions for handling downloads
 async function handleZipDownload(backup, key) {
-  const JSZip = await loadJSZip();
-  const zip = await JSZip.loadAsync(backup.data);
-
-  // Find metadata file
-  const metadataFile = zip.file("metadata.json");
-  let metadata;
-  if (metadataFile) {
-    const metadataContent = await metadataFile.async("text");
-    metadata = JSON.parse(metadataContent);
-  }
-
-  // Find and process the main data file
-  const dataFile = Object.keys(zip.files).find((f) => f !== "metadata.json");
-  if (!dataFile) {
-    throw new Error("No data file found in backup");
-  }
-
-  const fileContent = await zip.file(dataFile).async("uint8array");
-
   try {
-    // Decrypt the content
-    const decryptedString = await decryptData(fileContent);
+    const JSZip = await loadJSZip();
+    const zip = await JSZip.loadAsync(backup.data);
 
-    // Parse and format JSON
-    let finalContent;
-    try {
-      const parsedContent = JSON.parse(decryptedString);
-      finalContent = JSON.stringify(parsedContent, null, 2);
-    } catch (parseError) {
-      finalContent = decryptedString;
+    // Find the JSON file in the ZIP
+    const jsonFile = Object.keys(zip.files).find((f) => f.endsWith(".json"));
+    if (!jsonFile) {
+      throw new Error("No JSON file found in backup");
     }
 
-    // Download the processed content
-    const blob = new Blob([finalContent], { type: "application/json" });
+    // Extract and decrypt the content
+    const fileContent = await zip.file(jsonFile).async("uint8array");
+    const decryptedContent = await decryptData(fileContent);
+
+    // Download the decrypted content directly
+    const blob = new Blob([JSON.stringify(decryptedContent, null, 2)], {
+      type: "application/json",
+    });
     downloadFile(key.replace(".zip", ".json"), blob);
   } catch (error) {
     logToConsole("error", "Failed to process zip content:", error);
@@ -3902,23 +3595,20 @@ async function handleZipDownload(backup, key) {
 
 async function handleRegularFileDownload(backup, key) {
   try {
-    const decryptedString = await decryptData(backup.data);
+    // Decrypt the content
+    const decryptedContent = await decryptData(backup.data);
 
-    // For JSON files, ensure we have a properly formatted JSON string
+    // For JSON files, ensure proper formatting for download
     if (key.endsWith(".json")) {
-      // Parse and format JSON
-      const parsedData = JSON.parse(decryptedString);
-      const formattedJson = JSON.stringify(parsedData, null, 2);
-
-      // Create a text blob with the JSON content
-      const blob = new Blob([formattedJson], { type: "application/json" });
+      const blob = new Blob([JSON.stringify(decryptedContent, null, 2)], {
+        type: "application/json",
+      });
       downloadFile(key, blob);
     } else {
-      downloadFile(key, decryptedString);
+      downloadFile(key, decryptedContent);
     }
   } catch (error) {
     logToConsole("error", "Processing failed, downloading raw data:", error);
-    // If decryption fails, download the raw data
     downloadFile(key, backup.data);
   }
 }
@@ -4377,5 +4067,223 @@ async function cleanupMetadataVersions() {
         `Error code: ${error.code}, Message: ${error.message}`
       );
     }
+  }
+}
+
+async function deleteChatFromCloud(chatId) {
+  try {
+    if (!isAwsConfigured()) {
+      throw new Error("AWS is not configured");
+    }
+
+    // Delete the chat data from S3
+    const chatKey = `chats/${chatId}.json`;
+    await deleteFromS3(chatKey);
+
+    logToConsole("success", `Successfully deleted chat ${chatId} from cloud`);
+  } catch (error) {
+    logToConsole("error", `Failed to delete chat ${chatId} from cloud:`, error);
+    throw error;
+  }
+}
+
+async function downloadSettingsFromCloud() {
+  logToConsole("download", "Downloading settings.json from cloud");
+
+  try {
+    const s3 = initializeS3Client();
+
+    // Download settings file
+    const params = {
+      Bucket: config.bucketName,
+      Key: "settings.json",
+    };
+
+    try {
+      const data = await s3.getObject(params).promise();
+      const encryptedContent = new Uint8Array(data.Body);
+      const settingsData = await decryptData(encryptedContent);
+
+      // Log success with info about special keys
+      const specialKeys = [
+        "TM_useInstalledPlugins",
+        "TM_useUserCharacters",
+        "TM_useUserPrompts",
+      ];
+      const specialKeysFound = specialKeys.filter(
+        (key) => settingsData[key] !== undefined
+      );
+
+      logToConsole("success", "Downloaded settings from cloud", {
+        settingsCount: Object.keys(settingsData).length,
+        specialKeysFound: specialKeysFound,
+      });
+
+      return settingsData;
+    } catch (error) {
+      if (error.code === "NoSuchKey") {
+        logToConsole(
+          "info",
+          "No settings.json found in cloud, creating it now"
+        );
+        // Create it now by uploading current settings
+        await uploadSettingsToCloud();
+        return {};
+      }
+      throw error;
+    }
+  } catch (error) {
+    logToConsole("error", "Error downloading settings", error);
+    throw error;
+  }
+}
+
+async function uploadSettingsToCloud() {
+  logToConsole("upload", "Uploading settings.json to cloud");
+
+  try {
+    const s3 = initializeS3Client();
+    const settingsData = {};
+
+    // Exclude security-related keys
+    const excludeKeys = [
+      "aws-access-key",
+      "aws-secret-key",
+      "encryption-key",
+      "aws-endpoint",
+      "aws-region",
+      "aws-bucket",
+    ];
+
+    // Get localStorage settings
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!excludeKeys.includes(key)) {
+        settingsData[key] = localStorage.getItem(key);
+      }
+    }
+
+    // Add special IndexedDB keys
+    const specialKeys = [
+      "TM_useInstalledPlugins",
+      "TM_useUserCharacters",
+      "TM_useUserPrompts",
+    ];
+
+    for (const key of specialKeys) {
+      try {
+        const value = await getIndexedDBKey(key);
+        if (value !== undefined) {
+          // Properly serialize complex objects
+          try {
+            if (typeof value === "string") {
+              settingsData[key] = value;
+            } else {
+              settingsData[key] = JSON.stringify(value);
+              logToConsole("info", `Serialized complex object for ${key}`);
+            }
+          } catch (serializeError) {
+            logToConsole(
+              "error",
+              `Failed to serialize ${key}, storing as string`,
+              serializeError
+            );
+            settingsData[key] = JSON.stringify(String(value));
+          }
+        }
+      } catch (error) {
+        logToConsole("error", `Error reading IndexedDB key ${key}`, error);
+      }
+    }
+
+    // Encrypt settings data
+    const encryptedData = await encryptData(settingsData);
+
+    // Upload to S3
+    const params = {
+      Bucket: config.bucketName,
+      Key: "settings.json",
+      Body: encryptedData,
+      ContentType: "application/json",
+      ServerSideEncryption: "AES256",
+    };
+
+    await s3.putObject(params).promise();
+
+    logToConsole("success", "Uploaded settings to cloud", {
+      settingsCount: Object.keys(settingsData).length,
+    });
+
+    // Update metadata
+    localMetadata.settings.syncedAt = Date.now();
+    saveLocalMetadata();
+
+    // Update cloud metadata
+    const cloudMetadata = await downloadCloudMetadata();
+    cloudMetadata.settings = {
+      lastModified: Date.now(),
+      syncedAt: Date.now(),
+    };
+
+    await uploadToS3("metadata.json", await encryptData(cloudMetadata), {
+      ContentType: "application/json",
+      ServerSideEncryption: "AES256",
+    });
+
+    return true;
+  } catch (error) {
+    logToConsole("error", "Error uploading settings", error);
+    throw error;
+  }
+}
+
+async function downloadCloudMetadata() {
+  try {
+    const s3 = initializeS3Client();
+
+    // Download metadata file
+    const params = {
+      Bucket: config.bucketName,
+      Key: "metadata.json",
+    };
+
+    try {
+      const data = await s3.getObject(params).promise();
+      const encryptedContent = new Uint8Array(data.Body);
+      const metadata = await decryptData(encryptedContent);
+
+      logToConsole("success", "Downloaded cloud metadata");
+      return metadata;
+    } catch (error) {
+      if (error.code === "NoSuchKey") {
+        logToConsole(
+          "info",
+          "No cloud metadata found, creating initial metadata"
+        );
+        // Create initial metadata
+        const initialMetadata = {
+          version: "1.0",
+          lastSyncTime: Date.now(),
+          chats: {},
+          settings: {
+            lastModified: Date.now(),
+            syncedAt: Date.now(),
+          },
+        };
+
+        // Encrypt and upload initial metadata
+        const encryptedData = await encryptData(initialMetadata);
+        await uploadToS3("metadata.json", encryptedData, {
+          ContentType: "application/json",
+          ServerSideEncryption: "AES256",
+        });
+
+        return initialMetadata;
+      }
+      throw error;
+    }
+  } catch (error) {
+    logToConsole("error", "Error downloading cloud metadata", error);
+    throw error;
   }
 }
