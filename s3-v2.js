@@ -2161,16 +2161,17 @@ async function performInitialSync() {
       return;
     }
 
-    // Get local chats first
-    const localChats = await getAllChatsFromIndexedDB();
-    logToConsole("info", `Found ${localChats.length} local chats`);
+    // Load local metadata first
+    await loadLocalMetadata();
+    const localChatCount = Object.keys(localMetadata.chats || {}).length;
+    logToConsole("info", `Found ${localChatCount} chats in local metadata`);
 
     // Download cloud metadata
     const cloudMetadata = await downloadFromS3("metadata.json");
 
     if (!cloudMetadata || !cloudMetadata.data) {
       // No cloud data exists yet
-      if (localChats.length > 0) {
+      if (localChatCount > 0) {
         // We have local data, create initial backup
         logToConsole(
           "info",
@@ -2203,7 +2204,7 @@ async function performInitialSync() {
       const chatCount = Object.keys(metadata.chats).length;
       logToConsole("info", `Found ${chatCount} chats in cloud metadata`);
 
-      if (chatCount === 0 && localChats.length > 0) {
+      if (chatCount === 0 && localChatCount > 0) {
         // Cloud metadata exists but no chats - create fresh backup
         logToConsole("info", "Creating fresh backup with local data");
         await syncToCloud();
@@ -2218,7 +2219,7 @@ async function performInitialSync() {
       await syncFromCloud();
     } catch (error) {
       logToConsole("error", "Invalid cloud metadata:", error);
-      if (localChats.length > 0) {
+      if (localChatCount > 0) {
         logToConsole(
           "info",
           "Creating fresh backup with local data due to invalid cloud metadata"
@@ -2443,10 +2444,7 @@ async function syncToCloud() {
             : new TextDecoder().decode(cloudMetadataObj.data)
         );
       } catch (error) {
-        logToConsole(
-          "warning",
-          "Failed to parse existing cloud metadata, creating new"
-        );
+        logToConsole("warning", "Failed to parse existing cloud metadata, creating new");
       }
     }
 
@@ -2463,57 +2461,77 @@ async function syncToCloud() {
       };
     }
 
-    const chats = await getAllChatsFromIndexedDB();
+    // Load local metadata first
+    await loadLocalMetadata();
+    const localChatIds = Object.keys(localMetadata.chats || {});
     let hasChanges = false;
 
-    // Upload each chat individually
-    for (const chat of chats) {
-      if (!chat.id) continue;
+    // Get chats that need to be uploaded based on metadata comparison
+    const chatsToUpload = new Set();
+    for (const chatId of localChatIds) {
+      const localChatMeta = localMetadata.chats[chatId];
+      const cloudChatMeta = cloudMetadata.chats[chatId];
 
-      // Generate hash before upload
-      const chatHash = await generateChatHash(chat);
-      const cloudChatMeta = cloudMetadata.chats[chat.id];
+      // Skip deleted chats
+      if (localChatMeta.deleted) continue;
 
-      // Skip if chat hasn't changed
-      if (cloudChatMeta && cloudChatMeta.hash === chatHash) {
-        continue;
+      // Upload if:
+      // 1. Chat doesn't exist in cloud
+      // 2. Local hash is different from cloud hash
+      // 3. Local version is newer than cloud version
+      if (!cloudChatMeta || 
+          localChatMeta.hash !== cloudChatMeta.hash || 
+          (localChatMeta.lastModified || 0) > (cloudChatMeta.lastModified || 0)) {
+        chatsToUpload.add(chatId);
       }
+    }
 
-      const chatData = JSON.stringify(chat);
-      let uploadData;
-      let uploadMetadata = {
-        version: EXTENSION_VERSION,
-        timestamp: String(Date.now()),
-        chatId: chat.id,
-        messageCount: String(chat.messagesArray?.length || 0),
-        encrypted: config.encryptionKey ? "true" : "false",
-      };
+    // Only load chats from IndexedDB if we have something to upload
+    if (chatsToUpload.size > 0) {
+      const chats = await getAllChatsFromIndexedDB();
+      const chatsMap = new Map(chats.map(chat => [chat.id, chat]));
 
-      if (config.encryptionKey) {
-        uploadData = await encryptData(chatData);
-      } else {
-        uploadData = new TextEncoder().encode(chatData);
+      // Upload each chat that needs updating
+      for (const chatId of chatsToUpload) {
+        const chat = chatsMap.get(chatId);
+        if (!chat) continue;
+
+        const chatData = JSON.stringify(chat);
+        let uploadData;
+        let uploadMetadata = {
+          version: EXTENSION_VERSION,
+          timestamp: String(Date.now()),
+          chatId: chat.id,
+          messageCount: String(chat.messagesArray?.length || 0),
+          encrypted: config.encryptionKey ? "true" : "false",
+        };
+
+        if (config.encryptionKey) {
+          uploadData = await encryptData(chatData);
+        } else {
+          uploadData = new TextEncoder().encode(chatData);
+        }
+
+        await uploadToS3(`chats/${chat.id}.json`, uploadData, uploadMetadata);
+        hasChanges = true;
+
+        // Update cloud metadata
+        cloudMetadata.chats[chat.id] = {
+          lastModified: chat.updatedAt || Date.now(),
+          hash: await generateChatHash(chat),
+          syncedAt: Date.now(),
+        };
+
+        // Update local metadata
+        if (!localMetadata.chats[chat.id]) {
+          localMetadata.chats[chat.id] = {};
+        }
+        localMetadata.chats[chat.id] = {
+          lastModified: chat.updatedAt || Date.now(),
+          hash: await generateChatHash(chat),
+          syncedAt: Date.now(),
+        };
       }
-
-      await uploadToS3(`chats/${chat.id}.json`, uploadData, uploadMetadata);
-      hasChanges = true;
-
-      // Update cloud metadata
-      cloudMetadata.chats[chat.id] = {
-        lastModified: chat.updatedAt || Date.now(),
-        hash: chatHash,
-        syncedAt: Date.now(),
-      };
-
-      // Update local metadata
-      if (!localMetadata.chats[chat.id]) {
-        localMetadata.chats[chat.id] = {};
-      }
-      localMetadata.chats[chat.id] = {
-        lastModified: chat.updatedAt || Date.now(),
-        hash: chatHash,
-        syncedAt: Date.now(),
-      };
     }
 
     // Handle settings sync
@@ -4272,6 +4290,11 @@ async function deleteChatFromCloud(chatId) {
 
     logToConsole("success", `Successfully deleted chat ${chatId} from cloud`);
   } catch (error) {
+    logToConsole("error", `Failed to delete chat ${chatId} from cloud:`, error);
+    throw error;
+  }
+}
+
     logToConsole("error", `Failed to delete chat ${chatId} from cloud:`, error);
     throw error;
   }
