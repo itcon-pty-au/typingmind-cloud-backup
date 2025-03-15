@@ -1,5 +1,5 @@
 // TypingMind Cloud Sync & Backup v2.0.0
-// Combines features from YATSE and s3.js for comprehensive sync and backup
+// Combines features from s3.js and s3-cope.js for comprehensive sync and backup
 
 // ==================== CONSTANTS & STATE ====================
 
@@ -1635,8 +1635,11 @@ async function performDailyBackup() {
     // Use the correct filename format: typingmind-backup-YYYYMMDD.zip
     const key = `typingmind-backup-${dateString}.zip`;
 
+    // Export data from both localStorage and IndexedDB
+    const data = await exportBackupData();
+
     // Create and upload the backup
-    const success = await createBackup(key, "daily");
+    const success = await createDailyBackup(key, data);
 
     if (success) {
       await cleanupOldBackups("daily");
@@ -1655,133 +1658,80 @@ async function performDailyBackup() {
   }
 }
 
-// Create manual snapshot
-async function createSnapshot(name) {
-  logToConsole("start", "Creating snapshot...");
-  backupState.isBackupInProgress = true;
-
-  try {
-    // Load JSZip if not already loaded
-    logToConsole("info", "Loading JSZip...");
-    await loadJSZip();
-    logToConsole("success", "JSZip loaded successfully");
-
-    // Get all chats
-    const chats = await getAllChatsFromIndexedDB();
-    if (!chats || chats.length === 0) {
-      throw new Error("No data to backup");
-    }
-
-    // Create backup data structure
-    const backupData = {
-      version: EXTENSION_VERSION,
-      timestamp: Date.now(),
-      type: "snapshot",
-      chats: chats,
+// Export backup data from localStorage and IndexedDB
+function exportBackupData() {
+  return new Promise((resolve, reject) => {
+    const exportData = {
+      localStorage: { ...localStorage },
+      indexedDB: {},
     };
 
-    // Convert to JSON and get raw size
-    const backupJson = JSON.stringify(backupData);
-    const rawSize = new Blob([backupJson]).size;
-    logToConsole("info", `Raw data size: ${formatFileSize(rawSize)}`);
-
-    // Format timestamp in local timezone with DST handling
-    const now = new Date();
-    const timestamp =
-      now.getFullYear().toString() +
-      (now.getMonth() + 1).toString().padStart(2, "0") +
-      now.getDate().toString().padStart(2, "0") +
-      now.getHours().toString().padStart(2, "0") +
-      now.getMinutes().toString().padStart(2, "0") +
-      now.getSeconds().toString().padStart(2, "0") +
-      now.getMilliseconds().toString().padStart(3, "0");
-
-    const key = `s-${name}-${timestamp}.zip`;
-    logToConsole("info", `Creating snapshot with key: ${key}`);
-
-    // Create ZIP file
-    const zip = new JSZip();
-    const snapshotFileName = `snapshot-${timestamp}.json`;
-
-    // Add the JSON data as a file in the ZIP
-    if (config.encryptionKey) {
-      const encryptedResult = await encryptData(backupJson);
-      // Store the encrypted data directly, not accessing a non-existent 'encrypted' property
-      zip.file(snapshotFileName, encryptedResult);
-      zip.file(
-        "metadata.json",
-        JSON.stringify({
-          encrypted: true,
-          // Remove the iv property since it's already embedded in the encrypted data
-          timestamp: Date.now(),
-          version: EXTENSION_VERSION,
-          type: "snapshot",
-        })
-      );
-    } else {
-      zip.file(snapshotFileName, backupJson);
-      zip.file(
-        "metadata.json",
-        JSON.stringify({
-          encrypted: false,
-          timestamp: Date.now(),
-          version: EXTENSION_VERSION,
-          type: "snapshot",
-        })
-      );
-    }
-
-    // Generate ZIP with optimal compression
-    const content = await zip.generateAsync({
-      type: "uint8array",
-      compression: "DEFLATE",
-      compressionOptions: {
-        level: 9,
-      },
+    logToConsole("info", "Starting data export", {
+      localStorageKeys: Object.keys(exportData.localStorage).length,
     });
 
-    // Log compressed size
-    const compressedSize = content.byteLength;
-    //logToConsole("info", `Compressed size: ${formatFileSize(compressedSize)}`);
+    const request = indexedDB.open("keyval-store", 1);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = function (event) {
+      const db = event.target.result;
+      const transaction = db.transaction(["keyval"], "readonly");
+      const store = transaction.objectStore("keyval");
 
-    // Prepare metadata
-    const uploadMetadata = {
-      version: EXTENSION_VERSION,
-      timestamp: String(Date.now()),
-      type: "snapshot",
-      encrypted: config.encryptionKey ? "true" : "false",
+      // Create a promise that resolves when all data is collected
+      const collectData = new Promise((resolveData) => {
+        store.getAllKeys().onsuccess = function (keyEvent) {
+          const keys = keyEvent.target.result;
+          logToConsole("info", "IndexedDB keys found", {
+            count: keys.length,
+          });
+
+          store.getAll().onsuccess = function (valueEvent) {
+            const values = valueEvent.target.result;
+            keys.forEach((key, i) => {
+              exportData.indexedDB[key] = values[i];
+            });
+            resolveData();
+          };
+        };
+      });
+
+      // Wait for both transaction completion and data collection
+      Promise.all([
+        collectData,
+        new Promise((resolveTransaction) => {
+          transaction.oncomplete = resolveTransaction;
+        }),
+      ])
+        .then(() => {
+          const hasLocalStorageData =
+            Object.keys(exportData.localStorage).length > 0;
+          const hasIndexedDBData = Object.keys(exportData.indexedDB).length > 0;
+
+          logToConsole("info", "Export data summary", {
+            localStorageKeys: Object.keys(exportData.localStorage).length,
+            indexedDBKeys: Object.keys(exportData.indexedDB).length,
+            localStorageSize: JSON.stringify(exportData.localStorage).length,
+            indexedDBSize: JSON.stringify(exportData.indexedDB).length,
+            hasLocalStorageData,
+            hasIndexedDBData,
+          });
+
+          if (!hasLocalStorageData && !hasIndexedDBData) {
+            reject(new Error("No data found in localStorage or IndexedDB"));
+            return;
+          }
+          resolve(exportData);
+        })
+        .catch(reject);
+
+      transaction.onerror = () => reject(transaction.error);
     };
-
-    // Upload to S3
-    await uploadToS3(key, content, uploadMetadata);
-
-    backupState.lastManualSnapshot = Date.now();
-    //logToConsole("success", "Snapshot created successfully");
-
-    // Refresh the backup list in the modal
-    //logToConsole("info", "Refreshing backup list...");
-    await loadBackupList();
-    //logToConsole("success", "Backup list refreshed");
-
-    // Show success message to user
-    const statusText = document.querySelector(".status-text");
-    if (statusText) {
-      statusText.textContent = `Snapshot "${name}" created successfully`;
-      setTimeout(() => {
-        statusText.textContent = `Last synced: ${getLastSyncTime()}`;
-      }, 3000);
-    }
-  } catch (error) {
-    logToConsole("error", "Failed to create snapshot:", error);
-    throw error;
-  } finally {
-    backupState.isBackupInProgress = false;
-  }
+  });
 }
 
-// Create backup
-async function createBackup(key, type) {
-  logToConsole("start", `Creating ${type} backup: ${key}`);
+// Create daily backup with the format matching s3.js
+async function createDailyBackup(key, data) {
+  logToConsole("start", `Creating daily backup: ${key}`);
 
   try {
     // Ensure JSZip is loaded
@@ -1797,93 +1747,167 @@ async function createBackup(key, type) {
         "warning",
         "No encryption key found, backup will not be encrypted"
       );
+      return false;
     }
 
-    // Get all chats
-    const chats = await getAllChatsFromIndexedDB();
-    if (!chats || chats.length === 0) {
-      throw new Error("No data to backup");
-    }
-
-    // Create backup data structure
-    const backupData = {
-      version: EXTENSION_VERSION,
-      timestamp: Date.now(),
-      type: type,
-      chats: chats,
-    };
-
-    // Convert to JSON and get raw size
-    const backupJson = JSON.stringify(backupData);
-    const rawSize = new Blob([backupJson]).size;
+    // Convert data to JSON string
+    const dataStr = JSON.stringify(data);
+    const rawSize = new Blob([dataStr]).size;
     logToConsole("info", `Raw data size: ${formatFileSize(rawSize)}`);
+
+    // Encrypt the data
+    logToConsole("info", "Encrypting backup data...");
+    const encryptedData = await encryptData(dataStr);
 
     // Create ZIP file
     const zip = new JSZip();
-    const backupFileName = `backup-${Date.now()}.json`;
 
-    // Add the JSON data as a file in the ZIP
-    if (encryptionKey) {
-      // Encrypt the JSON data
-      const encryptedResult = await encryptData(backupJson);
-      // Store the encrypted data directly
-      zip.file(backupFileName, encryptedResult);
-      zip.file(
-        "metadata.json",
-        JSON.stringify({
-          encrypted: true,
-          timestamp: Date.now(),
-          version: EXTENSION_VERSION,
-          type: type,
-          originalSize: rawSize,
-        })
-      );
-    } else {
-      // Store unencrypted data
-      zip.file(backupFileName, backupJson);
-      zip.file(
-        "metadata.json",
-        JSON.stringify({
-          encrypted: false,
-          timestamp: Date.now(),
-          version: EXTENSION_VERSION,
-          type: type,
-          originalSize: rawSize,
-        })
-      );
-    }
-
-    // Generate ZIP with optimal compression
-    const content = await zip.generateAsync({
-      type: "uint8array",
+    // Add the encrypted data to the ZIP
+    const jsonFileName = key.replace(".zip", ".json");
+    zip.file(jsonFileName, encryptedData, {
       compression: "DEFLATE",
       compressionOptions: {
         level: 9,
       },
+      binary: true,
     });
 
-    // Log compressed size
-    const compressedSize = content.byteLength;
-    logToConsole("info", `Compressed size: ${formatFileSize(compressedSize)}`);
+    // Generate the ZIP file
+    const compressedContent = await zip.generateAsync({ type: "blob" });
+    if (compressedContent.size < 100) {
+      throw new Error(
+        "Daily backup file is too small or empty. Upload cancelled."
+      );
+    }
+
+    // Convert Blob to ArrayBuffer for S3 upload
+    const arrayBuffer = await compressedContent.arrayBuffer();
+    const content = new Uint8Array(arrayBuffer);
 
     // Prepare metadata for S3
     const uploadMetadata = {
       version: EXTENSION_VERSION,
       timestamp: String(Date.now()),
-      type: type,
+      type: "daily",
       originalSize: String(rawSize),
-      compressedSize: String(compressedSize),
-      encrypted: encryptionKey ? "true" : "false",
+      compressedSize: String(compressedContent.size),
+      encrypted: "true",
     };
 
-    // Upload to S3 - we upload the ZIP file directly, not encrypting it again
+    // Upload to S3
     await uploadToS3(key, content, uploadMetadata);
 
-    logToConsole("success", `Backup created successfully: ${key}`);
+    logToConsole("success", `Daily backup created successfully: ${key}`);
     return true;
   } catch (error) {
-    logToConsole("error", `Failed to create backup: ${error.message}`);
-    throw error;
+    logToConsole("error", `Failed to create daily backup: ${error.message}`);
+    return false;
+  }
+}
+
+// Create manual snapshot
+async function createSnapshot(name) {
+  logToConsole("start", "Creating snapshot...");
+  backupState.isBackupInProgress = true;
+
+  try {
+    // Load JSZip if not already loaded
+    logToConsole("info", "Loading JSZip...");
+    await loadJSZip();
+    logToConsole("success", "JSZip loaded successfully");
+
+    // Export data from both localStorage and IndexedDB
+    const data = await exportBackupData();
+
+    // Format timestamp in local timezone with DST handling
+    const now = new Date();
+    const timestamp =
+      now.getFullYear().toString() +
+      (now.getMonth() + 1).toString().padStart(2, "0") +
+      now.getDate().toString().padStart(2, "0") +
+      now.getHours().toString().padStart(2, "0") +
+      now.getMinutes().toString().padStart(2, "0") +
+      now.getSeconds().toString().padStart(2, "0") +
+      now.getMilliseconds().toString().padStart(3, "0");
+
+    const key = `s-${name}-${timestamp}.zip`;
+    logToConsole("info", `Creating snapshot with key: ${key}`);
+
+    // Check if encryption key is available
+    const encryptionKey = localStorage.getItem("encryption-key");
+    if (!encryptionKey) {
+      logToConsole(
+        "warning",
+        "No encryption key found, snapshot will not be encrypted"
+      );
+      return false;
+    }
+
+    // Convert data to JSON string
+    const dataStr = JSON.stringify(data);
+    const rawSize = new Blob([dataStr]).size;
+    logToConsole("info", `Raw data size: ${formatFileSize(rawSize)}`);
+
+    // Encrypt the data
+    logToConsole("info", "Encrypting snapshot data...");
+    const encryptedData = await encryptData(dataStr);
+
+    // Create ZIP file
+    const zip = new JSZip();
+
+    // Add the encrypted data to the ZIP
+    const jsonFileName = key.replace(".zip", ".json");
+    zip.file(jsonFileName, encryptedData, {
+      compression: "DEFLATE",
+      compressionOptions: {
+        level: 9,
+      },
+      binary: true,
+    });
+
+    // Generate the ZIP file
+    const compressedContent = await zip.generateAsync({ type: "blob" });
+    if (compressedContent.size < 100) {
+      throw new Error("Snapshot file is too small or empty. Upload cancelled.");
+    }
+
+    // Convert Blob to ArrayBuffer for S3 upload
+    const arrayBuffer = await compressedContent.arrayBuffer();
+    const content = new Uint8Array(arrayBuffer);
+
+    // Prepare metadata for S3
+    const uploadMetadata = {
+      version: EXTENSION_VERSION,
+      timestamp: String(Date.now()),
+      type: "snapshot",
+      originalSize: String(rawSize),
+      compressedSize: String(compressedContent.size),
+      encrypted: "true",
+    };
+
+    // Upload to S3
+    await uploadToS3(key, content, uploadMetadata);
+
+    backupState.lastManualSnapshot = Date.now();
+
+    // Refresh the backup list in the modal
+    await loadBackupList();
+
+    // Show success message to user
+    const statusText = document.querySelector(".status-text");
+    if (statusText) {
+      statusText.textContent = `Snapshot "${name}" created successfully`;
+      setTimeout(() => {
+        statusText.textContent = `Last synced: ${getLastSyncTime()}`;
+      }, 3000);
+    }
+
+    return true;
+  } catch (error) {
+    logToConsole("error", "Failed to create snapshot:", error);
+    return false;
+  } finally {
+    backupState.isBackupInProgress = false;
   }
 }
 
@@ -1942,17 +1966,8 @@ async function restoreFromBackup(key) {
       throw new Error("Backup ZIP file is empty");
     }
 
-    // Find the metadata file first
-    const metadataFile = zip.file("metadata.json");
-    let metadata;
-    if (metadataFile) {
-      const metadataContent = await metadataFile.async("text");
-      metadata = JSON.parse(metadataContent);
-      logToConsole("info", "Found metadata:", metadata);
-    }
-
-    // Find the main data file (either snapshot or backup)
-    const dataFile = files.find((f) => f !== "metadata.json");
+    // Find the first file in the ZIP (should be the backup data)
+    const dataFile = files[0];
     if (!dataFile) {
       throw new Error("No data file found in backup");
     }
@@ -1961,59 +1976,109 @@ async function restoreFromBackup(key) {
     logToConsole("info", `Extracting data from ${dataFile}...`);
     const backupContent = await zip.file(dataFile).async("uint8array");
 
-    // Decrypt if encryption is enabled
-    let decryptedContent;
-    try {
-      logToConsole("info", "Decrypting backup content...");
-      decryptedContent = await decryptData(backupContent);
-      logToConsole("success", "Backup content decrypted successfully");
-    } catch (decryptError) {
-      logToConsole("error", "Failed to decrypt backup content:", decryptError);
-      throw new Error(
-        "Failed to decrypt backup. Please check your encryption key."
-      );
-    }
+    // Decrypt the backup content
+    logToConsole("info", "Decrypting backup content...");
+    const decryptedContent = await decryptData(backupContent);
+    logToConsole("success", "Backup content decrypted successfully");
 
-    // Parse the decrypted JSON
-    let backupData;
-    try {
-      logToConsole("info", "Parsing decrypted content...");
-      backupData = JSON.parse(decryptedContent);
-      logToConsole("success", "Backup content parsed successfully");
-    } catch (parseError) {
-      logToConsole("error", "Failed to parse backup content:", parseError);
-      throw new Error("Invalid backup format");
-    }
+    // Parse the decrypted content
+    logToConsole("info", "Parsing backup data...");
+    const backupData = JSON.parse(decryptedContent);
 
-    // Validate backup data
-    if (!backupData || !backupData.chats) {
-      throw new Error("Invalid backup data format");
-    }
+    // Import the data to storage (both localStorage and IndexedDB)
+    await importDataToStorage(backupData);
 
-    // Clear existing data
-    logToConsole("info", "Clearing existing data...");
-    const db = await openIndexedDB();
-    const transaction = db.transaction(["keyval"], "readwrite");
-    const store = transaction.objectStore("keyval");
-    await new Promise((resolve, reject) => {
-      const request = store.clear();
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-    logToConsole("success", "Existing data cleared successfully");
+    // Update last sync time
+    const currentTime = new Date().toLocaleString();
+    localStorage.setItem("last-cloud-sync", currentTime);
 
-    // Restore chats
-    logToConsole("info", `Restoring ${backupData.chats.length} chats...`);
-    for (const chat of backupData.chats) {
-      await saveChatToIndexedDB(chat);
-    }
+    // Update metadata
+    await updateChatMetadata(null, true, false);
+    await saveLocalMetadata();
 
     logToConsole("success", "Backup restored successfully");
     return true;
   } catch (error) {
-    logToConsole("error", "Failed to restore backup:", error);
+    logToConsole("error", `Failed to restore backup: ${error.message}`);
     throw error;
   }
+}
+
+// Import data to storage (both localStorage and IndexedDB)
+function importDataToStorage(data) {
+  return new Promise((resolve, reject) => {
+    // Keys to preserve during import
+    const preserveKeys = [
+      "import-size-threshold",
+      "export-size-threshold",
+      "alert-smaller-cloud",
+      "encryption-key",
+      "aws-bucket",
+      "aws-access-key",
+      "aws-secret-key",
+      "aws-region",
+      "aws-endpoint",
+      "backup-interval",
+      "sync-mode",
+      "sync-status-hidden",
+      "sync-status-position",
+      "activeTabBackupRunning",
+      "last-time-based-backup",
+      "last-daily-backup-in-s3",
+      "last-cloud-sync",
+    ];
+
+    // Import localStorage data
+    if (data.localStorage) {
+      logToConsole("info", "Importing localStorage data...");
+      Object.keys(data.localStorage).forEach((key) => {
+        if (!preserveKeys.includes(key)) {
+          localStorage.setItem(key, data.localStorage[key]);
+        }
+      });
+    }
+
+    // Import IndexedDB data
+    if (data.indexedDB) {
+      logToConsole("info", "Importing IndexedDB data...");
+      const request = indexedDB.open("keyval-store");
+      request.onerror = () => reject(request.error);
+      request.onsuccess = function (event) {
+        const db = event.target.result;
+        const transaction = db.transaction(["keyval"], "readwrite");
+        const objectStore = transaction.objectStore("keyval");
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+
+        // Clear existing data
+        const deleteRequest = objectStore.clear();
+        deleteRequest.onsuccess = function () {
+          // Import new data
+          const indexedDBData = data.indexedDB;
+          Object.keys(indexedDBData).forEach((key) => {
+            objectStore.put(indexedDBData[key], key);
+          });
+        };
+      };
+    } else {
+      // If there's no IndexedDB data, resolve immediately
+      resolve();
+    }
+
+    // Ensure the extension URL is in the list
+    let extensionURLs = JSON.parse(
+      localStorage.getItem("TM_useExtensionURLs") || "[]"
+    );
+    if (!extensionURLs.some((url) => url.endsWith("s3-v2.js"))) {
+      extensionURLs.push(
+        "https://itcon-pty-au.github.io/typingmind-cloud-backup-bugfix/s3-v2.js"
+      );
+      localStorage.setItem(
+        "TM_useExtensionURLs",
+        JSON.stringify(extensionURLs)
+      );
+    }
+  });
 }
 
 // ==================== SYNC ENGINE ====================
