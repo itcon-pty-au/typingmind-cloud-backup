@@ -11,6 +11,7 @@ const MONITORED_ITEMS = {
     "TM_useUserPrompts",
   ],
   localStorage: [
+    "TM_useExtensionURLs",
     "TM_useCustomModels",
     "TM_useDefaultModel",
     "TM_useModelIDsOrder",
