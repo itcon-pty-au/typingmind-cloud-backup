@@ -1207,6 +1207,15 @@ async function downloadFromS3(key) {
       cleanMetadata[cleanKey] = value;
     }
 
+    // Special handling for metadata.json - no decryption needed
+    if (key === "metadata.json") {
+      return {
+        data: response.Body,
+        metadata: cleanMetadata,
+      };
+    }
+
+    // For all other files, return as is
     return {
       data: response.Body,
       metadata: cleanMetadata,
@@ -2154,7 +2163,7 @@ async function performInitialSync() {
   logToConsole("start", "Performing initial sync...");
 
   try {
-    // Check AWS credentials and encryption key
+    // Check AWS credentials
     if (
       !config.accessKey ||
       !config.secretKey ||
@@ -2171,33 +2180,21 @@ async function performInitialSync() {
     logToConsole("info", `Found ${localChatCount} chats in local metadata`);
 
     // Download cloud metadata
-    const cloudMetadata = await downloadFromS3("metadata.json");
+    const s3 = initializeS3Client();
+    const params = {
+      Bucket: config.bucketName,
+      Key: "metadata.json",
+    };
 
-    if (!cloudMetadata || !cloudMetadata.data) {
-      // No cloud data exists yet
-      if (localChatCount > 0) {
-        // We have local data, create initial backup
-        logToConsole(
-          "info",
-          "No cloud data found - creating initial backup with local data"
-        );
-        await syncToCloud();
-      } else {
-        // No local data and no cloud data - nothing to do
-        logToConsole(
-          "info",
-          "No local or cloud data found - skipping initial sync"
-        );
-      }
-      return;
-    }
-
-    // Parse and validate cloud metadata
     try {
+      const data = await s3.getObject(params).promise();
+      const content = data.Body;
+
+      // Parse metadata directly without decryption
       const metadata = JSON.parse(
-        typeof cloudMetadata.data === "string"
-          ? cloudMetadata.data
-          : new TextDecoder().decode(cloudMetadata.data)
+        typeof content === "string"
+          ? content
+          : new TextDecoder().decode(content)
       );
 
       if (!metadata || typeof metadata !== "object" || !metadata.chats) {
@@ -2222,6 +2219,24 @@ async function performInitialSync() {
       );
       await syncFromCloud();
     } catch (error) {
+      if (error.code === "NoSuchKey") {
+        // No cloud data exists yet
+        if (localChatCount > 0) {
+          // We have local data, create initial backup
+          logToConsole(
+            "info",
+            "No cloud data found - creating initial backup with local data"
+          );
+          await syncToCloud();
+        } else {
+          // No local data and no cloud data - nothing to do
+          logToConsole(
+            "info",
+            "No local or cloud data found - skipping initial sync"
+          );
+        }
+        return;
+      }
       logToConsole("error", "Invalid cloud metadata:", error);
       if (localChatCount > 0) {
         logToConsole(
@@ -4225,10 +4240,14 @@ async function uploadSettingsToCloud() {
       syncedAt: Date.now(),
     };
 
-    await uploadToS3("metadata.json", await encryptData(cloudMetadata), {
-      ContentType: "application/json",
-      ServerSideEncryption: "AES256",
-    });
+    await uploadToS3(
+      "metadata.json",
+      new TextEncoder().encode(JSON.stringify(cloudMetadata)),
+      {
+        ContentType: "application/json",
+        ServerSideEncryption: "AES256",
+      }
+    );
 
     return true;
   } catch (error) {
@@ -4249,8 +4268,14 @@ async function downloadCloudMetadata() {
 
     try {
       const data = await s3.getObject(params).promise();
-      const encryptedContent = new Uint8Array(data.Body);
-      const metadata = await decryptData(encryptedContent);
+      const content = data.Body;
+
+      // Parse metadata directly without decryption
+      const metadata = JSON.parse(
+        typeof content === "string"
+          ? content
+          : new TextDecoder().decode(content)
+      );
 
       logToConsole("success", "Downloaded cloud metadata");
       return metadata;
@@ -4271,12 +4296,15 @@ async function downloadCloudMetadata() {
           },
         };
 
-        // Encrypt and upload initial metadata
-        const encryptedData = await encryptData(initialMetadata);
-        await uploadToS3("metadata.json", encryptedData, {
-          ContentType: "application/json",
-          ServerSideEncryption: "AES256",
-        });
+        // Upload initial metadata without encryption
+        await uploadToS3(
+          "metadata.json",
+          new TextEncoder().encode(JSON.stringify(initialMetadata)),
+          {
+            ContentType: "application/json",
+            ServerSideEncryption: "AES256",
+          }
+        );
 
         return initialMetadata;
       }
