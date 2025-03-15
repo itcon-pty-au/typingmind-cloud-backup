@@ -1005,7 +1005,14 @@ function monitorIndexedDBForDeletions() {
 // Save a chat to IndexedDB
 async function saveChatToIndexedDB(chat) {
   return new Promise((resolve, reject) => {
-    const key = `CHAT_${chat.id}`;
+    if (!chat || !chat.id) {
+      reject(
+        new Error("Cannot save chat: chat object or chat.id is undefined")
+      );
+      return;
+    }
+
+    const key = chat.id.startsWith("CHAT_") ? chat.id : `CHAT_${chat.id}`;
     const request = indexedDB.open("keyval-store", 1);
 
     request.onerror = () => reject(request.error);
@@ -1015,15 +1022,30 @@ async function saveChatToIndexedDB(chat) {
       const transaction = db.transaction(["keyval"], "readwrite");
       const store = transaction.objectStore("keyval");
 
+      // Ensure chat.id is consistent with the key
+      if (chat.id.startsWith("CHAT_") && key !== chat.id) {
+        chat.id = chat.id.slice(5); // Remove CHAT_ prefix from chat.id
+      }
+
       const putRequest = store.put(chat, key);
 
       putRequest.onsuccess = () => {
+        logToConsole("success", `Saved chat ${chat.id} to IndexedDB`);
         resolve();
       };
 
-      putRequest.onerror = () => {
-        reject(putRequest.error);
+      putRequest.onerror = () => reject(putRequest.error);
+
+      transaction.oncomplete = () => {
+        db.close();
       };
+    };
+
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains("keyval")) {
+        db.createObjectStore("keyval");
+      }
     };
   });
 }
@@ -4397,15 +4419,22 @@ async function downloadChatFromCloud(chatId) {
       const encryptedContent = new Uint8Array(data.Body);
       const chatData = await decryptData(encryptedContent);
 
-      logToConsole("success", `Downloaded chat ${chatId} from cloud`, {
-        messageCount: (chatData.messagesArray || []).length,
-        title: chatData.chatTitle,
-      });
+      // Ensure the chat has an ID that matches its key
+      if (!chatData.id) {
+        chatData.id = chatId;
+      } else if (chatData.id !== chatId) {
+        logToConsole(
+          "warning",
+          `Chat ID mismatch: ${chatData.id} !== ${chatId}, using key as ID`
+        );
+        chatData.id = chatId;
+      }
 
+      logToConsole("success", `Downloaded chat ${chatId} from cloud`);
       return chatData;
     } catch (error) {
       if (error.code === "NoSuchKey") {
-        logToConsole("info", `Chat ${chatId} not found in cloud`);
+        logToConsole("warning", `Chat ${chatId} not found in cloud`);
         return null;
       }
       throw error;
@@ -4470,6 +4499,22 @@ async function uploadChatToCloud(chatId) {
         `Chat ${chatId} not found in IndexedDB, skipping upload`
       );
       return false;
+    }
+
+    // Ensure chat has proper ID
+    if (!chatData.id) {
+      chatData.id = chatId;
+    } else if (chatData.id.startsWith("CHAT_")) {
+      chatData.id = chatData.id.slice(5);
+    }
+
+    // Double check ID consistency
+    if (chatData.id !== chatId) {
+      logToConsole(
+        "warning",
+        `Chat ID mismatch: ${chatData.id} !== ${chatId}, fixing before upload`
+      );
+      chatData.id = chatId;
     }
 
     // Check if this is an empty or invalid chat
