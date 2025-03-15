@@ -1928,64 +1928,48 @@ async function restoreFromBackup(key) {
   logToConsole("start", `Starting restore from backup: ${key}`);
 
   try {
-    // Load JSZip first
-    const JSZip = await loadJSZip();
-    if (!JSZip) {
-      throw new Error("Failed to load JSZip library");
-    }
-
     // Download the backup file
     const backup = await downloadFromS3(key);
     if (!backup || !backup.data) {
       throw new Error("Backup not found or empty");
     }
 
-    // Load and extract ZIP
-    logToConsole("info", "Loading ZIP file...");
-    const zip = await JSZip.loadAsync(backup.data);
-    const files = Object.keys(zip.files);
+    let backupContent;
+    if (key.endsWith(".zip")) {
+      // Handle ZIP files
+      const JSZip = await loadJSZip();
+      const zip = await JSZip.loadAsync(backup.data);
 
-    if (files.length === 0) {
-      throw new Error("Backup ZIP file is empty");
+      // Find the JSON file in the ZIP
+      const jsonFile = Object.keys(zip.files).find((f) => f.endsWith(".json"));
+      if (!jsonFile) {
+        throw new Error("No JSON file found in backup");
+      }
+
+      // Extract the content
+      backupContent = await zip.file(jsonFile).async("uint8array");
+    } else {
+      // Handle regular files
+      backupContent = backup.data;
     }
 
-    // Find the JSON file in the ZIP (should be the first file)
-    const jsonFile = files.find((file) => file.endsWith(".json"));
-    if (!jsonFile) {
-      throw new Error("No JSON file found in backup");
-    }
-
-    // Extract the content
-    logToConsole("info", `Extracting data from ${jsonFile}...`);
-    const backupContent = await zip.file(jsonFile).async("uint8array");
-
-    // Decrypt if needed
-    logToConsole("info", "Processing backup content...");
+    // Decrypt the content
     const decryptedContent = await decryptData(backupContent);
 
-    // Parse the JSON data
-    logToConsole("info", "Parsing backup data...");
-    const backupData = JSON.parse(decryptedContent);
-
-    if (!backupData) {
-      throw new Error("Invalid backup data format");
-    }
-
     // Import the data to storage
-    logToConsole("info", "Importing data to storage...");
-    await importDataToStorage(backupData);
+    await importDataToStorage(decryptedContent);
 
     // Update last sync time
     const currentTime = new Date().toLocaleString();
     localStorage.setItem("last-cloud-sync", currentTime);
 
-    // Save metadata directly instead of calling updateChatMetadata with null
+    // Save metadata
     await saveLocalMetadata();
 
     logToConsole("success", "Backup restored successfully");
     return true;
   } catch (error) {
-    logToConsole("error", `Failed to restore backup: ${error.message}`);
+    logToConsole("error", "Restore failed:", error);
     throw error;
   }
 }
@@ -3826,40 +3810,24 @@ function setupButtonHandlers(backupList) {
 
 // Helper functions for handling downloads
 async function handleZipDownload(backup, key) {
-  const JSZip = await loadJSZip();
-  const zip = await JSZip.loadAsync(backup.data);
-
-  // Find metadata file
-  const metadataFile = zip.file("metadata.json");
-  let metadata;
-  if (metadataFile) {
-    const metadataContent = await metadataFile.async("text");
-    metadata = JSON.parse(metadataContent);
-  }
-
-  // Find and process the main data file
-  const dataFile = Object.keys(zip.files).find((f) => f !== "metadata.json");
-  if (!dataFile) {
-    throw new Error("No data file found in backup");
-  }
-
-  const fileContent = await zip.file(dataFile).async("uint8array");
-
   try {
-    // Decrypt the content
-    const decryptedString = await decryptData(fileContent);
+    const JSZip = await loadJSZip();
+    const zip = await JSZip.loadAsync(backup.data);
 
-    // Parse and format JSON
-    let finalContent;
-    try {
-      const parsedContent = JSON.parse(decryptedString);
-      finalContent = JSON.stringify(parsedContent, null, 2);
-    } catch (parseError) {
-      finalContent = decryptedString;
+    // Find the JSON file in the ZIP
+    const jsonFile = Object.keys(zip.files).find((f) => f.endsWith(".json"));
+    if (!jsonFile) {
+      throw new Error("No JSON file found in backup");
     }
 
-    // Download the processed content
-    const blob = new Blob([finalContent], { type: "application/json" });
+    // Extract and decrypt the content
+    const fileContent = await zip.file(jsonFile).async("uint8array");
+    const decryptedContent = await decryptData(fileContent);
+
+    // Download the decrypted content directly
+    const blob = new Blob([JSON.stringify(decryptedContent, null, 2)], {
+      type: "application/json",
+    });
     downloadFile(key.replace(".zip", ".json"), blob);
   } catch (error) {
     logToConsole("error", "Failed to process zip content:", error);
@@ -3869,23 +3837,20 @@ async function handleZipDownload(backup, key) {
 
 async function handleRegularFileDownload(backup, key) {
   try {
-    const decryptedString = await decryptData(backup.data);
+    // Decrypt the content
+    const decryptedContent = await decryptData(backup.data);
 
-    // For JSON files, ensure we have a properly formatted JSON string
+    // For JSON files, ensure proper formatting for download
     if (key.endsWith(".json")) {
-      // Parse and format JSON
-      const parsedData = JSON.parse(decryptedString);
-      const formattedJson = JSON.stringify(parsedData, null, 2);
-
-      // Create a text blob with the JSON content
-      const blob = new Blob([formattedJson], { type: "application/json" });
+      const blob = new Blob([JSON.stringify(decryptedContent, null, 2)], {
+        type: "application/json",
+      });
       downloadFile(key, blob);
     } else {
-      downloadFile(key, decryptedString);
+      downloadFile(key, decryptedContent);
     }
   } catch (error) {
     logToConsole("error", "Processing failed, downloading raw data:", error);
-    // If decryption fails, download the raw data
     downloadFile(key, backup.data);
   }
 }
