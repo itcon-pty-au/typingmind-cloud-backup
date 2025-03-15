@@ -3565,65 +3565,55 @@ async function loadBackupList() {
       return;
     }
 
+    // Get all objects from S3
     const backups = await listS3Objects();
 
     // Clear existing options
     backupList.innerHTML = "";
     backupList.disabled = false;
 
-    // Group files by type
-    const groupedBackups = backups.reduce((acc, backup) => {
-      // Skip chat files entirely
-      if (!backup.key.startsWith("chats/")) {
-        acc[backup.key] = backup;
-      }
-      return acc;
-    }, {});
+    // Filter out chat folder items
+    const filteredBackups = backups.filter(
+      (backup) => !backup.Key.startsWith("chats/") && backup.Key !== "chats/"
+    );
 
-    // Remove existing event listeners (if any)
-    const oldBackupList = document.createElement("select");
-    oldBackupList.id = backupList.id;
-    oldBackupList.className = backupList.className;
-
-    if (Object.keys(groupedBackups).length === 0) {
+    if (filteredBackups.length === 0) {
       const option = document.createElement("option");
       option.value = "";
       option.text = "No backups found";
-      oldBackupList.appendChild(option);
+      backupList.appendChild(option);
     } else {
-      // Sort backups by timestamp (newest first) excluding chats
-      const sortedBackups = Object.entries(groupedBackups).sort(
-        ([, a], [, b]) => {
-          const timestampA =
-            a.metadata?.timestamp || a.LastModified?.getTime() || 0;
-          const timestampB =
-            b.metadata?.timestamp || b.LastModified?.getTime() || 0;
-          return timestampB - timestampA;
-        }
-      );
+      // Sort backups by timestamp (newest first)
+      const sortedBackups = filteredBackups.sort((a, b) => {
+        const timestampA =
+          a.metadata?.timestamp || a.LastModified?.getTime() || 0;
+        const timestampB =
+          b.metadata?.timestamp || b.LastModified?.getTime() || 0;
+        return timestampB - timestampA;
+      });
 
-      // Add sorted backups
-      sortedBackups.forEach(([key, value]) => {
+      // Add sorted backups to the list
+      sortedBackups.forEach((backup) => {
         const option = document.createElement("option");
-        option.value = key;
-        const size = formatFileSize(value.Size || 0);
-        option.text = `${key} - ${size}`;
-        oldBackupList.appendChild(option);
+        option.value = backup.Key;
+        const size = formatFileSize(backup.Size || 0);
+        option.text = `${backup.Key} - ${size}`;
+        backupList.appendChild(option);
       });
     }
 
-    // Replace the old list with the new one
-    backupList.parentNode.replaceChild(oldBackupList, backupList);
+    // Update button states based on selection
+    updateButtonStates();
+
+    // Add change listener to update button states
+    backupList.addEventListener("change", updateButtonStates);
 
     // Function to update button states
-    const updateButtonStates = () => {
-      const selectedValue = oldBackupList.value || "";
+    function updateButtonStates() {
+      const selectedValue = backupList.value || "";
       const downloadButton = document.getElementById("download-backup-btn");
       const restoreButton = document.getElementById("restore-backup-btn");
       const deleteButton = document.getElementById("delete-backup-btn");
-
-      // Log the selected value for debugging
-      logToConsole("info", `Selected backup file: ${selectedValue}`);
 
       // Check file types
       const isSnapshot = selectedValue.startsWith("s-");
@@ -3634,19 +3624,11 @@ async function loadBackupList() {
 
       if (downloadButton) {
         downloadButton.disabled = !selectedValue;
-        logToConsole(
-          "info",
-          `Download button state: ${downloadButton.disabled}, selectedValue: ${selectedValue}`
-        );
       }
 
       if (restoreButton) {
         restoreButton.disabled =
           !selectedValue || (!isSnapshot && !isDailyBackup);
-        logToConsole(
-          "info",
-          `Restore button state: ${restoreButton.disabled}, isSnapshot: ${isSnapshot}, isDailyBackup: ${isDailyBackup}, selectedValue: ${selectedValue}`
-        );
       }
 
       if (deleteButton) {
@@ -3654,264 +3636,177 @@ async function loadBackupList() {
         const isProtectedFile =
           !selectedValue || isChatsFolder || isSettingsFile || isMetadataFile;
         deleteButton.disabled = isProtectedFile;
-        logToConsole(
-          "info",
-          `Delete button state: ${deleteButton.disabled}, isProtectedFile: ${isProtectedFile}, isChatsFolder: ${isChatsFolder}, isSettingsFile: ${isSettingsFile}, isMetadataFile: ${isMetadataFile}, selectedValue: ${selectedValue}`
-        );
       }
-    };
-
-    // Add change listener to update button states
-    oldBackupList.addEventListener("change", updateButtonStates);
-
-    // Initial button state update
-    updateButtonStates();
+    }
 
     // Add button handlers
-    const downloadButton = document.getElementById("download-backup-btn");
-    if (downloadButton) {
-      // Remove existing click handler
-      const newDownloadButton = downloadButton.cloneNode(true);
-      downloadButton.parentNode.replaceChild(newDownloadButton, downloadButton);
-
-      newDownloadButton.onclick = async () => {
-        const key = oldBackupList.value;
-        if (!key) {
-          alert("Please select a backup to download");
-          return;
-        }
-
-        try {
-          // Removed chats folder download logic
-          const backup = await downloadFromS3(key);
-
-          if (key.endsWith(".zip")) {
-            // Handle ZIP files
-            const JSZip = await loadJSZip();
-            const zip = await JSZip.loadAsync(backup.data);
-
-            // Find metadata file
-            const metadataFile = zip.file("metadata.json");
-            let metadata;
-            if (metadataFile) {
-              const metadataContent = await metadataFile.async("text");
-              metadata = JSON.parse(metadataContent);
-            }
-
-            // Find and process the main data file
-            const dataFile = Object.keys(zip.files).find(
-              (f) => f !== "metadata.json"
-            );
-            if (!dataFile) {
-              throw new Error("No data file found in backup");
-            }
-
-            const fileContent = await zip.file(dataFile).async("uint8array");
-            let finalContent;
-
-            logToConsole("info", "Decrypting backup content...");
-            try {
-              // Decrypt the content to get a string
-              const decryptedString = await decryptData(fileContent);
-
-              // Parse the JSON string
-              try {
-                finalContent = JSON.parse(decryptedString);
-                logToConsole("success", "Parsed decrypted content as JSON");
-              } catch (parseError) {
-                logToConsole(
-                  "error",
-                  "Failed to parse decrypted content as JSON:",
-                  parseError
-                );
-                finalContent = decryptedString;
-              }
-
-              // Log detailed information about the decrypted content
-              logToConsole(
-                "info",
-                "Decrypted content type:",
-                typeof finalContent
-              );
-              logToConsole(
-                "info",
-                "Decrypted content preview:",
-                typeof finalContent === "string"
-                  ? finalContent.substring(0, 100)
-                  : JSON.stringify(finalContent).substring(0, 100)
-              );
-
-              // Ensure we're properly handling the result
-              if (typeof finalContent === "object") {
-                // If it's already an object (parsed JSON), stringify it properly
-                finalContent = JSON.stringify(finalContent, null, 2);
-                logToConsole("info", "Stringified object to JSON");
-              } else if (typeof finalContent === "string") {
-                // If it's a string, try to parse it as JSON and re-stringify for formatting
-                try {
-                  const parsedContent = JSON.parse(finalContent);
-                  finalContent = JSON.stringify(parsedContent, null, 2);
-                  logToConsole("info", "Parsed and reformatted JSON string");
-                } catch (parseError) {
-                  logToConsole(
-                    "warning",
-                    "Content is not valid JSON, using as-is:",
-                    parseError
-                  );
-                }
-              }
-
-              logToConsole("success", "Backup content decrypted successfully");
-            } catch (error) {
-              logToConsole("error", "Failed to decrypt backup:", error);
-              throw new Error(`Decryption failed: ${error.message}`);
-            }
-
-            // Download the processed content
-            logToConsole(
-              "info",
-              "Preparing download with content type:",
-              typeof finalContent
-            );
-            logToConsole(
-              "info",
-              "Content preview:",
-              typeof finalContent === "string"
-                ? finalContent.substring(0, 100)
-                : "Non-string content"
-            );
-
-            const blob = new Blob([finalContent], {
-              type: "application/json",
-            });
-            downloadFile(key.replace(".zip", ".json"), blob);
-          } else {
-            // Handle non-ZIP files
-            // Always try to decrypt based on file content, not metadata
-            logToConsole("info", "Processing file content...");
-            try {
-              const decryptedString = await decryptData(backup.data);
-              logToConsole("info", "Processed data:", {
-                type: typeof decryptedString,
-                preview: decryptedString.substring(0, 100),
-              });
-
-              // For JSON files, ensure we have a properly formatted JSON string
-              if (key.endsWith(".json")) {
-                // Parse the JSON string and then stringify it with formatting
-                const parsedData = JSON.parse(decryptedString);
-                const formattedJson = JSON.stringify(parsedData, null, 2);
-
-                // Create a text blob with the JSON content
-                const blob = new Blob([formattedJson], {
-                  type: "application/json",
-                });
-
-                // Download the formatted JSON
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement("a");
-                link.href = url;
-                link.download = key;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
-
-                logToConsole(
-                  "success",
-                  `Downloaded and processed ${key} successfully`
-                );
-              } else {
-                downloadFile(key, decryptedString);
-              }
-            } catch (error) {
-              logToConsole(
-                "error",
-                "Processing failed, downloading raw data:",
-                error
-              );
-              // If decryption fails, download the raw data
-              downloadFile(key, backup.data);
-            }
-          }
-        } catch (error) {
-          logToConsole("error", "Failed to download backup:", error);
-          const actionMsg = document.getElementById("action-msg");
-          if (actionMsg) {
-            actionMsg.textContent = `Download failed: ${error.message}`;
-            actionMsg.style.color = "red";
-            setTimeout(() => {
-              actionMsg.textContent = "";
-            }, 5000);
-          }
-          alert("Failed to download backup: " + error.message);
-        }
-      };
-    }
-
-    // Add restore button handler
-    const restoreButton = document.getElementById("restore-backup-btn");
-    if (restoreButton) {
-      // Remove existing click handler
-      const newRestoreButton = restoreButton.cloneNode(true);
-      restoreButton.parentNode.replaceChild(newRestoreButton, restoreButton);
-
-      newRestoreButton.onclick = async () => {
-        const key = oldBackupList.value;
-        if (!key) {
-          alert("Please select a backup to restore");
-          return;
-        }
-
-        if (
-          confirm(
-            "Are you sure you want to restore this backup? This will overwrite your current data."
-          )
-        ) {
-          try {
-            await restoreFromBackup(key);
-            alert("Backup restored successfully!");
-          } catch (error) {
-            logToConsole("error", "Failed to restore backup:", error);
-            alert("Failed to restore backup: " + error.message);
-          }
-        }
-      };
-    }
-
-    // Add delete button handler
-    const deleteButton = document.getElementById("delete-backup-btn");
-    if (deleteButton) {
-      // Remove existing click handler
-      const newDeleteButton = deleteButton.cloneNode(true);
-      deleteButton.parentNode.replaceChild(newDeleteButton, deleteButton);
-
-      newDeleteButton.onclick = async () => {
-        const key = oldBackupList.value;
-        if (!key) {
-          alert("Please select a backup to delete");
-          return;
-        }
-
-        if (
-          confirm(
-            "Are you sure you want to delete this backup? This cannot be undone."
-          )
-        ) {
-          try {
-            await deleteFromS3(key);
-            await loadBackupList(); // Refresh the list
-            alert("Backup deleted successfully!");
-          } catch (error) {
-            logToConsole("error", "Failed to delete backup:", error);
-            alert("Failed to delete backup: " + error.message);
-          }
-        }
-      };
-    }
+    setupButtonHandlers(backupList);
   } catch (error) {
     logToConsole("error", "Failed to load backup list:", error);
+    if (backupList) {
+      backupList.innerHTML = '<option value="">Error loading backups</option>';
+      backupList.disabled = false;
+    }
+  }
+}
+
+// Helper function to set up button handlers
+function setupButtonHandlers(backupList) {
+  // Download button handler
+  const downloadButton = document.getElementById("download-backup-btn");
+  if (downloadButton) {
+    // Remove existing click handler
+    const newDownloadButton = downloadButton.cloneNode(true);
+    downloadButton.parentNode.replaceChild(newDownloadButton, downloadButton);
+
+    newDownloadButton.onclick = async () => {
+      const key = backupList.value;
+      if (!key) {
+        alert("Please select a backup to download");
+        return;
+      }
+
+      try {
+        const backup = await downloadFromS3(key);
+
+        // Handle download based on file type
+        if (key.endsWith(".zip")) {
+          handleZipDownload(backup, key);
+        } else {
+          handleRegularFileDownload(backup, key);
+        }
+      } catch (error) {
+        logToConsole("error", "Failed to download backup:", error);
+        alert("Failed to download backup: " + error.message);
+      }
+    };
+  }
+
+  // Restore button handler
+  const restoreButton = document.getElementById("restore-backup-btn");
+  if (restoreButton) {
+    // Remove existing click handler
+    const newRestoreButton = restoreButton.cloneNode(true);
+    restoreButton.parentNode.replaceChild(newRestoreButton, restoreButton);
+
+    newRestoreButton.onclick = async () => {
+      const key = backupList.value;
+      if (!key) {
+        alert("Please select a backup to restore");
+        return;
+      }
+
+      if (
+        confirm(
+          "Are you sure you want to restore this backup? This will overwrite your current data."
+        )
+      ) {
+        try {
+          await restoreFromBackup(key);
+          alert("Backup restored successfully!");
+        } catch (error) {
+          logToConsole("error", "Failed to restore backup:", error);
+          alert("Failed to restore backup: " + error.message);
+        }
+      }
+    };
+  }
+
+  // Delete button handler
+  const deleteButton = document.getElementById("delete-backup-btn");
+  if (deleteButton) {
+    // Remove existing click handler
+    const newDeleteButton = deleteButton.cloneNode(true);
+    deleteButton.parentNode.replaceChild(newDeleteButton, deleteButton);
+
+    newDeleteButton.onclick = async () => {
+      const key = backupList.value;
+      if (!key) {
+        alert("Please select a backup to delete");
+        return;
+      }
+
+      if (
+        confirm(
+          "Are you sure you want to delete this backup? This cannot be undone."
+        )
+      ) {
+        try {
+          await deleteFromS3(key);
+          await loadBackupList(); // Refresh the list
+          alert("Backup deleted successfully!");
+        } catch (error) {
+          logToConsole("error", "Failed to delete backup:", error);
+          alert("Failed to delete backup: " + error.message);
+        }
+      }
+    };
+  }
+}
+
+// Helper functions for handling downloads
+async function handleZipDownload(backup, key) {
+  const JSZip = await loadJSZip();
+  const zip = await JSZip.loadAsync(backup.data);
+
+  // Find metadata file
+  const metadataFile = zip.file("metadata.json");
+  let metadata;
+  if (metadataFile) {
+    const metadataContent = await metadataFile.async("text");
+    metadata = JSON.parse(metadataContent);
+  }
+
+  // Find and process the main data file
+  const dataFile = Object.keys(zip.files).find((f) => f !== "metadata.json");
+  if (!dataFile) {
+    throw new Error("No data file found in backup");
+  }
+
+  const fileContent = await zip.file(dataFile).async("uint8array");
+
+  try {
+    // Decrypt the content
+    const decryptedString = await decryptData(fileContent);
+
+    // Parse and format JSON
+    let finalContent;
+    try {
+      const parsedContent = JSON.parse(decryptedString);
+      finalContent = JSON.stringify(parsedContent, null, 2);
+    } catch (parseError) {
+      finalContent = decryptedString;
+    }
+
+    // Download the processed content
+    const blob = new Blob([finalContent], { type: "application/json" });
+    downloadFile(key.replace(".zip", ".json"), blob);
+  } catch (error) {
+    logToConsole("error", "Failed to process zip content:", error);
     throw error;
+  }
+}
+
+async function handleRegularFileDownload(backup, key) {
+  try {
+    const decryptedString = await decryptData(backup.data);
+
+    // For JSON files, ensure we have a properly formatted JSON string
+    if (key.endsWith(".json")) {
+      // Parse and format JSON
+      const parsedData = JSON.parse(decryptedString);
+      const formattedJson = JSON.stringify(parsedData, null, 2);
+
+      // Create a text blob with the JSON content
+      const blob = new Blob([formattedJson], { type: "application/json" });
+      downloadFile(key, blob);
+    } else {
+      downloadFile(key, decryptedString);
+    }
+  } catch (error) {
+    logToConsole("error", "Processing failed, downloading raw data:", error);
+    // If decryption fails, download the raw data
+    downloadFile(key, backup.data);
   }
 }
 
