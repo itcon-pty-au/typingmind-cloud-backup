@@ -1021,7 +1021,17 @@ async function saveChatToIndexedDB(chat) {
 // Delete a chat from IndexedDB
 async function deleteChatFromIndexedDB(chatId) {
   return new Promise((resolve, reject) => {
-    const key = chatId.startsWith("CHAT_") ? chatId : `CHAT_${chatId}`;
+    if (!chatId) {
+      reject(new Error("Cannot delete chat: chatId is undefined"));
+      return;
+    }
+
+    // Ensure we have the CHAT_ prefix
+    const key =
+      typeof chatId === "string" && chatId.startsWith("CHAT_")
+        ? chatId
+        : `CHAT_${chatId}`;
+
     const request = indexedDB.open("keyval-store", 1);
 
     request.onerror = () => reject(request.error);
@@ -1034,11 +1044,14 @@ async function deleteChatFromIndexedDB(chatId) {
       const deleteRequest = store.delete(key);
 
       deleteRequest.onsuccess = () => {
+        logToConsole("success", `Deleted chat ${chatId} from IndexedDB`);
         resolve();
       };
 
-      deleteRequest.onerror = () => {
-        reject(deleteRequest.error);
+      deleteRequest.onerror = () => reject(deleteRequest.error);
+
+      transaction.oncomplete = () => {
+        db.close();
       };
     };
   });
