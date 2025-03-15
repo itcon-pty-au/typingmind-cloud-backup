@@ -1762,7 +1762,7 @@ async function createSnapshot(name) {
 
 // Create backup
 async function createBackup(key, type) {
-  //logToConsole("start", `Creating ${type} backup: ${key}`);
+  logToConsole("start", `Creating ${type} backup: ${key}`);
 
   try {
     // Ensure JSZip is loaded
@@ -1777,11 +1777,6 @@ async function createBackup(key, type) {
       throw new Error("No data to backup");
     }
 
-    // Calculate total size before compression
-    const rawData = JSON.stringify(chats);
-    const rawSize = new Blob([rawData]).size;
-    //logToConsole("info", `Raw data size: ${formatFileSize(rawSize)}`);
-
     // Create backup data structure
     const backupData = {
       version: EXTENSION_VERSION,
@@ -1790,10 +1785,45 @@ async function createBackup(key, type) {
       chats: chats,
     };
 
-    // Convert to JSON and compress
+    // Convert to JSON and get raw size
     const backupJson = JSON.stringify(backupData);
+    const rawSize = new Blob([backupJson]).size;
+    logToConsole("info", `Raw data size: ${formatFileSize(rawSize)}`);
+
+    // Create ZIP file
     const zip = new JSZip();
-    zip.file("backup.json", backupJson);
+    const backupFileName = `backup-${Date.now()}.json`;
+
+    // Add the JSON data as a file in the ZIP
+    if (config.encryptionKey) {
+      // Encrypt the JSON data
+      const encryptedResult = await encryptData(backupJson);
+      // Store the encrypted data directly
+      zip.file(backupFileName, encryptedResult);
+      zip.file(
+        "metadata.json",
+        JSON.stringify({
+          encrypted: true,
+          timestamp: Date.now(),
+          version: EXTENSION_VERSION,
+          type: type,
+          originalSize: rawSize,
+        })
+      );
+    } else {
+      // Store unencrypted data
+      zip.file(backupFileName, backupJson);
+      zip.file(
+        "metadata.json",
+        JSON.stringify({
+          encrypted: false,
+          timestamp: Date.now(),
+          version: EXTENSION_VERSION,
+          type: type,
+          originalSize: rawSize,
+        })
+      );
+    }
 
     // Generate ZIP with optimal compression
     const content = await zip.generateAsync({
@@ -1806,11 +1836,10 @@ async function createBackup(key, type) {
 
     // Log compressed size
     const compressedSize = content.byteLength;
-    //logToConsole("info", `Compressed size: ${formatFileSize(compressedSize)}`);
+    logToConsole("info", `Compressed size: ${formatFileSize(compressedSize)}`);
 
-    // Encrypt if needed
-    let uploadData;
-    let uploadMetadata = {
+    // Prepare metadata for S3
+    const uploadMetadata = {
       version: EXTENSION_VERSION,
       timestamp: String(Date.now()),
       type: type,
@@ -1819,14 +1848,8 @@ async function createBackup(key, type) {
       encrypted: config.encryptionKey ? "true" : "false",
     };
 
-    if (config.encryptionKey) {
-      uploadData = await encryptData(content);
-    } else {
-      uploadData = content;
-    }
-
-    // Upload to S3
-    await uploadToS3(key, uploadData, uploadMetadata);
+    // Upload to S3 - we upload the ZIP file directly, not encrypting it again
+    await uploadToS3(key, content, uploadMetadata);
 
     logToConsole("success", `Backup created successfully: ${key}`);
     return true;
