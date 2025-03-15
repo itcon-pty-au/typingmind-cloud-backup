@@ -3,7 +3,7 @@
 # TypingMind Cloud Backup Extension
 
 ## Features
-- Extension to enable automatic backup & restore of app data to AWS S3/S3 compatible cloud services. (Full backup, not incremental)
+- Extension to enable automatic backup & restore of app data [entire Typingmind data] to AWS S3/S3 compatible cloud services. (Full backup, not incremental)
 - Manual export/import of data to and from cloud.
 - The entire typingmind data will be stored in S3 as a single JSON file. This file is overwritten each time a backup is written to S3.
 - Automatically (subject to data loss prevention rules) restores the latest backup version from S3 to your TypingMind instance when you load the app (provided a backup exists).
@@ -11,7 +11,7 @@
 - Last 30 days 'backup of backup' for a stress free experience. Apart from the single backup file, the extension now creates a daily 'no-touch' zipped backup of the main backup file. In case the main backup file gets corrupted, you can restore it using the previous day's backup.
 - Snapshot lets you backup the current typingmind data to the cloud when you need it. This is a 'no-touch' zipped backup that will permanently exist in the cloud till you choose to delete it.
 - A 'T-15 rolling snapshot' keeps a zipped snapshot of the typingmind instance from 15 minutes ago. This gives you a recent version of the backup that you can manually revert to in case of an unintended corruption of the main backup file. However, note that this is a rolling backup that gets overwritten every 15 minutes.
-- Allows you to view all the backups in the cloud and lets you download it or restore from the UI itself. The snapshot backups can be deleted from the UI as well.
+- Allows you to view all the backups in the cloud and lets you download it (decrypts before download) or restore from the UI itself. The snapshot backups can be deleted from the UI as well.
 - The backup interval is now configurable (Minimum of 15 seconds).
 - All backups are now encrypted! The backup system uses AES-GCM encryption with a 256-bit key derived using PBKDF2. All data is encrypted client-side before being uploaded to S3. The encryption key is derived from a user-provided password using 100,000 PBKDF2 iterations with SHA-256, providing strong protection for sensitive data.
 - The system includes several safeguards to prevent unintended data loss.
@@ -28,7 +28,7 @@
   
 ## Using this extension
 WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXPORT" before setting up the extension.
-1. Logout of Typingmind
+1. Logout of Typingmind. This disables the native sync. The app works perfectly fine when logged out as well.
 2. Load "https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js" into Menu > Preferences > Extension in Typingmind.
 3. Once the extension is installed, a new Backup button will be added to the menu. Clicking on this will bring up the S3 backup configuration form.
 4. Provide the AWS details in the configuration form. [These are stored locally in your browser]
