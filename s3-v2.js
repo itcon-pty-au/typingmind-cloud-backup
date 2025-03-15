@@ -2020,8 +2020,27 @@ function importDataToStorage(data) {
     if (data.localStorage) {
       logToConsole("info", "Importing localStorage data...");
       Object.keys(data.localStorage).forEach((key) => {
-        if (!preserveKeys.includes(key)) {
-          localStorage.setItem(key, data.localStorage[key]);
+        // Skip numeric keys and ensure key is a valid string
+        if (
+          !preserveKeys.includes(key) &&
+          isNaN(parseInt(key)) &&
+          typeof key === "string" &&
+          key.trim() !== ""
+        ) {
+          // Only set if the value is defined
+          if (
+            data.localStorage[key] !== undefined &&
+            data.localStorage[key] !== null
+          ) {
+            localStorage.setItem(key, data.localStorage[key]);
+            logToConsole("debug", `Imported localStorage key: ${key}`);
+          } else {
+            logToConsole("warn", `Skipping undefined value for key: ${key}`);
+          }
+        } else if (preserveKeys.includes(key)) {
+          logToConsole("debug", `Preserving existing value for key: ${key}`);
+        } else {
+          logToConsole("warn", `Skipping invalid localStorage key: ${key}`);
         }
       });
     }
@@ -2051,7 +2070,28 @@ function importDataToStorage(data) {
         deleteRequest.onsuccess = function () {
           // Import new data
           Object.keys(data.indexedDB).forEach((key) => {
-            objectStore.put(data.indexedDB[key], key);
+            // Skip numeric keys and ensure key is a valid string
+            if (
+              isNaN(parseInt(key)) &&
+              typeof key === "string" &&
+              key.trim() !== ""
+            ) {
+              // Only import if the value is defined
+              if (
+                data.indexedDB[key] !== undefined &&
+                data.indexedDB[key] !== null
+              ) {
+                objectStore.put(data.indexedDB[key], key);
+                logToConsole("debug", `Imported IndexedDB key: ${key}`);
+              } else {
+                logToConsole(
+                  "warn",
+                  `Skipping undefined value for IndexedDB key: ${key}`
+                );
+              }
+            } else {
+              logToConsole("warn", `Skipping invalid IndexedDB key: ${key}`);
+            }
           });
         };
       };
