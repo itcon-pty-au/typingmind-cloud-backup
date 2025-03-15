@@ -2243,18 +2243,39 @@ async function syncFromCloud() {
 
     let cloudMetadata;
     try {
+      // Parse the metadata (it's stored as plain JSON, not encrypted)
       cloudMetadata = JSON.parse(
         typeof cloudMetadataObj.data === "string"
           ? cloudMetadataObj.data
           : new TextDecoder().decode(cloudMetadataObj.data)
       );
-
-      if (config.encryptionKey) {
-        cloudMetadata = JSON.parse(await decryptData(cloudMetadata));
-      }
     } catch (error) {
       logToConsole("error", "Failed to parse cloud metadata:", error);
       return;
+    }
+
+    // Initialize metadata structure if needed
+    if (!cloudMetadata || typeof cloudMetadata !== "object") {
+      cloudMetadata = {
+        version: EXTENSION_VERSION,
+        timestamp: Date.now(),
+        chats: {},
+        settings: {
+          items: {},
+          lastModified: 0,
+          syncedAt: 0,
+        },
+      };
+    }
+
+    // Ensure required objects exist
+    if (!cloudMetadata.chats) cloudMetadata.chats = {};
+    if (!cloudMetadata.settings) {
+      cloudMetadata.settings = {
+        items: {},
+        lastModified: 0,
+        syncedAt: 0,
+      };
     }
 
     // Get local chats and metadata
@@ -2296,15 +2317,21 @@ async function syncFromCloud() {
 
           let chat;
           try {
-            chat = JSON.parse(
-              typeof chatData.data === "string"
-                ? chatData.data
-                : new TextDecoder().decode(chatData.data)
-            );
+            // Chat data is encrypted, so we need to decrypt it
+            let rawData = chatData.data;
+            if (typeof rawData === "string") {
+              rawData = new TextEncoder().encode(rawData);
+            }
 
             if (config.encryptionKey) {
-              chat = JSON.parse(await decryptData(chat));
+              rawData = await decryptData(rawData);
             }
+
+            chat = JSON.parse(
+              typeof rawData === "string"
+                ? rawData
+                : new TextDecoder().decode(rawData)
+            );
 
             if (!chat.id) {
               logToConsole("warning", `Chat ${chatId} has no ID, skipping`);
