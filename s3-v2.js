@@ -2332,7 +2332,7 @@ async function syncFromCloud() {
                 chat.id = chatId;
               }
 
-              await saveChat(chat);
+              await saveChatToIndexedDB(chat);
               hasChanges = true;
 
               // Update local metadata after successful save
