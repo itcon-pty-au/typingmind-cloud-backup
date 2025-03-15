@@ -2303,9 +2303,11 @@ async function syncFromCloud() {
       // Skip if we've already synced this version and hashes match
       if (
         localMeta &&
-        localMeta.syncedAt >= cloudChatMeta.lastModified &&
+        cloudChatMeta.hash &&
         localMeta.hash === cloudChatMeta.hash
       ) {
+        // Update syncedAt time even if no changes
+        localMetadata.chats[chatId].syncedAt = Date.now();
         continue;
       }
 
@@ -2317,7 +2319,8 @@ async function syncFromCloud() {
       if (
         !localChat ||
         !localMeta ||
-        cloudChatMeta.lastModified > (localMeta.syncedAt || 0) ||
+        !localMeta.hash ||
+        !cloudChatMeta.hash ||
         localMeta.hash !== cloudChatMeta.hash
       ) {
         chatsToDownload.push(chatId);
@@ -2373,14 +2376,17 @@ async function syncFromCloud() {
 
             await saveChatToIndexedDB(chat);
 
+            // Generate new hash for the chat
+            const newHash = await generateChatHash(chat);
+
             // Update local metadata for this chat
             if (!localMetadata.chats[chatId]) {
               localMetadata.chats[chatId] = {};
             }
             localMetadata.chats[chatId] = {
-              ...cloudMetadata.chats[chatId],
+              lastModified: chat.updatedAt || Date.now(),
               syncedAt: Date.now(),
-              hash: await generateChatHash(chat),
+              hash: newHash,
             };
 
             logToConsole("success", `Downloaded and saved chat ${chatId}`);
