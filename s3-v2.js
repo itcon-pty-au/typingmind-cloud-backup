@@ -308,7 +308,7 @@ async function initializeExtension() {
   // Initialize logging first
   initializeLoggingState();
 
-  logToConsole("start", "Starting initialization...");
+  //logToConsole("start", "Starting initialization...");
 
   try {
     // Load AWS SDK
@@ -388,7 +388,7 @@ async function loadAwsSdk() {
     const script = document.createElement("script");
     script.src = "https://sdk.amazonaws.com/js/aws-sdk-2.1048.0.min.js";
     script.onload = () => {
-      logToConsole("success", "AWS SDK loaded successfully");
+      //logToConsole("success", "AWS SDK loaded successfully");
       resolve();
     };
     script.onerror = () => reject(new Error("Failed to load AWS SDK"));
@@ -405,7 +405,7 @@ async function loadJSZip() {
     script.src =
       "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
     script.onload = () => {
-      logToConsole("success", "JSZip loaded successfully");
+      //logToConsole("success", "JSZip loaded successfully");
       resolve(window.JSZip);
     };
     script.onerror = () => reject(new Error("Failed to load JSZip"));
@@ -415,7 +415,7 @@ async function loadJSZip() {
 
 // Initialize last seen updates tracking
 async function initializeLastSeenUpdates() {
-  logToConsole("start", "Initializing last seen updates...");
+  //logToConsole("start", "Initializing last seen updates...");
   const chats = await getAllChatsFromIndexedDB();
 
   for (const chat of chats) {
@@ -425,12 +425,12 @@ async function initializeLastSeenUpdates() {
       hash: await generateChatHash(chat),
     };
   }
-  logToConsole("success", "Last seen updates initialized");
+  //logToConsole("success", "Last seen updates initialized");
 }
 
 // Load configuration from localStorage
 function loadConfiguration() {
-  logToConsole("start", "Loading configuration...");
+  //logToConsole("start", "Loading configuration...");
 
   // Initialize default config if not exists
   if (!config) {
@@ -460,16 +460,16 @@ function loadConfiguration() {
   // Update config with stored values
   config = { ...config, ...storedConfig };
 
-  logToConsole("success", "Configuration loaded", {
-    syncMode: config.syncMode,
-  });
+  //logToConsole("success", "Configuration loaded", {
+  //  syncMode: config.syncMode,
+  //});
 
   return config;
 }
 
 // Save configuration to localStorage
 function saveConfiguration() {
-  logToConsole("start", "Saving configuration...");
+  //logToConsole("start", "Saving configuration...");
 
   localStorage.setItem("aws-bucket", config.bucketName);
   localStorage.setItem("aws-region", config.region);
@@ -480,12 +480,12 @@ function saveConfiguration() {
   localStorage.setItem("encryption-key", config.encryptionKey);
   localStorage.setItem("sync-mode", config.syncMode);
 
-  logToConsole("success", "Configuration saved");
+  //logToConsole("success", "Configuration saved");
 }
 
 // Load local metadata
 async function loadLocalMetadata() {
-  logToConsole("start", "Loading local metadata...");
+  //logToConsole("start", "Loading local metadata...");
 
   try {
     const storedMetadata = await getIndexedDBKey("sync-metadata");
@@ -503,7 +503,7 @@ async function loadLocalMetadata() {
 
 // Initialize metadata from existing data
 async function initializeMetadataFromExistingData() {
-  logToConsole("start", "Initializing metadata from existing data...");
+  //logToConsole("start", "Initializing metadata from existing data...");
 
   const chats = await getAllChatsFromIndexedDB();
   localMetadata = {
@@ -541,7 +541,7 @@ async function generateChatHash(chat) {
   if (!chat || !chat.id) return null;
 
   const chatCopy = { ...chat };
-  delete chatCopy.updatedAt; // Exclude updatedAt from hash calculation
+  delete chatCopy.updatedAt;
 
   const msgStr = JSON.stringify(chatCopy);
   const msgBuffer = new TextEncoder().encode(msgStr);
@@ -554,10 +554,10 @@ async function generateChatHash(chat) {
 function startPeriodicChangeCheck() {
   const checkInterval = Math.max(config.syncInterval * 1000, 15000);
   setInterval(checkForChanges, checkInterval);
-  logToConsole(
-    "info",
-    `Started periodic change check (interval: ${checkInterval}ms)`
-  );
+  //logToConsole(
+  //  "info",
+  //  `Started periodic change check (interval: ${checkInterval}ms)`
+  //);
 }
 
 // Check for changes in chats
@@ -706,7 +706,7 @@ function openIndexedDB() {
         logToConsole("info", "IndexedDB version changed");
       };
 
-      logToConsole("success", "Successfully opened IndexedDB connection");
+      //logToConsole("success", "Successfully opened IndexedDB connection");
       resolve(db);
     };
 
@@ -1119,10 +1119,14 @@ async function uploadToS3(key, data, metadata) {
 
     // For large files, use multipart upload
     if (data.byteLength > 5 * 1024 * 1024) {
-      logToConsole(
-        "info",
-        `File size > 5MB, using multipart upload for ${key}`
-      );
+      //logToConsole(
+      //  "info",
+      //  `File size > 5MB, using multipart upload for ${key}`
+      //);
+
+      // Clean up any incomplete multipart uploads before starting a new one
+      await cleanupIncompleteMultipartUploads();
+
       const uploadId = await startMultipartUpload(key);
       const partSize = 5 * 1024 * 1024;
       const parts = [];
@@ -1139,7 +1143,7 @@ async function uploadToS3(key, data, metadata) {
           100,
           Math.round((end / data.byteLength) * 100)
         );
-        logToConsole("info", `Upload progress: ${progress}%`);
+        //logToConsole("info", `Upload progress: ${progress}%`);
       }
 
       await completeMultipartUpload(key, uploadId, parts);
@@ -1178,14 +1182,14 @@ async function downloadFromS3(key) {
       cleanMetadata[cleanKey] = value;
     }
 
-    logToConsole("info", "S3 response raw metadata:", response.Metadata);
-    logToConsole("info", "S3 response cleaned metadata:", cleanMetadata);
-    logToConsole("info", "S3 response data type:", typeof response.Body);
-    logToConsole(
-      "info",
-      "S3 response data instanceof:",
-      response.Body.constructor.name
-    );
+    //logToConsole("info", "S3 response raw metadata:", response.Metadata);
+    //logToConsole("info", "S3 response cleaned metadata:", cleanMetadata);
+    //logToConsole("info", "S3 response data type:", typeof response.Body);
+    //logToConsole(
+    //  "info",
+    //  "S3 response data instanceof:",
+    //  response.Body.constructor.name
+    //);
 
     return {
       data: response.Body,
@@ -1250,24 +1254,86 @@ async function startMultipartUpload(key) {
 // Upload part to multipart upload
 async function uploadPart(key, uploadId, partNumber, data) {
   const s3 = initializeS3Client();
+  const maxRetries = 3;
+  const baseDelay = 1000; // 1 second base delay
+  let retryCount = 0;
+  let lastError = null;
+  let uploadSuccess = false;
 
-  try {
-    const params = {
-      Bucket: config.bucketName,
-      Key: key,
-      UploadId: uploadId,
-      PartNumber: partNumber,
-      Body: data,
-    };
+  while (!uploadSuccess && retryCount <= maxRetries) {
+    try {
+      const params = {
+        Bucket: config.bucketName,
+        Key: key,
+        UploadId: uploadId,
+        PartNumber: partNumber,
+        Body: data,
+      };
 
-    const response = await s3.uploadPart(params).promise();
-    return {
-      ETag: response.ETag,
-      PartNumber: partNumber,
-    };
-  } catch (error) {
-    logToConsole("error", `Failed to upload part ${partNumber}:`, error);
-    throw error;
+      if (retryCount > 0) {
+        logToConsole(
+          "info",
+          `Retrying upload part ${partNumber} (attempt ${retryCount + 1}/${
+            maxRetries + 1
+          })`
+        );
+      }
+
+      const response = await s3.uploadPart(params).promise();
+      uploadSuccess = true;
+
+      //logToConsole(
+      //  "success",
+      //  `Successfully uploaded part ${partNumber} (ETag: ${response.ETag})`
+      //);
+
+      return {
+        ETag: response.ETag,
+        PartNumber: partNumber,
+      };
+    } catch (error) {
+      lastError = error;
+      retryCount++;
+      logToConsole(
+        "error",
+        `Error uploading part ${partNumber} (attempt ${retryCount}/${
+          maxRetries + 1
+        }):`,
+        error
+      );
+
+      if (retryCount > maxRetries) {
+        logToConsole(
+          "error",
+          `All retries failed for part ${partNumber}, aborting multipart upload`
+        );
+
+        try {
+          await abortMultipartUpload(key, uploadId);
+        } catch (abortError) {
+          logToConsole("error", "Error aborting multipart upload:", abortError);
+        }
+
+        throw new Error(
+          `Failed to upload part ${partNumber} after ${
+            maxRetries + 1
+          } attempts: ${lastError.message}`
+        );
+      }
+
+      // Exponential backoff with jitter
+      const delay = Math.min(
+        baseDelay * Math.pow(2, retryCount - 1) + Math.random() * 1000,
+        30000
+      );
+
+      logToConsole(
+        "info",
+        `Retrying part ${partNumber} in ${Math.round(delay / 1000)} seconds`
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
   }
 }
 
@@ -1309,6 +1375,68 @@ async function abortMultipartUpload(key, uploadId) {
   } catch (error) {
     logToConsole("error", "Failed to abort multipart upload:", error);
     throw error;
+  }
+}
+
+// Cleanup incomplete multipart uploads
+async function cleanupIncompleteMultipartUploads() {
+  //logToConsole("cleanup", "Checking for incomplete multipart uploads...");
+  const s3 = initializeS3Client();
+
+  try {
+    const multipartUploads = await s3
+      .listMultipartUploads({
+        Bucket: config.bucketName,
+      })
+      .promise();
+
+    if (multipartUploads.Uploads && multipartUploads.Uploads.length > 0) {
+      logToConsole(
+        "cleanup",
+        `Found ${multipartUploads.Uploads.length} incomplete multipart uploads`
+      );
+
+      for (const upload of multipartUploads.Uploads) {
+        const uploadAge = Date.now() - new Date(upload.Initiated).getTime();
+        const fiveMinutes = 5 * 60 * 1000;
+
+        if (uploadAge > fiveMinutes) {
+          try {
+            await s3
+              .abortMultipartUpload({
+                Bucket: config.bucketName,
+                Key: upload.Key,
+                UploadId: upload.UploadId,
+              })
+              .promise();
+
+            logToConsole(
+              "success",
+              `Aborted incomplete upload for ${upload.Key} (${Math.round(
+                uploadAge / 1000 / 60
+              )}min old)`
+            );
+          } catch (error) {
+            logToConsole(
+              "error",
+              `Failed to abort upload for ${upload.Key}:`,
+              error
+            );
+          }
+        } else {
+          logToConsole(
+            "skip",
+            `Skipping recent upload for ${upload.Key} (${Math.round(
+              uploadAge / 1000
+            )}s old)`
+          );
+        }
+      }
+    } else {
+      //logToConsole("info", "No incomplete multipart uploads found");
+    }
+  } catch (error) {
+    logToConsole("error", "Error cleaning up multipart uploads:", error);
   }
 }
 
@@ -1569,7 +1697,7 @@ async function createSnapshot(name) {
 
     // Log compressed size
     const compressedSize = content.byteLength;
-    logToConsole("info", `Compressed size: ${formatFileSize(compressedSize)}`);
+    //logToConsole("info", `Compressed size: ${formatFileSize(compressedSize)}`);
 
     // Prepare metadata
     const uploadMetadata = {
@@ -1583,12 +1711,12 @@ async function createSnapshot(name) {
     await uploadToS3(key, content, uploadMetadata);
 
     backupState.lastManualSnapshot = Date.now();
-    logToConsole("success", "Snapshot created successfully");
+    //logToConsole("success", "Snapshot created successfully");
 
     // Refresh the backup list in the modal
-    logToConsole("info", "Refreshing backup list...");
+    //logToConsole("info", "Refreshing backup list...");
     await loadBackupList();
-    logToConsole("success", "Backup list refreshed");
+    //logToConsole("success", "Backup list refreshed");
 
     // Show success message to user
     const statusText = document.querySelector(".status-text");
@@ -1608,7 +1736,7 @@ async function createSnapshot(name) {
 
 // Create backup
 async function createBackup(key, type) {
-  logToConsole("start", `Creating ${type} backup: ${key}`);
+  //logToConsole("start", `Creating ${type} backup: ${key}`);
 
   try {
     // Get all chats
@@ -1620,7 +1748,7 @@ async function createBackup(key, type) {
     // Calculate total size before compression
     const rawData = JSON.stringify(chats);
     const rawSize = new Blob([rawData]).size;
-    logToConsole("info", `Raw data size: ${formatFileSize(rawSize)}`);
+    //logToConsole("info", `Raw data size: ${formatFileSize(rawSize)}`);
 
     // Create backup data structure
     const backupData = {
@@ -1646,7 +1774,7 @@ async function createBackup(key, type) {
 
     // Log compressed size
     const compressedSize = content.byteLength;
-    logToConsole("info", `Compressed size: ${formatFileSize(compressedSize)}`);
+    //logToConsole("info", `Compressed size: ${formatFileSize(compressedSize)}`);
 
     // Encrypt if needed
     let uploadData;
@@ -2262,8 +2390,8 @@ async function syncFromCloud() {
       downloaded: changes.toDownload.length,
       uploaded: changes.toUpload.length,
       settingsSynced: changes.settingsToSync || hasSettingsChanges,
-      lastSettingsSync: localMetadata.settings.syncedAt,
-      timeSinceLastSettingsSync: Date.now() - localMetadata.settings.syncedAt,
+      //lastSettingsSync: localMetadata.settings.syncedAt,
+      //timeSinceLastSettingsSync: Date.now() - localMetadata.settings.syncedAt,
     };
 
     // Log appropriate message based on sync status
@@ -3708,7 +3836,7 @@ async function getIndexedDBValue(key) {
 
 // Monitor settings changes
 async function initializeSettingsMonitoring() {
-  logToConsole("start", "Initializing settings monitoring...");
+  //logToConsole("start", "Initializing settings monitoring...");
 
   // Ensure metadata structure exists
   if (!localMetadata.settings) {
@@ -3927,7 +4055,7 @@ async function handleSettingChange(key, value, source) {
 }
 
 async function cleanupMetadataVersions() {
-  logToConsole("start", "Starting metadata.json version cleanup...");
+  //logToConsole("start", "Starting metadata.json version cleanup...");
 
   try {
     const s3 = initializeS3Client();
@@ -3975,15 +4103,15 @@ async function cleanupMetadataVersions() {
       }
     }
 
-    if (allVersions.length === 0) {
-      logToConsole("info", "No old versions to clean up");
-      return;
-    }
+    //if (allVersions.length === 0) {
+    //  logToConsole("info", "No old metadata versions to clean up");
+    //  return;
+    //}
 
-    logToConsole(
-      "info",
-      `Found ${allVersions.length} old versions to clean up`
-    );
+    //logToConsole(
+    //  "info",
+    //  `Found ${allVersions.length} old metadata versions to clean up`
+    //);
 
     // Process versions in batches of 1000 (AWS limit)
     const batchSize = 1000;
@@ -4006,7 +4134,7 @@ async function cleanupMetadataVersions() {
       if (deleteResult.Deleted) {
         logToConsole(
           "success",
-          `Deleted ${deleteResult.Deleted.length} old versions`
+          `Deleted ${deleteResult.Deleted.length} old metadata versions`
         );
       }
 
