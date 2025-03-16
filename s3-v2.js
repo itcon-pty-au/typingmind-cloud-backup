@@ -1006,10 +1006,16 @@ function monitorIndexedDBForDeletions() {
               };
               saveLocalMetadata();
 
-              // Queue deletion from cloud
-              queueOperation(`delete-chat-${chatId}`, () =>
-                deleteChatFromCloud(chatId)
-              );
+              // Only queue deletion from cloud if sync is enabled
+              if (config.syncMode === "sync" || config.syncMode === "backup") {
+                logToConsole(
+                  "cleanup",
+                  `Queueing deletion from cloud for chat ${chatId}`
+                );
+                queueOperation(`delete-chat-${chatId}`, () =>
+                  deleteChatFromCloud(chatId)
+                );
+              }
 
               // Remove from our tracking
               knownChats.delete(chatId);
