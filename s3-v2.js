@@ -2210,110 +2210,51 @@ function startSyncInterval() {
   activeIntervals.sync = setInterval(async () => {
     // Skip if operations are in progress
     if (operationState.isImporting || operationState.isExporting) {
-      logToConsole("skip", "Operation in progress - skipping sync");
+      logToConsole("skip", "Operation in progress - skipping interval tasks");
       return;
     }
 
-    // Check for local changes
-    await checkForChanges();
-
-    // If AWS is configured, handle sync or backup based on mode
+    // If AWS is configured, handle periodic tasks
     if (isAwsConfigured()) {
-      // Sync settings if there are pending changes (for both modes)
+      // Handle pending settings changes (consolidate multiple changes)
       if (pendingSettingsChanges) {
-        try {
-          // Download cloud metadata
-          const cloudMetadata = await downloadCloudMetadata();
-          if (!cloudMetadata) return;
-
-          // Collect all settings (both localStorage and IndexedDB)
-          const settingsToUpload = {};
-
-          // Add localStorage settings
-          for (const key of Object.keys(localStorage)) {
-            if (!shouldExcludeSetting(key)) {
-              let value = localStorage.getItem(key);
-              // Try to parse JSON if it looks like JSON
-              if (value && (value.startsWith("{") || value.startsWith("["))) {
-                try {
-                  value = JSON.parse(value);
-                } catch (e) {
-                  // If parsing fails, use the original string value
-                }
-              }
-              settingsToUpload[key] = {
-                data: value,
-                source: "localstorage",
-                lastModified: Date.now(),
-              };
-            }
-          }
-
-          // Add IndexedDB settings
-          const db = await getPersistentDB();
-          const transaction = db.transaction("keyval", "readonly");
-          const store = transaction.objectStore("keyval");
-          const keys = await new Promise((resolve, reject) => {
-            const request = store.getAllKeys();
-            request.onerror = () => reject(request.error);
-            request.onsuccess = () => resolve(request.result);
-          });
-
-          for (const key of keys) {
-            if (!shouldExcludeSetting(key)) {
-              const value = await getIndexedDBValue(key);
-              if (value !== undefined) {
-                settingsToUpload[key] = {
-                  data: value,
-                  source: "indexeddb",
-                  lastModified: Date.now(),
-                };
-              }
-            }
-          }
-
-          // Encrypt and upload all settings
-          const encryptedData = await encryptData(settingsToUpload);
-          await uploadToS3("settings.json", encryptedData, {
-            ContentType: "application/json",
-            ServerSideEncryption: "AES256",
-          });
-
-          // Update metadata
-          cloudMetadata.settings = {
-            lastModified: Date.now(),
-            syncedAt: Date.now(),
-          };
-
-          await uploadToS3(
-            "metadata.json",
-            new TextEncoder().encode(JSON.stringify(cloudMetadata)),
-            {
-              ContentType: "application/json",
-              ServerSideEncryption: "AES256",
-            }
-          );
-
-          pendingSettingsChanges = false;
-          logToConsole("success", "Synced all settings to cloud");
-        } catch (error) {
-          logToConsole("error", "Error syncing settings to cloud:", error);
-        }
+        logToConsole("info", "Processing pending settings changes");
+        pendingSettingsChanges = false;
+        queueOperation("settings-sync", uploadSettingsToCloud);
       }
 
-      // For sync mode, also download from cloud
-      if (config.syncMode === "sync") {
-        queueOperation("periodic-cloud-sync", syncFromCloud);
+      // Check for daily backup if in backup mode
+      if (config.syncMode === "backup") {
+        queueOperation("daily-backup-check", checkAndPerformDailyBackup);
+      }
+
+      // If in sync mode, do a quick consistency check
+      // This helps catch any changes that might have been missed by real-time monitoring
+      if (config.syncMode === "sync" && !operationState.isCheckingChanges) {
+        const cloudMetadata = await downloadCloudMetadata().catch((error) => {
+          logToConsole(
+            "error",
+            "Error downloading cloud metadata for consistency check:",
+            error
+          );
+          return null;
+        });
+
+        if (
+          cloudMetadata &&
+          cloudMetadata.lastSyncTime > localMetadata.lastSyncTime
+        ) {
+          logToConsole(
+            "info",
+            "Cloud changes detected during consistency check"
+          );
+          queueOperation("consistency-check", syncFromCloud);
+        }
       }
     }
   }, interval);
 
-  logToConsole(
-    "info",
-    `${
-      config.syncMode.charAt(0).toUpperCase() + config.syncMode.slice(1)
-    } interval started (${interval}ms)`
-  );
+  logToConsole("info", `Sync interval started (${interval}ms)`);
 }
 
 // Perform initial sync
