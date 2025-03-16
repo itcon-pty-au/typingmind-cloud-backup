@@ -77,7 +77,7 @@ let backupState = {
 // Configuration with defaults
 let config = {
   // Sync settings
-  syncMode: "sync", // 'sync', 'backup', or 'disabled'
+  syncMode: "disabled", // 'sync', 'backup', or 'disabled'
   syncInterval: 15, // seconds
   importThreshold: 1, // percentage
   exportThreshold: 10, // percentage
@@ -493,7 +493,7 @@ function loadConfiguration() {
   // Initialize default config if not exists
   if (!config) {
     config = {
-      syncMode: "sync",
+      syncMode: "disabled",
       syncInterval: 15,
       bucketName: "",
       region: "",
@@ -512,7 +512,7 @@ function loadConfiguration() {
     endpoint: localStorage.getItem("aws-endpoint"),
     syncInterval: parseInt(localStorage.getItem("backup-interval")) || 15,
     encryptionKey: localStorage.getItem("encryption-key"),
-    syncMode: localStorage.getItem("sync-mode") || "sync",
+    syncMode: localStorage.getItem("sync-mode") || "disabled",
   };
 
   // Update config with stored values
@@ -2855,8 +2855,9 @@ function insertSyncButton() {
   const currentMode = config.syncMode;
   const button = document.createElement("button");
   button.id = "cloud-sync-button";
-  button.className =
-    "min-w-[58px] sm:min-w-0 sm:aspect-auto aspect-square cursor-default h-12 md:h-[50px] flex-col justify-start items-start inline-flex focus:outline-0 focus:text-white w-full relative";
+  button.className = `min-w-[58px] sm:min-w-0 sm:aspect-auto aspect-square cursor-default h-12 md:h-[50px] flex-col justify-start items-start inline-flex focus:outline-0 focus:text-white w-full relative ${
+    currentMode === "disabled" ? "opacity-50" : ""
+  }`;
 
   button.innerHTML = `
     <span class="text-white/70 hover:bg-white/20 self-stretch h-12 md:h-[50px] px-0.5 py-1.5 rounded-xl flex-col justify-start items-center gap-1.5 flex transition-colors">
@@ -2881,13 +2882,15 @@ function insertSyncButton() {
                  </g>`
           }
         </svg>
-        <div id="sync-status-dot" class="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-zinc-900"></div>
+        <div id="sync-status-dot" class="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-zinc-900 ${
+          currentMode === "disabled" ? "hidden" : ""
+        }"></div>
       </div>
       <span class="font-normal self-stretch text-center text-xs leading-4 md:leading-none ${
         currentMode === "disabled" ? "text-gray-400 dark:text-gray-500" : ""
       }">${
     currentMode === "disabled"
-      ? "Sync"
+      ? "Disabled"
       : currentMode === "sync"
       ? "Sync"
       : "Backup"
@@ -2916,9 +2919,6 @@ function insertSyncButton() {
       return;
     }
   }
-
-  // If still not inserted, try again in 1 second
-  setTimeout(insertSyncButton, 1000);
 }
 
 // Add updateSyncStatusDot function to update the status indicator
