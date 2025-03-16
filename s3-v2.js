@@ -106,6 +106,24 @@ let isLocalDataModified = false;
 // Track settings changes between syncs
 let pendingSettingsChanges = false;
 
+// Track active intervals
+let activeIntervals = {
+  sync: null,
+  backup: null,
+};
+
+// Clear all intervals
+function clearAllIntervals() {
+  if (activeIntervals.sync) {
+    clearInterval(activeIntervals.sync);
+    activeIntervals.sync = null;
+  }
+  if (activeIntervals.backup) {
+    clearInterval(activeIntervals.backup);
+    activeIntervals.backup = null;
+  }
+}
+
 // ==================== LOGGING SYSTEM ====================
 
 // Define log priority levels
@@ -315,8 +333,6 @@ async function initializeExtension() {
   // Initialize logging first
   initializeLoggingState();
 
-  //logToConsole("start", "Starting initialization...");
-
   try {
     // Load AWS SDK
     await loadAwsSdk();
@@ -339,28 +355,25 @@ async function initializeExtension() {
     // Setup localStorage change listener
     await setupLocalStorageChangeListener();
 
-    // Check if we should perform initial sync
-    if (config.syncMode === "sync") {
-      queueOperation("initial-sync", performInitialSync);
-    }
-
-    // Check for daily backup regardless of sync mode
-    // This ensures we create a daily backup if one hasn't been created today
+    // Check if AWS is configured
     if (isAwsConfigured()) {
+      // Always check for daily backup on page load
       queueOperation("daily-backup-check", checkAndPerformDailyBackup);
-    }
 
-    // Start sync interval (now handles both sync and change checks)
-    startSyncInterval();
+      // Start interval (works for both sync and backup modes)
+      startSyncInterval();
+
+      // If in sync mode, also perform initial sync
+      if (config.syncMode === "sync") {
+        queueOperation("initial-sync", performInitialSync);
+      }
+    }
 
     // Set up visibility change handler
     setupVisibilityChangeHandler();
 
     // Start monitoring IndexedDB for deletions
     monitorIndexedDBForDeletions();
-
-    // Start backup intervals if configured
-    startBackupIntervals();
 
     logToConsole("success", "Initialization completed successfully");
   } catch (error) {
@@ -1604,37 +1617,28 @@ async function decryptData(data) {
 
 // Start backup intervals
 function startBackupIntervals() {
-  // We've removed the sync mode check since daily backups should run regardless of mode
-  // Daily backups are now only triggered during initialization
-
-  logToConsole("info", "Backup system initialized");
+  startSyncInterval(); // Reuse the same interval mechanism
 }
 
 // Check if daily backup is needed and perform it if necessary
 async function checkAndPerformDailyBackup() {
   try {
-    const storedSuffix = localStorage.getItem("last-daily-backup-in-s3");
-    const today = new Date();
-    const currentDateSuffix = `${today.getFullYear()}${String(
-      today.getMonth() + 1
-    ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+    const lastBackupStr = localStorage.getItem("lastDailyBackup");
+    const lastBackup = lastBackupStr ? new Date(parseInt(lastBackupStr)) : null;
+    const now = new Date();
 
-    // Only perform backup if we haven't done one today
-    if (!storedSuffix || currentDateSuffix > storedSuffix) {
-      logToConsole("start", "Starting daily backup check...");
-      const success = await performDailyBackup();
-
-      // Only update localStorage if backup was successful
-      if (success) {
-        // Store today's date as the last backup date
-        localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
-        logToConsole("success", "Daily backup completed and recorded");
-      }
+    // If no backup has been performed today
+    if (!lastBackup || lastBackup.toDateString() !== now.toDateString()) {
+      logToConsole("info", "Starting daily backup...");
+      await performDailyBackup();
+      // Update last backup time
+      localStorage.setItem("lastDailyBackup", now.getTime().toString());
+      logToConsole("success", "Daily backup completed");
     } else {
-      logToConsole("info", "Daily backup already performed today, skipping");
+      logToConsole("skip", "Daily backup already performed today");
     }
   } catch (error) {
-    logToConsole("error", "Daily backup check failed:", error);
+    logToConsole("error", "Error checking/performing daily backup:", error);
   }
 }
 
@@ -2161,9 +2165,12 @@ async function processOperationQueue() {
 
 // Start sync interval
 function startSyncInterval() {
+  // Clear any existing intervals first
+  clearAllIntervals();
+
   const interval = Math.max(config.syncInterval * 1000, 15000);
 
-  setInterval(async () => {
+  activeIntervals.sync = setInterval(async () => {
     // Skip if operations are in progress
     if (operationState.isImporting || operationState.isExporting) {
       logToConsole("skip", "Operation in progress - skipping sync");
@@ -2173,9 +2180,9 @@ function startSyncInterval() {
     // Check for local changes
     await checkForChanges();
 
-    // If we're in sync mode and AWS is configured, sync settings and chats
-    if (config.syncMode === "sync" && isAwsConfigured()) {
-      // Sync settings if there are pending changes
+    // If AWS is configured, handle sync or backup based on mode
+    if (isAwsConfigured()) {
+      // Sync settings if there are pending changes (for both modes)
       if (pendingSettingsChanges) {
         try {
           // Download cloud metadata
@@ -2257,12 +2264,19 @@ function startSyncInterval() {
         }
       }
 
-      // Sync chats with cloud
-      queueOperation("periodic-cloud-sync", syncFromCloud);
+      // For sync mode, also download from cloud
+      if (config.syncMode === "sync") {
+        queueOperation("periodic-cloud-sync", syncFromCloud);
+      }
     }
   }, interval);
 
-  logToConsole("info", `Sync/check interval started (${interval}ms)`);
+  logToConsole(
+    "info",
+    `${
+      config.syncMode.charAt(0).toUpperCase() + config.syncMode.slice(1)
+    } interval started (${interval}ms)`
+  );
 }
 
 // Perform initial sync
@@ -3549,6 +3563,7 @@ async function saveSettings() {
   }
 
   // Update config
+  const oldMode = config.syncMode;
   config = { ...config, ...newConfig };
   saveConfiguration();
 
@@ -3560,13 +3575,14 @@ async function saveSettings() {
     buttonText.innerText = config.syncMode === "sync" ? "Sync" : "Backup";
   }
 
-  // Restart intervals
-  startSyncInterval();
-  startBackupIntervals();
+  // Restart interval with new settings
+  if (isAwsConfigured()) {
+    startSyncInterval();
 
-  // Perform initial sync
-  if (config.syncMode === "sync") {
-    queueOperation("initial-sync", performInitialSync);
+    // If switching to sync mode, perform initial sync
+    if (config.syncMode === "sync" && oldMode !== "sync") {
+      queueOperation("initial-sync", performInitialSync);
+    }
   }
 
   closeModal();
