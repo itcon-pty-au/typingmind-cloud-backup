@@ -29,7 +29,7 @@ function shouldExcludeSetting(key) {
     key.startsWith("last-seen-") ||
     key.startsWith("sync-") ||
     !isNaN(key)
-  ); // Exclude numeric keys
+  );
 }
 
 let isConsoleLoggingEnabled =
@@ -875,7 +875,7 @@ async function setIndexedDBKey(key, value) {
 
 // Monitor IndexedDB for deletions
 function monitorIndexedDBForDeletions() {
-  logToConsole("info", "Setting up IndexedDB deletion monitor");
+  //logToConsole("info", "Setting up IndexedDB deletion monitor");
 
   // Keep track of current chats and their detection timestamps
   let knownChats = new Map(); // Map of chatId -> { detectedAt: timestamp, confirmedCount: number }
@@ -2223,11 +2223,6 @@ function startSyncInterval() {
         logToConsole("info", "Processing pending settings changes");
         pendingSettingsChanges = false;
         queueOperation("settings-sync", uploadSettingsToCloud);
-      }
-
-      // Check for daily backup if in backup mode
-      if (config.syncMode === "backup") {
-        queueOperation("daily-backup-check", checkAndPerformDailyBackup);
       }
 
       // If in sync mode, do a quick consistency check
