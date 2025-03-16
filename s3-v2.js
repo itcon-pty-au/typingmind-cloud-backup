@@ -2872,44 +2872,42 @@ function insertSyncButton() {
     existingButton.remove();
   }
 
-  // Get current mode from config or localStorage
-  const currentMode =
-    config?.syncMode || localStorage.getItem("sync-mode") || "sync";
-
+  const currentMode = config.syncMode;
   const button = document.createElement("button");
   button.id = "cloud-sync-button";
   button.className =
-    "min-w-[58px] sm:min-w-0 sm:aspect-auto aspect-square cursor-default h-12 md:h-[50px] flex-col justify-start items-start inline-flex focus:outline-0 focus:text-white w-full";
-
+    "z-1 flex flex-col items-center justify-center px-2 py-1 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-lg transition-colors";
   button.innerHTML = `
-    <span class="text-white/70 hover:bg-white/20 self-stretch h-12 md:h-[50px] px-0.5 py-1.5 rounded-xl flex-col justify-start items-center gap-1.5 flex transition-colors">
-      <svg class="w-4 h-4 flex-shrink-0" width="18px" height="18px" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+    <span class="flex flex-col items-center justify-center">
+      <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">
         ${
           currentMode === "disabled"
             ? `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3.75 9h10.5"/>
-              <path d="M9 3.75v10.5"/>
-             </g>`
+                <path d="M9 4.5A4.5 4.5 0 0114.5 9M9 13.5A4.5 4.5 0 013.5 9"/>
+                <path d="M2 2L16 16"/>
+               </g>`
             : currentMode === "sync"
             ? `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M9 4.5A4.5 4.5 0 0114.5 9M9 13.5A4.5 4.5 0 013.5 9"/>
-              <polyline points="9,2.5 9,4.5 11,4.5"/>
-              <polyline points="9,15.5 9,13.5 7,13.5"/>
-             </g>`
+                <path d="M9 4.5A4.5 4.5 0 0114.5 9M9 13.5A4.5 4.5 0 013.5 9"/>
+                <polyline points="9,2.5 9,4.5 11,4.5"/>
+                <polyline points="9,15.5 9,13.5 7,13.5"/>
+               </g>`
             : `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M15.75 11.25v3c0 .828-.672 1.5-1.5 1.5h-10.5c-.828 0-1.5-.672-1.5-1.5v-3"/>
-              <polyline points="12.75,6 9,2.25 5.25,6"/>
-              <line x1="9" y1="2.25" x2="9" y2="11.25"/>
-             </g>`
+                <path d="M15.75 11.25v3c0 .828-.672 1.5-1.5 1.5h-10.5c-.828 0-1.5-.672-1.5-1.5v-3"/>
+                <polyline points="12.75,6 9,2.25 5.25,6"/>
+                <line x1="9" y1="2.25" x2="9" y2="11.25"/>
+               </g>`
         }
       </svg>
-      <span class="font-normal self-stretch text-center text-xs leading-4 md:leading-none">${
-        currentMode === "disabled"
-          ? "Cloud"
-          : currentMode === "sync"
-          ? "Sync"
-          : "Backup"
-      }</span>
+      <span class="font-normal self-stretch text-center text-xs leading-4 md:leading-none ${
+        currentMode === "disabled" ? "text-gray-400 dark:text-gray-500" : ""
+      }">${
+    currentMode === "disabled"
+      ? "Sync"
+      : currentMode === "sync"
+      ? "Sync"
+      : "Backup"
+  }</span>
     </span>
   `;
 
