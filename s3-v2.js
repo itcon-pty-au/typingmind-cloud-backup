@@ -15,6 +15,9 @@ const EXCLUDED_SETTINGS = [
   "sync-mode",
   "last-cloud-sync",
   "TM_useDraftContent",
+  "lastDailyBackup",
+  "TM_useLastVerifiedToken",
+  "TM_useStateUpdateHistory",
 ];
 
 function shouldExcludeSetting(key) {
@@ -4275,21 +4278,6 @@ async function downloadSettingsFromCloud() {
       const data = await s3.getObject(params).promise();
       const encryptedContent = new Uint8Array(data.Body);
       const settingsData = await decryptData(encryptedContent);
-
-      // Log success with info about special keys
-      const specialKeys = [
-        "TM_useInstalledPlugins",
-        "TM_useUserCharacters",
-        "TM_useUserPrompts",
-      ];
-      const specialKeysFound = specialKeys.filter(
-        (key) => settingsData[key] !== undefined
-      );
-
-      logToConsole("success", "Downloaded settings from cloud", {
-        settingsCount: Object.keys(settingsData).length,
-        specialKeysFound: specialKeysFound,
-      });
 
       return settingsData;
     } catch (error) {
