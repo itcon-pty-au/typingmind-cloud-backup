@@ -4,36 +4,30 @@
 // ==================== CONSTANTS & STATE ====================
 
 const EXTENSION_VERSION = "2.0.0";
-const MONITORED_ITEMS = {
-  indexedDB: [
-    "TM_useUserCharacters",
-    "TM_useInstalledPlugins",
-    "TM_useUserPrompts",
-  ],
-  localStorage: [
-    "TM_useExtensionURLs",
-    "TM_useCustomModels",
-    "TM_useDefaultModel",
-    "TM_useModelIDsOrder",
-    "TM_useFolderList",
-    "TM_useModelsSettings",
-    "TM_useUserPluginSettings",
-    "TM_useAPIKey",
-    "TM_useAnthropicAPIKey",
-    "TM_useCustomSearchAPIKey",
-    "TM_useGeminiAPIKey",
-    "TM_useKeyboardShortcuts",
-    "TM_useLicenseKey",
-    "aws-access-key",
-    "aws-secret-key",
-    "aws-endpoint",
-    "aws-region",
-    "aws-bucket",
-    "encryption-key",
-    "backup-interval",
-    "sync-mode",
-  ],
-};
+const EXCLUDED_SETTINGS = [
+  // AWS configuration keys
+  "aws-bucket",
+  "aws-access-key",
+  "aws-secret-key",
+  "aws-region",
+  "aws-endpoint",
+  // Security keys
+  "encryption-key",
+  // Sync metadata
+  "chat-sync-metadata",
+  "sync-mode",
+  "last-cloud-sync",
+];
+
+function shouldExcludeSetting(key) {
+  return (
+    EXCLUDED_SETTINGS.includes(key) ||
+    key.startsWith("CHAT_") ||
+    key.startsWith("last-seen-") ||
+    key.startsWith("sync-") ||
+    !isNaN(key)
+  ); // Exclude numeric keys
+}
 
 let isConsoleLoggingEnabled =
   new URLSearchParams(window.location.search).get("log") === "true";
@@ -342,7 +336,7 @@ async function initializeExtension() {
     await initializeSettingsMonitoring();
 
     // Setup localStorage change listener
-    setupLocalStorageChangeListener();
+    await setupLocalStorageChangeListener();
 
     // Check if we should perform initial sync
     if (config.syncMode === "sync") {
@@ -617,43 +611,32 @@ async function checkForChanges() {
 }
 
 // Setup localStorage change listener
-function setupLocalStorageChangeListener() {
-  window.addEventListener("storage", async (e) => {
-    if (!e.key) return;
-
-    // Handle chat changes
-    if (e.key.startsWith("chat:")) {
-      const chatId = e.key.split(":")[1];
-      if (!chatId) return;
-
-      logToConsole("info", `Chat storage change detected for chat ${chatId}`);
-      await updateChatMetadata(chatId, true);
-      queueOperation("sync", syncToCloud);
+async function setupLocalStorageChangeListener() {
+  window.addEventListener("storage", (e) => {
+    if (!e.key || shouldExcludeSetting(e.key)) {
       return;
     }
 
-    // Handle settings changes
-    if (MONITORED_ITEMS.localStorage.includes(e.key)) {
-      logToConsole("info", `Settings storage change detected for ${e.key}`);
-      await handleSettingChange(e.key, e.newValue, "localstorage");
-      return;
+    // Queue a settings sync operation
+    if (config.syncMode === "sync") {
+      queueOperation("settings-sync", () =>
+        handleSettingChange(e.key, e.newValue, "localStorage")
+      );
     }
   });
 
-  // Also monitor settings changes through direct localStorage modifications
+  // Also monitor for programmatic changes
   const originalSetItem = localStorage.setItem;
   localStorage.setItem = function (key, value) {
     const oldValue = localStorage.getItem(key);
     originalSetItem.apply(this, arguments);
 
-    // If this is a monitored setting and the value actually changed
-    if (MONITORED_ITEMS.localStorage.includes(key) && oldValue !== value) {
-      logToConsole("info", `Direct settings change detected for ${key}`);
-      handleSettingChange(key, value, "localstorage");
+    if (!shouldExcludeSetting(key) && oldValue !== value) {
+      queueOperation("settings-sync", () =>
+        handleSettingChange(key, value, "localStorage")
+      );
     }
   };
-
-  logToConsole("success", "Storage change listeners setup complete");
 }
 
 // ==================== INDEXEDDB UTILITIES ====================
@@ -2434,7 +2417,7 @@ async function syncFromCloud() {
 
         // Delete local chat if it exists
         if (localChatIds.has(chatId)) {
-          await deleteChatFromCloud(chatId);
+          await deleteChatFromIndexedDB(chatId);
           hasChanges = true;
         }
 
@@ -2447,6 +2430,18 @@ async function syncFromCloud() {
         };
         saveLocalMetadata();
         continue;
+      }
+
+      // Skip if we have a local tombstone that's newer than the cloud version
+      if (localChatMeta?.deleted === true) {
+        if (
+          !cloudChatMeta.deleted ||
+          localChatMeta.deletedAt > cloudChatMeta.lastModified
+        ) {
+          // Our deletion is newer than cloud's version, push our tombstone to cloud
+          await deleteChatFromCloud(chatId);
+          continue;
+        }
       }
 
       // Download if:
@@ -3855,8 +3850,6 @@ async function getIndexedDBValue(key) {
 
 // Monitor settings changes
 async function initializeSettingsMonitoring() {
-  //logToConsole("start", "Initializing settings monitoring...");
-
   // Ensure metadata structure exists
   if (!localMetadata.settings) {
     localMetadata.settings = {
@@ -3870,50 +3863,67 @@ async function initializeSettingsMonitoring() {
     localMetadata.settings.items = {};
   }
 
-  // Initialize metadata for all monitored items
-  for (const key of MONITORED_ITEMS.indexedDB) {
-    const value = await getIndexedDBValue(key);
-    if (value !== undefined) {
-      const hash = await generateContentHash(value);
-      // Only set lastModified if this is a new item or if the hash has changed
-      if (
-        !localMetadata.settings.items[key] ||
-        localMetadata.settings.items[key].hash !== hash
-      ) {
-        localMetadata.settings.items[key] = {
-          hash,
-          lastModified: Date.now(),
-          lastSynced: 0,
-          source: "indexeddb",
-        };
+  // Initialize metadata for all IndexedDB items
+  const db = await openIndexedDB();
+  const transaction = db.transaction("keyval", "readonly");
+  const store = transaction.objectStore("keyval");
+  const keys = await new Promise((resolve, reject) => {
+    const request = store.getAllKeys();
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+  });
+
+  for (const key of keys) {
+    if (!shouldExcludeSetting(key)) {
+      const value = await getIndexedDBValue(key);
+      if (value !== undefined) {
+        const hash = await generateContentHash(value);
+        // Only set lastModified if this is a new item or if the hash has changed
+        if (
+          !localMetadata.settings.items[key] ||
+          localMetadata.settings.items[key].hash !== hash
+        ) {
+          localMetadata.settings.items[key] = {
+            hash,
+            lastModified: Date.now(),
+            lastSynced: 0,
+            source: "indexeddb",
+          };
+        }
       }
     }
   }
 
-  for (const key of MONITORED_ITEMS.localStorage) {
-    const value = localStorage.getItem(key);
-    if (value !== null) {
-      const hash = await generateContentHash(value);
-      // Only set lastModified if this is a new item or if the hash has changed
-      if (
-        !localMetadata.settings.items[key] ||
-        localMetadata.settings.items[key].hash !== hash
-      ) {
-        localMetadata.settings.items[key] = {
-          hash,
-          lastModified: Date.now(),
-          lastSynced: 0,
-          source: "localstorage",
-        };
+  // Initialize metadata for all localStorage items
+  for (const key of Object.keys(localStorage)) {
+    if (!shouldExcludeSetting(key)) {
+      const value = localStorage.getItem(key);
+      if (value !== null) {
+        const hash = await generateContentHash(value);
+        // Only set lastModified if this is a new item or if the hash has changed
+        if (
+          !localMetadata.settings.items[key] ||
+          localMetadata.settings.items[key].hash !== hash
+        ) {
+          localMetadata.settings.items[key] = {
+            hash,
+            lastModified: Date.now(),
+            lastSynced: 0,
+            source: "localstorage",
+          };
+        }
       }
     }
   }
 
   // Set up localStorage change listener
-  window.addEventListener("storage", async (e) => {
-    if (MONITORED_ITEMS.localStorage.includes(e.key)) {
-      await handleSettingChange(e.key, e.newValue, "localstorage");
+  window.addEventListener("storage", (e) => {
+    if (!e.key || shouldExcludeSetting(e.key)) {
+      return;
     }
+    queueOperation("settings-sync", () =>
+      handleSettingChange(e.key, e.newValue, "localstorage")
+    );
   });
 
   // Set up periodic check for IndexedDB changes
@@ -3939,181 +3949,100 @@ async function checkIndexedDBChanges() {
   try {
     const db = await getPersistentDB();
 
+    // Get all keys
+    const transaction = db.transaction("keyval", "readonly");
+    const store = transaction.objectStore("keyval");
+    const keys = await new Promise((resolve, reject) => {
+      const request = store.getAllKeys();
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+
     // Process each key sequentially with its own transaction
-    for (const key of MONITORED_ITEMS.indexedDB) {
-      try {
-        // Create a new transaction for each key
-        const value = await new Promise((resolve, reject) => {
-          const transaction = db.transaction("keyval", "readonly");
-          const store = transaction.objectStore("keyval");
-          const request = store.get(key);
+    for (const key of keys) {
+      if (!shouldExcludeSetting(key)) {
+        try {
+          // Create a new transaction for each key
+          const value = await new Promise((resolve, reject) => {
+            const transaction = db.transaction("keyval", "readonly");
+            const store = transaction.objectStore("keyval");
+            const request = store.get(key);
 
-          request.onerror = () => reject(request.error);
-          request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => resolve(request.result);
+          });
 
-          // Handle transaction completion
-          transaction.oncomplete = () => {
-            if (!request.result) resolve(undefined);
-          };
+          if (value !== undefined) {
+            const hash = await generateContentHash(value);
+            const metadata = localMetadata.settings.items[key];
 
-          transaction.onerror = () => {
-            reject(transaction.error);
-          };
-        });
-
-        if (value !== undefined) {
-          const hash = await generateContentHash(value);
-          const metadata = localMetadata.settings.items[key];
-
-          if (!metadata || metadata.hash !== hash) {
-            await handleSettingChange(key, value, "indexeddb");
+            if (!metadata || metadata.hash !== hash) {
+              queueOperation("settings-sync", () =>
+                handleSettingChange(key, value, "indexeddb")
+              );
+            }
           }
+        } catch (error) {
+          logToConsole("error", `Error checking IndexedDB key ${key}:`, error);
         }
-      } catch (error) {
-        logToConsole("error", `Error checking IndexedDB key ${key}:`, error);
-        // Don't reset persistentDB here as the connection might still be valid
       }
     }
+
+    db.close();
   } catch (error) {
-    logToConsole("error", "Failed to check IndexedDB changes:", error);
-    persistentDB = null; // Only reset connection on critical errors
+    logToConsole("error", "Error checking IndexedDB changes:", error);
   }
 }
 
 // Handle setting change
 async function handleSettingChange(key, value, source) {
-  const hash = await generateContentHash(value);
-
-  // Check if the value has actually changed
-  const existingMetadata = localMetadata.settings.items[key];
-  if (existingMetadata && existingMetadata.hash === hash) {
-    logToConsole("info", `Setting ${key} unchanged, skipping sync`);
+  if (shouldExcludeSetting(key)) {
     return;
   }
-
-  logToConsole("info", `Setting changed: ${key}`);
-
-  localMetadata.settings.items[key] = {
-    hash,
-    lastModified: Date.now(),
-    lastSynced: 0,
-    source,
-  };
-
-  localMetadata.settings.lastModified = Date.now();
-  await saveLocalMetadata();
 
   // Queue settings-specific sync operation
   if (config.syncMode === "sync") {
     queueOperation("settings-sync", async () => {
-      // Only sync settings, not chats
       try {
-        // Download cloud metadata (only needed for updating metadata)
-        const cloudMetadataObj = await downloadFromS3("metadata.json");
-        if (!cloudMetadataObj) return;
+        // Download cloud metadata
+        const cloudMetadata = await downloadCloudMetadata();
+        if (!cloudMetadata) return;
 
-        let cloudMetadata = JSON.parse(
-          typeof cloudMetadataObj.data === "string"
-            ? cloudMetadataObj.data
-            : new TextDecoder().decode(cloudMetadataObj.data)
-        );
-
-        // Prepare a complete collection of all monitored settings
+        // Prepare settings data
         const settingsToUpload = {};
-
-        // Collect all monitored settings (both localStorage and IndexedDB)
-        // This is similar to the initial settings sync approach
-
-        // Add monitored localStorage settings
-        for (const settingKey of MONITORED_ITEMS.localStorage) {
-          const settingValue = localStorage.getItem(settingKey);
-          if (settingValue !== null) {
-            settingsToUpload[settingKey] = {
-              data: settingValue,
-              source: "localStorage",
-              lastModified: Date.now(),
-            };
-          }
-        }
-
-        // Add monitored IndexedDB settings
-        for (const settingKey of MONITORED_ITEMS.indexedDB) {
-          const settingValue = await getIndexedDBValue(settingKey);
-          if (settingValue !== undefined) {
-            settingsToUpload[settingKey] = {
-              data: settingValue,
-              source: "indexeddb",
-              lastModified: Date.now(),
-            };
-          }
-        }
-
-        // Check if we have any settings to upload
-        if (Object.keys(settingsToUpload).length === 0) {
-          logToConsole("info", "No settings to upload, skipping sync");
-          return;
-        }
-
-        logToConsole(
-          "info",
-          `Performing complete settings sync to cloud (${
-            Object.keys(settingsToUpload).length
-          } settings)`
-        );
-
-        const settingsData = JSON.stringify(settingsToUpload);
-        let uploadData;
-        let uploadMetadata = {
-          version: EXTENSION_VERSION,
-          timestamp: String(Date.now()),
-          type: "settings",
-          encrypted: "true",
+        settingsToUpload[key] = {
+          data: typeof value === "string" ? value : JSON.stringify(value),
+          source: source,
+          lastModified: Date.now(),
         };
 
-        // Always encrypt settings data
-        const encryptedResult = await encryptData(settingsData);
-        uploadData = encryptedResult;
-
-        await uploadToS3("settings.json", uploadData, uploadMetadata);
+        // Encrypt and upload settings
+        const encryptedData = await encryptData(settingsToUpload);
+        await uploadToS3("settings.json", encryptedData, {
+          ContentType: "application/json",
+          ServerSideEncryption: "AES256",
+        });
 
         // Update metadata
-        if (!cloudMetadata.settings) {
-          cloudMetadata.settings = {
-            items: {},
-            lastModified: Date.now(),
-            syncedAt: Date.now(),
-          };
-        }
+        cloudMetadata.settings = {
+          lastModified: Date.now(),
+          syncedAt: Date.now(),
+        };
 
-        // Update cloud metadata timestamp
-        cloudMetadata.settings.lastModified = Date.now();
-
-        // Upload updated metadata to cloud
         await uploadToS3(
           "metadata.json",
-          new TextEncoder().encode(JSON.stringify(cloudMetadata))
-        );
-
-        // Update local sync status for all settings
-        for (const settingKey in settingsToUpload) {
-          if (localMetadata.settings.items[settingKey]) {
-            localMetadata.settings.items[settingKey].lastSynced = Date.now();
+          new TextEncoder().encode(JSON.stringify(cloudMetadata)),
+          {
+            ContentType: "application/json",
+            ServerSideEncryption: "AES256",
           }
-        }
-
-        localMetadata.settings.syncedAt = Date.now();
-        await saveLocalMetadata();
-
-        logToConsole(
-          "success",
-          `Complete settings sync to cloud successful (${
-            Object.keys(settingsToUpload).length
-          } settings)`
         );
+
+        logToConsole("success", `Synced setting change for ${key}`);
       } catch (error) {
         logToConsole(
           "error",
-          `Failed to sync settings: ${error.message}`,
+          `Error syncing setting change for ${key}:`,
           error
         );
       }
@@ -4312,36 +4241,25 @@ async function downloadSettingsFromCloud() {
 }
 
 async function uploadSettingsToCloud() {
-  logToConsole("upload", "Uploading settings.json to cloud");
-
   try {
     const s3 = initializeS3Client();
     const settingsData = {};
 
-    // Exclude security-related keys
-    const excludeKeys = [
-      "aws-access-key",
-      "aws-secret-key",
-      "encryption-key",
-      "aws-endpoint",
-      "aws-region",
-      "aws-bucket",
-      "chat-sync-metadata",
-    ];
-
-    // Get localStorage settings
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (
-        !excludeKeys.includes(key) &&
-        !key.startsWith("CHAT_") &&
-        isNaN(key)
-      ) {
-        settingsData[key] = localStorage.getItem(key);
+    // Get all localStorage items
+    for (const key of Object.keys(localStorage)) {
+      if (!shouldExcludeSetting(key)) {
+        const value = localStorage.getItem(key);
+        if (value !== null) {
+          settingsData[key] = {
+            data: value,
+            source: "localStorage",
+            lastModified: Date.now(),
+          };
+        }
       }
     }
 
-    // Get all IndexedDB keys
+    // Get all IndexedDB items
     const db = await openIndexedDB();
     const transaction = db.transaction("keyval", "readonly");
     const store = transaction.objectStore("keyval");
@@ -4351,31 +4269,28 @@ async function uploadSettingsToCloud() {
       request.onsuccess = () => resolve(request.result);
     });
 
-    // Process each IndexedDB key
     for (const key of keys) {
-      if (
-        !excludeKeys.includes(key) &&
-        !key.startsWith("CHAT_") &&
-        isNaN(key)
-      ) {
+      if (!shouldExcludeSetting(key)) {
         try {
           const value = await getIndexedDBKey(key);
           if (value !== undefined) {
-            // Properly serialize complex objects
             try {
-              if (typeof value === "string") {
-                settingsData[key] = value;
-              } else {
-                settingsData[key] = JSON.stringify(value);
-                logToConsole("info", `Serialized complex object for ${key}`);
-              }
+              settingsData[key] = {
+                data: typeof value === "string" ? value : JSON.stringify(value),
+                source: "indexeddb",
+                lastModified: Date.now(),
+              };
             } catch (serializeError) {
               logToConsole(
                 "error",
                 `Failed to serialize ${key}, storing as string`,
                 serializeError
               );
-              settingsData[key] = JSON.stringify(String(value));
+              settingsData[key] = {
+                data: String(value),
+                source: "indexeddb",
+                lastModified: Date.now(),
+              };
             }
           }
         } catch (error) {
@@ -4384,22 +4299,20 @@ async function uploadSettingsToCloud() {
       }
     }
 
-    // Close the database connection
     db.close();
 
-    // Encrypt settings data
-    const encryptedData = await encryptData(settingsData);
+    // Check if we have any settings to upload
+    if (Object.keys(settingsData).length === 0) {
+      logToConsole("info", "No settings to upload, skipping sync");
+      return true;
+    }
 
-    // Upload to S3
-    const params = {
-      Bucket: config.bucketName,
-      Key: "settings.json",
-      Body: encryptedData,
+    // Encrypt and upload settings
+    const encryptedData = await encryptData(settingsData);
+    await uploadToS3("settings.json", encryptedData, {
       ContentType: "application/json",
       ServerSideEncryption: "AES256",
-    };
-
-    await s3.putObject(params).promise();
+    });
 
     logToConsole("success", "Uploaded settings to cloud", {
       settingsCount: Object.keys(settingsData).length,
