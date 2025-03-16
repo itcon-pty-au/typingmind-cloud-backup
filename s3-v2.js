@@ -660,7 +660,6 @@ async function checkForChanges() {
           "Local changes detected - will be backed up in next interval"
         );
       }
-
     }
   } finally {
     operationState.isCheckingChanges = false;
@@ -2268,8 +2267,6 @@ function startSyncInterval() {
         }
       }
     }
-
-
   }, interval);
 
   logToConsole(
@@ -2621,14 +2618,11 @@ async function syncFromCloud() {
 
     operationState.lastError = null; // Clear any previous errors
     updateSyncStatus(); // Show success status
-
-
   } catch (error) {
     operationState.lastError = error;
     logToConsole("error", "Sync from cloud failed:", error);
     updateSyncStatus(); // Show error status
     throw error;
-
   } finally {
     operationState.isImporting = false;
     updateSyncStatus(); // Update final status
@@ -2740,15 +2734,11 @@ async function syncToCloud() {
 
     operationState.lastError = null; // Clear any previous errors
     updateSyncStatus(); // Show success status
-
-
   } catch (error) {
     operationState.lastError = error;
     logToConsole("error", "Sync to cloud failed:", error);
     updateSyncStatus(); // Show error status
     throw error;
-
-
   } finally {
     operationState.isExporting = false;
     updateSyncStatus(); // Update final status
