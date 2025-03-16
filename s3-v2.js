@@ -660,8 +660,7 @@ async function checkForChanges() {
           "Local changes detected - will be backed up in next interval"
         );
       }
-      // Update sync status when changes are detected
-      throttledCheckSyncStatus();
+
     }
   } finally {
     operationState.isCheckingChanges = false;
@@ -678,6 +677,8 @@ async function setupLocalStorageChangeListener() {
     // Mark settings as changed, will be synced during interval
     pendingSettingsChanges = true;
     logToConsole("info", `LocalStorage change detected: ${e.key}`);
+    // Immediately update sync status to show out-of-sync
+    throttledCheckSyncStatus();
   });
 
   // Also monitor for programmatic changes
@@ -689,6 +690,8 @@ async function setupLocalStorageChangeListener() {
     if (!shouldExcludeSetting(key) && oldValue !== value) {
       pendingSettingsChanges = true;
       logToConsole("info", `LocalStorage programmatic change detected: ${key}`);
+      // Immediately update sync status to show out-of-sync
+      throttledCheckSyncStatus();
     }
   };
 }
@@ -2266,8 +2269,7 @@ function startSyncInterval() {
       }
     }
 
-    // Update sync status based on local state only
-    throttledCheckSyncStatus();
+
   }, interval);
 
   logToConsole(
@@ -2620,16 +2622,13 @@ async function syncFromCloud() {
     operationState.lastError = null; // Clear any previous errors
     updateSyncStatus(); // Show success status
 
-    // Check sync status after sync
-    throttledCheckSyncStatus();
+
   } catch (error) {
     operationState.lastError = error;
     logToConsole("error", "Sync from cloud failed:", error);
     updateSyncStatus(); // Show error status
     throw error;
 
-    // Check sync status after error
-    throttledCheckSyncStatus();
   } finally {
     operationState.isImporting = false;
     updateSyncStatus(); // Update final status
@@ -2742,16 +2741,14 @@ async function syncToCloud() {
     operationState.lastError = null; // Clear any previous errors
     updateSyncStatus(); // Show success status
 
-    // Check sync status after sync
-    throttledCheckSyncStatus();
+
   } catch (error) {
     operationState.lastError = error;
     logToConsole("error", "Sync to cloud failed:", error);
     updateSyncStatus(); // Show error status
     throw error;
 
-    // Check sync status after error
-    throttledCheckSyncStatus();
+
   } finally {
     operationState.isExporting = false;
     updateSyncStatus(); // Update final status
@@ -2824,6 +2821,8 @@ async function updateChatMetadata(
 
   if (isModified) {
     localMetadata.chats[chatId].syncedAt = 0;
+    // Immediately update sync status to show out-of-sync
+    throttledCheckSyncStatus();
   }
 
   await saveLocalMetadata();
@@ -4322,16 +4321,17 @@ async function checkIndexedDBChanges() {
 
 // Handle setting change
 async function handleSettingChange(key, value, source) {
-  if (shouldExcludeSetting(key)) {
-    return;
-  }
+  if (shouldExcludeSetting(key)) return;
 
-  // Just mark that we have pending changes, actual sync will happen during interval
+  // Mark settings as changed
   pendingSettingsChanges = true;
-  logToConsole(
-    "info",
-    `Setting ${key} changed, will sync during next interval`
-  );
+  localMetadata.settings.lastModified = Date.now();
+  await saveLocalMetadata();
+
+  // Immediately update sync status to show out-of-sync
+  throttledCheckSyncStatus();
+
+  logToConsole("info", `Setting change detected from ${source}: ${key}`);
 }
 
 async function cleanupMetadataVersions() {
