@@ -2876,9 +2876,10 @@ function insertSyncButton() {
   const button = document.createElement("button");
   button.id = "cloud-sync-button";
   button.className =
-    "z-1 flex flex-col items-center justify-center px-2 py-1 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-lg transition-colors";
+    "min-w-[58px] sm:min-w-0 sm:aspect-auto aspect-square cursor-default h-12 md:h-[50px] flex-col justify-start items-start inline-flex focus:outline-0 focus:text-white w-full";
+
   button.innerHTML = `
-    <span class="flex flex-col items-center justify-center">
+    <span class="text-white/70 hover:bg-white/20 self-stretch h-12 md:h-[50px] px-0.5 py-1.5 rounded-xl flex-col justify-start items-center gap-1.5 flex transition-colors">
       <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">
         ${
           currentMode === "disabled"
