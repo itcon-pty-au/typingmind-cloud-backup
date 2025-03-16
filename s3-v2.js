@@ -1662,13 +1662,13 @@ async function checkAndPerformDailyBackup() {
 
     // If no backup has been performed today
     if (!lastBackup || lastBackup.toDateString() !== now.toDateString()) {
-      logToConsole("info", "Starting daily backup...");
+      //logToConsole("info", "Starting daily backup...");
       await performDailyBackup();
       // Update last backup time
       localStorage.setItem("lastDailyBackup", now.getTime().toString());
-      logToConsole("success", "Daily backup completed");
+      //logToConsole("success", "Daily backup completed");
     } else {
-      logToConsole("skip", "Daily backup already performed today");
+      //logToConsole("skip", "Daily backup already performed today");
     }
   } catch (error) {
     logToConsole("error", "Error checking/performing daily backup:", error);
@@ -1677,7 +1677,7 @@ async function checkAndPerformDailyBackup() {
 
 // Perform daily backup
 async function performDailyBackup() {
-  logToConsole("start", "Starting daily backup...");
+  //logToConsole("start", "Starting daily backup...");
   backupState.isBackupInProgress = true;
 
   try {
