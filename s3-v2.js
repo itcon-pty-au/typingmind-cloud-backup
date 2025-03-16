@@ -2483,9 +2483,6 @@ async function syncFromCloud() {
               } else {
                 // Handle localStorage settings
                 let value = settingData.data;
-                if (typeof value === "object") {
-                  value = JSON.stringify(value);
-                }
                 localStorage.setItem(key, value);
                 logToConsole("info", `Updated localStorage setting: ${key}`);
               }
