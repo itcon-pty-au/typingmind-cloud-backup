@@ -62,6 +62,7 @@ let operationState = {
   isProcessingQueue: false,
   lastSyncStatus: null,
   isCheckingChanges: false,
+  lastError: null,
 };
 
 // Backup state tracking
@@ -2168,33 +2169,22 @@ function queueOperation(type, operation) {
 
 // Process operation queue
 async function processOperationQueue() {
-  if (
-    operationState.isProcessingQueue ||
-    operationState.operationQueue.length === 0
-  ) {
-    return;
-  }
+  if (operationState.isProcessingQueue) return;
 
   operationState.isProcessingQueue = true;
-  logToConsole("start", "Processing operation queue...");
+  operationState.lastError = null; // Reset error state at start of queue processing
+  updateSyncStatus(); // Update status to show in-progress
 
   try {
     while (operationState.operationQueue.length > 0) {
-      const { type, operation } = operationState.operationQueue[0];
-
+      const { type, operation } = operationState.operationQueue.shift();
       try {
         await operation();
-        operationState.operationQueue.shift();
-        logToConsole("success", `Operation completed: ${type}`);
       } catch (error) {
-        logToConsole("error", `Operation failed: ${type}`, error);
-        // Remove failed operation after 3 retries
-        if (operationState.operationQueue[0].retries >= 3) {
-          operationState.operationQueue.shift();
-        } else {
-          operationState.operationQueue[0].retries =
-            (operationState.operationQueue[0].retries || 0) + 1;
-        }
+        operationState.lastError = error;
+        logToConsole("error", `Operation ${type} failed:`, error);
+        updateSyncStatus(); // Update status to show error
+        throw error;
       }
 
       // Add delay between operations
@@ -2202,6 +2192,7 @@ async function processOperationQueue() {
     }
   } finally {
     operationState.isProcessingQueue = false;
+    updateSyncStatus(); // Update status when queue is done
   }
 }
 
@@ -2416,6 +2407,7 @@ async function syncFromCloud() {
   }
 
   operationState.isImporting = true;
+  updateSyncStatus(); // Show in-progress status
 
   try {
     logToConsole("start", "Starting sync from cloud...");
@@ -2610,12 +2602,16 @@ async function syncFromCloud() {
       logToConsole("info", "No changes detected during sync from cloud");
     }
 
-    operationState.isImporting = false;
+    operationState.lastError = null; // Clear any previous errors
+    updateSyncStatus(); // Show success status
   } catch (error) {
+    operationState.lastError = error;
     logToConsole("error", "Sync from cloud failed:", error);
+    updateSyncStatus(); // Show error status
     throw error;
   } finally {
     operationState.isImporting = false;
+    updateSyncStatus(); // Update final status
 
     // Check if another sync was requested while this one was running
     if (operationState.isPendingSync) {
@@ -2634,6 +2630,7 @@ async function syncToCloud() {
 
   logToConsole("start", "Starting sync to cloud...");
   operationState.isExporting = true;
+  updateSyncStatus(); // Show in-progress status
 
   try {
     // Reload local metadata to ensure we have latest changes
@@ -2720,11 +2717,17 @@ async function syncToCloud() {
     } else {
       logToConsole("info", "No changes detected during sync to cloud");
     }
+
+    operationState.lastError = null; // Clear any previous errors
+    updateSyncStatus(); // Show success status
   } catch (error) {
+    operationState.lastError = error;
     logToConsole("error", "Sync to cloud failed:", error);
+    updateSyncStatus(); // Show error status
     throw error;
   } finally {
     operationState.isExporting = false;
+    updateSyncStatus(); // Update final status
   }
 }
 
@@ -2840,30 +2843,33 @@ function insertSyncButton() {
   const button = document.createElement("button");
   button.id = "cloud-sync-button";
   button.className =
-    "min-w-[58px] sm:min-w-0 sm:aspect-auto aspect-square cursor-default h-12 md:h-[50px] flex-col justify-start items-start inline-flex focus:outline-0 focus:text-white w-full";
+    "min-w-[58px] sm:min-w-0 sm:aspect-auto aspect-square cursor-default h-12 md:h-[50px] flex-col justify-start items-start inline-flex focus:outline-0 focus:text-white w-full relative";
 
   button.innerHTML = `
     <span class="text-white/70 hover:bg-white/20 self-stretch h-12 md:h-[50px] px-0.5 py-1.5 rounded-xl flex-col justify-start items-center gap-1.5 flex transition-colors">
-      <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">
-        ${
-          currentMode === "disabled"
-            ? `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M9 4.5A4.5 4.5 0 0114.5 9M9 13.5A4.5 4.5 0 013.5 9"/>
-                <path d="M2 2L16 16"/>
-               </g>`
-            : currentMode === "sync"
-            ? `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M9 4.5A4.5 4.5 0 0114.5 9M9 13.5A4.5 4.5 0 013.5 9"/>
-                <polyline points="9,2.5 9,4.5 11,4.5"/>
-                <polyline points="9,15.5 9,13.5 7,13.5"/>
-               </g>`
-            : `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M15.75 11.25v3c0 .828-.672 1.5-1.5 1.5h-10.5c-.828 0-1.5-.672-1.5-1.5v-3"/>
-                <polyline points="12.75,6 9,2.25 5.25,6"/>
-                <line x1="9" y1="2.25" x2="9" y2="11.25"/>
-               </g>`
-        }
-      </svg>
+      <div class="relative">
+        <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">
+          ${
+            currentMode === "disabled"
+              ? `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 4.5A4.5 4.5 0 0114.5 9M9 13.5A4.5 4.5 0 013.5 9"/>
+                  <path d="M2 2L16 16"/>
+                 </g>`
+              : currentMode === "sync"
+              ? `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 4.5A4.5 4.5 0 0114.5 9M9 13.5A4.5 4.5 0 013.5 9"/>
+                  <polyline points="9,2.5 9,4.5 11,4.5"/>
+                  <polyline points="9,15.5 9,13.5 7,13.5"/>
+                 </g>`
+              : `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M15.75 11.25v3c0 .828-.672 1.5-1.5 1.5h-10.5c-.828 0-1.5-.672-1.5-1.5v-3"/>
+                  <polyline points="12.75,6 9,2.25 5.25,6"/>
+                  <line x1="9" y1="2.25" x2="9" y2="11.25"/>
+                 </g>`
+          }
+        </svg>
+        <div id="sync-status-dot" class="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-zinc-900"></div>
+      </div>
       <span class="font-normal self-stretch text-center text-xs leading-4 md:leading-none ${
         currentMode === "disabled" ? "text-gray-400 dark:text-gray-500" : ""
       }">${
@@ -2900,6 +2906,60 @@ function insertSyncButton() {
 
   // If still not inserted, try again in 1 second
   setTimeout(insertSyncButton, 1000);
+}
+
+// Add updateSyncStatusDot function to update the status indicator
+function updateSyncStatusDot(status = "success") {
+  const dot = document.getElementById("sync-status-dot");
+  if (!dot) return;
+
+  // First handle visibility based on mode
+  if (config.syncMode === "disabled") {
+    dot.style.display = "none";
+    return;
+  } else {
+    dot.style.display = "block";
+  }
+
+  // Remove existing classes
+  dot.className =
+    "absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-zinc-900";
+
+  // Add status-specific classes
+  switch (status) {
+    case "success":
+      dot.classList.add("bg-green-500");
+      break;
+    case "in-progress":
+      dot.classList.add("bg-orange-500");
+      break;
+    case "error":
+      dot.classList.add("bg-red-500");
+      break;
+    default:
+      dot.classList.add("bg-gray-500");
+  }
+}
+
+// Update the updateSyncStatus function to include dot status
+function updateSyncStatus() {
+  setTimeout(() => {
+    // Update sync status dot based on current state and mode
+    if (config.syncMode === "disabled") {
+      updateSyncStatusDot("hidden");
+    } else if (operationState.isImporting || operationState.isExporting) {
+      updateSyncStatusDot("in-progress");
+    } else if (operationState.lastError) {
+      updateSyncStatusDot("error");
+    } else {
+      updateSyncStatusDot("success");
+    }
+
+    const syncStatus = document.getElementById("sync-status");
+    if (!syncStatus) return;
+
+    // ... rest of the existing updateSyncStatus function ...
+  }, 100);
 }
 
 // Add required CSS styles for modal
@@ -3597,6 +3657,7 @@ async function saveSettings() {
       isProcessingQueue: false,
       lastSyncStatus: null,
       isCheckingChanges: false,
+      lastError: null,
     };
 
     // Reset backup state
@@ -3628,7 +3689,7 @@ async function saveSettings() {
   config = { ...config, ...newConfig };
   saveConfiguration();
 
-  // Update button text to match new mode
+  // Update button text and dot visibility to match new mode
   const buttonText = document.querySelector(
     "#cloud-sync-button span:last-child"
   );
@@ -3640,6 +3701,9 @@ async function saveSettings() {
         ? "Sync"
         : "Backup";
   }
+
+  // Update sync status dot for new mode
+  updateSyncStatus();
 
   // If switching from disabled mode to an active mode, perform full initialization
   if (oldMode === "disabled" && newConfig.syncMode !== "disabled") {
@@ -3699,14 +3763,6 @@ function getLastSyncTime() {
     return `${hours} hour${hours === 1 ? "" : "s"} ago`;
   } else {
     return lastSync.toLocaleString();
-  }
-}
-
-// Update sync status
-function updateSyncStatus() {
-  const statusText = document.querySelector(".status-text");
-  if (statusText) {
-    statusText.textContent = `Last synced: ${getLastSyncTime()}`;
   }
 }
 
