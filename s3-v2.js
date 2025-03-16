@@ -2600,11 +2600,17 @@ async function syncToCloud() {
       if (
         localChatMeta.deleted === true &&
         (!cloudMetadata.chats[chatId]?.deleted ||
-          localChatMeta.tombstoneVersion >
-            (cloudMetadata.chats[chatId]?.tombstoneVersion || 0))
+          (cloudMetadata.chats[chatId]?.deleted === true &&
+            localChatMeta.tombstoneVersion >
+              (cloudMetadata.chats[chatId]?.tombstoneVersion || 0) &&
+            localChatMeta.syncedAt === 0)) // Only delete if not synced
       ) {
         await deleteChatFromCloud(chatId);
         hasChanges = true;
+
+        // Update local metadata to mark as synced
+        localMetadata.chats[chatId].syncedAt = Date.now();
+        await saveLocalMetadata();
       }
     }
 
