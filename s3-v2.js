@@ -659,8 +659,9 @@ async function checkForChanges() {
           "info",
           "Local changes detected - will be backed up in next interval"
         );
-        // The changes are tracked in metadata and will be handled by the sync interval
       }
+      // Update sync status when changes are detected
+      throttledCheckSyncStatus();
     }
   } finally {
     operationState.isCheckingChanges = false;
@@ -2427,9 +2428,17 @@ async function syncFromCloud() {
     // Check for settings changes first
     if (
       cloudMetadata.settings &&
-      cloudMetadata.settings.lastModified > localMetadata.settings.syncedAt
+      (!localMetadata.settings.syncedAt ||
+        cloudMetadata.settings.lastModified > localMetadata.settings.syncedAt)
     ) {
-      logToConsole("info", "Settings changes detected in cloud");
+      logToConsole("info", "Settings changes detected in cloud", {
+        cloudLastModified: new Date(
+          cloudMetadata.settings.lastModified
+        ).toLocaleString(),
+        localSyncedAt: localMetadata.settings.syncedAt
+          ? new Date(localMetadata.settings.syncedAt).toLocaleString()
+          : "never",
+      });
       const cloudSettings = await downloadSettingsFromCloud();
       if (cloudSettings) {
         // Apply settings while preserving security keys
@@ -2973,7 +2982,51 @@ function updateSyncStatus() {
     const syncStatus = document.getElementById("sync-status");
     if (!syncStatus) return;
 
-    // ... rest of the existing updateSyncStatus function ...
+    // Update sync button text and status
+    if (config.syncMode === "disabled") {
+      syncStatus.textContent = "Sync disabled";
+      syncStatus.classList.remove(
+        "text-green-500",
+        "text-red-500",
+        "text-yellow-500"
+      );
+      syncStatus.classList.add("text-gray-500");
+    } else if (operationState.isImporting) {
+      syncStatus.textContent = "Syncing from cloud...";
+      syncStatus.classList.remove(
+        "text-green-500",
+        "text-red-500",
+        "text-gray-500"
+      );
+      syncStatus.classList.add("text-yellow-500");
+    } else if (operationState.isExporting) {
+      syncStatus.textContent = "Syncing to cloud...";
+      syncStatus.classList.remove(
+        "text-green-500",
+        "text-red-500",
+        "text-gray-500"
+      );
+      syncStatus.classList.add("text-yellow-500");
+    } else if (operationState.lastError) {
+      syncStatus.textContent = "Sync error";
+      syncStatus.classList.remove(
+        "text-green-500",
+        "text-yellow-500",
+        "text-gray-500"
+      );
+      syncStatus.classList.add("text-red-500");
+    } else {
+      const lastSync = getLastSyncTime();
+      syncStatus.textContent = lastSync
+        ? `Last synced ${lastSync}`
+        : "Ready to sync";
+      syncStatus.classList.remove(
+        "text-red-500",
+        "text-yellow-500",
+        "text-gray-500"
+      );
+      syncStatus.classList.add("text-green-500");
+    }
   }, 100);
 }
 
@@ -4579,7 +4632,11 @@ async function downloadCloudMetadata() {
           : new TextDecoder().decode(content)
       );
 
-      logToConsole("success", "Downloaded cloud metadata");
+      logToConsole("success", "Downloaded cloud metadata", {
+        chats: Object.keys(metadata.chats || {}).length,
+        lastSyncTime: new Date(metadata.lastSyncTime).toLocaleString(),
+        hasSettings: !!metadata.settings,
+      });
       return metadata;
     } catch (error) {
       if (error.code === "NoSuchKey") {
@@ -4929,60 +4986,5 @@ function updateSyncStatusDot(status) {
       break;
     default:
       dot.classList.add("bg-gray-500");
-  }
-}
-
-// Update the sync status check points
-async function checkForChanges() {
-  if (operationState.isImporting || operationState.isExporting) {
-    logToConsole("skip", "Skipping change check - operation in progress");
-    return;
-  }
-
-  // Add a check to prevent concurrent executions
-  if (operationState.isCheckingChanges) {
-    logToConsole("skip", "Change check already in progress");
-    return;
-  }
-
-  operationState.isCheckingChanges = true;
-  try {
-    logToConsole("start", "Checking for changes...");
-
-    // Get latest chats without reloading metadata
-    const chats = await getAllChatsFromIndexedDB();
-    let hasChanges = false;
-
-    for (const chat of chats) {
-      if (!chat.id) continue;
-
-      const currentHash = await generateChatHash(chat);
-      const lastSeen = lastSeenUpdates[chat.id];
-
-      if (!lastSeen || lastSeen.hash !== currentHash) {
-        hasChanges = true;
-        await updateChatMetadata(chat.id, true);
-        lastSeenUpdates[chat.id] = {
-          updatedAt: Date.now(),
-          hash: currentHash,
-        };
-      }
-    }
-
-    if (hasChanges) {
-      if (config.syncMode === "sync") {
-        logToConsole("info", "Local changes detected - queueing sync to cloud");
-        queueOperation("local-changes-sync", syncToCloud);
-      } else if (config.syncMode === "backup") {
-        logToConsole(
-          "info",
-          "Local changes detected - will be backed up in next interval"
-        );
-      }
-      // Update sync status when changes are detected
-      throttledCheckSyncStatus();
-    }
-  } finally {
-    operationState.isCheckingChanges = false;
   }
 }
