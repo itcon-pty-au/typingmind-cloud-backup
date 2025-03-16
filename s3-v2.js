@@ -638,9 +638,19 @@ async function checkForChanges() {
       if (!chat.id) continue;
 
       const currentHash = await generateChatHash(chat);
-      const lastSeen = lastSeenUpdates[chat.id];
+      const localChatMeta = localMetadata.chats[chat.id];
 
-      if (!lastSeen || lastSeen.hash !== currentHash) {
+      // Consider a chat changed if:
+      // 1. No last seen hash exists
+      // 2. Hash has changed from last seen
+      // 3. Chat has never been synced (syncedAt is 0 or undefined)
+      // 4. Chat has been modified since last sync
+      if (
+        !lastSeenUpdates[chat.id] ||
+        currentHash !== lastSeenUpdates[chat.id].hash ||
+        !localChatMeta?.syncedAt ||
+        (localChatMeta && localChatMeta.lastModified > localChatMeta.syncedAt)
+      ) {
         hasChanges = true;
         await updateChatMetadata(chat.id, true);
         lastSeenUpdates[chat.id] = {
@@ -657,8 +667,9 @@ async function checkForChanges() {
       } else if (config.syncMode === "backup") {
         logToConsole(
           "info",
-          "Local changes detected - will be backed up in next interval"
+          "Local changes detected - queueing backup to cloud"
         );
+        queueOperation("backup-modified-chats", syncToCloud);
       }
     }
   } finally {
