@@ -3946,8 +3946,9 @@ async function generateContentHash(content) {
 
 // Modified checkIndexedDBChanges to handle transactions properly
 async function checkIndexedDBChanges() {
+  let db = null;
   try {
-    const db = await getPersistentDB();
+    db = await getPersistentDB();
 
     // Get all keys
     const transaction = db.transaction("keyval", "readonly");
@@ -3962,7 +3963,6 @@ async function checkIndexedDBChanges() {
     for (const key of keys) {
       if (!shouldExcludeSetting(key)) {
         try {
-          // Create a new transaction for each key
           const value = await new Promise((resolve, reject) => {
             const transaction = db.transaction("keyval", "readonly");
             const store = transaction.objectStore("keyval");
@@ -3984,13 +3984,15 @@ async function checkIndexedDBChanges() {
           }
         } catch (error) {
           logToConsole("error", `Error checking IndexedDB key ${key}:`, error);
+          // Don't break the loop for individual key errors
+          continue;
         }
       }
     }
-
-    db.close();
   } catch (error) {
     logToConsole("error", "Error checking IndexedDB changes:", error);
+    // Reset the persistent connection on critical errors
+    persistentDB = null;
   }
 }
 
