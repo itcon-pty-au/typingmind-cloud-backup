@@ -2450,21 +2450,22 @@ async function syncFromCloud() {
           "chat-sync-metadata",
         ];
 
-        for (const [key, value] of Object.entries(cloudSettings)) {
+        // Process each setting from cloud
+        for (const [key, settingData] of Object.entries(cloudSettings)) {
           if (!preserveKeys.includes(key)) {
-            if (key.startsWith("TM_use")) {
-              try {
-                // Parse serialized complex objects
-                let valueToStore = value;
+            try {
+              if (key.startsWith("TM_use")) {
+                // Handle IndexedDB settings
+                let valueToStore = settingData.data;
                 if (
-                  typeof value === "string" &&
-                  (value.startsWith("{") || value.startsWith("["))
+                  typeof valueToStore === "string" &&
+                  (valueToStore.startsWith("{") || valueToStore.startsWith("["))
                 ) {
                   try {
-                    valueToStore = JSON.parse(value);
+                    valueToStore = JSON.parse(valueToStore);
                     logToConsole(
                       "info",
-                      `Successfully deserialized complex object for ${key}`
+                      `Successfully parsed complex object for ${key}`
                     );
                   } catch (parseError) {
                     logToConsole(
@@ -2475,23 +2476,21 @@ async function syncFromCloud() {
                   }
                 }
                 await setIndexedDBKey(key, valueToStore);
-              } catch (error) {
-                logToConsole(
-                  "error",
-                  `Error setting IndexedDB key ${key}`,
-                  error
-                );
-              }
-            } else {
-              // For localStorage, ensure we're storing the entire value, not splitting it
-              if (typeof value === "object") {
-                localStorage.setItem(key, JSON.stringify(value));
               } else {
+                // Handle localStorage settings
+                let value = settingData.data;
+                if (typeof value === "object") {
+                  value = JSON.stringify(value);
+                }
                 localStorage.setItem(key, value);
+                logToConsole("info", `Updated localStorage setting: ${key}`);
               }
+            } catch (error) {
+              logToConsole("error", `Error applying setting ${key}:`, error);
             }
           }
         }
+
         localMetadata.settings.syncedAt = cloudMetadata.settings.lastModified;
         saveLocalMetadata();
         hasChanges = true;
