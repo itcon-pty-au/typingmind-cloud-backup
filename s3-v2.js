@@ -2882,7 +2882,7 @@ function insertSyncButton() {
                  </g>`
           }
         </svg>
-        <div id="sync-status-dot" class="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-zinc-900 ${
+        <div id="sync-status-dot" class="absolute -top-1 -right-[-4px] w-2.5 h-2.5 rounded-full border border-zinc-900 ${
           currentMode === "disabled" ? "hidden" : ""
         }"></div>
       </div>
@@ -2890,7 +2890,7 @@ function insertSyncButton() {
         currentMode === "disabled" ? "text-gray-400 dark:text-gray-500" : ""
       }">${
     currentMode === "disabled"
-      ? "Disabled"
+      ? "Sync"
       : currentMode === "sync"
       ? "Sync"
       : "Backup"
