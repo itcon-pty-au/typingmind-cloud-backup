@@ -2901,7 +2901,7 @@ function insertSyncButton() {
         </svg>
         <div id="sync-status-dot" style="display: ${
           currentMode === "disabled" ? "none" : "block"
-        }" class="absolute -top-1 -right-[-4px] w-2.5 h-2.5 rounded-full border border-zinc-900"></div>
+        }" class="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-zinc-900"></div>
       </div>
       <span class="font-normal self-stretch text-center text-xs leading-4 md:leading-none ${
         currentMode === "disabled" ? "text-gray-400 dark:text-gray-500" : ""
