@@ -2188,8 +2188,17 @@ function startSyncInterval() {
           // Add localStorage settings
           for (const key of Object.keys(localStorage)) {
             if (!shouldExcludeSetting(key)) {
+              let value = localStorage.getItem(key);
+              // Try to parse JSON if it looks like JSON
+              if (value && (value.startsWith("{") || value.startsWith("["))) {
+                try {
+                  value = JSON.parse(value);
+                } catch (e) {
+                  // If parsing fails, use the original string value
+                }
+              }
               settingsToUpload[key] = {
-                data: localStorage.getItem(key),
+                data: value,
                 source: "localstorage",
                 lastModified: Date.now(),
               };
@@ -2211,8 +2220,7 @@ function startSyncInterval() {
               const value = await getIndexedDBValue(key);
               if (value !== undefined) {
                 settingsToUpload[key] = {
-                  data:
-                    typeof value === "string" ? value : JSON.stringify(value),
+                  data: value,
                   source: "indexeddb",
                   lastModified: Date.now(),
                 };
@@ -2458,7 +2466,12 @@ async function syncFromCloud() {
                 );
               }
             } else {
-              localStorage.setItem(key, value);
+              // For localStorage, ensure we're storing the entire value, not splitting it
+              if (typeof value === "object") {
+                localStorage.setItem(key, JSON.stringify(value));
+              } else {
+                localStorage.setItem(key, value);
+              }
             }
           }
         }
@@ -4083,84 +4096,12 @@ async function handleSettingChange(key, value, source) {
     return;
   }
 
-  // Queue settings-specific sync operation
-  if (config.syncMode === "sync") {
-    queueOperation("settings-sync", async () => {
-      try {
-        // Download cloud metadata
-        const cloudMetadata = await downloadCloudMetadata();
-        if (!cloudMetadata) return;
-
-        // Collect all settings (both localStorage and IndexedDB)
-        const settingsToUpload = {};
-
-        // Add localStorage settings
-        for (const key of Object.keys(localStorage)) {
-          if (!shouldExcludeSetting(key)) {
-            settingsToUpload[key] = {
-              data: localStorage.getItem(key),
-              source: "localstorage",
-              lastModified: Date.now(),
-            };
-          }
-        }
-
-        // Add IndexedDB settings
-        const db = await getPersistentDB();
-        const transaction = db.transaction("keyval", "readonly");
-        const store = transaction.objectStore("keyval");
-        const keys = await new Promise((resolve, reject) => {
-          const request = store.getAllKeys();
-          request.onerror = () => reject(request.error);
-          request.onsuccess = () => resolve(request.result);
-        });
-
-        for (const key of keys) {
-          if (!shouldExcludeSetting(key)) {
-            const value = await getIndexedDBValue(key);
-            if (value !== undefined) {
-              settingsToUpload[key] = {
-                data: typeof value === "string" ? value : JSON.stringify(value),
-                source: "indexeddb",
-                lastModified: Date.now(),
-              };
-            }
-          }
-        }
-
-        // Encrypt and upload all settings
-        const encryptedData = await encryptData(settingsToUpload);
-        await uploadToS3("settings.json", encryptedData, {
-          ContentType: "application/json",
-          ServerSideEncryption: "AES256",
-        });
-
-        // Update metadata
-        cloudMetadata.settings = {
-          lastModified: Date.now(),
-          syncedAt: Date.now(),
-        };
-
-        await uploadToS3(
-          "metadata.json",
-          new TextEncoder().encode(JSON.stringify(cloudMetadata)),
-          {
-            ContentType: "application/json",
-            ServerSideEncryption: "AES256",
-          }
-        );
-
-        // Clear any pending settings-sync operations since we've handled them
-        operationState.operationQueue = operationState.operationQueue.filter(
-          (op) => op.name !== "settings-sync"
-        );
-
-        logToConsole("success", "Synced all settings to cloud");
-      } catch (error) {
-        logToConsole("error", "Error syncing settings to cloud:", error);
-      }
-    });
-  }
+  // Just mark that we have pending changes, actual sync will happen during interval
+  pendingSettingsChanges = true;
+  logToConsole(
+    "info",
+    `Setting ${key} changed, will sync during next interval`
+  );
 }
 
 async function cleanupMetadataVersions() {
