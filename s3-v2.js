@@ -2434,7 +2434,7 @@ async function syncFromCloud() {
 
         // Delete local chat if it exists
         if (localChatIds.has(chatId)) {
-          await deleteChatFromIndexedDB(chatId);
+          await deleteChatFromCloud(chatId);
           hasChanges = true;
         }
 
@@ -4200,18 +4200,62 @@ async function cleanupMetadataVersions() {
 }
 
 async function deleteChatFromCloud(chatId) {
+  logToConsole("cleanup", `Deleting chat ${chatId} from cloud`);
+
   try {
-    if (!isAwsConfigured()) {
-      throw new Error("AWS is not configured");
+    const s3 = initializeS3Client();
+
+    // First, ensure we have the latest cloud metadata
+    const cloudMetadata = await downloadCloudMetadata();
+
+    // Delete chat file from S3
+    const deleteParams = {
+      Bucket: config.bucketName,
+      Key: `chats/${chatId}.json`,
+    };
+
+    try {
+      await s3.deleteObject(deleteParams).promise();
+      logToConsole(
+        "success",
+        `Successfully deleted from S3: chats/${chatId}.json`
+      );
+    } catch (error) {
+      if (error.code !== "NoSuchKey") {
+        throw error;
+      }
+      logToConsole("info", `Chat file ${chatId} already deleted from S3`);
     }
 
-    // Delete the chat data from S3
-    const chatKey = `chats/${chatId}.json`;
-    await deleteFromS3(chatKey);
+    // Create or update the tombstone entry in cloud metadata
+    if (!cloudMetadata.chats) {
+      cloudMetadata.chats = {};
+    }
+
+    // Create a tombstone entry with complete information
+    cloudMetadata.chats[chatId] = {
+      deleted: true,
+      deletedAt: Date.now(),
+      lastModified: Date.now(),
+      syncedAt: Date.now(),
+      tombstoneVersion:
+        (cloudMetadata.chats[chatId]?.tombstoneVersion || 0) + 1,
+    };
+
+    // Upload updated metadata to cloud
+    await uploadToS3(
+      "metadata.json",
+      new TextEncoder().encode(JSON.stringify(cloudMetadata)),
+      {
+        ContentType: "application/json",
+        ServerSideEncryption: "AES256",
+      }
+    );
 
     logToConsole("success", `Successfully deleted chat ${chatId} from cloud`);
+    return true;
   } catch (error) {
-    logToConsole("error", `Failed to delete chat ${chatId} from cloud:`, error);
+    logToConsole("error", `Error deleting chat ${chatId} from cloud`, error);
     throw error;
   }
 }
