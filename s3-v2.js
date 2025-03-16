@@ -103,6 +103,9 @@ let cloudFileSize = 0;
 let localFileSize = 0;
 let isLocalDataModified = false;
 
+// Track settings changes between syncs
+let pendingSettingsChanges = false;
+
 // ==================== LOGGING SYSTEM ====================
 
 // Define log priority levels
@@ -615,12 +618,9 @@ async function setupLocalStorageChangeListener() {
       return;
     }
 
-    // Queue a settings sync operation
-    if (config.syncMode === "sync") {
-      queueOperation("settings-sync", () =>
-        handleSettingChange(e.key, e.newValue, "localStorage")
-      );
-    }
+    // Mark settings as changed, will be synced during interval
+    pendingSettingsChanges = true;
+    logToConsole("info", `LocalStorage change detected: ${e.key}`);
   });
 
   // Also monitor for programmatic changes
@@ -630,9 +630,8 @@ async function setupLocalStorageChangeListener() {
     originalSetItem.apply(this, arguments);
 
     if (!shouldExcludeSetting(key) && oldValue !== value) {
-      queueOperation("settings-sync", () =>
-        handleSettingChange(key, value, "localStorage")
-      );
+      pendingSettingsChanges = true;
+      logToConsole("info", `LocalStorage programmatic change detected: ${key}`);
     }
   };
 }
@@ -2174,8 +2173,83 @@ function startSyncInterval() {
     // Check for local changes
     await checkForChanges();
 
-    // If we're in sync mode and AWS is configured, also sync with cloud
+    // If we're in sync mode and AWS is configured, sync settings and chats
     if (config.syncMode === "sync" && isAwsConfigured()) {
+      // Sync settings if there are pending changes
+      if (pendingSettingsChanges) {
+        try {
+          // Download cloud metadata
+          const cloudMetadata = await downloadCloudMetadata();
+          if (!cloudMetadata) return;
+
+          // Collect all settings (both localStorage and IndexedDB)
+          const settingsToUpload = {};
+
+          // Add localStorage settings
+          for (const key of Object.keys(localStorage)) {
+            if (!shouldExcludeSetting(key)) {
+              settingsToUpload[key] = {
+                data: localStorage.getItem(key),
+                source: "localstorage",
+                lastModified: Date.now(),
+              };
+            }
+          }
+
+          // Add IndexedDB settings
+          const db = await getPersistentDB();
+          const transaction = db.transaction("keyval", "readonly");
+          const store = transaction.objectStore("keyval");
+          const keys = await new Promise((resolve, reject) => {
+            const request = store.getAllKeys();
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => resolve(request.result);
+          });
+
+          for (const key of keys) {
+            if (!shouldExcludeSetting(key)) {
+              const value = await getIndexedDBValue(key);
+              if (value !== undefined) {
+                settingsToUpload[key] = {
+                  data:
+                    typeof value === "string" ? value : JSON.stringify(value),
+                  source: "indexeddb",
+                  lastModified: Date.now(),
+                };
+              }
+            }
+          }
+
+          // Encrypt and upload all settings
+          const encryptedData = await encryptData(settingsToUpload);
+          await uploadToS3("settings.json", encryptedData, {
+            ContentType: "application/json",
+            ServerSideEncryption: "AES256",
+          });
+
+          // Update metadata
+          cloudMetadata.settings = {
+            lastModified: Date.now(),
+            syncedAt: Date.now(),
+          };
+
+          await uploadToS3(
+            "metadata.json",
+            new TextEncoder().encode(JSON.stringify(cloudMetadata)),
+            {
+              ContentType: "application/json",
+              ServerSideEncryption: "AES256",
+            }
+          );
+
+          pendingSettingsChanges = false;
+          logToConsole("success", "Synced all settings to cloud");
+        } catch (error) {
+          logToConsole("error", "Error syncing settings to cloud:", error);
+        }
+      }
+
+      // Sync chats with cloud
       queueOperation("periodic-cloud-sync", syncFromCloud);
     }
   }, interval);
@@ -3942,11 +4016,12 @@ async function generateContentHash(content) {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// Modified checkIndexedDBChanges to handle transactions properly
+// Modified checkIndexedDBChanges to batch changes
 async function checkIndexedDBChanges() {
   let db = null;
   try {
     db = await getPersistentDB();
+    const changedKeys = new Set();
 
     // Get all keys
     const transaction = db.transaction("keyval", "readonly");
@@ -3975,21 +4050,29 @@ async function checkIndexedDBChanges() {
             const metadata = localMetadata.settings.items[key];
 
             if (!metadata || metadata.hash !== hash) {
-              queueOperation("settings-sync", () =>
-                handleSettingChange(key, value, "indexeddb")
-              );
+              changedKeys.add(key);
             }
           }
         } catch (error) {
           logToConsole("error", `Error checking IndexedDB key ${key}:`, error);
-          // Don't break the loop for individual key errors
           continue;
         }
       }
     }
+
+    // Queue a single operation for all changed keys
+    if (changedKeys.size > 0) {
+      const firstKey = Array.from(changedKeys)[0];
+      queueOperation("settings-sync", async () =>
+        handleSettingChange(
+          firstKey,
+          await getIndexedDBValue(firstKey),
+          "indexeddb"
+        )
+      );
+    }
   } catch (error) {
     logToConsole("error", "Error checking IndexedDB changes:", error);
-    // Reset the persistent connection on critical errors
     persistentDB = null;
   }
 }
@@ -4008,15 +4091,44 @@ async function handleSettingChange(key, value, source) {
         const cloudMetadata = await downloadCloudMetadata();
         if (!cloudMetadata) return;
 
-        // Prepare settings data
+        // Collect all settings (both localStorage and IndexedDB)
         const settingsToUpload = {};
-        settingsToUpload[key] = {
-          data: typeof value === "string" ? value : JSON.stringify(value),
-          source: source,
-          lastModified: Date.now(),
-        };
 
-        // Encrypt and upload settings
+        // Add localStorage settings
+        for (const key of Object.keys(localStorage)) {
+          if (!shouldExcludeSetting(key)) {
+            settingsToUpload[key] = {
+              data: localStorage.getItem(key),
+              source: "localstorage",
+              lastModified: Date.now(),
+            };
+          }
+        }
+
+        // Add IndexedDB settings
+        const db = await getPersistentDB();
+        const transaction = db.transaction("keyval", "readonly");
+        const store = transaction.objectStore("keyval");
+        const keys = await new Promise((resolve, reject) => {
+          const request = store.getAllKeys();
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => resolve(request.result);
+        });
+
+        for (const key of keys) {
+          if (!shouldExcludeSetting(key)) {
+            const value = await getIndexedDBValue(key);
+            if (value !== undefined) {
+              settingsToUpload[key] = {
+                data: typeof value === "string" ? value : JSON.stringify(value),
+                source: "indexeddb",
+                lastModified: Date.now(),
+              };
+            }
+          }
+        }
+
+        // Encrypt and upload all settings
         const encryptedData = await encryptData(settingsToUpload);
         await uploadToS3("settings.json", encryptedData, {
           ContentType: "application/json",
@@ -4038,13 +4150,14 @@ async function handleSettingChange(key, value, source) {
           }
         );
 
-        logToConsole("success", `Synced setting change for ${key}`);
-      } catch (error) {
-        logToConsole(
-          "error",
-          `Error syncing setting change for ${key}:`,
-          error
+        // Clear any pending settings-sync operations since we've handled them
+        operationState.operationQueue = operationState.operationQueue.filter(
+          (op) => op.name !== "settings-sync"
         );
+
+        logToConsole("success", "Synced all settings to cloud");
+      } catch (error) {
+        logToConsole("error", "Error syncing settings to cloud:", error);
       }
     });
   }
