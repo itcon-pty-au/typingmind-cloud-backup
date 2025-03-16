@@ -2216,6 +2216,9 @@ function startSyncInterval() {
       return;
     }
 
+    // Check sync status periodically
+    throttledCheckSyncStatus();
+
     // If AWS is configured, handle periodic tasks
     if (isAwsConfigured()) {
       // Handle pending settings changes (consolidate multiple changes)
@@ -2604,11 +2607,17 @@ async function syncFromCloud() {
 
     operationState.lastError = null; // Clear any previous errors
     updateSyncStatus(); // Show success status
+
+    // Check sync status after sync
+    throttledCheckSyncStatus();
   } catch (error) {
     operationState.lastError = error;
     logToConsole("error", "Sync from cloud failed:", error);
     updateSyncStatus(); // Show error status
     throw error;
+
+    // Check sync status after error
+    throttledCheckSyncStatus();
   } finally {
     operationState.isImporting = false;
     updateSyncStatus(); // Update final status
@@ -2720,11 +2729,17 @@ async function syncToCloud() {
 
     operationState.lastError = null; // Clear any previous errors
     updateSyncStatus(); // Show success status
+
+    // Check sync status after sync
+    throttledCheckSyncStatus();
   } catch (error) {
     operationState.lastError = error;
     logToConsole("error", "Sync to cloud failed:", error);
     updateSyncStatus(); // Show error status
     throw error;
+
+    // Check sync status after error
+    throttledCheckSyncStatus();
   } finally {
     operationState.isExporting = false;
     updateSyncStatus(); // Update final status
@@ -3738,6 +3753,9 @@ async function saveSettings() {
 
   // Force re-insert of sync button to ensure text is updated
   insertSyncButton();
+
+  // Check sync status after settings change
+  throttledCheckSyncStatus();
 }
 
 // Get formatted last sync time
@@ -4811,4 +4829,238 @@ async function uploadChatToCloud(chatId) {
 
     throw error;
   }
+}
+
+// Add new sync status checking functions
+async function checkSyncStatus() {
+  // If sync is disabled, no status needed
+  if (config.syncMode === "disabled") {
+    return "disabled";
+  }
+
+  // If operations in progress -> syncing
+  if (
+    operationState.isImporting ||
+    operationState.isExporting ||
+    operationState.isProcessingQueue
+  ) {
+    return "syncing";
+  }
+
+  try {
+    // Get cloud metadata without triggering a full sync
+    const cloudMetadata = await downloadCloudMetadata().catch(() => null);
+
+    // If we can't get cloud metadata, consider it out of sync
+    if (!cloudMetadata) {
+      return "out-of-sync";
+    }
+
+    // Check for local changes
+    const hasLocalChanges = Object.values(localMetadata.chats).some(
+      (chat) => chat.lastModified > chat.syncedAt
+    );
+
+    // Check for cloud changes
+    const hasCloudChanges =
+      cloudMetadata.lastSyncTime > localMetadata.lastSyncTime;
+
+    // Check for size mismatch (if sizes are available)
+    const hasSizeMismatch =
+      cloudFileSize > 0 &&
+      localFileSize > 0 &&
+      Math.abs(cloudFileSize - localFileSize) > 0;
+
+    // Check for settings changes
+    const hasSettingChanges =
+      localMetadata.settings.lastModified > localMetadata.settings.syncedAt;
+
+    // If any changes detected -> out of sync
+    if (
+      hasLocalChanges ||
+      hasCloudChanges ||
+      hasSizeMismatch ||
+      hasSettingChanges
+    ) {
+      return "out-of-sync";
+    }
+
+    // Everything is in sync
+    return "in-sync";
+  } catch (error) {
+    logToConsole("error", "Error checking sync status:", error);
+    return "out-of-sync";
+  }
+}
+
+// Add throttled version to prevent too frequent updates
+const throttledCheckSyncStatus = throttle(async () => {
+  const status = await checkSyncStatus();
+  updateSyncStatusDot(status);
+}, 5000); // Throttle to every 5 seconds
+
+// Update the status dot function to handle new states
+function updateSyncStatusDot(status) {
+  const dot = document.getElementById("sync-status-dot");
+  if (!dot) return;
+
+  // Handle visibility
+  if (status === "disabled") {
+    dot.style.display = "none";
+    return;
+  } else {
+    dot.style.display = "block";
+  }
+
+  // Remove existing classes
+  dot.className =
+    "absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-zinc-900";
+
+  // Add status-specific classes
+  switch (status) {
+    case "in-sync":
+      dot.classList.add("bg-green-500");
+      break;
+    case "syncing":
+      dot.classList.add("bg-orange-500");
+      break;
+    case "out-of-sync":
+      dot.classList.add("bg-red-500");
+      break;
+    default:
+      dot.classList.add("bg-gray-500");
+  }
+}
+
+// Update the sync status check points
+async function checkForChanges() {
+  if (operationState.isImporting || operationState.isExporting) {
+    logToConsole("skip", "Skipping change check - operation in progress");
+    return;
+  }
+
+  // Add a check to prevent concurrent executions
+  if (operationState.isCheckingChanges) {
+    logToConsole("skip", "Change check already in progress");
+    return;
+  }
+
+  operationState.isCheckingChanges = true;
+  try {
+    logToConsole("start", "Checking for changes...");
+
+    // Get latest chats without reloading metadata
+    const chats = await getAllChatsFromIndexedDB();
+    let hasChanges = false;
+
+    for (const chat of chats) {
+      if (!chat.id) continue;
+
+      const currentHash = await generateChatHash(chat);
+      const lastSeen = lastSeenUpdates[chat.id];
+
+      if (!lastSeen || lastSeen.hash !== currentHash) {
+        hasChanges = true;
+        await updateChatMetadata(chat.id, true);
+        lastSeenUpdates[chat.id] = {
+          updatedAt: Date.now(),
+          hash: currentHash,
+        };
+      }
+    }
+
+    if (hasChanges) {
+      if (config.syncMode === "sync") {
+        logToConsole("info", "Local changes detected - queueing sync to cloud");
+        queueOperation("local-changes-sync", syncToCloud);
+      } else if (config.syncMode === "backup") {
+        logToConsole(
+          "info",
+          "Local changes detected - will be backed up in next interval"
+        );
+      }
+      // Update sync status when changes are detected
+      throttledCheckSyncStatus();
+    }
+  } finally {
+    operationState.isCheckingChanges = false;
+  }
+}
+
+// Update sync interval to include status checks
+function startSyncInterval() {
+  // Clear any existing intervals first
+  clearAllIntervals();
+
+  // If in disabled mode, don't start any intervals
+  if (config.syncMode === "disabled") {
+    logToConsole("info", "Sync intervals disabled - manual operations only");
+    return;
+  }
+
+  const interval = Math.max(config.syncInterval * 1000, 15000);
+
+  activeIntervals.sync = setInterval(async () => {
+    // Skip if operations are in progress
+    if (operationState.isImporting || operationState.isExporting) {
+      logToConsole("skip", "Operation in progress - skipping interval tasks");
+      return;
+    }
+
+    // Check sync status periodically
+    throttledCheckSyncStatus();
+
+    // If AWS is configured, handle periodic tasks
+    if (isAwsConfigured()) {
+      // Handle pending settings changes (consolidate multiple changes)
+      if (pendingSettingsChanges) {
+        logToConsole("info", "Processing pending settings changes");
+        pendingSettingsChanges = false;
+        queueOperation("settings-sync", uploadSettingsToCloud);
+      }
+
+      // Handle mode-specific operations
+      if (config.syncMode === "sync") {
+        // For sync mode, do a quick consistency check
+        if (!operationState.isCheckingChanges) {
+          const cloudMetadata = await downloadCloudMetadata().catch((error) => {
+            logToConsole(
+              "error",
+              "Error downloading cloud metadata for consistency check:",
+              error
+            );
+            return null;
+          });
+
+          if (
+            cloudMetadata &&
+            cloudMetadata.lastSyncTime > localMetadata.lastSyncTime
+          ) {
+            logToConsole(
+              "info",
+              "Cloud changes detected during consistency check"
+            );
+            queueOperation("consistency-check", syncFromCloud);
+          }
+        }
+      } else if (config.syncMode === "backup") {
+        // For backup mode, check for any modified chats and queue them for backup
+        const modifiedChats = Object.entries(localMetadata.chats)
+          .filter(([_, meta]) => meta.lastModified > meta.syncedAt)
+          .map(([chatId]) => chatId);
+
+        if (modifiedChats.length > 0) {
+          logToConsole("info", `Found ${modifiedChats.length} chats to backup`);
+          queueOperation("backup-modified-chats", syncToCloud);
+        }
+      }
+    }
+  }, interval);
+
+  logToConsole(
+    "info",
+    `${
+      config.syncMode.charAt(0).toUpperCase() + config.syncMode.slice(1)
+    } interval started (${interval}ms)`
+  );
 }
