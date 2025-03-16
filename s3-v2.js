@@ -4535,13 +4535,6 @@ async function uploadChatToCloud(chatId) {
       chatData.id = chatId;
     }
 
-    // Check if this is an empty or invalid chat
-    const messagesCount = chatData.messagesArray?.length || 0;
-    if (messagesCount === 0 && !chatData.chatTitle) {
-      logToConsole("warning", `Skipping upload of empty chat ${chatId}`);
-      return false;
-    }
-
     // Generate a new hash for the chat
     const newHash = await generateContentHash(JSON.stringify(chatData));
 
@@ -4580,7 +4573,7 @@ async function uploadChatToCloud(chatId) {
     await s3.putObject(params).promise();
 
     logToConsole("success", `Uploaded chat ${chatId} to cloud`, {
-      messageCount: messagesCount,
+      messageCount: chatData.messagesArray?.length || 0,
       title: chatData.chatTitle || "(Untitled)",
       size: encryptedData.length,
     });
