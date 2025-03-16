@@ -5,14 +5,12 @@
 
 const EXTENSION_VERSION = "2.0.0";
 const EXCLUDED_SETTINGS = [
-  // AWS configuration keys
   "aws-bucket",
   "aws-access-key",
   "aws-secret-key",
   "aws-region",
   "aws-endpoint",
   "encryption-key",
-  // Sync metadata
   "chat-sync-metadata",
   "sync-mode",
   "last-cloud-sync",
