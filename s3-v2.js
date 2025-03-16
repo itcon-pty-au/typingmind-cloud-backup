@@ -4821,7 +4821,6 @@ async function uploadChatToCloud(chatId) {
     await uploadToS3(`chats/${chatId}.json`, encryptedData, {
       ContentType: "application/json",
       ServerSideEncryption: "AES256",
-      Metadata: { encrypted: "true" },
     });
 
     // Log success with chat info
