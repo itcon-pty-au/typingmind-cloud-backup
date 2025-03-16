@@ -4111,8 +4111,6 @@ async function handleSettingChange(key, value, source) {
 }
 
 async function cleanupMetadataVersions() {
-  //logToConsole("start", "Starting metadata.json version cleanup...");
-
   try {
     const s3 = initializeS3Client();
 
@@ -4143,83 +4141,50 @@ async function cleanupMetadataVersions() {
     let allVersions = [];
 
     if (versions.Versions) {
-      // Get all non-current versions
-      allVersions.push(...versions.Versions.filter((v) => !v.IsLatest));
+      // Get all non-current versions of metadata.json only
+      allVersions.push(
+        ...versions.Versions.filter(
+          (v) => !v.IsLatest && v.Key === "metadata.json"
+        )
+      );
     }
 
     if (versions.DeleteMarkers) {
-      // Add all delete markers except the most recent one if it exists
-      const sortedMarkers = versions.DeleteMarkers.sort(
-        (a, b) => b.LastModified - a.LastModified
+      // Get delete markers for metadata.json only
+      allVersions.push(
+        ...versions.DeleteMarkers.filter((v) => v.Key === "metadata.json")
       );
-      if (sortedMarkers.length > 0 && !sortedMarkers[0].IsLatest) {
-        allVersions.push(...sortedMarkers);
-      } else {
-        allVersions.push(...sortedMarkers.slice(1));
-      }
     }
 
-    //if (allVersions.length === 0) {
-    //  logToConsole("info", "No old metadata versions to clean up");
-    //  return;
-    //}
+    // Sort by date (newest first)
+    allVersions.sort((a, b) => b.LastModified - a.LastModified);
 
-    //logToConsole(
-    //  "info",
-    //  `Found ${allVersions.length} old metadata versions to clean up`
-    //);
+    // Keep the most recent version and delete others
+    const versionsToDelete = allVersions.slice(1);
 
-    // Process versions in batches of 1000 (AWS limit)
-    const batchSize = 1000;
-    for (let i = 0; i < allVersions.length; i += batchSize) {
-      const batch = allVersions.slice(i, i + batchSize);
-
+    if (versionsToDelete.length > 0) {
       const deleteParams = {
         Bucket: config.bucketName,
         Delete: {
-          Objects: batch.map((version) => ({
+          Objects: versionsToDelete.map((version) => ({
             Key: version.Key,
             VersionId: version.VersionId,
           })),
-          Quiet: false,
+          Quiet: true,
         },
       };
 
-      const deleteResult = await s3.deleteObjects(deleteParams).promise();
-
-      if (deleteResult.Deleted) {
-        logToConsole(
-          "success",
-          `Deleted ${deleteResult.Deleted.length} old metadata versions`
-        );
-      }
-
-      if (deleteResult.Errors && deleteResult.Errors.length > 0) {
-        logToConsole(
-          "error",
-          "Some versions could not be deleted:",
-          deleteResult.Errors
-        );
-        // Log specific errors for debugging
-        deleteResult.Errors.forEach((error) => {
-          logToConsole(
-            "error",
-            `Failed to delete version ${error.VersionId}: ${error.Message}`
-          );
-        });
-      }
+      await s3.deleteObjects(deleteParams).promise();
+      logToConsole(
+        "success",
+        `Deleted ${versionsToDelete.length} old metadata versions`
+      );
     }
 
     logToConsole("success", "Metadata version cleanup completed");
   } catch (error) {
-    logToConsole("error", "Failed to cleanup metadata versions:", error);
-    // Log detailed error information
-    if (error.code) {
-      logToConsole(
-        "error",
-        `Error code: ${error.code}, Message: ${error.message}`
-      );
-    }
+    logToConsole("error", "Error cleaning up metadata versions:", error);
+    throw error;
   }
 }
 
