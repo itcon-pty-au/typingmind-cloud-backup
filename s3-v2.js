@@ -4905,40 +4905,23 @@ async function checkSyncStatus() {
   }
 
   try {
-    // Get cloud metadata without triggering a full sync
-    const cloudMetadata = await downloadCloudMetadata().catch(() => null);
+    // Check for local changes (using only local metadata)
+    const hasLocalChanges = Object.values(localMetadata.chats).some(
+      (chat) => !chat.deleted && chat.lastModified > chat.syncedAt
+    );
 
-    // If we can't get cloud metadata, consider it out of sync
-    if (!cloudMetadata) {
+    // Check for pending settings changes
+    const hasSettingChanges =
+      pendingSettingsChanges ||
+      localMetadata.settings.lastModified > localMetadata.settings.syncedAt;
+
+    // Check for errors
+    if (operationState.lastError) {
       return "out-of-sync";
     }
 
-    // Check for local changes
-    const hasLocalChanges = Object.values(localMetadata.chats).some(
-      (chat) => chat.lastModified > chat.syncedAt
-    );
-
-    // Check for cloud changes
-    const hasCloudChanges =
-      cloudMetadata.lastSyncTime > localMetadata.lastSyncTime;
-
-    // Check for size mismatch (if sizes are available)
-    const hasSizeMismatch =
-      cloudFileSize > 0 &&
-      localFileSize > 0 &&
-      Math.abs(cloudFileSize - localFileSize) > 0;
-
-    // Check for settings changes
-    const hasSettingChanges =
-      localMetadata.settings.lastModified > localMetadata.settings.syncedAt;
-
     // If any changes detected -> out of sync
-    if (
-      hasLocalChanges ||
-      hasCloudChanges ||
-      hasSizeMismatch ||
-      hasSettingChanges
-    ) {
+    if (hasLocalChanges || hasSettingChanges) {
       return "out-of-sync";
     }
 
