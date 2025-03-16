@@ -4712,6 +4712,40 @@ async function downloadChatFromCloud(chatId) {
     } catch (error) {
       if (error.code === "NoSuchKey") {
         logToConsole("warning", `Chat ${chatId} not found in cloud`);
+
+        // Get current cloud metadata to mark this chat as deleted
+        const cloudMetadata = await downloadCloudMetadata();
+        if (
+          cloudMetadata.chats &&
+          cloudMetadata.chats[chatId] &&
+          !cloudMetadata.chats[chatId].deleted
+        ) {
+          // Create a tombstone entry in cloud metadata
+          cloudMetadata.chats[chatId] = {
+            deleted: true,
+            deletedAt: Date.now(),
+            lastModified: Date.now(),
+            syncedAt: Date.now(),
+            tombstoneVersion:
+              (cloudMetadata.chats[chatId]?.tombstoneVersion || 0) + 1,
+            deletionSource: "file-missing",
+          };
+
+          // Upload updated metadata to cloud
+          await uploadToS3(
+            "metadata.json",
+            new TextEncoder().encode(JSON.stringify(cloudMetadata)),
+            {
+              ContentType: "application/json",
+              ServerSideEncryption: "AES256",
+            }
+          );
+
+          logToConsole(
+            "info",
+            `Created tombstone for missing chat ${chatId} in cloud metadata`
+          );
+        }
         return null;
       }
       throw error;
