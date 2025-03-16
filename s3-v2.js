@@ -2485,30 +2485,43 @@ async function syncFromCloud() {
     // Process local chats that don't exist in cloud
     for (const chatId of localChatIds) {
       if (!cloudChatIds.has(chatId)) {
-        // If we've synced before and this chat isn't in the cloud, it was deleted
-        if (localMetadata.lastSyncTime > 0) {
-          await deleteChatFromIndexedDB(chatId);
-          hasChanges = true;
+        const localChatMeta = localMetadata.chats[chatId];
 
-          // Add tombstone to local metadata
-          localMetadata.chats[chatId] = {
-            deleted: true,
-            deletedAt: Date.now(),
-            lastModified: Date.now(),
-            syncedAt: Date.now(),
-          };
-          saveLocalMetadata();
+        // Skip if this is a new local chat (created after our last sync)
+        if (
+          !localChatMeta ||
+          !localMetadata.lastSyncTime ||
+          localChatMeta.lastModified > localMetadata.lastSyncTime
+        ) {
+          logToConsole(
+            "info",
+            `Skipping new local chat ${chatId} - will be uploaded in next sync`
+          );
+          continue;
         }
+
+        // If this is an old chat that's missing from cloud, it was likely deleted on another device
+        await deleteChatFromIndexedDB(chatId);
+        hasChanges = true;
+
+        // Add tombstone to local metadata
+        localMetadata.chats[chatId] = {
+          deleted: true,
+          deletedAt: Date.now(),
+          lastModified: Date.now(),
+          syncedAt: Date.now(),
+        };
+        saveLocalMetadata();
       }
     }
 
     if (hasChanges) {
-      localMetadata.lastSyncTime = Date.now();
-      saveLocalMetadata();
       logToConsole("success", "Sync from cloud completed with changes");
     } else {
       logToConsole("info", "No changes detected during sync from cloud");
     }
+
+    operationState.isImporting = false;
   } catch (error) {
     logToConsole("error", "Sync from cloud failed:", error);
     throw error;
