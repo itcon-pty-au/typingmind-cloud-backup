@@ -590,6 +590,10 @@ async function checkForChanges() {
   }
 
   logToConsole("start", "Checking for changes...");
+
+  // Reload local metadata to ensure we have latest state
+  await loadLocalMetadata();
+
   const chats = await getAllChatsFromIndexedDB();
   let hasChanges = false;
 
@@ -2530,6 +2534,9 @@ async function syncToCloud() {
   operationState.isExporting = true;
 
   try {
+    // Reload local metadata to ensure we have latest changes
+    await loadLocalMetadata();
+
     // Get current cloud metadata
     const cloudMetadata = await downloadCloudMetadata();
     let hasChanges = false;
