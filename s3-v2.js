@@ -591,9 +591,7 @@ async function checkForChanges() {
 
   logToConsole("start", "Checking for changes...");
 
-  // Reload local metadata to ensure we have latest state
-  await loadLocalMetadata();
-
+  // Get latest chats without reloading metadata
   const chats = await getAllChatsFromIndexedDB();
   let hasChanges = false;
 
@@ -615,12 +613,8 @@ async function checkForChanges() {
 
   if (hasChanges) {
     logToConsole("info", "Local changes detected - queueing sync to cloud");
-    // First sync to cloud to save our changes
+    // Queue sync to cloud with the changes
     queueOperation("local-changes-sync", syncToCloud);
-    // Then sync from cloud to ensure we have latest data
-    queueOperation("post-upload-sync", syncFromCloud);
-  } else {
-    logToConsole("skip", "No local changes detected");
   }
 }
 
@@ -2198,9 +2192,10 @@ function startSyncInterval() {
       return;
     }
 
-    // Load latest metadata before checking for changes
-    await loadLocalMetadata();
-    // First sync from cloud to get any remote changes
+    // First check for local changes
+    await checkForChanges();
+
+    // Then sync from cloud to get any remote changes
     queueOperation("periodic-cloud-sync", syncFromCloud);
   }, interval);
 
