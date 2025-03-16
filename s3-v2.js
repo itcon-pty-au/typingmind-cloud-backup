@@ -650,8 +650,16 @@ async function checkForChanges() {
     }
 
     if (hasChanges) {
-      logToConsole("info", "Local changes detected - queueing sync to cloud");
-      queueOperation("local-changes-sync", syncToCloud);
+      if (config.syncMode === "sync") {
+        logToConsole("info", "Local changes detected - queueing sync to cloud");
+        queueOperation("local-changes-sync", syncToCloud);
+      } else if (config.syncMode === "backup") {
+        logToConsole(
+          "info",
+          "Local changes detected - will be backed up in next interval"
+        );
+        // The changes are tracked in metadata and will be handled by the sync interval
+      }
     }
   } finally {
     operationState.isCheckingChanges = false;
@@ -2226,33 +2234,50 @@ function startSyncInterval() {
         queueOperation("settings-sync", uploadSettingsToCloud);
       }
 
-      // If in sync mode, do a quick consistency check
-      // This helps catch any changes that might have been missed by real-time monitoring
-      if (config.syncMode === "sync" && !operationState.isCheckingChanges) {
-        const cloudMetadata = await downloadCloudMetadata().catch((error) => {
-          logToConsole(
-            "error",
-            "Error downloading cloud metadata for consistency check:",
-            error
-          );
-          return null;
-        });
+      // Handle mode-specific operations
+      if (config.syncMode === "sync") {
+        // For sync mode, do a quick consistency check
+        if (!operationState.isCheckingChanges) {
+          const cloudMetadata = await downloadCloudMetadata().catch((error) => {
+            logToConsole(
+              "error",
+              "Error downloading cloud metadata for consistency check:",
+              error
+            );
+            return null;
+          });
 
-        if (
-          cloudMetadata &&
-          cloudMetadata.lastSyncTime > localMetadata.lastSyncTime
-        ) {
-          logToConsole(
-            "info",
-            "Cloud changes detected during consistency check"
-          );
-          queueOperation("consistency-check", syncFromCloud);
+          if (
+            cloudMetadata &&
+            cloudMetadata.lastSyncTime > localMetadata.lastSyncTime
+          ) {
+            logToConsole(
+              "info",
+              "Cloud changes detected during consistency check"
+            );
+            queueOperation("consistency-check", syncFromCloud);
+          }
+        }
+      } else if (config.syncMode === "backup") {
+        // For backup mode, check for any modified chats and queue them for backup
+        const modifiedChats = Object.entries(localMetadata.chats)
+          .filter(([_, meta]) => meta.lastModified > meta.syncedAt)
+          .map(([chatId]) => chatId);
+
+        if (modifiedChats.length > 0) {
+          logToConsole("info", `Found ${modifiedChats.length} chats to backup`);
+          queueOperation("backup-modified-chats", syncToCloud);
         }
       }
     }
   }, interval);
 
-  logToConsole("info", `Sync interval started (${interval}ms)`);
+  logToConsole(
+    "info",
+    `${
+      config.syncMode.charAt(0).toUpperCase() + config.syncMode.slice(1)
+    } interval started (${interval}ms)`
+  );
 }
 
 // Perform initial sync
