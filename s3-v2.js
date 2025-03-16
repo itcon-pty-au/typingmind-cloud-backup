@@ -2606,6 +2606,10 @@ async function syncFromCloud() {
       logToConsole("info", "No changes detected during sync from cloud");
     }
 
+    // Always update lastSyncTime after successful sync, regardless of changes
+    localMetadata.lastSyncTime = Date.now();
+    saveLocalMetadata();
+
     operationState.lastError = null; // Clear any previous errors
     updateSyncStatus(); // Show success status
   } catch (error) {
