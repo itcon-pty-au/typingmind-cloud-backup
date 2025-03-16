@@ -2253,7 +2253,39 @@ async function performInitialSync() {
       if (chatCount === 0 && localChatCount > 0) {
         // Cloud metadata exists but no chats - create fresh backup
         logToConsole("info", "Creating fresh backup with local data");
-        await syncToCloud();
+
+        // Get all local chats and update cloud metadata
+        const chats = await getAllChatsFromIndexedDB();
+        for (const chat of chats) {
+          if (!chat.id) continue;
+
+          const localChatMeta = localMetadata.chats[chat.id];
+          if (!localChatMeta) continue;
+
+          // Add chat to cloud metadata
+          metadata.chats[chat.id] = {
+            hash:
+              localChatMeta.hash ||
+              (await generateContentHash(JSON.stringify(chat))),
+            lastModified: localChatMeta.lastModified || Date.now(),
+            syncedAt: Date.now(),
+            deleted: false,
+          };
+
+          // Upload the chat
+          await uploadChatToCloud(chat.id);
+        }
+
+        // Upload the updated metadata
+        await uploadToS3(
+          "metadata.json",
+          new TextEncoder().encode(JSON.stringify(metadata)),
+          {
+            ContentType: "application/json",
+            ServerSideEncryption: "AES256",
+          }
+        );
+
         return;
       }
 
