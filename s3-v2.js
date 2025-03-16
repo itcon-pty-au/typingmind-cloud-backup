@@ -4254,48 +4254,66 @@ async function uploadSettingsToCloud() {
       "aws-endpoint",
       "aws-region",
       "aws-bucket",
+      "chat-sync-metadata", // Also exclude sync metadata
     ];
 
     // Get localStorage settings
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (!excludeKeys.includes(key)) {
+      if (
+        !excludeKeys.includes(key) &&
+        !key.startsWith("CHAT_") &&
+        isNaN(key)
+      ) {
         settingsData[key] = localStorage.getItem(key);
       }
     }
 
-    // Add special IndexedDB keys
-    const specialKeys = [
-      "TM_useInstalledPlugins",
-      "TM_useUserCharacters",
-      "TM_useUserPrompts",
-    ];
+    // Get all IndexedDB keys
+    const db = await openIndexedDB();
+    const transaction = db.transaction("keyval", "readonly");
+    const store = transaction.objectStore("keyval");
+    const keys = await new Promise((resolve, reject) => {
+      const request = store.getAllKeys();
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
 
-    for (const key of specialKeys) {
-      try {
-        const value = await getIndexedDBKey(key);
-        if (value !== undefined) {
-          // Properly serialize complex objects
-          try {
-            if (typeof value === "string") {
-              settingsData[key] = value;
-            } else {
-              settingsData[key] = JSON.stringify(value);
-              logToConsole("info", `Serialized complex object for ${key}`);
+    // Process each IndexedDB key
+    for (const key of keys) {
+      if (
+        !excludeKeys.includes(key) &&
+        !key.startsWith("CHAT_") &&
+        isNaN(key)
+      ) {
+        try {
+          const value = await getIndexedDBKey(key);
+          if (value !== undefined) {
+            // Properly serialize complex objects
+            try {
+              if (typeof value === "string") {
+                settingsData[key] = value;
+              } else {
+                settingsData[key] = JSON.stringify(value);
+                logToConsole("info", `Serialized complex object for ${key}`);
+              }
+            } catch (serializeError) {
+              logToConsole(
+                "error",
+                `Failed to serialize ${key}, storing as string`,
+                serializeError
+              );
+              settingsData[key] = JSON.stringify(String(value));
             }
-          } catch (serializeError) {
-            logToConsole(
-              "error",
-              `Failed to serialize ${key}, storing as string`,
-              serializeError
-            );
-            settingsData[key] = JSON.stringify(String(value));
           }
+        } catch (error) {
+          logToConsole("error", `Error reading IndexedDB key ${key}`, error);
         }
-      } catch (error) {
-        logToConsole("error", `Error reading IndexedDB key ${key}`, error);
       }
     }
+
+    // Close the database connection
+    db.close();
 
     // Encrypt settings data
     const encryptedData = await encryptData(settingsData);
