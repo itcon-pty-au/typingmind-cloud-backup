@@ -2720,6 +2720,16 @@ async function syncToCloud() {
 
     if (hasChanges) {
       localMetadata.lastSyncTime = Date.now();
+      // Update cloud metadata's lastSyncTime
+      cloudMetadata.lastSyncTime = localMetadata.lastSyncTime;
+      await uploadToS3(
+        "metadata.json",
+        new TextEncoder().encode(JSON.stringify(cloudMetadata)),
+        {
+          ContentType: "application/json",
+          ServerSideEncryption: "AES256",
+        }
+      );
       saveLocalMetadata();
       logToConsole("success", "Sync to cloud completed with changes");
     } else {
