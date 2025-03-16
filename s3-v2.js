@@ -331,7 +331,43 @@ function initializeLoggingState() {
 
 // ==================== INITIALIZATION ====================
 
-// Initialize the extension
+async function performFullInitialization() {
+  try {
+    // Load local metadata
+    await loadLocalMetadata();
+
+    // Initialize lastSeenUpdates from current chat states
+    await initializeLastSeenUpdates();
+
+    // Initialize settings monitoring
+    await initializeSettingsMonitoring();
+
+    // Setup localStorage change listener
+    await setupLocalStorageChangeListener();
+
+    // Check for daily backup if applicable
+    if (config.syncMode !== "disabled") {
+      queueOperation("daily-backup-check", checkAndPerformDailyBackup);
+    }
+
+    // Start interval (works for both sync and backup modes)
+    startSyncInterval();
+
+    // If in sync mode, also perform initial sync
+    if (config.syncMode === "sync") {
+      queueOperation("initial-sync", performInitialSync);
+    }
+
+    // Start monitoring IndexedDB for deletions
+    monitorIndexedDBForDeletions();
+
+    logToConsole("success", "Full initialization completed successfully");
+  } catch (error) {
+    logToConsole("error", "Error during full initialization:", error);
+    throw error;
+  }
+}
+
 async function initializeExtension() {
   // Initialize logging first
   initializeLoggingState();
@@ -346,39 +382,29 @@ async function initializeExtension() {
     // Create UI elements after config is loaded
     insertSyncButton();
 
-    // Load local metadata
-    await loadLocalMetadata();
-
-    // Initialize lastSeenUpdates from current chat states
-    await initializeLastSeenUpdates();
-
-    // Initialize settings monitoring
-    await initializeSettingsMonitoring();
-
-    // Setup localStorage change listener
-    await setupLocalStorageChangeListener();
-
-    // Check if AWS is configured
-    if (isAwsConfigured()) {
-      // Only check for daily backup if not in disabled mode
-      if (config.syncMode !== "disabled") {
-        queueOperation("daily-backup-check", checkAndPerformDailyBackup);
-      }
-
-      // Start interval (works for both sync and backup modes)
-      startSyncInterval();
-
-      // If in sync mode, also perform initial sync
-      if (config.syncMode === "sync") {
-        queueOperation("initial-sync", performInitialSync);
-      }
+    // Check AWS configuration first
+    if (!isAwsConfigured()) {
+      logToConsole(
+        "info",
+        "AWS not configured - minimal initialization completed"
+      );
+      return;
     }
+
+    // Check if disabled mode
+    if (config.syncMode === "disabled") {
+      logToConsole(
+        "info",
+        "Disabled mode - skipping cloud operations initialization"
+      );
+      return;
+    }
+
+    // Proceed with full initialization if AWS is configured and not in disabled mode
+    await performFullInitialization();
 
     // Set up visibility change handler
     setupVisibilityChangeHandler();
-
-    // Start monitoring IndexedDB for deletions
-    monitorIndexedDBForDeletions();
 
     logToConsole("success", "Initialization completed successfully");
   } catch (error) {
@@ -3627,6 +3653,11 @@ async function saveSettings() {
 
     // Clear all intervals
     clearAllIntervals();
+
+    logToConsole(
+      "info",
+      "State reset completed, proceeding with initialization"
+    );
   }
 
   // Update config
@@ -3647,8 +3678,26 @@ async function saveSettings() {
         : "Backup";
   }
 
-  // Restart interval with new settings
-  if (isAwsConfigured()) {
+  // If switching from disabled mode to an active mode, perform full initialization
+  if (oldMode === "disabled" && newConfig.syncMode !== "disabled") {
+    try {
+      await performFullInitialization();
+      logToConsole(
+        "success",
+        "Full initialization completed after mode switch"
+      );
+    } catch (error) {
+      logToConsole(
+        "error",
+        "Error during initialization after mode switch:",
+        error
+      );
+      alert(
+        "Error initializing cloud operations. Please check the console for details."
+      );
+    }
+  } else if (isAwsConfigured()) {
+    // Otherwise just restart interval with new settings
     startSyncInterval();
 
     // If switching to sync mode, perform initial sync
