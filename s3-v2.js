@@ -18,6 +18,8 @@ const EXCLUDED_SETTINGS = [
   "lastDailyBackup",
   "TM_useLastVerifiedToken",
   "TM_useStateUpdateHistory",
+  "TM_useGlobalChatLoading",
+  "TM_crossTabLastSynced",
 ];
 
 function shouldExcludeSetting(key) {
