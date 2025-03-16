@@ -11,12 +11,12 @@ const EXCLUDED_SETTINGS = [
   "aws-secret-key",
   "aws-region",
   "aws-endpoint",
-  // Security keys
   "encryption-key",
   // Sync metadata
   "chat-sync-metadata",
   "sync-mode",
   "last-cloud-sync",
+  "TM_useDraftContent",
 ];
 
 function shouldExcludeSetting(key) {
