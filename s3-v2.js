@@ -133,27 +133,6 @@ function clearAllIntervals() {
 
 // ==================== LOGGING SYSTEM ====================
 
-// Define log priority levels
-const LOG_LEVELS = {
-  error: 1, // Always log errors - highest priority
-  warning: 2, // Important warnings
-  success: 2, // Success messages for important operations
-  upload: 2, // Important upload events
-  download: 2, // Important download events
-  cleanup: 2, // Deletion operations
-  start: 3, // Start of key operations
-  end: 3, // End of key operations
-  info: 4, // General info
-  skip: 5, // Low priority skips
-  visibility: 5, // Visibility events
-  active: 5, // Tab activity - lowest priority
-  backup: 2, // Backup operations
-  restore: 2, // Restore operations
-  snapshot: 2, // Snapshot operations
-  sync: 2, // Sync operations
-  time: 3, // Time-based operations
-};
-
 // Log icons for different types
 const LOG_ICONS = {
   info: "ℹ️",
@@ -181,11 +160,8 @@ const LOG_ICONS = {
 function logToConsole(type, message, data = null) {
   if (!isConsoleLoggingEnabled) return;
 
-  // Get priority level (default to lowest)
-  const priority = LOG_LEVELS[type] || 5;
-
   // By default, only show priority 1-3 logs unless debug mode is enabled
-  if (!isConsoleLoggingEnabled && priority > 3) return;
+  if (!isConsoleLoggingEnabled) return;
 
   const timestamp = new Date().toLocaleTimeString([], {
     hour: "2-digit",
@@ -3827,20 +3803,27 @@ function getLastSyncTime() {
   const now = new Date();
   const diff = now - lastSync;
 
+  // Format relative time for recent syncs
   if (diff < 60000) {
-    // Less than 1 minute
     return "Just now";
   } else if (diff < 3600000) {
-    // Less than 1 hour
     const minutes = Math.floor(diff / 60000);
     return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
   } else if (diff < 86400000) {
-    // Less than 1 day
     const hours = Math.floor(diff / 3600000);
     return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-  } else {
-    return lastSync.toLocaleString();
   }
+
+  // For older syncs, show the full local date and time
+  return lastSync.toLocaleString(undefined, {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
 // Load backup list
