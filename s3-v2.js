@@ -73,7 +73,7 @@ let backupState = {
 // Configuration with defaults
 let config = {
   // Sync settings
-  syncMode: "sync", // 'sync' or 'backup'
+  syncMode: "sync", // 'sync', 'backup', or 'disabled'
   syncInterval: 15, // seconds
   importThreshold: 1, // percentage
   exportThreshold: 10, // percentage
@@ -360,8 +360,10 @@ async function initializeExtension() {
 
     // Check if AWS is configured
     if (isAwsConfigured()) {
-      // Always check for daily backup on page load
-      queueOperation("daily-backup-check", checkAndPerformDailyBackup);
+      // Only check for daily backup if not in disabled mode
+      if (config.syncMode !== "disabled") {
+        queueOperation("daily-backup-check", checkAndPerformDailyBackup);
+      }
 
       // Start interval (works for both sync and backup modes)
       startSyncInterval();
@@ -2171,6 +2173,12 @@ function startSyncInterval() {
   // Clear any existing intervals first
   clearAllIntervals();
 
+  // If in disabled mode, don't start any intervals
+  if (config.syncMode === "disabled") {
+    logToConsole("info", "Sync intervals disabled - manual operations only");
+    return;
+  }
+
   const interval = Math.max(config.syncInterval * 1000, 15000);
 
   activeIntervals.sync = setInterval(async () => {
@@ -2811,6 +2819,15 @@ function setupVisibilityChangeHandler() {
     );
 
     if (isVisible) {
+      // Skip if in disabled mode
+      if (config.syncMode === "disabled") {
+        logToConsole(
+          "info",
+          "Cloud operations disabled - skipping visibility change handling"
+        );
+        return;
+      }
+
       // For sync mode, queue a sync operation
       if (config.syncMode === "sync") {
         queueOperation("visibility-sync", syncFromCloud);
@@ -2842,7 +2859,12 @@ function insertSyncButton() {
     <span class="text-white/70 hover:bg-white/20 self-stretch h-12 md:h-[50px] px-0.5 py-1.5 rounded-xl flex-col justify-start items-center gap-1.5 flex transition-colors">
       <svg class="w-4 h-4 flex-shrink-0" width="18px" height="18px" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
         ${
-          currentMode === "sync"
+          currentMode === "disabled"
+            ? `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3.75 9h10.5"/>
+              <path d="M9 3.75v10.5"/>
+             </g>`
+            : currentMode === "sync"
             ? `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M9 4.5A4.5 4.5 0 0114.5 9M9 13.5A4.5 4.5 0 013.5 9"/>
               <polyline points="9,2.5 9,4.5 11,4.5"/>
@@ -2856,7 +2878,11 @@ function insertSyncButton() {
         }
       </svg>
       <span class="font-normal self-stretch text-center text-xs leading-4 md:leading-none">${
-        currentMode === "sync" ? "Sync" : "Backup"
+        currentMode === "disabled"
+          ? "Cloud"
+          : currentMode === "sync"
+          ? "Sync"
+          : "Backup"
       }</span>
     </span>
   `;
@@ -3396,6 +3422,13 @@ function openSyncModal() {
                 <span class="ml-2">Backup</span>
                 <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="Only creates backups. No automatic import from cloud on app start.">ⓘ</button>
               </label>
+              <label class="inline-flex items-center">
+                <input type="radio" name="sync-mode" value="disabled" class="form-radio text-blue-600" ${
+                  config.syncMode === "disabled" ? "checked" : ""
+                }>
+                <span class="ml-2">Disabled</span>
+                <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="No automatic operations. Manual sync and snapshot operations still work.">ⓘ</button>
+              </label>
             </div>
 
             <div class="flex space-x-4">
@@ -3564,6 +3597,38 @@ async function saveSettings() {
     return;
   }
 
+  // Reset state when switching from disabled mode
+  if (config.syncMode === "disabled" && newConfig.syncMode !== "disabled") {
+    // Reset operation state
+    operationState = {
+      isImporting: false,
+      isExporting: false,
+      isPendingSync: false,
+      operationQueue: [],
+      isProcessingQueue: false,
+      lastSyncStatus: null,
+      isCheckingChanges: false,
+    };
+
+    // Reset backup state
+    backupState = {
+      isBackupInProgress: false,
+      lastDailyBackup: null,
+      lastManualSnapshot: null,
+      backupInterval: null,
+      isBackupIntervalRunning: false,
+    };
+
+    // Reset file sizes
+    cloudFileSize = 0;
+    localFileSize = 0;
+    isLocalDataModified = false;
+    pendingSettingsChanges = false;
+
+    // Clear all intervals
+    clearAllIntervals();
+  }
+
   // Update config
   const oldMode = config.syncMode;
   config = { ...config, ...newConfig };
@@ -3574,7 +3639,12 @@ async function saveSettings() {
     "#cloud-sync-button span:last-child"
   );
   if (buttonText) {
-    buttonText.innerText = config.syncMode === "sync" ? "Sync" : "Backup";
+    buttonText.innerText =
+      config.syncMode === "disabled"
+        ? "Cloud"
+        : config.syncMode === "sync"
+        ? "Sync"
+        : "Backup";
   }
 
   // Restart interval with new settings
