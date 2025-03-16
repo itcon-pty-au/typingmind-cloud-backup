@@ -4254,7 +4254,7 @@ async function uploadSettingsToCloud() {
       "aws-endpoint",
       "aws-region",
       "aws-bucket",
-      "chat-sync-metadata", // Also exclude sync metadata
+      "chat-sync-metadata",
     ];
 
     // Get localStorage settings
