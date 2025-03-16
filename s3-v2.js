@@ -63,6 +63,7 @@ let operationState = {
   operationQueue: [],
   isProcessingQueue: false,
   lastSyncStatus: null,
+  isCheckingChanges: false,
 };
 
 // Backup state tracking
@@ -354,14 +355,11 @@ async function initializeExtension() {
       queueOperation("daily-backup-check", checkAndPerformDailyBackup);
     }
 
-    // Start periodic change check
-    startPeriodicChangeCheck();
+    // Start sync interval (now handles both sync and change checks)
+    startSyncInterval();
 
     // Set up visibility change handler
     setupVisibilityChangeHandler();
-
-    // Start regular sync interval
-    startSyncInterval();
 
     // Start monitoring IndexedDB for deletions
     monitorIndexedDBForDeletions();
@@ -371,7 +369,7 @@ async function initializeExtension() {
 
     logToConsole("success", "Initialization completed successfully");
   } catch (error) {
-    logToConsole("error", "Initialization failed:", error);
+    logToConsole("error", "Error initializing extension:", error);
     throw error;
   }
 }
@@ -572,16 +570,6 @@ async function generateChatHash(chat) {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// Start periodic change check
-function startPeriodicChangeCheck() {
-  const checkInterval = Math.max(config.syncInterval * 1000, 15000);
-  setInterval(checkForChanges, checkInterval);
-  //logToConsole(
-  //  "info",
-  //  `Started periodic change check (interval: ${checkInterval}ms)`
-  //);
-}
-
 // Check for changes in chats
 async function checkForChanges() {
   if (operationState.isImporting || operationState.isExporting) {
@@ -589,32 +577,42 @@ async function checkForChanges() {
     return;
   }
 
-  logToConsole("start", "Checking for changes...");
-
-  // Get latest chats without reloading metadata
-  const chats = await getAllChatsFromIndexedDB();
-  let hasChanges = false;
-
-  for (const chat of chats) {
-    if (!chat.id) continue;
-
-    const currentHash = await generateChatHash(chat);
-    const lastSeen = lastSeenUpdates[chat.id];
-
-    if (!lastSeen || lastSeen.hash !== currentHash) {
-      hasChanges = true;
-      await updateChatMetadata(chat.id, true);
-      lastSeenUpdates[chat.id] = {
-        updatedAt: Date.now(),
-        hash: currentHash,
-      };
-    }
+  // Add a check to prevent concurrent executions
+  if (operationState.isCheckingChanges) {
+    logToConsole("skip", "Change check already in progress");
+    return;
   }
 
-  if (hasChanges) {
-    logToConsole("info", "Local changes detected - queueing sync to cloud");
-    // Queue sync to cloud with the changes
-    queueOperation("local-changes-sync", syncToCloud);
+  operationState.isCheckingChanges = true;
+  try {
+    logToConsole("start", "Checking for changes...");
+
+    // Get latest chats without reloading metadata
+    const chats = await getAllChatsFromIndexedDB();
+    let hasChanges = false;
+
+    for (const chat of chats) {
+      if (!chat.id) continue;
+
+      const currentHash = await generateChatHash(chat);
+      const lastSeen = lastSeenUpdates[chat.id];
+
+      if (!lastSeen || lastSeen.hash !== currentHash) {
+        hasChanges = true;
+        await updateChatMetadata(chat.id, true);
+        lastSeenUpdates[chat.id] = {
+          updatedAt: Date.now(),
+          hash: currentHash,
+        };
+      }
+    }
+
+    if (hasChanges) {
+      logToConsole("info", "Local changes detected - queueing sync to cloud");
+      queueOperation("local-changes-sync", syncToCloud);
+    }
+  } finally {
+    operationState.isCheckingChanges = false;
   }
 }
 
@@ -2183,23 +2181,25 @@ async function processOperationQueue() {
 
 // Start sync interval
 function startSyncInterval() {
-  if (config.syncMode !== "sync" || !isAwsConfigured()) return;
-
   const interval = Math.max(config.syncInterval * 1000, 15000);
+
   setInterval(async () => {
+    // Skip if operations are in progress
     if (operationState.isImporting || operationState.isExporting) {
       logToConsole("skip", "Operation in progress - skipping sync");
       return;
     }
 
-    // First check for local changes
+    // Check for local changes
     await checkForChanges();
 
-    // Then sync from cloud to get any remote changes
-    queueOperation("periodic-cloud-sync", syncFromCloud);
+    // If we're in sync mode and AWS is configured, also sync with cloud
+    if (config.syncMode === "sync" && isAwsConfigured()) {
+      queueOperation("periodic-cloud-sync", syncFromCloud);
+    }
   }, interval);
 
-  logToConsole("info", `Sync interval started (${interval}ms)`);
+  logToConsole("info", `Sync/check interval started (${interval}ms)`);
 }
 
 // Perform initial sync
