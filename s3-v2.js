@@ -4503,12 +4503,14 @@ async function deleteChatFromCloud(chatId) {
       cloudMetadata.chats = {};
     }
 
+    const now = Date.now();
+
     // Create a tombstone entry with complete information
     cloudMetadata.chats[chatId] = {
       deleted: true,
-      deletedAt: Date.now(),
-      lastModified: Date.now(),
-      syncedAt: Date.now(),
+      deletedAt: now,
+      lastModified: now,
+      syncedAt: now,
       tombstoneVersion:
         (cloudMetadata.chats[chatId]?.tombstoneVersion || 0) + 1,
     };
@@ -4522,6 +4524,18 @@ async function deleteChatFromCloud(chatId) {
         ServerSideEncryption: "AES256",
       }
     );
+
+    // Update local metadata with the same timestamps
+    if (localMetadata.chats) {
+      localMetadata.chats[chatId] = {
+        deleted: true,
+        deletedAt: now,
+        lastModified: now,
+        syncedAt: now, // Set syncedAt to now instead of 0
+        tombstoneVersion: cloudMetadata.chats[chatId].tombstoneVersion,
+      };
+      saveLocalMetadata();
+    }
 
     logToConsole("success", `Successfully deleted chat ${chatId} from cloud`);
     return true;
