@@ -2684,7 +2684,7 @@ async function syncToCloud() {
 
     // Upload settings if they've changed
     if (localMetadata.settings.lastModified > localMetadata.settings.syncedAt) {
-      await uploadSettingsToCloud();
+      await uploadSettingsToCloud(syncTimestamp);
       hasChanges = true;
     }
 
@@ -4556,7 +4556,8 @@ async function downloadSettingsFromCloud() {
           "No settings.json found in cloud, creating it now"
         );
         // Create it now by uploading current settings
-        await uploadSettingsToCloud();
+        const now = Date.now();
+        await uploadSettingsToCloud(now);
         return {};
       }
       throw error;
@@ -4567,11 +4568,11 @@ async function downloadSettingsFromCloud() {
   }
 }
 
-async function uploadSettingsToCloud() {
+async function uploadSettingsToCloud(syncTimestamp = null) {
   try {
     const s3 = initializeS3Client();
     const settingsData = {};
-    const now = Date.now();
+    const now = syncTimestamp || Date.now();
 
     // Get all localStorage items
     for (const key of Object.keys(localStorage)) {
