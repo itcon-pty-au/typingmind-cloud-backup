@@ -4325,6 +4325,7 @@ async function checkIndexedDBChanges() {
             const hash = await generateContentHash(value);
             const metadata = localMetadata.settings.items[key];
 
+            // Only consider it changed if hash is different
             if (!metadata || metadata.hash !== hash) {
               changedKeys.add(key);
             }
@@ -4357,15 +4358,38 @@ async function checkIndexedDBChanges() {
 async function handleSettingChange(key, value, source) {
   if (shouldExcludeSetting(key)) return;
 
-  // Mark settings as changed
-  pendingSettingsChanges = true;
-  localMetadata.settings.lastModified = Date.now();
-  await saveLocalMetadata();
+  // Generate hash for new value
+  const newHash = await generateContentHash(value);
+  const metadata = localMetadata.settings.items[key];
 
-  // Immediately update sync status to show out-of-sync
-  throttledCheckSyncStatus();
+  // Only proceed if the hash has actually changed
+  if (!metadata || metadata.hash !== newHash) {
+    // Update metadata with new hash
+    localMetadata.settings.items[key] = {
+      hash: newHash,
+      lastModified: Date.now(),
+      lastSynced: 0,
+      source: source,
+    };
 
-  logToConsole("info", `Setting change detected from ${source}: ${key}`);
+    // Mark settings as changed only if hash changed
+    pendingSettingsChanges = true;
+    localMetadata.settings.lastModified = Date.now();
+    await saveLocalMetadata();
+
+    // Immediately update sync status to show out-of-sync
+    throttledCheckSyncStatus();
+
+    logToConsole(
+      "info",
+      `Setting change detected from ${source}: ${key} (hash changed)`
+    );
+  } else {
+    logToConsole(
+      "info",
+      `Setting change ignored from ${source}: ${key} (hash unchanged)`
+    );
+  }
 }
 
 async function cleanupMetadataVersions() {
