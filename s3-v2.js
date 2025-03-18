@@ -4668,6 +4668,11 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
       }
     );
 
+    logToConsole(
+      "success",
+      "Cloud metadata lastSyncTime updated after settings sync"
+    );
+
     return true;
   } catch (error) {
     logToConsole("error", "Error uploading settings", error);
