@@ -4571,6 +4571,7 @@ async function uploadSettingsToCloud() {
   try {
     const s3 = initializeS3Client();
     const settingsData = {};
+    const now = Date.now();
 
     // Get all localStorage items
     for (const key of Object.keys(localStorage)) {
@@ -4580,7 +4581,7 @@ async function uploadSettingsToCloud() {
           settingsData[key] = {
             data: value,
             source: "localStorage",
-            lastModified: Date.now(),
+            lastModified: now,
           };
         }
       }
@@ -4605,7 +4606,7 @@ async function uploadSettingsToCloud() {
               settingsData[key] = {
                 data: typeof value === "string" ? value : JSON.stringify(value),
                 source: "indexeddb",
-                lastModified: Date.now(),
+                lastModified: now,
               };
             } catch (serializeError) {
               logToConsole(
@@ -4616,7 +4617,7 @@ async function uploadSettingsToCloud() {
               settingsData[key] = {
                 data: String(value),
                 source: "indexeddb",
-                lastModified: Date.now(),
+                lastModified: now,
               };
             }
           }
@@ -4645,16 +4646,17 @@ async function uploadSettingsToCloud() {
       settingsCount: Object.keys(settingsData).length,
     });
 
-    // Update metadata
-    localMetadata.settings.syncedAt = Date.now();
+    // Update local metadata
+    localMetadata.settings.syncedAt = now;
     saveLocalMetadata();
 
     // Update cloud metadata
     const cloudMetadata = await downloadCloudMetadata();
     cloudMetadata.settings = {
-      lastModified: Date.now(),
-      syncedAt: Date.now(),
+      lastModified: now,
+      syncedAt: now,
     };
+    cloudMetadata.lastSyncTime = now; // Update global lastSyncTime
 
     await uploadToS3(
       "metadata.json",
