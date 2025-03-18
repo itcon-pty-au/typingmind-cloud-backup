@@ -2340,7 +2340,7 @@ async function performInitialSync() {
           };
 
           // Upload the chat
-          await uploadChatToCloud(chat.id);
+          await uploadChatToCloud(chat.id, metadata);
         }
 
         // Upload the updated metadata
@@ -2411,7 +2411,7 @@ async function syncFromCloud() {
   try {
     logToConsole("start", "Starting sync from cloud...");
 
-    // Download cloud metadata
+    // Download cloud metadata once and store it
     const cloudMetadata = await downloadCloudMetadata();
     if (!cloudMetadata || !cloudMetadata.chats) {
       logToConsole("info", "No cloud metadata found or invalid format");
@@ -2434,6 +2434,8 @@ async function syncFromCloud() {
           ? new Date(localMetadata.settings.syncedAt).toLocaleString()
           : "never",
       });
+
+      // Download and apply settings
       const cloudSettings = await downloadSettingsFromCloud();
       if (cloudSettings) {
         // Apply settings while preserving security keys
@@ -2684,7 +2686,7 @@ async function syncToCloud() {
         !localChatMeta?.syncedAt ||
         localChatMeta.lastModified > localChatMeta.syncedAt
       ) {
-        await uploadChatToCloud(chat.id);
+        await uploadChatToCloud(chat.id, cloudMetadata);
         hasChanges = true;
       }
     }
@@ -4757,15 +4759,26 @@ async function downloadChatFromCloud(chatId) {
 }
 
 // Upload a chat to cloud
-async function uploadChatToCloud(chatId) {
+async function uploadChatToCloud(chatId, existingCloudMetadata = null) {
   logToConsole("upload", `Uploading chat ${chatId} to cloud`);
 
   try {
     const s3 = initializeS3Client();
 
-    // First, check if there's a tombstone for this chat in cloud metadata
-    // to prevent uploading a chat that was deleted on another device
-    const cloudMetadata = await downloadCloudMetadata();
+    // Use existing cloud metadata if provided and recent, otherwise download it
+    let cloudMetadata;
+    if (
+      existingCloudMetadata &&
+      Date.now() - existingCloudMetadata.lastSyncTime < 30000
+    ) {
+      // Only use if less than 30 seconds old
+      cloudMetadata = existingCloudMetadata;
+      logToConsole("info", "Using existing cloud metadata");
+    } else {
+      cloudMetadata = await downloadCloudMetadata();
+      logToConsole("info", "Downloaded fresh cloud metadata");
+    }
+
     if (
       cloudMetadata.chats &&
       cloudMetadata.chats[chatId] &&
