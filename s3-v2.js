@@ -2399,8 +2399,15 @@ async function performInitialSync() {
 
 // Sync from cloud
 async function syncFromCloud() {
-  if (operationState.isImporting || operationState.isExporting) {
-    logToConsole("skip", "Sync already in progress, queueing this sync");
+  if (
+    operationState.isImporting ||
+    operationState.isExporting ||
+    operationState.isProcessingQueue
+  ) {
+    logToConsole(
+      "skip",
+      "Sync already in progress or queue being processed, queueing this sync"
+    );
     operationState.isPendingSync = true;
     return;
   }
