@@ -4879,7 +4879,8 @@ async function uploadChatToCloud(chatId, existingCloudMetadata = null) {
     await s3.putObject(params).promise();
 
     logToConsole("success", `Uploaded chat ${chatId} to cloud`, {
-      messageCount: chatData.messagesArray?.length || 0,
+      messageCount:
+        chatData.messagesArray?.length || chatData.messages?.length || 0,
       title: chatData.chatTitle || "(Untitled)",
       size: encryptedData.length,
     });
@@ -4912,6 +4913,9 @@ async function uploadChatToCloud(chatId, existingCloudMetadata = null) {
       syncedAt: Date.now(),
       hash: newHash,
     };
+
+    // Update lastSyncTime to prevent unnecessary re-downloads
+    cloudMetadata.lastSyncTime = Date.now();
 
     await uploadToS3(
       "metadata.json",
