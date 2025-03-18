@@ -2340,7 +2340,7 @@ async function performInitialSync() {
           };
 
           // Upload the chat
-          await uploadChatToCloud(chat.id, metadata);
+          await uploadChatToCloud(chat.id);
         }
 
         // Upload the updated metadata
@@ -2411,10 +2411,7 @@ async function syncFromCloud() {
   try {
     logToConsole("start", "Starting sync from cloud...");
 
-    // Use a single timestamp for the entire sync operation
-    const syncTimestamp = Date.now();
-
-    // Download cloud metadata once and store it
+    // Download cloud metadata
     const cloudMetadata = await downloadCloudMetadata();
     if (!cloudMetadata || !cloudMetadata.chats) {
       logToConsole("info", "No cloud metadata found or invalid format");
@@ -2437,8 +2434,6 @@ async function syncFromCloud() {
           ? new Date(localMetadata.settings.syncedAt).toLocaleString()
           : "never",
       });
-
-      // Download and apply settings
       const cloudSettings = await downloadSettingsFromCloud();
       if (cloudSettings) {
         // Apply settings while preserving security keys
@@ -2490,7 +2485,7 @@ async function syncFromCloud() {
           }
         }
 
-        localMetadata.settings.syncedAt = syncTimestamp;
+        localMetadata.settings.syncedAt = cloudMetadata.settings.lastModified;
         saveLocalMetadata();
         hasChanges = true;
       }
@@ -2526,7 +2521,7 @@ async function syncFromCloud() {
           deleted: true,
           deletedAt: cloudChatMeta.deletedAt,
           lastModified: cloudChatMeta.lastModified,
-          syncedAt: syncTimestamp,
+          syncedAt: Date.now(),
         };
         saveLocalMetadata();
         continue;
@@ -2565,7 +2560,7 @@ async function syncFromCloud() {
             localMetadata.chats[chatId] = {};
           }
           localMetadata.chats[chatId].lastModified = cloudChatMeta.lastModified;
-          localMetadata.chats[chatId].syncedAt = syncTimestamp;
+          localMetadata.chats[chatId].syncedAt = Date.now();
           localMetadata.chats[chatId].hash = cloudChatMeta.hash;
           saveLocalMetadata();
         }
@@ -2597,42 +2592,23 @@ async function syncFromCloud() {
         // Add tombstone to local metadata
         localMetadata.chats[chatId] = {
           deleted: true,
-          deletedAt: syncTimestamp,
-          lastModified: syncTimestamp,
-          syncedAt: syncTimestamp,
+          deletedAt: Date.now(),
+          lastModified: Date.now(),
+          syncedAt: Date.now(),
         };
         saveLocalMetadata();
-
-        // Update cloud metadata with the tombstone
-        if (!cloudMetadata.chats) cloudMetadata.chats = {};
-        cloudMetadata.chats[chatId] = {
-          deleted: true,
-          deletedAt: syncTimestamp,
-          lastModified: syncTimestamp,
-          syncedAt: syncTimestamp,
-        };
       }
     }
 
     if (hasChanges) {
-      // Update sync times
-      localMetadata.lastSyncTime = syncTimestamp;
-      cloudMetadata.lastSyncTime = syncTimestamp;
-
-      // Save final state
-      await uploadToS3(
-        "metadata.json",
-        new TextEncoder().encode(JSON.stringify(cloudMetadata)),
-        {
-          ContentType: "application/json",
-          ServerSideEncryption: "AES256",
-        }
-      );
-      saveLocalMetadata();
       logToConsole("success", "Sync from cloud completed with changes");
     } else {
       logToConsole("info", "No changes detected during sync from cloud");
     }
+
+    // Always update lastSyncTime after successful sync, regardless of changes
+    localMetadata.lastSyncTime = Date.now();
+    saveLocalMetadata();
 
     operationState.lastError = null; // Clear any previous errors
     updateSyncStatus(); // Show success status
@@ -2665,9 +2641,6 @@ async function syncToCloud() {
   updateSyncStatus(); // Show in-progress status
 
   try {
-    // Use a single timestamp for the entire sync operation
-    const syncTimestamp = Date.now();
-
     // Reload local metadata to ensure we have latest changes
     await loadLocalMetadata();
 
@@ -2711,7 +2684,7 @@ async function syncToCloud() {
         !localChatMeta?.syncedAt ||
         localChatMeta.lastModified > localChatMeta.syncedAt
       ) {
-        await uploadChatToCloud(chat.id, cloudMetadata, syncTimestamp);
+        await uploadChatToCloud(chat.id);
         hasChanges = true;
       }
     }
@@ -2735,7 +2708,7 @@ async function syncToCloud() {
         // Update local metadata to mark as synced and ensure tombstone version is set
         localMetadata.chats[chatId] = {
           ...localMetadata.chats[chatId],
-          syncedAt: syncTimestamp,
+          syncedAt: Date.now(),
           tombstoneVersion: Math.max(
             localChatMeta.tombstoneVersion || 1,
             (cloudMetadata.chats[chatId]?.tombstoneVersion || 0) + 1
@@ -2746,8 +2719,9 @@ async function syncToCloud() {
     }
 
     if (hasChanges) {
-      localMetadata.lastSyncTime = syncTimestamp;
-      cloudMetadata.lastSyncTime = syncTimestamp;
+      localMetadata.lastSyncTime = Date.now();
+      // Update cloud metadata's lastSyncTime
+      cloudMetadata.lastSyncTime = localMetadata.lastSyncTime;
       await uploadToS3(
         "metadata.json",
         new TextEncoder().encode(JSON.stringify(cloudMetadata)),
@@ -4783,30 +4757,15 @@ async function downloadChatFromCloud(chatId) {
 }
 
 // Upload a chat to cloud
-async function uploadChatToCloud(
-  chatId,
-  existingCloudMetadata = null,
-  syncTimestamp = null
-) {
+async function uploadChatToCloud(chatId) {
   logToConsole("upload", `Uploading chat ${chatId} to cloud`);
 
   try {
     const s3 = initializeS3Client();
 
-    // Use existing cloud metadata if provided and recent, otherwise download it
-    let cloudMetadata;
-    if (
-      existingCloudMetadata &&
-      Date.now() - existingCloudMetadata.lastSyncTime < 30000
-    ) {
-      // Only use if less than 30 seconds old
-      cloudMetadata = existingCloudMetadata;
-      logToConsole("info", "Using existing cloud metadata");
-    } else {
-      cloudMetadata = await downloadCloudMetadata();
-      logToConsole("info", "Downloaded fresh cloud metadata");
-    }
-
+    // First, check if there's a tombstone for this chat in cloud metadata
+    // to prevent uploading a chat that was deleted on another device
+    const cloudMetadata = await downloadCloudMetadata();
     if (
       cloudMetadata.chats &&
       cloudMetadata.chats[chatId] &&
@@ -4907,8 +4866,7 @@ async function uploadChatToCloud(
     await s3.putObject(params).promise();
 
     logToConsole("success", `Uploaded chat ${chatId} to cloud`, {
-      messageCount:
-        chatData.messagesArray?.length || chatData.messages?.length || 0,
+      messageCount: chatData.messagesArray?.length || 0,
       title: chatData.chatTitle || "(Untitled)",
       size: encryptedData.length,
     });
@@ -4918,12 +4876,8 @@ async function uploadChatToCloud(
       localMetadata.chats[chatId] = {};
     }
 
-    // Use provided sync timestamp or generate new one
-    const now = syncTimestamp || Date.now();
-    const lastModified = chatData.updatedAt || now;
-
-    localMetadata.chats[chatId].lastModified = lastModified;
-    localMetadata.chats[chatId].syncedAt = now;
+    localMetadata.chats[chatId].lastModified = chatData.updatedAt || Date.now();
+    localMetadata.chats[chatId].syncedAt = Date.now();
     localMetadata.chats[chatId].hash = newHash;
 
     // Clear any deleted flag if it existed (this is a restoration)
@@ -4941,13 +4895,10 @@ async function uploadChatToCloud(
 
     // Remove any tombstone and update metadata
     cloudMetadata.chats[chatId] = {
-      lastModified: lastModified,
-      syncedAt: now,
+      lastModified: chatData.updatedAt || Date.now(),
+      syncedAt: Date.now(),
       hash: newHash,
     };
-
-    // Update lastSyncTime to prevent unnecessary re-downloads
-    cloudMetadata.lastSyncTime = now;
 
     await uploadToS3(
       "metadata.json",
