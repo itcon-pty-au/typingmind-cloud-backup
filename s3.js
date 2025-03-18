@@ -1406,16 +1406,6 @@ function openSyncModal() {
                                         <span class="ml-2">Backup</span>
                                         <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="Only creates backups. No automatic import from cloud on app start. Use Import button to manually restore data.">ⓘ</button>
                                     </label>
-                                    <label class="inline-flex items-center">
-                                        <input type="radio" name="sync-mode" value="disabled" class="form-radio text-blue-600" ${
-                                          localStorage.getItem("sync-mode") ===
-                                          "disabled"
-                                            ? "checked"
-                                            : ""
-                                        }>
-                                        <span class="ml-2">Disable</span>
-                                        <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="Completely disables all backup and sync operations. No automatic backups or syncs will occur.">ⓘ</button>
-                                    </label>
                                 </div>
                                 <div class="flex space-x-4">
                                     <div class="w-2/3">
@@ -1598,20 +1588,6 @@ function openSyncModal() {
     if (exportButton) exportButton.disabled = !hasRequiredFields;
     if (importButton) importButton.disabled = !hasRequiredFields;
     if (snapshotButton) snapshotButton.disabled = !hasRequiredFields;
-
-    const buttonText = document.querySelector(
-      "#cloud-sync-button span:last-child"
-    );
-    if (buttonText) {
-      const syncMode = localStorage.getItem("sync-mode");
-      if (syncMode === "disabled") {
-        buttonText.innerText = "Disabled";
-        buttonText.parentElement.classList.add("opacity-50");
-      } else {
-        buttonText.innerText = syncMode === "backup" ? "Backup" : "Sync";
-        buttonText.parentElement.classList.remove("opacity-50");
-      }
-    }
   }
 
   modalPopup.addEventListener("click", function (event) {
@@ -1716,19 +1692,6 @@ function openSyncModal() {
         setTimeout(() => {
           actionMsgElement.textContent = "";
         }, 3000);
-
-        // Reset all state variables when switching from disabled mode
-        if (localStorage.getItem("sync-mode") !== "disabled") {
-          backupInterval = null;
-          backupIntervalRunning = false;
-          isImportInProgress = false;
-          isExportInProgress = false;
-          isProcessingQueue = false;
-          cloudOperationQueue = [];
-          isWaitingForUserInput = false;
-          localStorage.setItem("activeTabBackupRunning", "false");
-        }
-
         clearInterval(backupInterval);
         backupIntervalRunning = false;
         startBackupInterval();
@@ -1942,11 +1905,8 @@ document.addEventListener("visibilitychange", async () => {
     localStorage.setItem("activeTabBackupRunning", "false");
   }
 
-  if (document.hidden || localStorage.getItem("sync-mode") === "disabled") {
-    logToConsole(
-      "info",
-      "Tab hidden or backup disabled - clearing backup intervals"
-    );
+  if (document.hidden) {
+    logToConsole("info", "Tab hidden - clearing backup intervals");
     return;
   }
 
@@ -2407,17 +2367,6 @@ async function restoreBackupFile() {
 function startBackupInterval() {
   if (isWaitingForUserInput) {
     logToConsole("skip", "Skipping interval start - waiting for user input");
-    return;
-  }
-
-  if (localStorage.getItem("sync-mode") === "disabled") {
-    if (backupInterval) {
-      logToConsole("cleanup", "Clearing backup interval due to disabled mode");
-      clearInterval(backupInterval);
-      backupInterval = null;
-      backupIntervalRunning = false;
-      localStorage.setItem("activeTabBackupRunning", "false");
-    }
     return;
   }
 
