@@ -575,6 +575,13 @@ async function generateChatHash(chat) {
 
 // Check for changes in chats
 async function checkForChanges() {
+  if (document.hidden) return; // Skip if tab is not visible
+
+  // Skip if sync is disabled
+  if (localStorage.getItem("sync-mode") === "disabled") {
+    return;
+  }
+
   if (operationState.isImporting || operationState.isExporting) {
     logToConsole("skip", "Skipping change check - operation in progress");
     return;
@@ -2196,29 +2203,31 @@ function isAwsConfigured() {
   );
 }
 
-// Queue an operation
-function queueOperation(type, operation) {
-  // Check for duplicates
-  if (operationState.operationQueue.some((op) => op.name === type)) {
-    logToConsole("skip", `Skipping duplicate operation: ${type}`);
+// Queue an operation for execution
+function queueOperation(name, operation) {
+  // Check if sync is disabled
+  if (localStorage.getItem("sync-mode") === "disabled") {
+    logToConsole("skip", `Skipping operation ${name} - sync is disabled`);
     return;
   }
 
-  // Reset any stuck states before queuing new operation
-  if (
-    !operationState.isProcessingQueue &&
-    (operationState.isImporting || operationState.isExporting)
-  ) {
-    logToConsole("warning", "Detected stuck operation states, resetting...");
-    resetOperationStates();
+  // Check for duplicates
+  if (operationState.operationQueue.some((op) => op.name === name)) {
+    logToConsole("skip", `Skipping duplicate operation: ${name}`);
+    return;
   }
 
-  operationState.operationQueue.push({
-    name: type,
-    operation,
-    queuedAt: Date.now(),
-  });
+  operationState.operationQueue.push({ name, operation });
+  // Only log important operations
+  if (
+    name.startsWith("initial") ||
+    name.startsWith("manual") ||
+    name.startsWith("visibility")
+  ) {
+    logToConsole("info", `Added '${name}' to operation queue`);
+  }
 
+  // Start processing if not already processing
   if (!operationState.isProcessingQueue) {
     processOperationQueue();
   }
@@ -2262,17 +2271,25 @@ async function processOperationQueue() {
 
 // Start sync interval
 function startSyncInterval() {
-  // Clear any existing intervals
-  clearAllIntervals();
+  // Clear any existing interval
+  if (window.syncInterval) {
+    clearInterval(window.syncInterval);
+  }
 
-  // If in disabled mode, don't start any intervals
-  if (config.syncMode === "disabled") {
+  // Don't start interval if sync is disabled
+  if (localStorage.getItem("sync-mode") === "disabled") {
     logToConsole("info", "Sync intervals disabled - manual operations only");
     return;
   }
 
+  // Track the last time a sync was queued to prevent too frequent syncs
+  let lastSyncQueuedTime = 0;
+  const MIN_SYNC_INTERVAL_MS = 15000; // 15 seconds minimum between syncs
+
+  // Set new interval
+  const intervalMs = Math.max(syncConfig.syncInterval * 1000, 15000);
+
   // Set interval for checking changes
-  const intervalMs = Math.max(config.syncInterval * 1000, 15000); // minimum 15 seconds
   window.syncInterval = setInterval(() => {
     if (document.hidden) return; // Skip if tab not visible
     queueOperation("interval-sync", syncFromCloud);
