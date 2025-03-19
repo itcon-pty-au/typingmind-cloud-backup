@@ -2440,10 +2440,10 @@ async function syncFromCloud() {
                 localStorage.setItem(key, value);
               }
               settingsProcessed++;
-              logToConsole(
-                "info",
-                `Settings sync progress: ${settingsProcessed}/${totalSettings} settings processed`
-              );
+              // logToConsole(
+              //   "info",
+              //   `Settings sync progress: ${settingsProcessed}/${totalSettings} settings processed`
+              // );
             } catch (error) {
               logToConsole("error", `Error applying setting ${key}:`, error);
             }
@@ -2472,12 +2472,12 @@ async function syncFromCloud() {
       const localChatMeta = localMetadata.chats[chatId];
 
       // Log progress periodically
-      if (processedChats % 10 === 0 || processedChats === totalChats) {
-        logToConsole(
-          "info",
-          `Sync progress: ${processedChats}/${totalChats} chats processed (${downloadedChats} downloaded, ${deletedChats} deleted)`
-        );
-      }
+      // if (processedChats % 10 === 0 || processedChats === totalChats) {
+      //   logToConsole(
+      //     "info",
+      //     `Sync progress: ${processedChats}/${totalChats} chats processed (${downloadedChats} downloaded, ${deletedChats} deleted)`
+      //   );
+      // }
 
       // Skip if this is a cloud tombstone and we've already processed it
       if (cloudChatMeta.deleted === true) {
