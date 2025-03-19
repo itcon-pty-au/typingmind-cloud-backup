@@ -1612,44 +1612,66 @@ async function encryptData(data) {
 // Decrypt data
 async function decryptData(data) {
   const marker = "ENCRYPTED:";
-  const markerBytes = new TextEncoder().encode(marker);
+  const dataString = new TextDecoder().decode(data.slice(0, marker.length));
+  const bucketName = localStorage.getItem("aws-bucket");
 
-  // Check if data is too short to be encrypted
-  if (data.length < markerBytes.length) {
-    return new TextDecoder().decode(data);
+  logToConsole("tag", "Checking encryption marker:", {
+    expectedMarker: marker,
+    foundMarker: dataString,
+    isEncrypted: dataString === marker,
+  });
+
+  if (dataString !== marker) {
+    logToConsole("info", "Data is not encrypted, returning as-is");
+    return JSON.parse(new TextDecoder().decode(data));
   }
 
-  // Check for encryption marker
-  const dataPrefix = new TextDecoder().decode(
-    data.slice(0, markerBytes.length)
-  );
-
-  // If not encrypted, return as-is
-  if (dataPrefix !== marker) {
-    return new TextDecoder().decode(data);
+  if (!bucketName) {
+    logToConsole("info", "Backup not configured, skipping decryption");
+    throw new Error("Backup not configured");
   }
 
-  // Data is encrypted, get the encryption key
   const encryptionKey = localStorage.getItem("encryption-key");
   if (!encryptionKey) {
+    logToConsole("error", "Encrypted data found but no key provided");
+    if (backupIntervalRunning) {
+      clearInterval(backupInterval);
+      backupIntervalRunning = false;
+      localStorage.setItem("activeTabBackupRunning", "false");
+    }
+    wasImportSuccessful = false;
+    await showCustomAlert(
+      "Please configure your encryption key in the backup settings before proceeding.",
+      "Configuration Required"
+    );
     throw new Error("Encryption key not configured");
   }
 
-  // Decrypt the data
-  const key = await deriveKey(encryptionKey);
-  const iv = data.slice(markerBytes.length, markerBytes.length + 12);
-  const content = data.slice(markerBytes.length + 12);
+  try {
+    const key = await deriveKey(encryptionKey);
+    const iv = data.slice(marker.length, marker.length + 12);
+    const encryptedData = data.slice(marker.length + 12);
 
-  const decryptedContent = await window.crypto.subtle.decrypt(
-    {
-      name: "AES-GCM",
-      iv: iv,
-    },
-    key,
-    content
-  );
+    const decryptedContent = await window.crypto.subtle.decrypt(
+      {
+        name: "AES-GCM",
+        iv: iv,
+      },
+      key,
+      encryptedData
+    );
 
-  return new TextDecoder().decode(decryptedContent);
+    const decryptedText = new TextDecoder().decode(decryptedContent);
+    logToConsole("success", "Decryption successful");
+
+    // Return the decrypted text as is - let the caller handle parsing
+    return decryptedText;
+  } catch (error) {
+    logToConsole("error", "Decryption failed:", error);
+    throw new Error(
+      "Failed to decrypt backup. Please check your encryption key."
+    );
+  }
 }
 
 // ==================== BACKUP SYSTEM ====================
@@ -2038,22 +2060,49 @@ async function restoreFromBackup(key) {
     }
 
     // Decrypt the content
+    logToConsole("info", "Decrypting backup content...");
     const decryptedContent = await decryptData(backupContent);
+    logToConsole("info", "Decrypted content type:", typeof decryptedContent);
 
     // Parse the decrypted content as JSON
     let parsedContent;
     try {
+      logToConsole("info", "Attempting to parse decrypted content...");
       parsedContent = JSON.parse(decryptedContent);
+      logToConsole("info", "Parsed content structure:", {
+        type: typeof parsedContent,
+        hasLocalStorage: !!parsedContent.localStorage,
+        hasIndexedDB: !!parsedContent.indexedDB,
+        localStorageKeys: parsedContent.localStorage
+          ? Object.keys(parsedContent.localStorage).length
+          : 0,
+        indexedDBKeys: parsedContent.indexedDB
+          ? Object.keys(parsedContent.indexedDB).length
+          : 0,
+      });
     } catch (error) {
-      throw new Error("Failed to parse backup data: Invalid JSON format");
+      logToConsole("error", "JSON parse error:", error);
+      logToConsole(
+        "error",
+        "Decrypted content preview:",
+        decryptedContent.slice(0, 200)
+      );
+      throw new Error(`Failed to parse backup data: ${error.message}`);
     }
 
-    // Validate the parsed content
-    if (typeof parsedContent !== "object" || !parsedContent) {
-      throw new Error("Invalid backup data format: Not a valid data object");
+    // Validate the backup structure
+    if (!parsedContent || typeof parsedContent !== "object") {
+      throw new Error("Invalid backup format: Root content is not an object");
+    }
+
+    if (!parsedContent.localStorage && !parsedContent.indexedDB) {
+      throw new Error(
+        "Invalid backup format: Missing both localStorage and indexedDB sections"
+      );
     }
 
     // Import the data to storage
+    logToConsole("info", "Importing data to storage...");
     await importDataToStorage(parsedContent);
 
     // Validate imported chats
