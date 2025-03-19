@@ -1834,14 +1834,13 @@ async function createDailyBackup(key, data) {
       return false;
     }
 
-    // Convert data to JSON string
-    const dataStr = JSON.stringify(data);
-    const rawSize = new Blob([dataStr]).size;
+    // Calculate raw size for logging
+    const rawSize = new Blob([JSON.stringify(data)]).size;
     logToConsole("info", `Raw data size: ${formatFileSize(rawSize)}`);
 
-    // Encrypt the data
+    // Encrypt the data (encryptData will handle JSON stringification)
     logToConsole("info", "Encrypting backup data...");
-    const encryptedData = await encryptData(dataStr);
+    const encryptedData = await encryptData(data);
 
     // Create ZIP file
     const zip = new JSZip();
@@ -1881,10 +1880,10 @@ async function createDailyBackup(key, data) {
     // Upload to S3
     await uploadToS3(key, content, uploadMetadata);
 
-    logToConsole("success", `Daily backup created successfully: ${key}`);
+    logToConsole("success", "Daily backup created successfully");
     return true;
   } catch (error) {
-    logToConsole("error", `Failed to create daily backup: ${error.message}`);
+    logToConsole("error", "Daily backup creation failed:", error);
     return false;
   }
 }
@@ -1927,14 +1926,13 @@ async function createSnapshot(name) {
       return false;
     }
 
-    // Convert data to JSON string
-    const dataStr = JSON.stringify(data);
-    const rawSize = new Blob([dataStr]).size;
+    // Calculate raw size for logging
+    const rawSize = new Blob([JSON.stringify(data)]).size;
     logToConsole("info", `Raw data size: ${formatFileSize(rawSize)}`);
 
-    // Encrypt the data
+    // Encrypt the data (encryptData will handle JSON stringification)
     logToConsole("info", "Encrypting snapshot data...");
-    const encryptedData = await encryptData(dataStr);
+    const encryptedData = await encryptData(data);
 
     // Create ZIP file
     const zip = new JSZip();
@@ -1977,18 +1975,10 @@ async function createSnapshot(name) {
     // Refresh the backup list in the modal
     await loadBackupList();
 
-    // Show success message to user
-    const statusText = document.querySelector(".status-text");
-    if (statusText) {
-      statusText.textContent = `Snapshot "${name}" created successfully`;
-      setTimeout(() => {
-        statusText.textContent = `Last synced: ${getLastSyncTime()}`;
-      }, 3000);
-    }
-
+    logToConsole("success", "Snapshot created successfully");
     return true;
   } catch (error) {
-    logToConsole("error", "Failed to create snapshot:", error);
+    logToConsole("error", "Snapshot creation failed:", error);
     return false;
   } finally {
     backupState.isBackupInProgress = false;
