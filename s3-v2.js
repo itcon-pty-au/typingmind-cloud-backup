@@ -2322,122 +2322,61 @@ async function performInitialSync() {
   logToConsole("start", "Performing initial sync...");
 
   try {
-    // Check AWS credentials
-    if (
-      !config.accessKey ||
-      !config.secretKey ||
-      !config.region ||
-      !config.bucketName
-    ) {
-      logToConsole("warning", "AWS configuration is incomplete");
-      return;
-    }
-
-    // Load local metadata first
-    await loadLocalMetadata();
+    // Always get fresh metadata
+    const metadata = await downloadCloudMetadata();
+    const chatCount = Object.keys(metadata.chats || {}).length;
     const localChatCount = Object.keys(localMetadata.chats || {}).length;
-    logToConsole("info", `Found ${localChatCount} chats in local metadata`);
 
-    // Download cloud metadata
-    const s3 = initializeS3Client();
-    const params = {
-      Bucket: config.bucketName,
-      Key: "metadata.json",
-    };
+    logToConsole("info", "Initial sync status", {
+      cloudChats: chatCount,
+      localChats: localChatCount,
+    });
 
-    try {
-      const data = await s3.getObject(params).promise();
-      const content = data.Body;
+    if (chatCount === 0 && localChatCount > 0) {
+      // Cloud metadata exists but no chats - create fresh backup
+      logToConsole("info", "Creating fresh backup with local data");
 
-      // Parse metadata directly without decryption
-      const metadata = JSON.parse(
-        typeof content === "string"
-          ? content
-          : new TextDecoder().decode(content)
+      // Get all local chats and update cloud metadata
+      const chats = await getAllChatsFromIndexedDB();
+      for (const chat of chats) {
+        if (!chat.id) continue;
+
+        const localChatMeta = localMetadata.chats[chat.id];
+        if (!localChatMeta) continue;
+
+        // Add chat to cloud metadata
+        metadata.chats[chat.id] = {
+          hash:
+            localChatMeta.hash ||
+            (await generateContentHash(JSON.stringify(chat))),
+          lastModified: localChatMeta.lastModified || Date.now(),
+          syncedAt: Date.now(),
+          deleted: false,
+        };
+
+        // Upload the chat without passing metadata to prevent caching
+        await uploadChatToCloud(chat.id, null);
+      }
+
+      // Upload the updated metadata
+      await uploadToS3(
+        "metadata.json",
+        new TextEncoder().encode(JSON.stringify(metadata)),
+        {
+          ContentType: "application/json",
+          ServerSideEncryption: "AES256",
+        }
       );
 
-      if (!metadata || typeof metadata !== "object" || !metadata.chats) {
-        throw new Error("Invalid metadata format");
-      }
-
-      // Check if there are any chats in the cloud metadata
-      const chatCount = Object.keys(metadata.chats).length;
-      logToConsole("info", `Found ${chatCount} chats in cloud metadata`);
-
-      if (chatCount === 0 && localChatCount > 0) {
-        // Cloud metadata exists but no chats - create fresh backup
-        logToConsole("info", "Creating fresh backup with local data");
-
-        // Get all local chats and update cloud metadata
-        const chats = await getAllChatsFromIndexedDB();
-        for (const chat of chats) {
-          if (!chat.id) continue;
-
-          const localChatMeta = localMetadata.chats[chat.id];
-          if (!localChatMeta) continue;
-
-          // Add chat to cloud metadata
-          metadata.chats[chat.id] = {
-            hash:
-              localChatMeta.hash ||
-              (await generateContentHash(JSON.stringify(chat))),
-            lastModified: localChatMeta.lastModified || Date.now(),
-            syncedAt: Date.now(),
-            deleted: false,
-          };
-
-          // Upload the chat
-          await uploadChatToCloud(chat.id, metadata);
-        }
-
-        // Upload the updated metadata
-        await uploadToS3(
-          "metadata.json",
-          new TextEncoder().encode(JSON.stringify(metadata)),
-          {
-            ContentType: "application/json",
-            ServerSideEncryption: "AES256",
-          }
-        );
-
-        return;
-      }
-
-      // Cloud data exists and appears valid, proceed with normal sync
-      logToConsole(
-        "info",
-        "Cloud data found and validated - performing normal sync"
-      );
-      await syncFromCloud();
-    } catch (error) {
-      if (error.code === "NoSuchKey") {
-        // No cloud data exists yet
-        if (localChatCount > 0) {
-          // We have local data, create initial backup
-          logToConsole(
-            "info",
-            "No cloud data found - creating initial backup with local data"
-          );
-          await syncToCloud();
-        } else {
-          // No local data and no cloud data - nothing to do
-          logToConsole(
-            "info",
-            "No local or cloud data found - skipping initial sync"
-          );
-        }
-        return;
-      }
-      logToConsole("error", "Invalid cloud metadata:", error);
-      if (localChatCount > 0) {
-        logToConsole(
-          "info",
-          "Creating fresh backup with local data due to invalid cloud metadata"
-        );
-        await syncToCloud();
-      }
       return;
     }
+
+    // Cloud data exists and appears valid, proceed with normal sync
+    logToConsole(
+      "info",
+      "Cloud data found and validated - performing normal sync"
+    );
+    await syncFromCloud();
   } catch (error) {
     logToConsole("error", "Initial sync failed:", error);
     throw error;
@@ -2725,7 +2664,7 @@ async function syncToCloud() {
     // Reload local metadata to ensure we have latest changes
     await loadLocalMetadata();
 
-    // Get current cloud metadata
+    // Always get fresh cloud metadata
     const cloudMetadata = await downloadCloudMetadata();
     let hasChanges = false;
 
@@ -2765,7 +2704,8 @@ async function syncToCloud() {
         !localChatMeta?.syncedAt ||
         localChatMeta.lastModified > localChatMeta.syncedAt
       ) {
-        await uploadChatToCloud(chat.id, cloudMetadata, syncTimestamp);
+        // Always pass fresh metadata to prevent caching issues
+        await uploadChatToCloud(chat.id, null, syncTimestamp);
         hasChanges = true;
       }
     }
@@ -4893,19 +4833,9 @@ async function uploadChatToCloud(
   try {
     const s3 = initializeS3Client();
 
-    // Use existing cloud metadata if provided and recent, otherwise download it
-    let cloudMetadata;
-    if (
-      existingCloudMetadata &&
-      Date.now() - existingCloudMetadata.lastSyncTime < 30000
-    ) {
-      // Only use if less than 30 seconds old
-      cloudMetadata = existingCloudMetadata;
-      logToConsole("info", "Using existing cloud metadata");
-    } else {
-      cloudMetadata = await downloadCloudMetadata();
-      logToConsole("info", "Downloaded fresh cloud metadata");
-    }
+    // Always download fresh cloud metadata
+    const cloudMetadata = await downloadCloudMetadata();
+    logToConsole("info", "Downloaded fresh cloud metadata");
 
     if (
       cloudMetadata.chats &&
