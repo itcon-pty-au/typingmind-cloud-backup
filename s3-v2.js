@@ -5188,8 +5188,8 @@ function startChangeDetectionInterval() {
     clearInterval(window.changeDetectionInterval);
   }
 
-  // Check for changes every 5 seconds
-  window.changeDetectionInterval = setInterval(async () => {
+  // Create throttled version of checkForChanges with 5 second limit
+  const throttledCheckForChanges = throttle(async () => {
     if (document.hidden) return; // Skip if tab not visible
     if (config.syncMode === "disabled") return; // Skip if sync is disabled
 
@@ -5199,4 +5199,7 @@ function startChangeDetectionInterval() {
       logToConsole("error", "Error in change detection interval:", error);
     }
   }, 5000);
+
+  // Check for changes every 5 seconds using the throttled function
+  window.changeDetectionInterval = setInterval(throttledCheckForChanges, 5000);
 }
