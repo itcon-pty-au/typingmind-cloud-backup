@@ -2415,6 +2415,10 @@ async function syncFromCloud() {
     }
 
     let hasChanges = false;
+    let totalChats = Object.keys(cloudMetadata.chats).length;
+    let processedChats = 0;
+    let downloadedChats = 0;
+    let deletedChats = 0;
 
     // Check for settings changes first
     if (
@@ -2434,6 +2438,8 @@ async function syncFromCloud() {
       // Download and apply settings
       const cloudSettings = await downloadSettingsFromCloud();
       if (cloudSettings) {
+        let settingsProcessed = 0;
+        const totalSettings = Object.keys(cloudSettings).length;
         // Apply settings while preserving security keys
         const preserveKeys = [
           "aws-bucket",
@@ -2475,8 +2481,12 @@ async function syncFromCloud() {
                 // Handle localStorage settings
                 let value = settingData.data;
                 localStorage.setItem(key, value);
-                logToConsole("info", `Updated localStorage setting: ${key}`);
               }
+              settingsProcessed++;
+              logToConsole(
+                "info",
+                `Settings sync progress: ${settingsProcessed}/${totalSettings} settings processed`
+              );
             } catch (error) {
               logToConsole("error", `Error applying setting ${key}:`, error);
             }
@@ -2486,6 +2496,10 @@ async function syncFromCloud() {
         localMetadata.settings.syncedAt = syncTimestamp;
         saveLocalMetadata();
         hasChanges = true;
+        logToConsole(
+          "success",
+          `Settings sync completed: ${settingsProcessed}/${totalSettings} settings processed`
+        );
       }
     }
 
@@ -2496,8 +2510,17 @@ async function syncFromCloud() {
 
     // Process cloud chats that don't exist locally or have changes
     for (const chatId of cloudChatIds) {
+      processedChats++;
       const cloudChatMeta = cloudMetadata.chats[chatId];
       const localChatMeta = localMetadata.chats[chatId];
+
+      // Log progress periodically
+      if (processedChats % 10 === 0 || processedChats === totalChats) {
+        logToConsole(
+          "info",
+          `Sync progress: ${processedChats}/${totalChats} chats processed (${downloadedChats} downloaded, ${deletedChats} deleted)`
+        );
+      }
 
       // Skip if this is a cloud tombstone and we've already processed it
       if (cloudChatMeta.deleted === true) {
@@ -2511,6 +2534,7 @@ async function syncFromCloud() {
         // Delete local chat if it exists
         if (localChatIds.has(chatId)) {
           await deleteChatFromIndexedDB(chatId);
+          deletedChats++;
           hasChanges = true;
         }
 
@@ -2552,6 +2576,7 @@ async function syncFromCloud() {
         if (cloudChat) {
           await saveChatToIndexedDB(cloudChat);
           hasChanges = true;
+          downloadedChats++;
 
           // Update local metadata
           if (!localMetadata.chats[chatId]) {
@@ -2566,45 +2591,65 @@ async function syncFromCloud() {
     }
 
     // Process local chats that don't exist in cloud
-    for (const chatId of localChatIds) {
-      if (!cloudChatIds.has(chatId)) {
-        const localChatMeta = localMetadata.chats[chatId];
+    let localChatsProcessed = 0;
+    const localOnlyChats = Array.from(localChatIds).filter(
+      (id) => !cloudChatIds.has(id)
+    );
+    const totalLocalOnly = localOnlyChats.length;
 
-        // Skip if this is a new local chat (created after our last sync)
-        if (
-          !localChatMeta ||
-          !localMetadata.lastSyncTime ||
-          localChatMeta.lastModified > localMetadata.lastSyncTime
-        ) {
-          logToConsole(
-            "info",
-            `Skipping new local chat ${chatId} - will be uploaded in next sync`
-          );
-          continue;
-        }
+    if (totalLocalOnly > 0) {
+      logToConsole("info", `Processing ${totalLocalOnly} local-only chats`);
+    }
 
-        // If this is an old chat that's missing from cloud, it was likely deleted on another device
-        await deleteChatFromIndexedDB(chatId);
-        hasChanges = true;
+    for (const chatId of localOnlyChats) {
+      localChatsProcessed++;
+      const localChatMeta = localMetadata.chats[chatId];
 
-        // Add tombstone to local metadata
-        localMetadata.chats[chatId] = {
-          deleted: true,
-          deletedAt: syncTimestamp,
-          lastModified: syncTimestamp,
-          syncedAt: syncTimestamp,
-        };
-        saveLocalMetadata();
-
-        // Update cloud metadata with the tombstone
-        if (!cloudMetadata.chats) cloudMetadata.chats = {};
-        cloudMetadata.chats[chatId] = {
-          deleted: true,
-          deletedAt: syncTimestamp,
-          lastModified: syncTimestamp,
-          syncedAt: syncTimestamp,
-        };
+      if (
+        localChatsProcessed % 10 === 0 ||
+        localChatsProcessed === totalLocalOnly
+      ) {
+        logToConsole(
+          "info",
+          `Local chat processing: ${localChatsProcessed}/${totalLocalOnly}`
+        );
       }
+
+      // Skip if this is a new local chat (created after our last sync)
+      if (
+        !localChatMeta ||
+        !localMetadata.lastSyncTime ||
+        localChatMeta.lastModified > localMetadata.lastSyncTime
+      ) {
+        logToConsole(
+          "info",
+          `Skipping new local chat ${chatId} - will be uploaded in next sync`
+        );
+        continue;
+      }
+
+      // If this is an old chat that's missing from cloud, it was likely deleted on another device
+      await deleteChatFromIndexedDB(chatId);
+      deletedChats++;
+      hasChanges = true;
+
+      // Add tombstone to local metadata
+      localMetadata.chats[chatId] = {
+        deleted: true,
+        deletedAt: syncTimestamp,
+        lastModified: syncTimestamp,
+        syncedAt: syncTimestamp,
+      };
+      saveLocalMetadata();
+
+      // Update cloud metadata with the tombstone
+      if (!cloudMetadata.chats) cloudMetadata.chats = {};
+      cloudMetadata.chats[chatId] = {
+        deleted: true,
+        deletedAt: syncTimestamp,
+        lastModified: syncTimestamp,
+        syncedAt: syncTimestamp,
+      };
     }
 
     if (hasChanges) {
@@ -2622,7 +2667,13 @@ async function syncFromCloud() {
         }
       );
       saveLocalMetadata();
-      logToConsole("success", "Sync from cloud completed with changes");
+      logToConsole("success", "Sync summary:", {
+        totalChatsProcessed: processedChats,
+        downloaded: downloadedChats,
+        deleted: deletedChats,
+        localProcessed: localChatsProcessed,
+        duration: `${Math.round((Date.now() - syncTimestamp) / 1000)}s`,
+      });
     } else {
       logToConsole("info", "No changes detected during sync from cloud");
     }
