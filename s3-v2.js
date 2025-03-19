@@ -313,6 +313,7 @@ async function performFullInitialization() {
       queueOperation("daily-backup-check", checkAndPerformDailyBackup);
     }
     startSyncInterval();
+    startChangeDetectionInterval(); // Add this line
 
     // If in sync mode, also perform initial sync
     if (config.syncMode === "sync") {
@@ -2555,16 +2556,18 @@ async function syncFromCloud() {
         );
       }
 
-      // Skip if this is a new local chat (created after our last sync)
       if (
         !localChatMeta ||
         !localMetadata.lastSyncTime ||
         localChatMeta.lastModified > localMetadata.lastSyncTime
       ) {
-        logToConsole(
-          "info",
-          `Skipping new local chat ${chatId} - will be uploaded in next sync`
-        );
+        logToConsole("info", `Uploading new local chat ${chatId} to cloud`);
+        try {
+          await uploadChatToCloud(chatId);
+          hasChanges = true;
+        } catch (error) {
+          logToConsole("error", `Error uploading new chat ${chatId}:`, error);
+        }
         continue;
       }
 
@@ -2806,30 +2809,50 @@ async function updateChatMetadata(
 ) {
   const chat = await getChatFromIndexedDB(chatId);
 
+  // Initialize metadata if it doesn't exist
   if (!localMetadata.chats[chatId]) {
     localMetadata.chats[chatId] = {
-      updatedAt: 0,
-      hash: null,
+      lastModified: Date.now(),
       syncedAt: 0,
-      isDeleted: false,
+      hash: null,
+      deleted: false,
     };
   }
 
   if (chat) {
-    localMetadata.chats[chatId].updatedAt = chat.updatedAt || Date.now();
-    localMetadata.chats[chatId].hash = await generateChatHash(chat);
-    localMetadata.chats[chatId].isDeleted = false;
-  } else {
-    localMetadata.chats[chatId].isDeleted = isDeleted;
-  }
+    // Update metadata for existing chat
+    const currentHash = await generateChatHash(chat);
+    const metadata = localMetadata.chats[chatId];
 
-  if (isModified) {
-    localMetadata.chats[chatId].syncedAt = 0;
-    // Immediately update sync status to show out-of-sync
-    throttledCheckSyncStatus();
+    // Update last modified if content changed
+    if (metadata.hash !== currentHash) {
+      metadata.lastModified = Date.now();
+      metadata.hash = currentHash;
+    }
+
+    metadata.deleted = false;
+
+    // Reset syncedAt if modified
+    if (isModified) {
+      metadata.syncedAt = 0;
+      // Queue for sync immediately
+      queueOperation(`chat-changed-${chatId}`, () => uploadChatToCloud(chatId));
+    }
+
+    // Update lastSeenUpdates
+    lastSeenUpdates[chatId] = {
+      hash: currentHash,
+      timestamp: Date.now(),
+    };
+  } else if (isDeleted) {
+    // Handle deletion
+    localMetadata.chats[chatId].deleted = true;
+    localMetadata.chats[chatId].deletedAt = Date.now();
+    delete lastSeenUpdates[chatId];
   }
 
   await saveLocalMetadata();
+  throttledCheckSyncStatus();
 }
 
 // Setup visibility change handler
@@ -5129,3 +5152,23 @@ window.addEventListener("visibilitychange", () => {
     resetOperationStates();
   }
 });
+
+// Add this near the other intervals
+function startChangeDetectionInterval() {
+  // Clear any existing interval
+  if (window.changeDetectionInterval) {
+    clearInterval(window.changeDetectionInterval);
+  }
+
+  // Check for changes every 5 seconds
+  window.changeDetectionInterval = setInterval(async () => {
+    if (document.hidden) return; // Skip if tab not visible
+    if (config.syncMode === "disabled") return; // Skip if sync is disabled
+
+    try {
+      await checkForChanges();
+    } catch (error) {
+      logToConsole("error", "Error in change detection interval:", error);
+    }
+  }, 5000);
+}
