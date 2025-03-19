@@ -33,6 +33,18 @@ function shouldExcludeSetting(key) {
   );
 }
 
+// Add global config object
+let config = {
+  syncMode: "disabled",
+  syncInterval: 15,
+  bucketName: "",
+  region: "",
+  accessKey: "",
+  secretKey: "",
+  endpoint: "",
+  encryptionKey: "",
+};
+
 let isConsoleLoggingEnabled =
   new URLSearchParams(window.location.search).get("log") === "true";
 
@@ -73,34 +85,6 @@ let backupState = {
   lastManualSnapshot: null,
   backupInterval: null,
   isBackupIntervalRunning: false,
-};
-
-// Configuration with defaults
-let config = {
-  // Sync settings
-  syncMode: "disabled", // 'sync', 'backup', or 'disabled'
-  syncInterval: 15, // seconds
-  importThreshold: 1, // percentage
-  exportThreshold: 10, // percentage
-  alertOnSmallerCloud: true,
-
-  // Backup settings
-  keepDailyBackups: 30, // days
-  compressionLevel: 9, // ZIP compression level
-
-  // File prefixes
-  dailyBackupPrefix: "typingmind-backup-",
-  snapshotPrefix: "s-",
-
-  // AWS configuration
-  accessKey: "",
-  secretKey: "",
-  region: "",
-  bucketName: "",
-  endpoint: "",
-
-  // Encryption configuration
-  encryptionKey: "",
 };
 
 // Track last seen updates for change detection
@@ -314,24 +298,20 @@ function initializeLoggingState() {
 
 async function performFullInitialization() {
   try {
-    // Load local metadata
+    // Load configuration first
+    loadConfiguration();
+
+    // Then proceed with other initialization
+    await loadAwsSdk();
     await loadLocalMetadata();
-
-    // Initialize lastSeenUpdates from current chat states
     await initializeLastSeenUpdates();
-
-    // Initialize settings monitoring
     await initializeSettingsMonitoring();
-
-    // Setup localStorage change listener
     await setupLocalStorageChangeListener();
 
     // Check for daily backup if applicable
     if (config.syncMode !== "disabled") {
       queueOperation("daily-backup-check", checkAndPerformDailyBackup);
     }
-
-    // Start interval (works for both sync and backup modes)
     startSyncInterval();
 
     // If in sync mode, also perform initial sync
@@ -340,9 +320,11 @@ async function performFullInitialization() {
     }
 
     // Start monitoring IndexedDB for deletions
+    setupLocalStorageChangeListener();
     monitorIndexedDBForDeletions();
+    setupVisibilityChangeHandler();
 
-    logToConsole("success", "Full initialization completed successfully");
+    logToConsole("success", "Full initialization completed");
   } catch (error) {
     logToConsole("error", "Error during full initialization:", error);
     throw error;
@@ -2263,42 +2245,23 @@ async function processOperationQueue() {
 
 // Start sync interval
 function startSyncInterval() {
-  // Clear any existing interval
-  if (window.syncInterval) {
-    clearInterval(window.syncInterval);
+  // Clear any existing intervals
+  clearAllIntervals();
+
+  // If in disabled mode, don't start any intervals
+  if (config.syncMode === "disabled") {
+    logToConsole("info", "Sync intervals disabled - manual operations only");
+    return;
   }
 
-  // Track the last time a sync was queued to prevent too frequent syncs
-  let lastSyncQueuedTime = 0;
-  const MIN_SYNC_INTERVAL_MS = 15000; // 15 seconds minimum between syncs
-
-  // Set new interval
-  const intervalMs = Math.max(syncConfig.syncInterval * 1000, 15000);
+  // Set interval for checking changes
+  const intervalMs = Math.max(config.syncInterval * 1000, 15000); // minimum 15 seconds
   window.syncInterval = setInterval(() => {
     if (document.hidden) return; // Skip if tab not visible
-
-    const now = Date.now();
-
-    // Check if any sync operations are already in progress or queued
-    const hasPendingSync =
-      operationState.isPendingSync ||
-      operationState.isImporting ||
-      operationState.operationQueue.some(
-        (op) =>
-          op.name.includes("sync") ||
-          op.name.includes("upload") ||
-          op.name.includes("download")
-      );
-
-    // Check if minimum time has passed since last sync
-    const timePassedSinceLastSync = now - lastSyncQueuedTime;
-    const isEnoughTimePassed = timePassedSinceLastSync >= MIN_SYNC_INTERVAL_MS;
-
-    if (!hasPendingSync && isEnoughTimePassed) {
-      queueOperation("interval-sync", syncFromCloud);
-      lastSyncQueuedTime = now;
-    }
+    queueOperation("interval-sync", syncFromCloud);
   }, intervalMs);
+
+  logToConsole("info", `Started sync interval (${intervalMs / 1000}s)`);
 }
 
 // Perform initial sync
