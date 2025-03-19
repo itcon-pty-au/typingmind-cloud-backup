@@ -63,6 +63,7 @@ let operationState = {
   lastSyncStatus: null,
   isCheckingChanges: false,
   lastError: null,
+  operationStartTime: null,
 };
 
 // Backup state tracking
@@ -2198,12 +2199,26 @@ function isAwsConfigured() {
 
 // Queue an operation
 function queueOperation(type, operation) {
-  if (!isAwsConfigured()) {
-    logToConsole("skip", "Skipping cloud operation - AWS not configured");
+  // Check for duplicates
+  if (operationState.operationQueue.some((op) => op.name === type)) {
+    logToConsole("skip", `Skipping duplicate operation: ${type}`);
     return;
   }
 
-  operationState.operationQueue.push({ type, operation });
+  // Reset any stuck states before queuing new operation
+  if (
+    !operationState.isProcessingQueue &&
+    (operationState.isImporting || operationState.isExporting)
+  ) {
+    logToConsole("warning", "Detected stuck operation states, resetting...");
+    resetOperationStates();
+  }
+
+  operationState.operationQueue.push({
+    name: type,
+    operation,
+    queuedAt: Date.now(),
+  });
 
   if (!operationState.isProcessingQueue) {
     processOperationQueue();
@@ -2212,110 +2227,78 @@ function queueOperation(type, operation) {
 
 // Process operation queue
 async function processOperationQueue() {
-  if (operationState.isProcessingQueue) return;
-
-  operationState.isProcessingQueue = true;
-  operationState.lastError = null; // Reset error state at start of queue processing
-  updateSyncStatus(); // Update status to show in-progress
+  if (
+    operationState.isProcessingQueue ||
+    operationState.operationQueue.length === 0
+  ) {
+    return;
+  }
 
   try {
+    operationState.isProcessingQueue = true;
     while (operationState.operationQueue.length > 0) {
-      const { type, operation } = operationState.operationQueue.shift();
+      const nextOperation = operationState.operationQueue[0];
       try {
-        await operation();
+        await nextOperation.operation();
+        // Add a small delay to ensure proper completion
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        operationState.operationQueue.shift();
       } catch (error) {
-        operationState.lastError = error;
-        logToConsole("error", `Operation ${type} failed:`, error);
-        updateSyncStatus(); // Update status to show error
-        throw error;
+        logToConsole(
+          "error",
+          `Error executing operation ${nextOperation.name}:`,
+          error
+        );
+        operationState.operationQueue.shift();
+        // Add a delay after errors to prevent rapid retries
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       }
-
-      // Add delay between operations
-      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
+  } catch (error) {
+    logToConsole("error", "Error processing queue:", error);
   } finally {
-    // Reset ALL operation states
-    operationState.isProcessingQueue = false;
-    updateSyncStatus(); // Update status when queue is done
+    operationState.isProcessingQueue = false; // <-- Make sure this is always reset
   }
 }
 
 // Start sync interval
 function startSyncInterval() {
-  // Clear any existing intervals first
-  clearAllIntervals();
-
-  // If in disabled mode, don't start any intervals
-  if (config.syncMode === "disabled") {
-    logToConsole("info", "Sync intervals disabled - manual operations only");
-    return;
+  // Clear any existing interval
+  if (window.syncInterval) {
+    clearInterval(window.syncInterval);
   }
 
-  const interval = Math.max(config.syncInterval * 1000, 15000);
+  // Track the last time a sync was queued to prevent too frequent syncs
+  let lastSyncQueuedTime = 0;
+  const MIN_SYNC_INTERVAL_MS = 15000; // 15 seconds minimum between syncs
 
-  activeIntervals.sync = setInterval(async () => {
-    // Skip if operations are in progress
-    if (operationState.isImporting || operationState.isExporting) {
-      logToConsole("skip", "Operation in progress - skipping interval tasks");
-      return;
+  // Set new interval
+  const intervalMs = Math.max(syncConfig.syncInterval * 1000, 15000);
+  window.syncInterval = setInterval(() => {
+    if (document.hidden) return; // Skip if tab not visible
+
+    const now = Date.now();
+
+    // Check if any sync operations are already in progress or queued
+    const hasPendingSync =
+      operationState.isPendingSync ||
+      operationState.isImporting ||
+      operationState.operationQueue.some(
+        (op) =>
+          op.name.includes("sync") ||
+          op.name.includes("upload") ||
+          op.name.includes("download")
+      );
+
+    // Check if minimum time has passed since last sync
+    const timePassedSinceLastSync = now - lastSyncQueuedTime;
+    const isEnoughTimePassed = timePassedSinceLastSync >= MIN_SYNC_INTERVAL_MS;
+
+    if (!hasPendingSync && isEnoughTimePassed) {
+      queueOperation("interval-sync", syncFromCloud);
+      lastSyncQueuedTime = now;
     }
-
-    // Check for local changes first
-    await checkForChanges();
-
-    // If AWS is configured, handle periodic tasks
-    if (isAwsConfigured()) {
-      // Handle pending settings changes (consolidate multiple changes)
-      if (pendingSettingsChanges) {
-        logToConsole("info", "Processing pending settings changes");
-        pendingSettingsChanges = false;
-        queueOperation("settings-sync", uploadSettingsToCloud);
-      }
-
-      // Handle mode-specific operations
-      if (config.syncMode === "sync") {
-        // For sync mode, do a quick consistency check
-        if (!operationState.isCheckingChanges) {
-          const cloudMetadata = await downloadCloudMetadata().catch((error) => {
-            logToConsole(
-              "error",
-              "Error downloading cloud metadata for consistency check:",
-              error
-            );
-            return null;
-          });
-
-          if (
-            cloudMetadata &&
-            cloudMetadata.lastSyncTime > localMetadata.lastSyncTime
-          ) {
-            logToConsole(
-              "info",
-              "Cloud changes detected during consistency check"
-            );
-            queueOperation("consistency-check", syncFromCloud);
-          }
-        }
-      } else if (config.syncMode === "backup") {
-        // For backup mode, check for any modified chats and queue them for backup
-        const modifiedChats = Object.entries(localMetadata.chats)
-          .filter(([_, meta]) => meta.lastModified > meta.syncedAt)
-          .map(([chatId]) => chatId);
-
-        if (modifiedChats.length > 0) {
-          logToConsole("info", `Found ${modifiedChats.length} chats to backup`);
-          queueOperation("backup-modified-chats", syncToCloud);
-        }
-      }
-    }
-  }, interval);
-
-  logToConsole(
-    "info",
-    `${
-      config.syncMode.charAt(0).toUpperCase() + config.syncMode.slice(1)
-    } interval started (${interval}ms)`
-  );
+  }, intervalMs);
 }
 
 // Perform initial sync
@@ -2392,9 +2375,10 @@ async function syncFromCloud() {
     return;
   }
 
-  operationState.isImporting = true;
-
   try {
+    operationState.isImporting = true;
+    operationState.isPendingSync = false; // Add this to ensure it's reset when sync starts
+
     logToConsole("start", "Starting sync from cloud...");
 
     // Use a single timestamp for the entire sync operation
@@ -2675,12 +2659,11 @@ async function syncFromCloud() {
     updateSyncStatus(); // Show success status
   } catch (error) {
     logToConsole("error", "Sync failed:", error);
-    operationState.lastSyncStatus = "failed";
+    operationState.lastError = error;
+    updateSyncStatus(); // Show error status
     throw error;
   } finally {
-    // Reset ALL operation states
-    operationState.isImporting = false;
-    operationState.isExporting = false;
+    operationState.isImporting = false; // <-- Make sure this is always reset
 
     // Check if another sync was requested while this one was running
     if (operationState.isPendingSync) {
@@ -3786,6 +3769,7 @@ async function saveSettings() {
       lastSyncStatus: null,
       isCheckingChanges: false,
       lastError: null,
+      operationStartTime: null,
     };
 
     // Reset backup state
@@ -4615,6 +4599,7 @@ async function downloadSettingsFromCloud() {
 
 async function uploadSettingsToCloud(syncTimestamp = null) {
   try {
+    operationState.isExporting = true;
     const s3 = initializeS3Client();
     const settingsData = {};
     const now = syncTimestamp || Date.now();
@@ -4722,6 +4707,8 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
   } catch (error) {
     logToConsole("error", "Error uploading settings", error);
     throw error;
+  } finally {
+    operationState.isExporting = false; // Add this
   }
 }
 
@@ -4875,6 +4862,7 @@ async function uploadChatToCloud(
   logToConsole("upload", `Uploading chat ${chatId} to cloud`);
 
   try {
+    operationState.isExporting = true;
     const s3 = initializeS3Client();
 
     // Always download fresh cloud metadata
@@ -5040,10 +5028,22 @@ async function uploadChatToCloud(
 
     return true;
   } catch (error) {
+    logToConsole("error", `Error uploading chat ${chatId}`, error);
+
+    // Update metadata to mark this chat for retry later
+    if (localMetadata.chats[chatId]) {
+      localMetadata.chats[chatId].uploadError = error.message;
+      localMetadata.chats[chatId].uploadErrorTime = Date.now();
+      localMetadata.chats[chatId].uploadRetryCount =
+        (localMetadata.chats[chatId].uploadRetryCount || 0) + 1;
+      saveLocalMetadata();
+    }
+
     logToConsole("error", `Error uploading chat ${chatId}:`, error);
+
     throw error;
   } finally {
-    operationState.isExporting = false;
+    operationState.isExporting = false; // Add this
   }
 }
 
@@ -5054,14 +5054,34 @@ async function checkSyncStatus() {
     return "disabled";
   }
 
+  // Add timeout check for potentially stuck states
+  const MAX_OPERATION_TIME = 1 * 60 * 1000; // 5 minutes
+  const now = Date.now();
+
+  if (
+    operationState.operationStartTime &&
+    now - operationState.operationStartTime > MAX_OPERATION_TIME
+  ) {
+    // Operation has been running too long, probably stuck
+    resetOperationStates();
+    return "out-of-sync";
+  }
+
   // If operations in progress -> syncing
   if (
     operationState.isImporting ||
     operationState.isExporting ||
     operationState.isProcessingQueue
   ) {
+    // Track operation start time if not already set
+    if (!operationState.operationStartTime) {
+      operationState.operationStartTime = now;
+    }
     return "syncing";
   }
+
+  // Reset operation start time when no operations are running
+  operationState.operationStartTime = null;
 
   try {
     // Check for local changes (using only local metadata)
@@ -5130,3 +5150,19 @@ function updateSyncStatusDot(status) {
       dot.classList.add("bg-gray-500");
   }
 }
+
+function resetOperationStates() {
+  operationState.isImporting = false;
+  operationState.isExporting = false;
+  operationState.isProcessingQueue = false;
+  operationState.isPendingSync = false;
+}
+
+// Add this to your error handlers and cleanup code
+window.addEventListener("unload", resetOperationStates);
+window.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    // When tab becomes hidden, reset states to prevent them getting stuck
+    resetOperationStates();
+  }
+});
