@@ -2040,13 +2040,21 @@ async function restoreFromBackup(key) {
     // Decrypt the content
     const decryptedContent = await decryptData(backupContent);
 
-    // Validate the decrypted content before importing
-    if (typeof decryptedContent !== "object" || !decryptedContent) {
-      throw new Error("Invalid backup data format");
+    // Parse the decrypted content as JSON
+    let parsedContent;
+    try {
+      parsedContent = JSON.parse(decryptedContent);
+    } catch (error) {
+      throw new Error("Failed to parse backup data: Invalid JSON format");
+    }
+
+    // Validate the parsed content
+    if (typeof parsedContent !== "object" || !parsedContent) {
+      throw new Error("Invalid backup data format: Not a valid data object");
     }
 
     // Import the data to storage
-    await importDataToStorage(decryptedContent);
+    await importDataToStorage(parsedContent);
 
     // Validate imported chats
     const chats = await getAllChatsFromIndexedDB();
