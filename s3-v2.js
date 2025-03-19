@@ -2678,9 +2678,22 @@ async function syncToCloud() {
     let hasChanges = false;
 
     // Upload settings if they've changed
-    if (localMetadata.settings.lastModified > localMetadata.settings.syncedAt) {
-      await uploadSettingsToCloud(syncTimestamp);
-      hasChanges = true;
+    if (
+      pendingSettingsChanges ||
+      localMetadata.settings.lastModified > localMetadata.settings.syncedAt
+    ) {
+      try {
+        await uploadSettingsToCloud(syncTimestamp);
+        // Reset flags only after successful upload
+        pendingSettingsChanges = false;
+        localMetadata.settings.syncedAt = syncTimestamp;
+        await saveLocalMetadata();
+        hasChanges = true;
+      } catch (error) {
+        logToConsole("error", "Failed to upload settings:", error);
+        // Don't reset flags if upload failed
+        throw error;
+      }
     }
 
     // Get all local chats that need to be uploaded
@@ -2768,13 +2781,12 @@ async function syncToCloud() {
     operationState.lastError = null; // Clear any previous errors
     updateSyncStatus(); // Show success status
   } catch (error) {
-    operationState.lastError = error;
     logToConsole("error", "Sync to cloud failed:", error);
+    operationState.lastError = error;
     updateSyncStatus(); // Show error status
     throw error;
   } finally {
     operationState.isExporting = false;
-    updateSyncStatus(); // Update final status
   }
 }
 
