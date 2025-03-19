@@ -2222,7 +2222,6 @@ async function processOperationQueue() {
   }
 
   operationState.isProcessingQueue = true;
-
   try {
     while (operationState.operationQueue.length > 0) {
       const nextOperation = operationState.operationQueue[0];
@@ -2243,7 +2242,10 @@ async function processOperationQueue() {
       }
     }
   } finally {
+    // Reset ALL operation states
     operationState.isProcessingQueue = false;
+    operationState.isExporting = false;
+    operationState.isImporting = false;
   }
 }
 
@@ -2355,21 +2357,13 @@ async function performInitialSync() {
 
 // Sync from cloud
 async function syncFromCloud() {
-  if (
-    operationState.isImporting ||
-    operationState.isExporting ||
-    operationState.isProcessingQueue
-  ) {
-    logToConsole(
-      "skip",
-      "Sync already in progress or queue being processed, queueing this sync"
-    );
+  if (operationState.isImporting || operationState.isExporting) {
+    logToConsole("skip", "Sync already in progress, queueing this sync");
     operationState.isPendingSync = true;
     return;
   }
 
   operationState.isImporting = true;
-  updateSyncStatus(); // Show in-progress status
 
   try {
     logToConsole("start", "Starting sync from cloud...");
@@ -2651,13 +2645,13 @@ async function syncFromCloud() {
     operationState.lastError = null; // Clear any previous errors
     updateSyncStatus(); // Show success status
   } catch (error) {
-    operationState.lastError = error;
-    logToConsole("error", "Sync from cloud failed:", error);
-    updateSyncStatus(); // Show error status
+    logToConsole("error", "Sync failed:", error);
+    operationState.lastSyncStatus = "failed";
     throw error;
   } finally {
+    // Reset ALL operation states
     operationState.isImporting = false;
-    updateSyncStatus(); // Update final status
+    operationState.isExporting = false;
 
     // Check if another sync was requested while this one was running
     if (operationState.isPendingSync) {
@@ -5017,18 +5011,10 @@ async function uploadChatToCloud(
 
     return true;
   } catch (error) {
-    logToConsole("error", `Error uploading chat ${chatId}`, error);
-
-    // Update metadata to mark this chat for retry later
-    if (localMetadata.chats[chatId]) {
-      localMetadata.chats[chatId].uploadError = error.message;
-      localMetadata.chats[chatId].uploadErrorTime = Date.now();
-      localMetadata.chats[chatId].uploadRetryCount =
-        (localMetadata.chats[chatId].uploadRetryCount || 0) + 1;
-      saveLocalMetadata();
-    }
-
+    logToConsole("error", `Error uploading chat ${chatId}:`, error);
     throw error;
+  } finally {
+    operationState.isExporting = false;
   }
 }
 
