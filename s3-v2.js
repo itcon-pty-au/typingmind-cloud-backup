@@ -5017,6 +5017,12 @@ async function uploadChatToCloud(
 
     saveLocalMetadata();
 
+    // Update lastSeenUpdates to prevent re-detection of the same changes
+    lastSeenUpdates[chatId] = {
+      updatedAt: now,
+      hash: newHash,
+    };
+
     // Update cloud metadata
     if (!cloudMetadata.chats) cloudMetadata.chats = {};
 
