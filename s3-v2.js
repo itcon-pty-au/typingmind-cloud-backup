@@ -2287,7 +2287,7 @@ function startSyncInterval() {
   const MIN_SYNC_INTERVAL_MS = 15000; // 15 seconds minimum between syncs
 
   // Set new interval
-  const intervalMs = Math.max(syncConfig.syncInterval * 1000, 15000);
+  const intervalMs = Math.max(config.syncInterval * 1000, 15000);
 
   // Set interval for checking changes
   window.syncInterval = setInterval(() => {
