@@ -590,9 +590,25 @@ async function checkForChanges() {
   try {
     logToConsole("start", "Checking for changes...");
 
+    let hasChanges = false;
+
+    // Check for settings changes first
+    if (
+      pendingSettingsChanges ||
+      localMetadata.settings.lastModified > localMetadata.settings.syncedAt
+    ) {
+      hasChanges = true;
+      logToConsole(
+        "info",
+        "Settings changes detected - queueing sync to cloud"
+      );
+      if (config.syncMode === "sync") {
+        queueOperation("settings-sync", syncToCloud);
+      }
+    }
+
     // Get latest chats without reloading metadata
     const chats = await getAllChatsFromIndexedDB();
-    let hasChanges = false;
 
     for (const chat of chats) {
       if (!chat.id) continue;
@@ -620,7 +636,7 @@ async function checkForChanges() {
       }
     }
 
-    if (hasChanges) {
+    if (hasChanges && !operationState.isProcessingQueue) {
       if (config.syncMode === "sync") {
         logToConsole("info", "Local changes detected - queueing sync to cloud");
         queueOperation("local-changes-sync", syncToCloud);
