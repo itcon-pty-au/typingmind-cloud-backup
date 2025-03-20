@@ -3788,8 +3788,15 @@ async function saveSettings() {
     return;
   }
 
+  // Store old mode before updating config
+  const oldMode = config.syncMode;
+
+  // Update config first
+  config = { ...config, ...newConfig };
+  saveConfiguration();
+
   // Reset state when switching from disabled mode
-  if (config.syncMode === "disabled" && newConfig.syncMode !== "disabled") {
+  if (oldMode === "disabled" && newConfig.syncMode !== "disabled") {
     // Reset operation state
     operationState = {
       isImporting: false,
@@ -3827,11 +3834,6 @@ async function saveSettings() {
     );
   }
 
-  // Update config
-  const oldMode = config.syncMode;
-  config = { ...config, ...newConfig };
-  saveConfiguration();
-
   // Update button text and dot visibility to match new mode
   const buttonText = document.querySelector(
     "#cloud-sync-button span:last-child"
@@ -3848,14 +3850,90 @@ async function saveSettings() {
   // Update sync status dot for new mode
   updateSyncStatus();
 
-  // If switching from disabled mode to an active mode, perform full initialization
+  // Handle initialization and sync based on mode changes
   if (oldMode === "disabled" && newConfig.syncMode !== "disabled") {
     try {
+      // First perform initialization
       await performFullInitialization();
       logToConsole(
         "success",
         "Full initialization completed after mode switch"
       );
+
+      // Then determine sync direction based on metadata comparison
+      if (isAwsConfigured()) {
+        // Clear any existing operations first
+        operationState.operationQueue = [];
+        operationState.isProcessingQueue = false;
+
+        try {
+          // Get cloud metadata
+          const cloudMetadata = await downloadCloudMetadata();
+          const cloudLastSync = cloudMetadata?.lastSyncTime || 0;
+
+          // Get local metadata last sync time
+          const localLastSync = localMetadata?.lastSyncTime || 0;
+
+          // Compare number of chats and last sync times
+          const cloudChatCount = Object.keys(cloudMetadata?.chats || {}).length;
+          const localChatCount = Object.keys(localMetadata?.chats || {}).length;
+
+          logToConsole("info", "Comparing metadata for sync direction", {
+            cloudLastSync: new Date(cloudLastSync).toLocaleString(),
+            localLastSync: new Date(localLastSync).toLocaleString(),
+            cloudChats: cloudChatCount,
+            localChats: localChatCount,
+          });
+
+          if (cloudChatCount === 0 && localChatCount > 0) {
+            // Cloud is empty but we have local chats - sync to cloud
+            logToConsole("info", "Cloud is empty, syncing local data to cloud");
+            queueOperation("force-initial-sync", async () => {
+              logToConsole("start", "Performing forced sync to cloud");
+              await syncToCloud();
+            });
+          } else if (cloudLastSync > localLastSync) {
+            // Cloud has newer data - sync from cloud
+            logToConsole("info", "Cloud has newer data, syncing from cloud");
+            queueOperation("force-initial-sync", async () => {
+              logToConsole("start", "Performing forced sync from cloud");
+              await syncFromCloud();
+            });
+          } else if (localLastSync > cloudLastSync) {
+            // Local has newer data - sync to cloud
+            logToConsole("info", "Local has newer data, syncing to cloud");
+            queueOperation("force-initial-sync", async () => {
+              logToConsole("start", "Performing forced sync to cloud");
+              await syncToCloud();
+            });
+          } else {
+            // Times are equal, compare chat counts
+            if (cloudChatCount > localChatCount) {
+              logToConsole("info", "Cloud has more chats, syncing from cloud");
+              queueOperation("force-initial-sync", async () => {
+                logToConsole("start", "Performing forced sync from cloud");
+                await syncFromCloud();
+              });
+            } else {
+              logToConsole(
+                "info",
+                "Local has equal or more chats, syncing to cloud"
+              );
+              queueOperation("force-initial-sync", async () => {
+                logToConsole("start", "Performing forced sync to cloud");
+                await syncToCloud();
+              });
+            }
+          }
+        } catch (error) {
+          logToConsole("error", "Error determining sync direction:", error);
+          // Default to sync from cloud if we can't determine direction
+          queueOperation("force-initial-sync", async () => {
+            logToConsole("start", "Defaulting to sync from cloud after error");
+            await syncFromCloud();
+          });
+        }
+      }
     } catch (error) {
       logToConsole(
         "error",
@@ -3867,12 +3945,94 @@ async function saveSettings() {
       );
     }
   } else if (isAwsConfigured()) {
-    // Otherwise just restart interval with new settings
+    // Just restart interval with new settings for mode changes between sync/backup
     startSyncInterval();
 
-    // If switching to sync mode, perform initial sync
-    if (config.syncMode === "sync" && oldMode !== "sync") {
-      queueOperation("initial-sync", performInitialSync);
+    // If switching to sync mode from backup, determine sync direction
+    if (config.syncMode === "sync" && oldMode === "backup") {
+      try {
+        // Get cloud metadata
+        const cloudMetadata = await downloadCloudMetadata();
+        const cloudLastSync = cloudMetadata?.lastSyncTime || 0;
+
+        // Get local metadata last sync time
+        const localLastSync = localMetadata?.lastSyncTime || 0;
+
+        // Compare number of chats and last sync times
+        const cloudChatCount = Object.keys(cloudMetadata?.chats || {}).length;
+        const localChatCount = Object.keys(localMetadata?.chats || {}).length;
+
+        logToConsole("info", "Comparing metadata for backup to sync switch", {
+          cloudLastSync: new Date(cloudLastSync).toLocaleString(),
+          localLastSync: new Date(localLastSync).toLocaleString(),
+          cloudChats: cloudChatCount,
+          localChats: localChatCount,
+        });
+
+        if (cloudChatCount === 0 && localChatCount > 0) {
+          // Cloud is empty but we have local chats - sync to cloud
+          logToConsole("info", "Cloud is empty, syncing local data to cloud");
+          queueOperation("mode-switch-sync", async () => {
+            logToConsole("start", "Performing sync to cloud after mode switch");
+            await syncToCloud();
+          });
+        } else if (cloudLastSync > localLastSync) {
+          // Cloud has newer data - sync from cloud
+          logToConsole("info", "Cloud has newer data, syncing from cloud");
+          queueOperation("mode-switch-sync", async () => {
+            logToConsole(
+              "start",
+              "Performing sync from cloud after mode switch"
+            );
+            await syncFromCloud();
+          });
+        } else if (localLastSync > cloudLastSync) {
+          // Local has newer data - sync to cloud
+          logToConsole("info", "Local has newer data, syncing to cloud");
+          queueOperation("mode-switch-sync", async () => {
+            logToConsole("start", "Performing sync to cloud after mode switch");
+            await syncToCloud();
+          });
+        } else {
+          // Times are equal, compare chat counts
+          if (cloudChatCount > localChatCount) {
+            logToConsole("info", "Cloud has more chats, syncing from cloud");
+            queueOperation("mode-switch-sync", async () => {
+              logToConsole(
+                "start",
+                "Performing sync from cloud after mode switch"
+              );
+              await syncFromCloud();
+            });
+          } else {
+            logToConsole(
+              "info",
+              "Local has equal or more chats, syncing to cloud"
+            );
+            queueOperation("mode-switch-sync", async () => {
+              logToConsole(
+                "start",
+                "Performing sync to cloud after mode switch"
+              );
+              await syncToCloud();
+            });
+          }
+        }
+      } catch (error) {
+        logToConsole(
+          "error",
+          "Error determining sync direction for mode switch:",
+          error
+        );
+        // Default to sync from cloud if we can't determine direction
+        queueOperation("mode-switch-sync", async () => {
+          logToConsole(
+            "start",
+            "Defaulting to sync from cloud after error in mode switch"
+          );
+          await syncFromCloud();
+        });
+      }
     }
   }
 
@@ -4822,7 +4982,8 @@ async function downloadChatFromCloud(chatId) {
     try {
       const data = await s3.getObject(params).promise();
       const encryptedContent = new Uint8Array(data.Body);
-      const chatData = await decryptData(encryptedContent);
+      const decryptedText = await decryptData(encryptedContent);
+      const chatData = JSON.parse(decryptedText); // Parse the decrypted text into JSON
 
       // Ensure the chat has an ID that matches its key
       if (!chatData.id) {
