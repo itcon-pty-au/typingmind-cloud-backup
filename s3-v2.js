@@ -4286,9 +4286,13 @@ function setupButtonHandlers(backupList) {
             for (const [key, settingData] of Object.entries(settingsData)) {
               if (!preserveKeys.includes(key)) {
                 try {
-                  if (key.startsWith("TM_use")) {
+                  // Get the value and source from the backup
+                  const value = settingData.data;
+                  const source = settingData.source || "localStorage"; // Default to localStorage if source not specified
+
+                  if (source === "indexeddb") {
                     // Handle IndexedDB settings
-                    let valueToStore = settingData.data;
+                    let valueToStore = value;
                     if (
                       typeof valueToStore === "string" &&
                       (valueToStore.startsWith("{") ||
@@ -4305,9 +4309,17 @@ function setupButtonHandlers(backupList) {
                       }
                     }
                     await setIndexedDBKey(key, valueToStore);
+                    logToConsole(
+                      "info",
+                      `Restored setting to IndexedDB: ${key}`
+                    );
                   } else {
                     // Handle localStorage settings
-                    localStorage.setItem(key, settingData.data);
+                    localStorage.setItem(key, value);
+                    logToConsole(
+                      "info",
+                      `Restored setting to localStorage: ${key}`
+                    );
                   }
                   settingsRestored++;
                 } catch (error) {
@@ -4320,13 +4332,18 @@ function setupButtonHandlers(backupList) {
               }
             }
 
-            // Update local metadata with cloud timestamps to prevent unwanted sync
+            // Update local metadata with cloud timestamps to prevent unwanted syncs
             if (cloudMetadata.settings) {
               localMetadata.settings.lastModified =
                 cloudMetadata.settings.lastModified;
               localMetadata.settings.syncedAt = cloudMetadata.settings.syncedAt;
               await saveLocalMetadata();
             }
+
+            logToConsole("success", "Settings restore completed", {
+              totalRestored: settingsRestored,
+              timestamp: new Date().toISOString(),
+            });
 
             alert(
               `Settings restored successfully! (${settingsRestored} settings restored)`
