@@ -4320,7 +4320,7 @@ function setupButtonHandlers(backupList) {
               }
             }
 
-            // Update local metadata with cloud timestamps to prevent unwanted syncs
+            // Update local metadata with cloud timestamps to prevent unwanted sync
             if (cloudMetadata.settings) {
               localMetadata.settings.lastModified =
                 cloudMetadata.settings.lastModified;
