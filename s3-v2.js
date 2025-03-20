@@ -464,6 +464,17 @@ function loadConfiguration() {
     };
   }
 
+  // Check URL parameters first
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlSyncMode = urlParams.get("syncMode");
+
+  // Validate URL sync mode if present
+  if (urlSyncMode && ["disabled", "backup", "sync"].includes(urlSyncMode)) {
+    // Save to localStorage so it persists
+    localStorage.setItem("sync-mode", urlSyncMode);
+    logToConsole("info", `Sync mode set from URL parameter: ${urlSyncMode}`);
+  }
+
   const storedConfig = {
     bucketName: localStorage.getItem("aws-bucket"),
     region: localStorage.getItem("aws-region"),
