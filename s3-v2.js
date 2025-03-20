@@ -4182,7 +4182,7 @@ async function loadBackupList() {
 
       if (restoreButton) {
         restoreButton.disabled =
-          !selectedValue || (!isSnapshot && !isDailyBackup);
+          !selectedValue || (!isSnapshot && !isDailyBackup && !isSettingsFile);
       }
 
       if (deleteButton) {
@@ -4239,7 +4239,6 @@ function setupButtonHandlers(backupList) {
   // Restore button handler
   const restoreButton = document.getElementById("restore-backup-btn");
   if (restoreButton) {
-    // Remove existing click handler
     const newRestoreButton = restoreButton.cloneNode(true);
     restoreButton.parentNode.replaceChild(newRestoreButton, restoreButton);
 
@@ -4250,6 +4249,38 @@ function setupButtonHandlers(backupList) {
         return;
       }
 
+      // Special handling for settings.json
+      if (key === "settings.json") {
+        if (confirm("Are you sure you want to restore settings from cloud?")) {
+          try {
+            if (config.syncMode === "disabled") {
+              alert(
+                "Please enable sync mode (backup or sync) first to restore settings from cloud."
+              );
+              return;
+            }
+
+            // Set lastModified to 0 to force sync from cloud
+            localMetadata.settings.lastModified = 0;
+            localMetadata.settings.syncedAt = 0;
+            await saveLocalMetadata();
+
+            // Queue immediate sync
+            queueOperation("settings-restore", syncFromCloud);
+
+            alert(
+              "Settings sync has been triggered. Your settings will be restored from cloud in a few seconds."
+            );
+          } catch (error) {
+            logToConsole("error", "Failed to trigger settings restore:", error);
+            alert("Failed to trigger settings restore: " + error.message);
+          }
+          return;
+        }
+        return;
+      }
+
+      // Regular backup restore handling
       if (
         confirm(
           "Are you sure you want to restore this backup? This will overwrite your current data."
