@@ -5058,7 +5058,8 @@ async function downloadCloudMetadata() {
       });
       return metadata;
     } catch (error) {
-      if (error.code === "NoSuchKey") {
+      // Handle case where metadata.json doesn't exist yet
+      if (error.code === "NoSuchKey" || error.name === "NoSuchKey") {
         logToConsole(
           "info",
           "No cloud metadata found, creating initial metadata"
@@ -5074,21 +5075,41 @@ async function downloadCloudMetadata() {
           },
         };
 
-        // Upload initial metadata without encryption
-        await uploadToS3(
-          "metadata.json",
-          new TextEncoder().encode(JSON.stringify(initialMetadata)),
-          {
-            ContentType: "application/json",
-            ServerSideEncryption: "AES256",
-          }
-        );
-
-        return initialMetadata;
+        try {
+          // Upload initial metadata without encryption
+          await uploadToS3(
+            "metadata.json",
+            new TextEncoder().encode(JSON.stringify(initialMetadata)),
+            {
+              ContentType: "application/json",
+              ServerSideEncryption: "AES256",
+            }
+          );
+          logToConsole("success", "Created and uploaded initial metadata");
+          return initialMetadata;
+        } catch (uploadError) {
+          logToConsole(
+            "error",
+            "Failed to create initial metadata",
+            uploadError
+          );
+          throw uploadError;
+        }
       }
       throw error;
     }
   } catch (error) {
+    // Check if this is an AWS credentials error
+    if (
+      error.code === "CredentialsError" ||
+      error.message?.includes("credentials")
+    ) {
+      logToConsole(
+        "error",
+        "AWS credentials error - please check your configuration"
+      );
+      throw new Error("AWS credentials not properly configured");
+    }
     logToConsole("error", "Error downloading cloud metadata", error);
     throw error;
   }
