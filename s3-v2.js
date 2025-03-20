@@ -473,6 +473,14 @@ function loadConfiguration() {
     // Save to localStorage so it persists
     localStorage.setItem("sync-mode", urlSyncMode);
     logToConsole("info", `Sync mode set from URL parameter: ${urlSyncMode}`);
+
+    // Remove the syncMode parameter from URL
+    urlParams.delete("syncMode");
+    const newUrl =
+      window.location.pathname +
+      (urlParams.toString() ? `?${urlParams.toString()}` : "") +
+      window.location.hash;
+    window.history.replaceState({}, "", newUrl);
   }
 
   const storedConfig = {
