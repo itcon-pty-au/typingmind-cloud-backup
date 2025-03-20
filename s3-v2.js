@@ -4251,29 +4251,89 @@ function setupButtonHandlers(backupList) {
 
       // Special handling for settings.json
       if (key === "settings.json") {
-        if (confirm("Are you sure you want to restore settings from cloud?")) {
+        if (
+          confirm(
+            "Are you sure you want to restore settings from cloud? This will overwrite your current settings with the backup version."
+          )
+        ) {
           try {
-            if (config.syncMode === "disabled") {
-              alert(
-                "Please enable sync mode (backup or sync) first to restore settings from cloud."
-              );
-              return;
+            // Download the settings backup
+            const backup = await downloadFromS3(key);
+            if (!backup || !backup.data) {
+              throw new Error("Settings backup not found or empty");
             }
 
-            // Set lastModified to 0 to force sync from cloud
-            localMetadata.settings.lastModified = 0;
-            localMetadata.settings.syncedAt = 0;
-            await saveLocalMetadata();
+            // Decrypt the settings
+            const decryptedContent = await decryptData(backup.data);
+            const settingsData = JSON.parse(decryptedContent);
 
-            // Queue immediate sync
-            queueOperation("settings-restore", syncFromCloud);
+            // Get cloud metadata to get the correct timestamps
+            const cloudMetadata = await downloadCloudMetadata();
+
+            // Apply settings while preserving security keys
+            const preserveKeys = [
+              "aws-bucket",
+              "aws-access-key",
+              "aws-secret-key",
+              "aws-region",
+              "aws-endpoint",
+              "encryption-key",
+              "chat-sync-metadata",
+            ];
+
+            let settingsRestored = 0;
+            // Apply each setting
+            for (const [key, settingData] of Object.entries(settingsData)) {
+              if (!preserveKeys.includes(key)) {
+                try {
+                  if (key.startsWith("TM_use")) {
+                    // Handle IndexedDB settings
+                    let valueToStore = settingData.data;
+                    if (
+                      typeof valueToStore === "string" &&
+                      (valueToStore.startsWith("{") ||
+                        valueToStore.startsWith("["))
+                    ) {
+                      try {
+                        valueToStore = JSON.parse(valueToStore);
+                      } catch (parseError) {
+                        logToConsole(
+                          "warning",
+                          `Failed to parse ${key} as JSON, using as-is`,
+                          parseError
+                        );
+                      }
+                    }
+                    await setIndexedDBKey(key, valueToStore);
+                  } else {
+                    // Handle localStorage settings
+                    localStorage.setItem(key, settingData.data);
+                  }
+                  settingsRestored++;
+                } catch (error) {
+                  logToConsole(
+                    "error",
+                    `Error restoring setting ${key}:`,
+                    error
+                  );
+                }
+              }
+            }
+
+            // Update local metadata with cloud timestamps to prevent unwanted syncs
+            if (cloudMetadata.settings) {
+              localMetadata.settings.lastModified =
+                cloudMetadata.settings.lastModified;
+              localMetadata.settings.syncedAt = cloudMetadata.settings.syncedAt;
+              await saveLocalMetadata();
+            }
 
             alert(
-              "Settings sync has been triggered. Your settings will be restored from cloud in a few seconds."
+              `Settings restored successfully! (${settingsRestored} settings restored)`
             );
           } catch (error) {
-            logToConsole("error", "Failed to trigger settings restore:", error);
-            alert("Failed to trigger settings restore: " + error.message);
+            logToConsole("error", "Failed to restore settings:", error);
+            alert("Failed to restore settings: " + error.message);
           }
           return;
         }
