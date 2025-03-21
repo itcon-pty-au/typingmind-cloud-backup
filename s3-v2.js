@@ -61,9 +61,12 @@ let localMetadata = {
 
 // Add persistent IndexedDB connection
 let persistentDB = null;
-let isDBConnecting = false;
+let dbConnectionPromise = null;
 let dbConnectionRetries = 0;
 const MAX_DB_RETRIES = 3;
+const DB_RETRY_DELAY = 1000; // 1 second base delay
+const DB_CONNECTION_TIMEOUT = 10000; // 10 second timeout
+let dbHeartbeatInterval = null;
 
 // Operation state tracking
 let operationState = {
@@ -655,40 +658,138 @@ async function setupLocalStorageChangeListener() {
 
 // ==================== INDEXEDDB UTILITIES ====================
 
-// Get persistent IndexedDB connection
+// Get persistent IndexedDB connection with improved race condition handling
 async function getPersistentDB() {
-  if (persistentDB) return persistentDB;
-  if (isDBConnecting) {
-    // Wait for existing connection attempt
-    while (isDBConnecting) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+  // Return existing connection if available and healthy
+  if (persistentDB) {
+    try {
+      // Quick health check
+      const transaction = persistentDB.transaction(["keyval"], "readonly");
+      return persistentDB;
+    } catch (error) {
+      logToConsole(
+        "warning",
+        "Existing IndexedDB connection is stale, reconnecting"
+      );
+      await cleanupDBConnection();
     }
-    return persistentDB;
   }
 
-  isDBConnecting = true;
-  try {
-    persistentDB = await openIndexedDB();
-    isDBConnecting = false;
-    dbConnectionRetries = 0;
-    return persistentDB;
-  } catch (error) {
-    isDBConnecting = false;
-    dbConnectionRetries++;
-    logToConsole(
-      "error",
-      `Failed to establish IndexedDB connection (attempt ${dbConnectionRetries}):`,
-      error
-    );
-
-    if (dbConnectionRetries < MAX_DB_RETRIES) {
-      // Try to reconnect after a delay
-      await new Promise((resolve) =>
-        setTimeout(resolve, 1000 * dbConnectionRetries)
-      );
-      return getPersistentDB();
+  // Use existing connection promise if one is in progress
+  if (dbConnectionPromise) {
+    try {
+      return await dbConnectionPromise;
+    } catch (error) {
+      // If the existing promise failed, clear it and try again
+      dbConnectionPromise = null;
     }
-    throw error;
+  }
+
+  // Create new connection promise
+  dbConnectionPromise = (async () => {
+    try {
+      // Attempt connection with timeout
+      persistentDB = await Promise.race([
+        openIndexedDB(),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("IndexedDB connection timeout")),
+            DB_CONNECTION_TIMEOUT
+          )
+        ),
+      ]);
+
+      // Setup connection monitoring
+      setupDBConnectionMonitoring();
+
+      // Reset retry counter on successful connection
+      dbConnectionRetries = 0;
+      return persistentDB;
+    } catch (error) {
+      // Clear connection promise since it failed
+      dbConnectionPromise = null;
+
+      // Increment retry counter
+      dbConnectionRetries++;
+
+      if (dbConnectionRetries < MAX_DB_RETRIES) {
+        // Calculate exponential backoff with jitter
+        const delay = Math.min(
+          DB_RETRY_DELAY * Math.pow(2, dbConnectionRetries - 1) +
+            Math.random() * 1000,
+          5000
+        );
+
+        logToConsole(
+          "warning",
+          `IndexedDB connection attempt ${dbConnectionRetries} failed, retrying in ${Math.round(
+            delay / 1000
+          )}s`,
+          error
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        return getPersistentDB(); // Retry connection
+      }
+
+      logToConsole("error", "Max IndexedDB connection retries reached", error);
+      throw new Error(
+        `Failed to establish IndexedDB connection after ${MAX_DB_RETRIES} attempts: ${error.message}`
+      );
+    }
+  })();
+
+  return dbConnectionPromise;
+}
+
+// Setup monitoring for the IndexedDB connection
+function setupDBConnectionMonitoring() {
+  // Clear any existing monitoring
+  if (dbHeartbeatInterval) {
+    clearInterval(dbHeartbeatInterval);
+  }
+
+  // Setup periodic health checks
+  dbHeartbeatInterval = setInterval(async () => {
+    if (!persistentDB) return;
+
+    try {
+      // Attempt a simple transaction to verify connection
+      const transaction = persistentDB.transaction(["keyval"], "readonly");
+      const store = transaction.objectStore("keyval");
+      await new Promise((resolve, reject) => {
+        const request = store.count();
+        request.onsuccess = resolve;
+        request.onerror = reject;
+      });
+    } catch (error) {
+      logToConsole(
+        "warning",
+        "IndexedDB connection health check failed",
+        error
+      );
+      await cleanupDBConnection();
+    }
+  }, 30000); // Check every 30 seconds
+}
+
+// Cleanup stale database connection
+async function cleanupDBConnection() {
+  try {
+    if (dbHeartbeatInterval) {
+      clearInterval(dbHeartbeatInterval);
+      dbHeartbeatInterval = null;
+    }
+
+    if (persistentDB) {
+      persistentDB.close();
+      persistentDB = null;
+    }
+
+    dbConnectionPromise = null;
+    logToConsole("info", "Cleaned up stale IndexedDB connection");
+  } catch (error) {
+    logToConsole("error", "Error cleaning up IndexedDB connection", error);
   }
 }
 
@@ -697,9 +798,14 @@ function openIndexedDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open("keyval-store", 1);
 
-    request.onerror = (event) => {
-      logToConsole("error", "Failed to open IndexedDB:", event.target.error);
-      reject(request.error);
+    request.onerror = () => {
+      reject(
+        new Error(
+          `Failed to open IndexedDB: ${
+            request.error?.message || "Unknown error"
+          }`
+        )
+      );
     };
 
     request.onsuccess = (event) => {
@@ -708,23 +814,21 @@ function openIndexedDB() {
       // Add connection error handler
       db.onerror = (event) => {
         logToConsole("error", "IndexedDB error:", event.target.error);
-        persistentDB = null; // Clear persistent connection on error
+        cleanupDBConnection();
       };
 
       // Add close handler
       db.onclose = () => {
         logToConsole("info", "IndexedDB connection closed");
-        persistentDB = null; // Clear persistent connection when closed
+        cleanupDBConnection();
       };
 
-      // Add version change handler (e.g., when DB is deleted or schema is updated)
+      // Add version change handler
       db.onversionchange = () => {
-        db.close();
-        persistentDB = null;
-        logToConsole("info", "IndexedDB version changed");
+        logToConsole("info", "IndexedDB version changed, closing connection");
+        cleanupDBConnection();
       };
 
-      //logToConsole("success", "Successfully opened IndexedDB connection");
       resolve(db);
     };
 
@@ -734,6 +838,13 @@ function openIndexedDB() {
         db.createObjectStore("keyval");
       }
     };
+
+    // Add timeout for the open request
+    setTimeout(() => {
+      if (!persistentDB) {
+        reject(new Error("IndexedDB open request timed out"));
+      }
+    }, DB_CONNECTION_TIMEOUT);
   });
 }
 
