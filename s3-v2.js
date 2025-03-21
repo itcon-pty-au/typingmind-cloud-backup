@@ -341,9 +341,23 @@ async function performFullInitialization() {
     }
 
     logToConsole("success", "Full initialization completed");
+
+    // Add tombstone cleanup as the last step
+    logToConsole("cleanup", "Starting tombstone cleanup...");
+    const localCleanupCount = cleanupOldTombstones();
+    const cloudCleanupCount = await cleanupCloudTombstones();
+
+    if (localCleanupCount > 0 || cloudCleanupCount > 0) {
+      logToConsole("success", "Tombstone cleanup completed", {
+        localTombstonesRemoved: localCleanupCount,
+        cloudTombstonesRemoved: cloudCleanupCount,
+      });
+    }
+
+    return true;
   } catch (error) {
     logToConsole("error", "Error during full initialization:", error);
-    throw error;
+    return false;
   }
 }
 
@@ -5625,4 +5639,72 @@ async function mergeChats(localChat, cloudChat) {
   });
 
   return mergedChat;
+}
+
+// Clean up old tombstones
+function cleanupOldTombstones() {
+  const now = Date.now();
+  const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
+  let cleanupCount = 0;
+
+  // Check local metadata for old tombstones
+  for (const [chatId, metadata] of Object.entries(localMetadata.chats)) {
+    if (
+      metadata.deleted &&
+      metadata.deletedAt &&
+      now - metadata.deletedAt > tombstoneRetentionPeriod
+    ) {
+      delete localMetadata.chats[chatId];
+      cleanupCount++;
+    }
+  }
+
+  if (cleanupCount > 0) {
+    saveLocalMetadata();
+    logToConsole("cleanup", `Removed ${cleanupCount} old tombstone entries`);
+  }
+
+  return cleanupCount;
+}
+
+// Clean up cloud tombstones
+async function cleanupCloudTombstones() {
+  try {
+    const cloudMetadata = await downloadCloudMetadata();
+    const now = Date.now();
+    const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000; // 30 days
+    let cleanupCount = 0;
+
+    if (cloudMetadata.chats) {
+      for (const [chatId, metadata] of Object.entries(cloudMetadata.chats)) {
+        if (
+          metadata.deleted &&
+          metadata.deletedAt &&
+          now - metadata.deletedAt > tombstoneRetentionPeriod
+        ) {
+          delete cloudMetadata.chats[chatId];
+          cleanupCount++;
+        }
+      }
+
+      if (cleanupCount > 0) {
+        await uploadToS3(
+          "metadata.json",
+          new TextEncoder().encode(JSON.stringify(cloudMetadata)),
+          {
+            ContentType: "application/json",
+            ServerSideEncryption: "AES256",
+          }
+        );
+        logToConsole(
+          "cleanup",
+          `Removed ${cleanupCount} old tombstone entries from cloud metadata`
+        );
+      }
+    }
+    return cleanupCount;
+  } catch (error) {
+    logToConsole("error", "Error cleaning up cloud tombstones", error);
+    return 0;
+  }
 }
