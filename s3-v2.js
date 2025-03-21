@@ -3073,19 +3073,15 @@ function insertSyncButton() {
                  </g>`
           }
         </svg>
-        <div id="sync-status-dot" style="display: ${
-          currentMode === "disabled" ? "none" : "block"
-        }" class="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-zinc-900"></div>
+        ${
+          currentMode === "sync"
+            ? `<div id="sync-status-dot" class="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-zinc-900"></div>`
+            : ""
+        }
       </div>
       <span class="font-normal self-stretch text-center text-xs leading-4 md:leading-none ${
         currentMode === "disabled" ? "text-gray-400 dark:text-gray-500" : ""
-      }">${
-    currentMode === "disabled"
-      ? "Sync"
-      : currentMode === "sync"
-      ? "Sync"
-      : "Backup"
-  }</span>
+      }">${currentMode === "sync" ? "Sync" : "Backup"}</span>
     </span>
   `;
 
@@ -3117,13 +3113,13 @@ function updateSyncStatusDot(status = "success") {
   const dot = document.getElementById("sync-status-dot");
   if (!dot) return;
 
-  // First handle visibility based on mode
-  if (config.syncMode === "disabled") {
+  // Only show dot in sync mode
+  if (config.syncMode !== "sync") {
     dot.style.display = "none";
     return;
-  } else {
-    dot.style.display = "block";
   }
+
+  dot.style.display = "block";
 
   // Remove existing classes
   dot.className =
@@ -3132,16 +3128,16 @@ function updateSyncStatusDot(status = "success") {
   // Add status-specific classes
   switch (status) {
     case "success":
-      dot.classList.add("bg-green-500");
+      dot.classList.add("bg-green-500"); // In sync
       break;
     case "in-progress":
-      dot.classList.add("bg-orange-500");
+      dot.classList.add("bg-yellow-500"); // Syncing
       break;
     case "error":
-      dot.classList.add("bg-red-500");
+      dot.classList.add("bg-red-500"); // Not synced/error
       break;
     default:
-      dot.classList.add("bg-gray-500");
+      dot.classList.add("bg-gray-500"); // Unknown state
   }
 }
 
@@ -3149,14 +3145,16 @@ function updateSyncStatusDot(status = "success") {
 function updateSyncStatus() {
   setTimeout(() => {
     // Update sync status dot based on current state and mode
-    if (config.syncMode === "disabled") {
+    if (config.syncMode !== "sync") {
       updateSyncStatusDot("hidden");
     } else if (operationState.isImporting || operationState.isExporting) {
       updateSyncStatusDot("in-progress");
     } else if (operationState.lastError) {
       updateSyncStatusDot("error");
-    } else {
+    } else if (operationState.lastSyncTime) {
       updateSyncStatusDot("success");
+    } else {
+      updateSyncStatusDot("error"); // Not synced yet
     }
 
     const syncStatus = document.getElementById("sync-status");
@@ -3671,7 +3669,7 @@ function openSyncModal() {
   modal.innerHTML = `
     <div class="text-gray-800 dark:text-white text-left text-sm">
       <div class="flex justify-center items-center mb-3">
-        <h3 class="text-center text-xl font-bold">Cloud Sync Settings</h3>
+        <h3 class="text-center text-xl font-bold">S3 Backup & Sync Settings</h3>
         <button class="ml-2 text-blue-600 text-lg hint--bottom-left hint--rounded hint--large" 
           aria-label="Fill form & Save. If you are using Amazon S3 - fill in S3 Bucket Name, AWS Region, AWS Access Key, AWS Secret Key and Encryption key.&#10;&#10;Initial backup: You will need to click on Export to create your first backup in S3. Thereafter, automatic backups are done to S3 as per Backup Interval if the browser tab is active.&#10;&#10;Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the local data.&#10;&#10;&#10;&#10;Snapshot: Creates an instant no-touch backup that will not be overwritten.&#10;&#10;Download: You can select the backup data to be download and click on Download button to download it for local storage.&#10;&#10;Restore: Select the backup you want to restore and Click on Restore. The typingmind data will be restored to the selected backup data/date.">ⓘ</button>
       </div>
