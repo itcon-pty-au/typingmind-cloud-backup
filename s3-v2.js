@@ -3398,20 +3398,22 @@ async function updateChatMetadata(
     const currentHash = await generateChatHash(chat);
     const metadata = localMetadata.chats[chatId];
 
-    // Update last modified if content changed
+    // Only update lastModified if the content actually changed
     if (metadata.hash !== currentHash) {
       metadata.lastModified = Date.now();
       metadata.hash = currentHash;
+
+      // Reset syncedAt only if content changed
+      if (isModified) {
+        metadata.syncedAt = 0;
+        // Queue for sync only if content changed
+        queueOperation(`chat-changed-${chatId}`, () =>
+          uploadChatToCloud(chatId)
+        );
+      }
     }
 
     metadata.deleted = false;
-
-    // Reset syncedAt if modified
-    if (isModified) {
-      metadata.syncedAt = 0;
-      // Queue for sync immediately
-      queueOperation(`chat-changed-${chatId}`, () => uploadChatToCloud(chatId));
-    }
 
     // Update lastSeenUpdates
     lastSeenUpdates[chatId] = {
@@ -3420,8 +3422,13 @@ async function updateChatMetadata(
     };
   } else if (isDeleted) {
     // Handle deletion
-    localMetadata.chats[chatId].deleted = true;
-    localMetadata.chats[chatId].deletedAt = Date.now();
+    localMetadata.chats[chatId] = {
+      ...localMetadata.chats[chatId],
+      deleted: true,
+      deletedAt: Date.now(),
+      lastModified: Date.now(),
+      syncedAt: 0,
+    };
     delete lastSeenUpdates[chatId];
   }
 
