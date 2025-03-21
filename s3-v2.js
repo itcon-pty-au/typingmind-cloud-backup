@@ -3120,12 +3120,12 @@ function insertSyncButton() {
     openSyncModal();
   });
 
-  // Try to insert after the Teams button
-  const teamsButton = document.querySelector(
-    'button[data-element-id="workspace-tab-teams"]'
+  // Try to insert after the Chat button
+  const chatButton = document.querySelector(
+    'button[data-element-id="workspace-tab-chat"]'
   );
-  if (teamsButton && teamsButton.parentNode) {
-    teamsButton.parentNode.insertBefore(button, teamsButton.nextSibling);
+  if (chatButton && chatButton.parentNode) {
+    chatButton.parentNode.insertBefore(button, chatButton.nextSibling);
     return;
   }
 
