@@ -1710,19 +1710,24 @@ function startBackupIntervals() {
 // Check if daily backup is needed and perform it if necessary
 async function checkAndPerformDailyBackup() {
   try {
+    // Get the last backup date in YYYYMMDD format
     const lastBackupStr = localStorage.getItem("lastDailyBackup");
-    const lastBackup = lastBackupStr ? new Date(parseInt(lastBackupStr)) : null;
-    const now = new Date();
 
-    // If no backup has been performed today
-    if (!lastBackup || lastBackup.toDateString() !== now.toDateString()) {
-      //logToConsole("info", "Starting daily backup...");
+    // Get current date in YYYYMMDD format
+    const now = new Date();
+    const currentDateStr = `${now.getFullYear()}${String(
+      now.getMonth() + 1
+    ).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+
+    // If no backup has been performed or last backup was on a different date
+    if (!lastBackupStr || lastBackupStr !== currentDateStr) {
+      logToConsole("info", "Starting daily backup...");
       await performDailyBackup();
-      // Update last backup time
-      localStorage.setItem("lastDailyBackup", now.getTime().toString());
-      //logToConsole("success", "Daily backup completed");
+      // Update last backup date in YYYYMMDD format
+      localStorage.setItem("lastDailyBackup", currentDateStr);
+      logToConsole("success", "Daily backup completed");
     } else {
-      //logToConsole("skip", "Daily backup already performed today");
+      logToConsole("skip", "Daily backup already performed today");
     }
   } catch (error) {
     logToConsole("error", "Error checking/performing daily backup:", error);
