@@ -3144,76 +3144,38 @@ function updateSyncStatusDot(status = "success") {
 // Update the updateSyncStatus function to include dot status
 function updateSyncStatus() {
   setTimeout(async () => {
-    // Update sync status dot based on current state and mode
+    // Only show dot in sync mode
     if (config.syncMode !== "sync") {
       updateSyncStatusDot("hidden");
-    } else if (operationState.isImporting || operationState.isExporting) {
-      updateSyncStatusDot("in-progress");
-    } else {
-      // Get sync status
-      const status = await checkSyncStatus();
-      switch (status) {
-        case "in-sync":
-          updateSyncStatusDot("success");
-          break;
-        case "syncing":
-          updateSyncStatusDot("in-progress");
-          break;
-        case "out-of-sync":
-          updateSyncStatusDot("error");
-          break;
-        default:
-          updateSyncStatusDot("hidden");
-      }
+      return;
     }
 
-    const syncStatus = document.getElementById("sync-status");
-    if (!syncStatus) return;
+    // If operations in progress, show yellow
+    if (
+      operationState.isImporting ||
+      operationState.isExporting ||
+      operationState.isProcessingQueue
+    ) {
+      updateSyncStatusDot("in-progress");
+      return;
+    }
 
-    // Update sync button text and status
-    if (config.syncMode === "disabled") {
-      syncStatus.textContent = "Sync disabled";
-      syncStatus.classList.remove(
-        "text-green-500",
-        "text-red-500",
-        "text-yellow-500"
-      );
-      syncStatus.classList.add("text-gray-500");
-    } else if (operationState.isImporting) {
-      syncStatus.textContent = "Syncing from cloud...";
-      syncStatus.classList.remove(
-        "text-green-500",
-        "text-red-500",
-        "text-gray-500"
-      );
-      syncStatus.classList.add("text-yellow-500");
-    } else if (operationState.isExporting) {
-      syncStatus.textContent = "Syncing to cloud...";
-      syncStatus.classList.remove(
-        "text-green-500",
-        "text-red-500",
-        "text-gray-500"
-      );
-      syncStatus.classList.add("text-yellow-500");
-    } else if (operationState.lastError) {
-      syncStatus.textContent = "Sync error";
-      syncStatus.classList.remove(
-        "text-green-500",
-        "text-yellow-500",
-        "text-gray-500"
-      );
-      syncStatus.classList.add("text-red-500");
-    } else {
-      const lastSync = getLastSyncTime();
-      syncStatus.textContent = lastSync
-        ? `Last synced ${lastSync}`
-        : "Ready to sync";
-      syncStatus.classList.remove(
-        "text-red-500",
-        "text-yellow-500",
-        "text-gray-500"
-      );
-      syncStatus.classList.add("text-green-500");
+    // Check sync status
+    const status = await checkSyncStatus();
+
+    // Update dot based on status
+    switch (status) {
+      case "in-sync":
+        updateSyncStatusDot("success");
+        break;
+      case "syncing":
+        updateSyncStatusDot("in-progress");
+        break;
+      case "out-of-sync":
+        updateSyncStatusDot("error");
+        break;
+      default:
+        updateSyncStatusDot("hidden");
     }
   }, 100);
 }
@@ -5485,21 +5447,8 @@ async function uploadChatToCloud(
 // Add new sync status checking functions
 async function checkSyncStatus() {
   // If sync is disabled, no status needed
-  if (config.syncMode === "disabled") {
+  if (config.syncMode !== "sync") {
     return "disabled";
-  }
-
-  // Add timeout check for potentially stuck states
-  const MAX_OPERATION_TIME = 5 * 60 * 1000; // 5 minutes
-  const now = Date.now();
-
-  if (
-    operationState.operationStartTime &&
-    now - operationState.operationStartTime > MAX_OPERATION_TIME
-  ) {
-    // Operation has been running too long, probably stuck
-    resetOperationStates();
-    return "out-of-sync";
   }
 
   // If operations in progress -> syncing
@@ -5508,27 +5457,19 @@ async function checkSyncStatus() {
     operationState.isExporting ||
     operationState.isProcessingQueue
   ) {
-    // Track operation start time if not already set
-    if (!operationState.operationStartTime) {
-      operationState.operationStartTime = now;
-    }
     return "syncing";
   }
 
-  // Reset operation start time when no operations are running
-  operationState.operationStartTime = null;
-
   try {
-    // Check for local changes (using only local metadata)
+    // Check for local changes
     const hasLocalChanges = Object.values(localMetadata.chats).some(
       (chat) => !chat.deleted && chat.lastModified > (chat.syncedAt || 0)
     );
 
     // Check for pending settings changes
     const hasSettingChanges =
-      pendingSettingsChanges ||
       localMetadata.settings.lastModified >
-        (localMetadata.settings.syncedAt || 0);
+      (localMetadata.settings.syncedAt || 0);
 
     // Check for errors
     if (operationState.lastError) {
@@ -5540,12 +5481,12 @@ async function checkSyncStatus() {
       return "out-of-sync";
     }
 
-    // If we have a last sync time and no changes, we're in sync
+    // If we have a successful sync time and no changes -> in sync
     if (localMetadata.lastSyncTime > 0) {
       return "in-sync";
     }
 
-    // No sync time yet, consider it out of sync
+    // No sync time yet -> out of sync
     return "out-of-sync";
   } catch (error) {
     logToConsole("error", "Error checking sync status:", error);
