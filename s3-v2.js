@@ -82,6 +82,7 @@ let operationState = {
   queueProcessingPromise: null,
   completedOperations: new Set(),
   operationTimeouts: new Map(),
+  lastChatCheck: 0,
 };
 
 // Backup state tracking
@@ -865,7 +866,7 @@ async function getAllChatsFromIndexedDB() {
       const chats = [];
 
       // Get all chat keys
-      store.getAllKeys().onsuccess = (keyEvent) => {
+      store.getAllKeys().onsuccess = async (keyEvent) => {
         const keys = keyEvent.target.result;
         const chatKeys = keys.filter((key) => key.startsWith("CHAT_"));
 
@@ -875,7 +876,7 @@ async function getAllChatsFromIndexedDB() {
         }
 
         // Get all chat data
-        store.getAll().onsuccess = (valueEvent) => {
+        store.getAll().onsuccess = async (valueEvent) => {
           const values = valueEvent.target.result;
           for (let i = 0; i < keys.length; i++) {
             const key = keys[i];
@@ -885,9 +886,36 @@ async function getAllChatsFromIndexedDB() {
               if (!chat.id) {
                 chat.id = key.startsWith("CHAT_") ? key.slice(5) : key;
               }
+
+              // Check for changes
+              const newHash = await generateChatHash(chat);
+              const lastSeen = lastSeenUpdates[chat.id];
+
+              if (!lastSeen || lastSeen.hash !== newHash) {
+                // Update metadata for changed chat
+                if (!localMetadata.chats[chat.id]) {
+                  localMetadata.chats[chat.id] = {};
+                }
+
+                localMetadata.chats[chat.id].lastModified = Date.now();
+                localMetadata.chats[chat.id].hash = newHash;
+                localMetadata.chats[chat.id].syncedAt = 0; // Force sync
+
+                // Update last seen
+                lastSeenUpdates[chat.id] = {
+                  hash: newHash,
+                  updatedAt: Date.now(),
+                };
+
+                logToConsole("info", `Detected changes in chat: ${chat.id}`);
+              }
+
               chats.push(chat);
             }
           }
+
+          // Save metadata if changes were detected
+          await saveLocalMetadata();
           resolve(chats);
         };
       };
@@ -2622,7 +2650,10 @@ function startSyncInterval() {
     }
 
     try {
-      // Check for local changes first
+      // Check for chat updates first
+      await checkForChatUpdates();
+
+      // Rest of the existing interval code...
       const hasLocalChanges =
         pendingSettingsChanges ||
         Object.values(localMetadata.chats).some(
@@ -2630,15 +2661,10 @@ function startSyncInterval() {
         );
 
       if (config.syncMode === "sync") {
-        // In sync mode:
-        // 1. If there are local changes, sync to cloud
-        // 2. If metadata is out of date (over 1 min), check cloud
-        // 3. Otherwise skip this cycle
         if (hasLocalChanges) {
           logToConsole("info", "Local changes detected - syncing to cloud");
           queueOperation("local-changes-sync", syncToCloud);
         } else {
-          // Check if we should sync from cloud based on metadata age
           const metadataAge = Date.now() - (localMetadata.lastSyncTime || 0);
           const METADATA_REFRESH_INTERVAL = 60000; // 1 minute
 
@@ -2653,7 +2679,6 @@ function startSyncInterval() {
           }
         }
       } else if (config.syncMode === "backup" && hasLocalChanges) {
-        // In backup mode, only sync to cloud when there are local changes
         logToConsole("info", "Local changes detected - backing up to cloud");
         queueOperation("backup-modified-chats", syncToCloud);
       }
@@ -5963,5 +5988,43 @@ async function cleanupCloudTombstones() {
   } catch (error) {
     logToConsole("error", "Error cleaning up cloud tombstones", error);
     return 0;
+  }
+}
+
+// Add periodic chat check function
+async function checkForChatUpdates() {
+  // Skip if sync is disabled
+  if (config.syncMode === "disabled") return;
+
+  // Skip if another check was done recently (within 5 seconds)
+  const now = Date.now();
+  if (now - operationState.lastChatCheck < 5000) return;
+
+  operationState.lastChatCheck = now;
+
+  try {
+    const chats = await getAllChatsFromIndexedDB();
+    let hasChanges = false;
+
+    for (const chat of chats) {
+      if (!chat.id) continue;
+
+      const newHash = await generateChatHash(chat);
+      const lastSeen = lastSeenUpdates[chat.id];
+
+      if (!lastSeen || lastSeen.hash !== newHash) {
+        hasChanges = true;
+        // Changes are handled in getAllChatsFromIndexedDB
+      }
+    }
+
+    if (hasChanges) {
+      logToConsole("info", "Chat changes detected, queueing sync");
+      if (config.syncMode === "sync") {
+        queueOperation("chat-changes-sync", syncToCloud);
+      }
+    }
+  } catch (error) {
+    logToConsole("error", "Error checking for chat updates:", error);
   }
 }
