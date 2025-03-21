@@ -15,7 +15,7 @@ const EXCLUDED_SETTINGS = [
   "sync-mode",
   "last-cloud-sync",
   "TM_useDraftContent",
-  "lastDailyBackup",
+  "last-daily-backup",
   "TM_useLastVerifiedToken",
   "TM_useStateUpdateHistory",
   "TM_useGlobalChatLoading",
@@ -82,7 +82,6 @@ let operationState = {
   queueProcessingPromise: null,
   completedOperations: new Set(),
   operationTimeouts: new Map(),
-  lastChatCheck: 0,
 };
 
 // Backup state tracking
@@ -469,38 +468,17 @@ async function loadJSZip() {
 
 // Initialize last seen updates tracking
 async function initializeLastSeenUpdates() {
-  try {
-    lastSeenUpdates = {};
-    const chats = await getAllChatsFromIndexedDB();
+  //logToConsole("start", "Initializing last seen updates...");
+  const chats = await getAllChatsFromIndexedDB();
 
-    for (const chat of chats) {
-      if (!chat.id) continue;
-
-      // Skip deleted chats and tombstones
-      if (
-        localMetadata.tombstones?.[chat.id] ||
-        localMetadata.chats[chat.id]?.isDeleted
-      ) {
-        continue;
-      }
-
-      const hash = await generateChatHash(chat);
-      lastSeenUpdates[chat.id] = {
-        hash,
-        updatedAt: Date.now(),
-      };
-    }
-
-    logToConsole(
-      "info",
-      `Initialized lastSeenUpdates for ${
-        Object.keys(lastSeenUpdates).length
-      } chats`
-    );
-  } catch (error) {
-    logToConsole("error", "Error initializing lastSeenUpdates", error);
-    lastSeenUpdates = {};
+  for (const chat of chats) {
+    if (!chat.id) continue;
+    lastSeenUpdates[chat.id] = {
+      updatedAt: chat.updatedAt || Date.now(),
+      hash: await generateChatHash(chat),
+    };
   }
+  //logToConsole("success", "Last seen updates initialized");
 }
 
 // Load configuration from localStorage
@@ -887,7 +865,7 @@ async function getAllChatsFromIndexedDB() {
       const chats = [];
 
       // Get all chat keys
-      store.getAllKeys().onsuccess = async (keyEvent) => {
+      store.getAllKeys().onsuccess = (keyEvent) => {
         const keys = keyEvent.target.result;
         const chatKeys = keys.filter((key) => key.startsWith("CHAT_"));
 
@@ -897,7 +875,7 @@ async function getAllChatsFromIndexedDB() {
         }
 
         // Get all chat data
-        store.getAll().onsuccess = async (valueEvent) => {
+        store.getAll().onsuccess = (valueEvent) => {
           const values = valueEvent.target.result;
           for (let i = 0; i < keys.length; i++) {
             const key = keys[i];
@@ -907,36 +885,9 @@ async function getAllChatsFromIndexedDB() {
               if (!chat.id) {
                 chat.id = key.startsWith("CHAT_") ? key.slice(5) : key;
               }
-
-              // Check for changes
-              const newHash = await generateChatHash(chat);
-              const lastSeen = lastSeenUpdates[chat.id];
-
-              if (!lastSeen || lastSeen.hash !== newHash) {
-                // Update metadata for changed chat
-                if (!localMetadata.chats[chat.id]) {
-                  localMetadata.chats[chat.id] = {};
-                }
-
-                localMetadata.chats[chat.id].lastModified = Date.now();
-                localMetadata.chats[chat.id].hash = newHash;
-                localMetadata.chats[chat.id].syncedAt = 0; // Force sync
-
-                // Update last seen
-                lastSeenUpdates[chat.id] = {
-                  hash: newHash,
-                  updatedAt: Date.now(),
-                };
-
-                logToConsole("info", `Detected changes in chat: ${chat.id}`);
-              }
-
               chats.push(chat);
             }
           }
-
-          // Save metadata if changes were detected
-          await saveLocalMetadata();
           resolve(chats);
         };
       };
@@ -1766,7 +1717,7 @@ async function decryptData(data) {
     if (backupIntervalRunning) {
       clearInterval(backupInterval);
       backupIntervalRunning = false;
-      localStorage.setItem("activeTabBackupRunning", "false");
+      //localStorage.setItem("activeTabBackupRunning", "false");
     }
     wasImportSuccessful = false;
     await showCustomAlert(
@@ -1814,7 +1765,7 @@ function startBackupIntervals() {
 async function checkAndPerformDailyBackup() {
   try {
     // Get the last backup date in YYYYMMDD format
-    const lastBackupStr = localStorage.getItem("lastDailyBackup");
+    const lastBackupStr = localStorage.getItem("last-daily-backup");
 
     // Get current date in YYYYMMDD format
     const now = new Date();
@@ -1827,7 +1778,7 @@ async function checkAndPerformDailyBackup() {
       logToConsole("info", "Starting daily backup...");
       await performDailyBackup();
       // Update last backup date in YYYYMMDD format
-      localStorage.setItem("lastDailyBackup", currentDateStr);
+      localStorage.setItem("last-daily-backup", currentDateStr);
       logToConsole("success", "Daily backup completed");
     } else {
       logToConsole("skip", "Daily backup already performed today");
@@ -2262,9 +2213,6 @@ async function restoreFromBackup(key) {
 function importDataToStorage(data) {
   return new Promise((resolve, reject) => {
     const preserveKeys = [
-      "import-size-threshold",
-      "export-size-threshold",
-      "alert-smaller-cloud",
       "encryption-key",
       "aws-bucket",
       "aws-access-key",
@@ -2273,11 +2221,7 @@ function importDataToStorage(data) {
       "aws-endpoint",
       "backup-interval",
       "sync-mode",
-      "sync-status-hidden",
-      "sync-status-position",
-      "activeTabBackupRunning",
-      "last-time-based-backup",
-      "last-daily-backup-in-s3",
+      "last-daily-backup",
       "last-cloud-sync",
       "chat-sync-metadata",
     ];
@@ -2671,10 +2615,7 @@ function startSyncInterval() {
     }
 
     try {
-      // Check for chat updates first
-      await checkForChatUpdates();
-
-      // Rest of the existing interval code...
+      // Check for local changes first
       const hasLocalChanges =
         pendingSettingsChanges ||
         Object.values(localMetadata.chats).some(
@@ -2682,10 +2623,15 @@ function startSyncInterval() {
         );
 
       if (config.syncMode === "sync") {
+        // In sync mode:
+        // 1. If there are local changes, sync to cloud
+        // 2. If metadata is out of date (over 1 min), check cloud
+        // 3. Otherwise skip this cycle
         if (hasLocalChanges) {
           logToConsole("info", "Local changes detected - syncing to cloud");
           queueOperation("local-changes-sync", syncToCloud);
         } else {
+          // Check if we should sync from cloud based on metadata age
           const metadataAge = Date.now() - (localMetadata.lastSyncTime || 0);
           const METADATA_REFRESH_INTERVAL = 60000; // 1 minute
 
@@ -2700,6 +2646,7 @@ function startSyncInterval() {
           }
         }
       } else if (config.syncMode === "backup" && hasLocalChanges) {
+        // In backup mode, only sync to cloud when there are local changes
         logToConsole("info", "Local changes detected - backing up to cloud");
         queueOperation("backup-modified-chats", syncToCloud);
       }
@@ -6009,104 +5956,5 @@ async function cleanupCloudTombstones() {
   } catch (error) {
     logToConsole("error", "Error cleaning up cloud tombstones", error);
     return 0;
-  }
-}
-
-// Add periodic chat check function
-async function checkForChatUpdates() {
-  // Skip if sync is disabled
-  if (config.syncMode === "disabled") return;
-
-  // Skip if another check was done recently (within 5 seconds)
-  const now = Date.now();
-  if (now - operationState.lastChatCheck < 5000) return;
-
-  operationState.lastChatCheck = now;
-
-  try {
-    // Try to get latest cloud metadata if we're in sync mode
-    let cloudTombstones = {};
-    if (config.syncMode === "sync") {
-      try {
-        const metadata = await downloadCloudMetadata();
-        if (metadata?.tombstones) {
-          cloudTombstones = metadata.tombstones;
-        }
-      } catch (error) {
-        logToConsole(
-          "warn",
-          "Could not fetch cloud metadata for tombstone check",
-          error
-        );
-      }
-    }
-
-    const chats = await getAllChatsFromIndexedDB();
-    let hasChanges = false;
-
-    for (const chat of chats) {
-      if (!chat.id) continue;
-
-      // Skip if chat has a local tombstone entry
-      if (localMetadata.tombstones?.[chat.id]) {
-        continue;
-      }
-
-      // Skip if chat is marked as deleted in metadata
-      if (localMetadata.chats[chat.id]?.isDeleted) {
-        continue;
-      }
-
-      // Skip if chat has a cloud tombstone
-      if (cloudTombstones[chat.id]) {
-        logToConsole("sync", `Skipping chat ${chat.id} - has cloud tombstone`);
-        continue;
-      }
-
-      const newHash = await generateChatHash(chat);
-      const lastSeen = lastSeenUpdates[chat.id];
-      const metadata = localMetadata.chats[chat.id];
-
-      // Only detect changes if:
-      // 1. We haven't seen this chat before OR
-      // 2. The hash has changed AND it's not already marked for sync
-      if (
-        (!lastSeen || lastSeen.hash !== newHash) &&
-        (!metadata || metadata.syncedAt !== 0)
-      ) {
-        logToConsole(
-          "sync",
-          `Detected changes in chat ${chat.id} - old hash: ${lastSeen?.hash}, new hash: ${newHash}`
-        );
-
-        // Update metadata
-        if (!metadata) {
-          localMetadata.chats[chat.id] = {
-            lastModified: now,
-            hash: newHash,
-            syncedAt: 0,
-          };
-        } else {
-          metadata.lastModified = now;
-          metadata.hash = newHash;
-          metadata.syncedAt = 0; // Force sync
-        }
-
-        // Update last seen state
-        lastSeenUpdates[chat.id] = {
-          hash: newHash,
-          updatedAt: now,
-        };
-
-        hasChanges = true;
-      }
-    }
-
-    if (hasChanges) {
-      await saveLocalMetadata();
-      queueOperation("chat-changes-sync", syncToCloud);
-    }
-  } catch (error) {
-    logToConsole("error", "Error checking for chat updates", error);
   }
 }
