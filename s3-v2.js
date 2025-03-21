@@ -2343,26 +2343,37 @@ function startSyncInterval() {
     }
 
     try {
-      if (config.syncMode === "sync") {
-        // In sync mode, we alternate between syncToCloud and syncFromCloud
-        const shouldSyncToCloud =
-          pendingSettingsChanges ||
-          Object.values(localMetadata.chats).some(
-            (chat) => !chat.deleted && chat.lastModified > (chat.syncedAt || 0)
-          );
+      // Check for local changes first
+      const hasLocalChanges =
+        pendingSettingsChanges ||
+        Object.values(localMetadata.chats).some(
+          (chat) => !chat.deleted && chat.lastModified > (chat.syncedAt || 0)
+        );
 
-        if (shouldSyncToCloud) {
+      if (config.syncMode === "sync") {
+        // In sync mode:
+        // 1. If there are local changes, sync to cloud
+        // 2. If metadata is out of date (over 1 min), check cloud
+        // 3. Otherwise skip this cycle
+        if (hasLocalChanges) {
           logToConsole("info", "Local changes detected - syncing to cloud");
           queueOperation("local-changes-sync", syncToCloud);
         } else {
-          // If no local changes, check cloud for changes
-          logToConsole("info", "Checking cloud for changes");
-          queueOperation("interval-sync", syncFromCloud);
+          // Check if we should sync from cloud based on metadata age
+          const metadataAge = Date.now() - (localMetadata.lastSyncTime || 0);
+          const METADATA_REFRESH_INTERVAL = 60000; // 1 minute
+
+          if (metadataAge >= METADATA_REFRESH_INTERVAL) {
+            logToConsole(
+              "info",
+              "Checking for cloud updates (metadata age: " +
+                Math.round(metadataAge / 1000) +
+                "s)"
+            );
+            queueOperation("cloud-check", syncFromCloud);
+          }
         }
-      } else if (
-        config.syncMode === "backup" &&
-        (pendingSettingsChanges || isLocalDataModified)
-      ) {
+      } else if (config.syncMode === "backup" && hasLocalChanges) {
         // In backup mode, only sync to cloud when there are local changes
         logToConsole("info", "Local changes detected - backing up to cloud");
         queueOperation("backup-modified-chats", syncToCloud);
@@ -2370,7 +2381,7 @@ function startSyncInterval() {
     } catch (error) {
       logToConsole("error", "Error in sync interval:", error);
     }
-  }, config.syncInterval * 1000); // Use exactly what the user configured
+  }, config.syncInterval * 1000);
 
   logToConsole("info", `Started sync interval (${config.syncInterval}s)`);
 }
