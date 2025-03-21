@@ -2647,7 +2647,15 @@ async function syncFromCloud() {
       ) {
         const cloudChat = await downloadChatFromCloud(chatId);
         if (cloudChat) {
-          await saveChatToIndexedDB(cloudChat);
+          let chatToSave = cloudChat;
+
+          // If we have a local version, merge them
+          const localChat = await getChatFromIndexedDB(chatId);
+          if (localChat) {
+            chatToSave = await mergeChats(localChat, cloudChat);
+          }
+
+          await saveChatToIndexedDB(chatToSave);
           hasChanges = true;
           downloadedChats++;
 
@@ -5552,3 +5560,69 @@ window.addEventListener("visibilitychange", () => {
     resetOperationStates();
   }
 });
+
+// Merge two versions of a chat, combining their messages and metadata
+async function mergeChats(localChat, cloudChat) {
+  logToConsole("info", "Merging chat versions", {
+    chatId: localChat.id,
+    localMessages: (localChat.messagesArray || []).length,
+    cloudMessages: (cloudChat.messagesArray || []).length,
+  });
+
+  // Create a fresh copy to work with
+  const mergedChat = JSON.parse(JSON.stringify(localChat));
+
+  // Use the most recent metadata
+  mergedChat.updatedAt = Math.max(
+    localChat.updatedAt || 0,
+    cloudChat.updatedAt || 0
+  );
+
+  // Use the most recent title
+  if (
+    cloudChat.chatTitle &&
+    (!localChat.chatTitle || cloudChat.updatedAt > localChat.updatedAt)
+  ) {
+    mergedChat.chatTitle = cloudChat.chatTitle;
+  }
+
+  // Handle message merging
+  if (!mergedChat.messagesArray) mergedChat.messagesArray = [];
+  if (!cloudChat.messagesArray) cloudChat.messagesArray = [];
+
+  // Create a map of message IDs we already have
+  const messageMap = new Map();
+  for (const msg of mergedChat.messagesArray) {
+    const msgId = msg.id || JSON.stringify(msg);
+    messageMap.set(msgId, true);
+  }
+
+  // Add messages from cloud that don't exist locally
+  for (const cloudMsg of cloudChat.messagesArray) {
+    const msgId = cloudMsg.id || JSON.stringify(cloudMsg);
+    if (!messageMap.has(msgId)) {
+      mergedChat.messagesArray.push(cloudMsg);
+      messageMap.set(msgId, true);
+    }
+  }
+
+  // Sort messages by timestamp or index
+  mergedChat.messagesArray.sort((a, b) => {
+    // First by timestamp if available
+    if (a.timestamp && b.timestamp) {
+      return a.timestamp - b.timestamp;
+    }
+    // Then by message index if available
+    if (a.index !== undefined && b.index !== undefined) {
+      return a.index - b.index;
+    }
+    // Default to keeping existing order
+    return 0;
+  });
+
+  logToConsole("success", "Chat merge completed", {
+    messageCount: mergedChat.messagesArray.length,
+  });
+
+  return mergedChat;
+}
