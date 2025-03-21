@@ -6024,13 +6024,30 @@ async function checkForChatUpdates() {
   operationState.lastChatCheck = now;
 
   try {
+    // Try to get latest cloud metadata if we're in sync mode
+    let cloudTombstones = {};
+    if (config.syncMode === "sync") {
+      try {
+        const metadata = await downloadCloudMetadata();
+        if (metadata?.tombstones) {
+          cloudTombstones = metadata.tombstones;
+        }
+      } catch (error) {
+        logToConsole(
+          "warn",
+          "Could not fetch cloud metadata for tombstone check",
+          error
+        );
+      }
+    }
+
     const chats = await getAllChatsFromIndexedDB();
     let hasChanges = false;
 
     for (const chat of chats) {
       if (!chat.id) continue;
 
-      // Skip if chat has a tombstone entry
+      // Skip if chat has a local tombstone entry
       if (localMetadata.tombstones?.[chat.id]) {
         continue;
       }
@@ -6041,7 +6058,7 @@ async function checkForChatUpdates() {
       }
 
       // Skip if chat has a cloud tombstone
-      if (cloudMetadata?.tombstones?.[chat.id]) {
+      if (cloudTombstones[chat.id]) {
         logToConsole("sync", `Skipping chat ${chat.id} - has cloud tombstone`);
         continue;
       }
