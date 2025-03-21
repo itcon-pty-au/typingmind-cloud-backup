@@ -4226,45 +4226,23 @@ async function saveSettings() {
             localChats: localChatCount,
           });
 
-          if (cloudChatCount === 0 && localChatCount > 0) {
-            // Cloud is empty but we have local chats - sync to cloud
-            logToConsole("info", "Cloud is empty, syncing local data to cloud");
-            queueOperation("force-initial-sync", async () => {
-              logToConsole("start", "Performing forced sync to cloud");
-              await syncToCloud();
-            });
-          } else if (cloudLastSync > localLastSync) {
-            // Cloud has newer data - sync from cloud
-            logToConsole("info", "Cloud has newer data, syncing from cloud");
+          // Only sync from cloud if it has newer data AND has chats
+          if (cloudLastSync > localLastSync && cloudChatCount > 0) {
+            logToConsole(
+              "info",
+              "Cloud has newer data and chats, syncing from cloud"
+            );
             queueOperation("force-initial-sync", async () => {
               logToConsole("start", "Performing forced sync from cloud");
               await syncFromCloud();
             });
-          } else if (localLastSync > cloudLastSync) {
-            // Local has newer data - sync to cloud
-            logToConsole("info", "Local has newer data, syncing to cloud");
+          } else if (localChatCount > 0) {
+            // If we have local chats, sync to cloud
+            logToConsole("info", "Local data exists, syncing to cloud");
             queueOperation("force-initial-sync", async () => {
               logToConsole("start", "Performing forced sync to cloud");
               await syncToCloud();
             });
-          } else {
-            // Times are equal, compare chat counts
-            if (cloudChatCount > localChatCount) {
-              logToConsole("info", "Cloud has more chats, syncing from cloud");
-              queueOperation("force-initial-sync", async () => {
-                logToConsole("start", "Performing forced sync from cloud");
-                await syncFromCloud();
-              });
-            } else {
-              logToConsole(
-                "info",
-                "Local has equal or more chats, syncing to cloud"
-              );
-              queueOperation("force-initial-sync", async () => {
-                logToConsole("start", "Performing forced sync to cloud");
-                await syncToCloud();
-              });
-            }
           }
         } catch (error) {
           logToConsole("error", "Error determining sync direction:", error);
