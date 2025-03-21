@@ -2171,14 +2171,42 @@ function importDataToStorage(data) {
       "last-time-based-backup",
       "last-daily-backup-in-s3",
       "last-cloud-sync",
+      "chat-sync-metadata",
     ];
+
+    let settingsRestored = 0;
 
     // Import localStorage data
     if (data.localStorage) {
-      Object.keys(data.localStorage).forEach((key) => {
+      Object.entries(data.localStorage).forEach(([key, settingData]) => {
         if (!preserveKeys.includes(key)) {
-          // Store the value exactly as it was in the backup
-          localStorage.setItem(key, data.localStorage[key]);
+          try {
+            // Handle both old format (direct value) and new format (data + source)
+            const value =
+              typeof settingData === "object" && settingData.data !== undefined
+                ? settingData.data
+                : settingData;
+            const source =
+              typeof settingData === "object" && settingData.source
+                ? settingData.source
+                : "localStorage";
+
+            if (source === "indexeddb") {
+              // If it's meant for indexedDB, skip it here - it will be handled in the indexedDB section
+              return;
+            }
+
+            // Store in localStorage
+            localStorage.setItem(key, value);
+            settingsRestored++;
+            logToConsole("info", `Restored setting to localStorage: ${key}`);
+          } catch (error) {
+            logToConsole(
+              "error",
+              `Error restoring localStorage setting ${key}:`,
+              error
+            );
+          }
         }
       });
     }
@@ -2192,19 +2220,73 @@ function importDataToStorage(data) {
         const transaction = db.transaction(["keyval"], "readwrite");
         const objectStore = transaction.objectStore("keyval");
 
-        transaction.oncomplete = () => resolve();
+        transaction.oncomplete = () => {
+          logToConsole("success", `Settings restore completed`, {
+            totalRestored: settingsRestored,
+            timestamp: new Date().toISOString(),
+          });
+          resolve();
+        };
         transaction.onerror = () => reject(transaction.error);
 
         // Clear existing data
         const deleteRequest = objectStore.clear();
         deleteRequest.onsuccess = function () {
-          // Import new data directly
-          Object.keys(data.indexedDB).forEach((key) => {
-            objectStore.put(data.indexedDB[key], key);
+          // Import new data
+          Object.entries(data.indexedDB).forEach(([key, settingData]) => {
+            if (!preserveKeys.includes(key)) {
+              try {
+                // Handle both old format (direct value) and new format (data + source)
+                let value =
+                  typeof settingData === "object" &&
+                  settingData.data !== undefined
+                    ? settingData.data
+                    : settingData;
+                const source =
+                  typeof settingData === "object" && settingData.source
+                    ? settingData.source
+                    : "indexeddb";
+
+                if (source === "localStorage") {
+                  // If it's meant for localStorage, skip it here - it was handled in the localStorage section
+                  return;
+                }
+
+                // Parse JSON strings if needed
+                if (
+                  typeof value === "string" &&
+                  (value.startsWith("{") || value.startsWith("["))
+                ) {
+                  try {
+                    value = JSON.parse(value);
+                  } catch (parseError) {
+                    logToConsole(
+                      "warning",
+                      `Failed to parse ${key} as JSON, using as-is`,
+                      parseError
+                    );
+                  }
+                }
+
+                objectStore.put(value, key);
+                settingsRestored++;
+                logToConsole("info", `Restored setting to IndexedDB: ${key}`);
+              } catch (error) {
+                logToConsole(
+                  "error",
+                  `Error restoring IndexedDB setting ${key}:`,
+                  error
+                );
+              }
+            }
           });
         };
       };
     } else {
+      logToConsole("success", `Settings restore completed`, {
+        totalRestored: settingsRestored,
+        timestamp: new Date().toISOString(),
+      });
       resolve();
     }
   });
