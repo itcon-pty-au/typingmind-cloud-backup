@@ -2353,13 +2353,30 @@ async function processOperationQueue() {
 
   try {
     operationState.isProcessingQueue = true;
+    // Only log queue processing for 2+ items to reduce noise
+    if (operationState.operationQueue.length > 1) {
+      logToConsole(
+        "info",
+        `Processing operation queue (${operationState.operationQueue.length} items)`
+      );
+    }
+
     while (operationState.operationQueue.length > 0) {
       const nextOperation = operationState.operationQueue[0];
       try {
+        // Only log important operations
+        if (
+          nextOperation.name.startsWith("initial") ||
+          nextOperation.name.startsWith("manual") ||
+          nextOperation.name.startsWith("visibility")
+        ) {
+          logToConsole("info", `Executing operation: ${nextOperation.name}`);
+        }
         await nextOperation.operation();
+        operationState.operationQueue.shift();
+
         // Add a small delay to ensure proper completion
         await new Promise((resolve) => setTimeout(resolve, 500));
-        operationState.operationQueue.shift();
       } catch (error) {
         logToConsole(
           "error",
@@ -2367,14 +2384,23 @@ async function processOperationQueue() {
           error
         );
         operationState.operationQueue.shift();
+
         // Add a delay after errors to prevent rapid retries
         await new Promise((resolve) => setTimeout(resolve, 2000));
       }
     }
-  } catch (error) {
-    logToConsole("error", "Error processing queue:", error);
   } finally {
-    operationState.isProcessingQueue = false; // <-- Make sure this is always reset
+    // Always reset processing state
+    operationState.isProcessingQueue = false;
+    // Reset other operation states if queue is empty
+    if (operationState.operationQueue.length === 0) {
+      operationState.isImporting = false;
+      operationState.isExporting = false;
+      operationState.isPendingSync = false;
+      // Force a sync status update
+      const status = await checkSyncStatus();
+      updateSyncStatusDot(status);
+    }
   }
 }
 
