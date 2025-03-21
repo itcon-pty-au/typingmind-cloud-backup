@@ -2637,13 +2637,34 @@ function startSyncInterval() {
           const METADATA_REFRESH_INTERVAL = 60000; // 1 minute
 
           if (metadataAge >= METADATA_REFRESH_INTERVAL) {
-            logToConsole(
-              "info",
-              "Checking for cloud updates (metadata age: " +
-                Math.round(metadataAge / 1000) +
-                "s)"
-            );
-            queueOperation("cloud-check", syncFromCloud);
+            // Get cloud metadata to check chat counts
+            const cloudMetadata = await downloadCloudMetadata();
+            const cloudChatCount = Object.keys(
+              cloudMetadata?.chats || {}
+            ).length;
+            const localChatCount = Object.keys(
+              localMetadata.chats || {}
+            ).length;
+
+            // If cloud is empty/new and we have local chats, sync to cloud instead
+            if (
+              (cloudChatCount === 0 && localChatCount > 0) ||
+              cloudMetadata.lastSyncTime === 0
+            ) {
+              logToConsole(
+                "info",
+                "Cloud is empty/new but we have local chats - syncing to cloud"
+              );
+              queueOperation("cloud-empty-sync", syncToCloud);
+            } else {
+              logToConsole(
+                "info",
+                "Checking for cloud updates (metadata age: " +
+                  Math.round(metadataAge / 1000) +
+                  "s)"
+              );
+              queueOperation("cloud-check", syncFromCloud);
+            }
           }
         }
       } else if (config.syncMode === "backup" && hasLocalChanges) {
@@ -2783,6 +2804,22 @@ async function syncFromCloud() {
     const cloudMetadata = await downloadCloudMetadata();
     if (!cloudMetadata || !cloudMetadata.chats) {
       logToConsole("info", "No cloud metadata found or invalid format");
+      return;
+    }
+
+    // Safety check: Don't sync from empty/new cloud if we have local data
+    const cloudChatCount = Object.keys(cloudMetadata.chats).length;
+    const localChatCount = Object.keys(localMetadata.chats || {}).length;
+    if (
+      (cloudChatCount === 0 && localChatCount > 0) ||
+      cloudMetadata.lastSyncTime === 0
+    ) {
+      logToConsole(
+        "info",
+        "Aborting sync from cloud - cloud is empty/new but we have local data"
+      );
+      // Queue a sync to cloud instead
+      queueOperation("cloud-empty-sync", syncToCloud);
       return;
     }
 
