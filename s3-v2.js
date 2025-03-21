@@ -1717,7 +1717,6 @@ async function decryptData(data) {
     if (backupIntervalRunning) {
       clearInterval(backupInterval);
       backupIntervalRunning = false;
-      //localStorage.setItem("activeTabBackupRunning", "false");
     }
     wasImportSuccessful = false;
     await showCustomAlert(
@@ -2221,6 +2220,8 @@ function importDataToStorage(data) {
       "aws-endpoint",
       "backup-interval",
       "sync-mode",
+      "sync-status-hidden",
+      "sync-status-position",
       "last-daily-backup",
       "last-cloud-sync",
       "chat-sync-metadata",
@@ -2973,49 +2974,27 @@ async function syncFromCloud() {
       }
 
       // If this is an old chat that's missing from cloud, it was likely deleted on another device
-      // Add additional safety checks to prevent accidental deletions
-      const timeSinceLastSync = Date.now() - (localMetadata.lastSyncTime || 0);
-      const deletionThreshold = 5 * 60 * 1000; // 5 minutes
-      const isRecentlyModified =
-        localChatMeta &&
-        Date.now() - localChatMeta.lastModified < deletionThreshold;
+      await deleteChatFromIndexedDB(chatId);
+      deletedChats++;
+      hasChanges = true;
 
-      if (!isRecentlyModified && timeSinceLastSync > deletionThreshold) {
-        await deleteChatFromIndexedDB(chatId);
-        deletedChats++;
-        hasChanges = true;
+      // Add tombstone to local metadata
+      localMetadata.chats[chatId] = {
+        deleted: true,
+        deletedAt: syncTimestamp,
+        lastModified: syncTimestamp,
+        syncedAt: syncTimestamp,
+      };
+      saveLocalMetadata();
 
-        // Add tombstone to local metadata
-        localMetadata.chats[chatId] = {
-          deleted: true,
-          deletedAt: syncTimestamp,
-          lastModified: syncTimestamp,
-          syncedAt: syncTimestamp,
-        };
-        saveLocalMetadata();
-
-        // Update cloud metadata with the tombstone
-        if (!cloudMetadata.chats) cloudMetadata.chats = {};
-        cloudMetadata.chats[chatId] = {
-          deleted: true,
-          deletedAt: syncTimestamp,
-          lastModified: syncTimestamp,
-          syncedAt: syncTimestamp,
-        };
-      } else {
-        // Chat was recently modified or we haven't waited long enough since last sync
-        // Skip deletion and try to upload instead
-        logToConsole(
-          "info",
-          `Skipping deletion of chat ${chatId} - recently modified or recent sync`
-        );
-        try {
-          await uploadChatToCloud(chatId);
-          hasChanges = true;
-        } catch (error) {
-          logToConsole("error", `Error uploading chat ${chatId}:`, error);
-        }
-      }
+      // Update cloud metadata with the tombstone
+      if (!cloudMetadata.chats) cloudMetadata.chats = {};
+      cloudMetadata.chats[chatId] = {
+        deleted: true,
+        deletedAt: syncTimestamp,
+        lastModified: syncTimestamp,
+        syncedAt: syncTimestamp,
+      };
     }
 
     if (hasChanges) {
