@@ -313,7 +313,6 @@ async function performFullInitialization() {
       queueOperation("daily-backup-check", checkAndPerformDailyBackup);
     }
     startSyncInterval();
-    startChangeDetectionInterval(); // Add this line
 
     // If in sync mode, also perform initial sync
     if (config.syncMode === "sync") {
@@ -593,93 +592,6 @@ async function generateChatHash(chat) {
   const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-// Check for changes in chats
-async function checkForChanges() {
-  if (document.hidden) return; // Skip if tab is not visible
-
-  // Skip if sync is disabled
-  if (localStorage.getItem("sync-mode") === "disabled") {
-    return;
-  }
-
-  if (operationState.isImporting || operationState.isExporting) {
-    logToConsole("skip", "Skipping change check - operation in progress");
-    return;
-  }
-
-  // Add a check to prevent concurrent executions
-  if (operationState.isCheckingChanges) {
-    logToConsole("skip", "Change check already in progress");
-    return;
-  }
-
-  operationState.isCheckingChanges = true;
-  try {
-    logToConsole("start", "Checking for changes...");
-
-    let hasChanges = false;
-
-    // Check for settings changes first
-    if (
-      pendingSettingsChanges ||
-      localMetadata.settings.lastModified > localMetadata.settings.syncedAt
-    ) {
-      hasChanges = true;
-      logToConsole(
-        "info",
-        "Settings changes detected - queueing sync to cloud"
-      );
-      if (config.syncMode === "sync") {
-        queueOperation("settings-sync", syncToCloud);
-      }
-    }
-
-    // Get latest chats without reloading metadata
-    const chats = await getAllChatsFromIndexedDB();
-
-    for (const chat of chats) {
-      if (!chat.id) continue;
-
-      const currentHash = await generateChatHash(chat);
-      const localChatMeta = localMetadata.chats[chat.id];
-
-      // Consider a chat changed if:
-      // 1. No last seen hash exists
-      // 2. Hash has changed from last seen
-      // 3. Chat has never been synced (syncedAt is 0 or undefined)
-      // 4. Chat has been modified since last sync
-      if (
-        !lastSeenUpdates[chat.id] ||
-        currentHash !== lastSeenUpdates[chat.id].hash ||
-        !localChatMeta?.syncedAt ||
-        (localChatMeta && localChatMeta.lastModified > localChatMeta.syncedAt)
-      ) {
-        hasChanges = true;
-        await updateChatMetadata(chat.id, true);
-        lastSeenUpdates[chat.id] = {
-          updatedAt: Date.now(),
-          hash: currentHash,
-        };
-      }
-    }
-
-    if (hasChanges && !operationState.isProcessingQueue) {
-      if (config.syncMode === "sync") {
-        logToConsole("info", "Local changes detected - queueing sync to cloud");
-        queueOperation("local-changes-sync", syncToCloud);
-      } else if (config.syncMode === "backup") {
-        logToConsole(
-          "info",
-          "Local changes detected - queueing backup to cloud"
-        );
-        queueOperation("backup-modified-chats", syncToCloud);
-      }
-    }
-  } finally {
-    operationState.isCheckingChanges = false;
-  }
 }
 
 // Setup localStorage change listener
@@ -2417,20 +2329,50 @@ function startSyncInterval() {
     return;
   }
 
-  // Track the last time a sync was queued to prevent too frequent syncs
-  let lastSyncQueuedTime = 0;
-  const MIN_SYNC_INTERVAL_MS = 15000; // 15 seconds minimum between syncs
-
-  // Set new interval
-  const intervalMs = Math.max(config.syncInterval * 1000, 15000);
-
-  // Set interval for checking changes
-  window.syncInterval = setInterval(() => {
+  // Set interval for syncing using user's configured interval
+  window.syncInterval = setInterval(async () => {
     if (document.hidden) return; // Skip if tab not visible
-    queueOperation("interval-sync", syncFromCloud);
-  }, intervalMs);
 
-  logToConsole("info", `Started sync interval (${intervalMs / 1000}s)`);
+    // Skip if a sync operation is already in progress
+    if (
+      operationState.isImporting ||
+      operationState.isExporting ||
+      operationState.isProcessingQueue
+    ) {
+      return;
+    }
+
+    try {
+      if (config.syncMode === "sync") {
+        // In sync mode, we alternate between syncToCloud and syncFromCloud
+        const shouldSyncToCloud =
+          pendingSettingsChanges ||
+          Object.values(localMetadata.chats).some(
+            (chat) => !chat.deleted && chat.lastModified > (chat.syncedAt || 0)
+          );
+
+        if (shouldSyncToCloud) {
+          logToConsole("info", "Local changes detected - syncing to cloud");
+          queueOperation("local-changes-sync", syncToCloud);
+        } else {
+          // If no local changes, check cloud for changes
+          logToConsole("info", "Checking cloud for changes");
+          queueOperation("interval-sync", syncFromCloud);
+        }
+      } else if (
+        config.syncMode === "backup" &&
+        (pendingSettingsChanges || isLocalDataModified)
+      ) {
+        // In backup mode, only sync to cloud when there are local changes
+        logToConsole("info", "Local changes detected - backing up to cloud");
+        queueOperation("backup-modified-chats", syncToCloud);
+      }
+    } catch (error) {
+      logToConsole("error", "Error in sync interval:", error);
+    }
+  }, config.syncInterval * 1000); // Use exactly what the user configured
+
+  logToConsole("info", `Started sync interval (${config.syncInterval}s)`);
 }
 
 // Perform initial sync
@@ -5579,23 +5521,3 @@ window.addEventListener("visibilitychange", () => {
     resetOperationStates();
   }
 });
-
-// Add this near the other intervals
-function startChangeDetectionInterval() {
-  // Clear any existing interval
-  if (window.changeDetectionInterval) {
-    clearInterval(window.changeDetectionInterval);
-  }
-
-  // Check for changes every 5 seconds
-  window.changeDetectionInterval = setInterval(async () => {
-    if (document.hidden) return; // Skip if tab not visible
-    if (config.syncMode === "disabled") return; // Skip if sync is disabled
-
-    try {
-      await checkForChanges();
-    } catch (error) {
-      logToConsole("error", "Error in change detection interval:", error);
-    }
-  }, 5000);
-}
