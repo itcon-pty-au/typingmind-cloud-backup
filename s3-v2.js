@@ -3143,18 +3143,28 @@ function updateSyncStatusDot(status = "success") {
 
 // Update the updateSyncStatus function to include dot status
 function updateSyncStatus() {
-  setTimeout(() => {
+  setTimeout(async () => {
     // Update sync status dot based on current state and mode
     if (config.syncMode !== "sync") {
       updateSyncStatusDot("hidden");
     } else if (operationState.isImporting || operationState.isExporting) {
       updateSyncStatusDot("in-progress");
-    } else if (operationState.lastError) {
-      updateSyncStatusDot("error");
-    } else if (operationState.lastSyncTime) {
-      updateSyncStatusDot("success");
     } else {
-      updateSyncStatusDot("error"); // Not synced yet
+      // Get sync status
+      const status = await checkSyncStatus();
+      switch (status) {
+        case "in-sync":
+          updateSyncStatusDot("success");
+          break;
+        case "syncing":
+          updateSyncStatusDot("in-progress");
+          break;
+        case "out-of-sync":
+          updateSyncStatusDot("error");
+          break;
+        default:
+          updateSyncStatusDot("hidden");
+      }
     }
 
     const syncStatus = document.getElementById("sync-status");
@@ -5480,7 +5490,7 @@ async function checkSyncStatus() {
   }
 
   // Add timeout check for potentially stuck states
-  const MAX_OPERATION_TIME = 1 * 60 * 1000; // 5 minutes
+  const MAX_OPERATION_TIME = 5 * 60 * 1000; // 5 minutes
   const now = Date.now();
 
   if (
@@ -5511,13 +5521,14 @@ async function checkSyncStatus() {
   try {
     // Check for local changes (using only local metadata)
     const hasLocalChanges = Object.values(localMetadata.chats).some(
-      (chat) => !chat.deleted && chat.lastModified > chat.syncedAt
+      (chat) => !chat.deleted && chat.lastModified > (chat.syncedAt || 0)
     );
 
     // Check for pending settings changes
     const hasSettingChanges =
       pendingSettingsChanges ||
-      localMetadata.settings.lastModified > localMetadata.settings.syncedAt;
+      localMetadata.settings.lastModified >
+        (localMetadata.settings.syncedAt || 0);
 
     // Check for errors
     if (operationState.lastError) {
@@ -5529,8 +5540,13 @@ async function checkSyncStatus() {
       return "out-of-sync";
     }
 
-    // Everything is in sync
-    return "in-sync";
+    // If we have a last sync time and no changes, we're in sync
+    if (localMetadata.lastSyncTime > 0) {
+      return "in-sync";
+    }
+
+    // No sync time yet, consider it out of sync
+    return "out-of-sync";
   } catch (error) {
     logToConsole("error", "Error checking sync status:", error);
     return "out-of-sync";
