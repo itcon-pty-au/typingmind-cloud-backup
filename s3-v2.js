@@ -3216,16 +3216,24 @@ async function syncToCloud() {
           }
 
           const newHash = await generateContentHash(JSON.stringify(chatData));
-          localMetadata.chats[chatId].lastModified =
-            chatData.updatedAt || syncTimestamp;
-          localMetadata.chats[chatId].syncedAt = syncTimestamp;
-          localMetadata.chats[chatId].hash = newHash;
+          localMetadata.chats[chatId] = {
+            ...localMetadata.chats[chatId],
+            lastModified: chatData.updatedAt || syncTimestamp,
+            syncedAt: syncTimestamp,
+            hash: newHash,
+          };
 
           // Update cloud metadata (but don't upload yet)
           if (!cloudMetadata.chats) cloudMetadata.chats = {};
           cloudMetadata.chats[chatId] = {
             lastModified: chatData.updatedAt || syncTimestamp,
             syncedAt: syncTimestamp,
+            hash: newHash,
+          };
+
+          // Update lastSeenUpdates to prevent re-detection
+          lastSeenUpdates[chatId] = {
+            updatedAt: syncTimestamp,
             hash: newHash,
           };
 
@@ -3236,6 +3244,9 @@ async function syncToCloud() {
               `Uploaded ${uploadedChats}/${totalChatsToUpload} chats`
             );
           }
+
+          // Save local metadata after each successful upload
+          await saveLocalMetadata();
         } catch (error) {
           logToConsole("error", `Error uploading chat ${chatId}:`, error);
         }
@@ -3279,6 +3290,9 @@ async function syncToCloud() {
             tombstoneVersion: cloudMetadata.chats[chatId].tombstoneVersion,
           };
           hasChanges = true;
+
+          // Save local metadata after each successful deletion
+          await saveLocalMetadata();
         } catch (error) {
           logToConsole("error", `Error deleting chat ${chatId}:`, error);
         }
@@ -3299,7 +3313,7 @@ async function syncToCloud() {
           ServerSideEncryption: "AES256",
         }
       );
-      saveLocalMetadata();
+      await saveLocalMetadata();
 
       logToConsole("success", "Sync to cloud completed with changes", {
         uploadedChats,
