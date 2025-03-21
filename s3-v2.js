@@ -2949,15 +2949,15 @@ async function syncFromCloud() {
       const localChatMeta = localMetadata.chats[chatId];
       const GRACE_PERIOD = 10 * 60 * 1000; // 10 minutes grace period for new chats
 
-      if (
-        localChatsProcessed % 10 === 0 ||
-        localChatsProcessed === totalLocalOnly
-      ) {
-        logToConsole(
-          "info",
-          `Local chat processing: ${localChatsProcessed}/${totalLocalOnly}`
-        );
-      }
+      // if (
+      //   localChatsProcessed % 10 === 0 ||
+      //   localChatsProcessed === totalLocalOnly
+      // ) {
+      //   logToConsole(
+      //     "info",
+      //     `Local chat processing: ${localChatsProcessed}/${totalLocalOnly}`
+      //   );
+      // }
 
       // Skip if chat has a local tombstone
       if (localChatMeta?.deleted === true) {
