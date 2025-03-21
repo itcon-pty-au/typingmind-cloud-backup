@@ -469,17 +469,38 @@ async function loadJSZip() {
 
 // Initialize last seen updates tracking
 async function initializeLastSeenUpdates() {
-  //logToConsole("start", "Initializing last seen updates...");
-  const chats = await getAllChatsFromIndexedDB();
+  try {
+    lastSeenUpdates = {};
+    const chats = await getAllChatsFromIndexedDB();
 
-  for (const chat of chats) {
-    if (!chat.id) continue;
-    lastSeenUpdates[chat.id] = {
-      updatedAt: chat.updatedAt || Date.now(),
-      hash: await generateChatHash(chat),
-    };
+    for (const chat of chats) {
+      if (!chat.id) continue;
+
+      // Skip deleted chats and tombstones
+      if (
+        localMetadata.tombstones?.[chat.id] ||
+        localMetadata.chats[chat.id]?.isDeleted
+      ) {
+        continue;
+      }
+
+      const hash = await generateChatHash(chat);
+      lastSeenUpdates[chat.id] = {
+        hash,
+        updatedAt: Date.now(),
+      };
+    }
+
+    logToConsole(
+      "info",
+      `Initialized lastSeenUpdates for ${
+        Object.keys(lastSeenUpdates).length
+      } chats`
+    );
+  } catch (error) {
+    logToConsole("error", "Error initializing lastSeenUpdates", error);
+    lastSeenUpdates = {};
   }
-  //logToConsole("success", "Last seen updates initialized");
 }
 
 // Load configuration from localStorage
@@ -6010,7 +6031,7 @@ async function checkForChatUpdates() {
       if (!chat.id) continue;
 
       // Skip if chat has a tombstone entry
-      if (localMetadata.tombstones && localMetadata.tombstones[chat.id]) {
+      if (localMetadata.tombstones?.[chat.id]) {
         continue;
       }
 
@@ -6019,22 +6040,39 @@ async function checkForChatUpdates() {
         continue;
       }
 
+      // Skip if chat has a cloud tombstone
+      if (cloudMetadata?.tombstones?.[chat.id]) {
+        logToConsole("sync", `Skipping chat ${chat.id} - has cloud tombstone`);
+        continue;
+      }
+
       const newHash = await generateChatHash(chat);
       const lastSeen = lastSeenUpdates[chat.id];
+      const metadata = localMetadata.chats[chat.id];
 
-      // Only consider changes for active chats
-      if (!lastSeen || lastSeen.hash !== newHash) {
+      // Only detect changes if:
+      // 1. We haven't seen this chat before OR
+      // 2. The hash has changed AND it's not already marked for sync
+      if (
+        (!lastSeen || lastSeen.hash !== newHash) &&
+        (!metadata || metadata.syncedAt !== 0)
+      ) {
+        logToConsole(
+          "sync",
+          `Detected changes in chat ${chat.id} - old hash: ${lastSeen?.hash}, new hash: ${newHash}`
+        );
+
         // Update metadata
-        if (!localMetadata.chats[chat.id]) {
+        if (!metadata) {
           localMetadata.chats[chat.id] = {
             lastModified: now,
             hash: newHash,
             syncedAt: 0,
           };
         } else {
-          localMetadata.chats[chat.id].lastModified = now;
-          localMetadata.chats[chat.id].hash = newHash;
-          localMetadata.chats[chat.id].syncedAt = 0; // Force sync
+          metadata.lastModified = now;
+          metadata.hash = newHash;
+          metadata.syncedAt = 0; // Force sync
         }
 
         // Update last seen state
@@ -6044,7 +6082,6 @@ async function checkForChatUpdates() {
         };
 
         hasChanges = true;
-        logToConsole("sync", `Detected changes in chat ${chat.id}`);
       }
     }
 
