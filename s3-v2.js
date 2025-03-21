@@ -312,6 +312,7 @@ async function performFullInitialization() {
     if (config.syncMode !== "disabled") {
       queueOperation("daily-backup-check", checkAndPerformDailyBackup);
     }
+
     startSyncInterval();
 
     // If in sync mode, also perform initial sync
@@ -323,6 +324,21 @@ async function performFullInitialization() {
     setupLocalStorageChangeListener();
     monitorIndexedDBForDeletions();
     setupVisibilityChangeHandler();
+
+    // Clean up old metadata versions as the last initialization step
+    try {
+      await cleanupMetadataVersions();
+      logToConsole(
+        "success",
+        "Metadata cleanup completed during initialization"
+      );
+    } catch (cleanupError) {
+      logToConsole(
+        "warning",
+        "Non-critical: Metadata cleanup failed during initialization",
+        cleanupError
+      );
+    }
 
     logToConsole("success", "Full initialization completed");
   } catch (error) {
@@ -1188,11 +1204,6 @@ async function uploadToS3(key, data, metadata) {
       await completeMultipartUpload(key, uploadId, parts);
     } else {
       await s3.putObject(params).promise();
-    }
-
-    // If this was a metadata.json upload, clean up old versions
-    if (key === "metadata.json") {
-      await cleanupMetadataVersions();
     }
 
     logToConsole("success", `Successfully uploaded to S3: ${key}`);
@@ -5523,6 +5534,15 @@ function resetOperationStates() {
   operationState.isProcessingQueue = false;
   operationState.isPendingSync = false;
 }
+
+// Add this to your error handlers and cleanup code
+window.addEventListener("unload", resetOperationStates);
+window.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    // When tab becomes hidden, reset states to prevent them getting stuck
+    resetOperationStates();
+  }
+});
 
 // Add this to your error handlers and cleanup code
 window.addEventListener("unload", resetOperationStates);
