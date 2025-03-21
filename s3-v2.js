@@ -2818,10 +2818,6 @@ async function syncFromCloud() {
                 localStorage.setItem(key, value);
               }
               settingsProcessed++;
-              // logToConsole(
-              //   "info",
-              //   `Settings sync progress: ${settingsProcessed}/${totalSettings} settings processed`
-              // );
             } catch (error) {
               logToConsole("error", `Error applying setting ${key}:`, error);
             }
@@ -2838,36 +2834,47 @@ async function syncFromCloud() {
       }
     }
 
-    // Get all local chats
-    const localChats = await getAllChatsFromIndexedDB();
-    const localChatIds = new Set(localChats.map((chat) => chat.id));
+    // Get all current chats from IndexedDB
+    const currentLocalChats = await getAllChatsFromIndexedDB();
+    const currentLocalChatIds = new Set(
+      currentLocalChats.map((chat) => chat.id)
+    );
     const cloudChatIds = new Set(Object.keys(cloudMetadata.chats));
 
-    // Process cloud chats that don't exist locally or have changes
-    for (const chatId of cloudChatIds) {
+    // Process cloud metadata entries first
+    for (const [chatId, cloudChatMeta] of Object.entries(cloudMetadata.chats)) {
       processedChats++;
-      const cloudChatMeta = cloudMetadata.chats[chatId];
+      if (processedChats % 10 === 0 || processedChats === totalChats) {
+        logToConsole("info", `Processing: ${processedChats}/${totalChats}`);
+      }
+
       const localChatMeta = localMetadata.chats[chatId];
+      const chatExistsLocally = currentLocalChatIds.has(chatId);
 
-      // Log progress periodically
-      // if (processedChats % 10 === 0 || processedChats === totalChats) {
-      //   logToConsole(
-      //     "info",
-      //     `Sync progress: ${processedChats}/${totalChats} chats processed (${downloadedChats} downloaded, ${deletedChats} deleted)`
-      //   );
-      // }
-
-      // Skip if this is a cloud tombstone and we've already processed it
+      // CASE 1: Handle explicit cloud tombstones
       if (cloudChatMeta.deleted === true) {
+        logToConsole("info", `Found cloud tombstone for chat ${chatId}`);
+
+        // If we have a local version that's newer than the cloud tombstone, it might be a restoration
         if (
-          localChatMeta?.deleted === true &&
-          localChatMeta.deletedAt >= cloudChatMeta.deletedAt
+          localChatMeta &&
+          !localChatMeta.deleted &&
+          localChatMeta.lastModified > cloudChatMeta.deletedAt
         ) {
+          logToConsole(
+            "info",
+            `Local chat ${chatId} appears to be a restoration - keeping local version`
+          );
+          // Will be uploaded in the upload phase
           continue;
         }
 
-        // Delete local chat if it exists
-        if (localChatIds.has(chatId)) {
+        // Otherwise, respect the cloud tombstone
+        if (chatExistsLocally) {
+          logToConsole(
+            "cleanup",
+            `Deleting local chat ${chatId} due to cloud tombstone`
+          );
           await deleteChatFromIndexedDB(chatId);
           deletedChats++;
           hasChanges = true;
@@ -2879,29 +2886,22 @@ async function syncFromCloud() {
           deletedAt: cloudChatMeta.deletedAt,
           lastModified: cloudChatMeta.lastModified,
           syncedAt: syncTimestamp,
+          tombstoneVersion: cloudChatMeta.tombstoneVersion || 1,
         };
         saveLocalMetadata();
         continue;
       }
 
-      // Skip if we have a local tombstone that's newer than the cloud version
+      // CASE 2: Handle local tombstones
       if (localChatMeta?.deleted === true) {
-        if (
-          !cloudChatMeta.deleted ||
-          localChatMeta.deletedAt > cloudChatMeta.lastModified
-        ) {
-          // Our deletion is newer than cloud's version, push our tombstone to cloud
-          await deleteChatFromCloud(chatId);
-          continue;
-        }
+        // Our deletion is newer than cloud's version, push our tombstone to cloud
+        await deleteChatFromCloud(chatId);
+        continue;
       }
 
-      // Download if:
-      // 1. Chat doesn't exist locally
-      // 2. Different hash
-      // 3. Never synced
-      // 4. Cloud changes not synced
+      // CASE 3: Handle normal sync cases (no tombstones)
       if (
+        !chatExistsLocally ||
         !localChatMeta ||
         cloudChatMeta.hash !== localChatMeta.hash ||
         !localChatMeta.syncedAt ||
@@ -2934,10 +2934,10 @@ async function syncFromCloud() {
     }
 
     // Process local chats that don't exist in cloud
-    let localChatsProcessed = 0;
-    const localOnlyChats = Array.from(localChatIds).filter(
+    const localOnlyChats = Array.from(currentLocalChatIds).filter(
       (id) => !cloudChatIds.has(id)
     );
+    let localChatsProcessed = 0;
     const totalLocalOnly = localOnlyChats.length;
 
     if (totalLocalOnly > 0) {
@@ -2947,6 +2947,7 @@ async function syncFromCloud() {
     for (const chatId of localOnlyChats) {
       localChatsProcessed++;
       const localChatMeta = localMetadata.chats[chatId];
+      const GRACE_PERIOD = 10 * 60 * 1000; // 10 minutes grace period for new chats
 
       if (
         localChatsProcessed % 10 === 0 ||
@@ -2958,47 +2959,37 @@ async function syncFromCloud() {
         );
       }
 
+      // Skip if chat has a local tombstone
+      if (localChatMeta?.deleted === true) {
+        continue;
+      }
+
+      // If chat is within grace period or has pending changes, upload it
       if (
         !localChatMeta ||
         !localMetadata.lastSyncTime ||
-        localChatMeta.lastModified > localMetadata.lastSyncTime
+        Date.now() - localChatMeta.lastModified < GRACE_PERIOD ||
+        localChatMeta.lastModified > localChatMeta.syncedAt
       ) {
-        logToConsole("info", `Uploading new local chat ${chatId} to cloud`);
+        logToConsole("info", `Uploading local chat ${chatId} to cloud`);
         try {
           await uploadChatToCloud(chatId);
           hasChanges = true;
         } catch (error) {
-          logToConsole("error", `Error uploading new chat ${chatId}:`, error);
+          logToConsole("error", `Error uploading chat ${chatId}:`, error);
         }
         continue;
       }
 
-      // If this is an old chat that's missing from cloud, it was likely deleted on another device
-      await deleteChatFromIndexedDB(chatId);
-      deletedChats++;
-      hasChanges = true;
-
-      // Add tombstone to local metadata
-      localMetadata.chats[chatId] = {
-        deleted: true,
-        deletedAt: syncTimestamp,
-        lastModified: syncTimestamp,
-        syncedAt: syncTimestamp,
-      };
-      saveLocalMetadata();
-
-      // Update cloud metadata with the tombstone
-      if (!cloudMetadata.chats) cloudMetadata.chats = {};
-      cloudMetadata.chats[chatId] = {
-        deleted: true,
-        deletedAt: syncTimestamp,
-        lastModified: syncTimestamp,
-        syncedAt: syncTimestamp,
-      };
+      // IMPORTANT: We do NOT delete chats just because they're missing from cloud
+      // They must have an explicit tombstone to be deleted
+      logToConsole(
+        "info",
+        `Chat ${chatId} exists only locally - keeping it until explicit deletion`
+      );
     }
 
     if (hasChanges) {
-      // Update sync times
       localMetadata.lastSyncTime = syncTimestamp;
       cloudMetadata.lastSyncTime = syncTimestamp;
 
@@ -3012,6 +3003,7 @@ async function syncFromCloud() {
         }
       );
       saveLocalMetadata();
+
       logToConsole("success", "Sync summary:", {
         totalChatsProcessed: processedChats,
         downloaded: downloadedChats,
@@ -3024,12 +3016,17 @@ async function syncFromCloud() {
     }
 
     operationState.lastError = null; // Clear any previous errors
+    localStorage.setItem("last-cloud-sync", new Date().toLocaleString());
+    logToConsole("success", "Sync completed successfully");
+    operationState.lastSyncStatus = "success";
+
     // Force immediate status check after successful sync
     const status = await checkSyncStatus();
     updateSyncStatusDot(status);
   } catch (error) {
     logToConsole("error", "Sync failed:", error);
     operationState.lastError = error;
+    operationState.lastSyncStatus = "error";
     updateSyncStatusDot("error");
     throw error;
   } finally {
