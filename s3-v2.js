@@ -6009,22 +6009,50 @@ async function checkForChatUpdates() {
     for (const chat of chats) {
       if (!chat.id) continue;
 
+      // Skip if chat has a tombstone entry
+      if (localMetadata.tombstones && localMetadata.tombstones[chat.id]) {
+        continue;
+      }
+
+      // Skip if chat is marked as deleted in metadata
+      if (localMetadata.chats[chat.id]?.isDeleted) {
+        continue;
+      }
+
       const newHash = await generateChatHash(chat);
       const lastSeen = lastSeenUpdates[chat.id];
 
+      // Only consider changes for active chats
       if (!lastSeen || lastSeen.hash !== newHash) {
+        // Update metadata
+        if (!localMetadata.chats[chat.id]) {
+          localMetadata.chats[chat.id] = {
+            lastModified: now,
+            hash: newHash,
+            syncedAt: 0,
+          };
+        } else {
+          localMetadata.chats[chat.id].lastModified = now;
+          localMetadata.chats[chat.id].hash = newHash;
+          localMetadata.chats[chat.id].syncedAt = 0; // Force sync
+        }
+
+        // Update last seen state
+        lastSeenUpdates[chat.id] = {
+          hash: newHash,
+          updatedAt: now,
+        };
+
         hasChanges = true;
-        // Changes are handled in getAllChatsFromIndexedDB
+        logToConsole("sync", `Detected changes in chat ${chat.id}`);
       }
     }
 
     if (hasChanges) {
-      logToConsole("info", "Chat changes detected, queueing sync");
-      if (config.syncMode === "sync") {
-        queueOperation("chat-changes-sync", syncToCloud);
-      }
+      await saveLocalMetadata();
+      queueOperation("chat-changes-sync", syncToCloud);
     }
   } catch (error) {
-    logToConsole("error", "Error checking for chat updates:", error);
+    logToConsole("error", "Error checking for chat updates", error);
   }
 }
