@@ -497,9 +497,12 @@ function loadConfiguration() {
   // Update config with stored values
   config = { ...config, ...storedConfig };
 
-  //logToConsole("success", "Configuration loaded", {
-  //  syncMode: config.syncMode,
-  //});
+  // Ensure sync mode is properly set in config
+  config.syncMode = localStorage.getItem("sync-mode") || "disabled";
+
+  // logToConsole("success", "Configuration loaded", {
+  //   syncMode: config.syncMode,
+  // });
 
   return config;
 }
@@ -2480,7 +2483,7 @@ async function syncFromCloud() {
 
   try {
     operationState.isImporting = true;
-    operationState.isPendingSync = false; // Add this to ensure it's reset when sync starts
+    operationState.isPendingSync = false;
 
     logToConsole("start", "Starting sync from cloud...");
 
@@ -2761,14 +2764,16 @@ async function syncFromCloud() {
     }
 
     operationState.lastError = null; // Clear any previous errors
-    updateSyncStatus(); // Show success status
+    // Force immediate status check after successful sync
+    const status = await checkSyncStatus();
+    updateSyncStatusDot(status);
   } catch (error) {
     logToConsole("error", "Sync failed:", error);
     operationState.lastError = error;
-    updateSyncStatus(); // Show error status
+    updateSyncStatusDot("error");
     throw error;
   } finally {
-    operationState.isImporting = false; // <-- Make sure this is always reset
+    operationState.isImporting = false;
 
     // Check if another sync was requested while this one was running
     if (operationState.isPendingSync) {
