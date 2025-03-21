@@ -5367,11 +5367,11 @@ async function downloadCloudMetadata() {
         // Create initial metadata
         const initialMetadata = {
           version: "1.0",
-          lastSyncTime: Date.now(),
+          lastSyncTime: 0, // Set to 0 instead of Date.now()
           chats: {},
           settings: {
-            lastModified: Date.now(),
-            syncedAt: Date.now(),
+            lastModified: 0, // Set to 0 instead of Date.now()
+            syncedAt: 0, // Set to 0 instead of Date.now()
           },
         };
 
