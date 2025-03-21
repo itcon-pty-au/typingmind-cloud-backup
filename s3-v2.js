@@ -2674,9 +2674,16 @@ async function performInitialSync() {
       localChats: localChatCount,
     });
 
-    if (chatCount === 0 && localChatCount > 0) {
-      // Cloud metadata exists but no chats - create fresh backup
-      logToConsole("info", "Creating fresh backup with local data");
+    // If cloud has no chats but local has chats, OR if cloud metadata was just initialized (lastSyncTime is 0/1970)
+    if (
+      (chatCount === 0 && localChatCount > 0) ||
+      metadata.lastSyncTime === 0
+    ) {
+      // Cloud metadata exists but no chats or was just initialized - create fresh backup
+      logToConsole(
+        "info",
+        "Creating fresh backup with local data - cloud is empty or newly initialized"
+      );
 
       // Initialize cloud metadata chats object if it doesn't exist
       if (!metadata.chats) {
@@ -2685,6 +2692,8 @@ async function performInitialSync() {
 
       // Get all local chats and update cloud metadata
       const chats = await getAllChatsFromIndexedDB();
+      let uploadedCount = 0;
+
       for (const chat of chats) {
         if (!chat.id) continue;
 
@@ -2702,7 +2711,18 @@ async function performInitialSync() {
         };
 
         // Upload the chat without passing metadata to prevent caching
-        await uploadChatToCloud(chat.id, metadata);
+        try {
+          await uploadChatToCloud(chat.id, metadata);
+          uploadedCount++;
+          if (uploadedCount % 10 === 0) {
+            logToConsole(
+              "info",
+              `Upload progress: ${uploadedCount}/${chats.length} chats`
+            );
+          }
+        } catch (error) {
+          logToConsole("error", `Failed to upload chat ${chat.id}:`, error);
+        }
       }
 
       // Update metadata's lastSyncTime
@@ -2723,7 +2743,8 @@ async function performInitialSync() {
       await saveLocalMetadata();
 
       logToConsole("success", "Successfully uploaded local chats to cloud", {
-        chatsUploaded: Object.keys(metadata.chats).length,
+        chatsUploaded: uploadedCount,
+        totalChats: chats.length,
       });
 
       return;
@@ -2736,7 +2757,7 @@ async function performInitialSync() {
     );
     await syncFromCloud();
   } catch (error) {
-    logToConsole("error", "Initial sync failed:", error);
+    logToConsole("error", "Error during initial sync:", error);
     throw error;
   }
 }
@@ -2999,10 +3020,10 @@ async function syncFromCloud() {
 
       // IMPORTANT: We do NOT delete chats just because they're missing from cloud
       // They must have an explicit tombstone to be deleted
-      logToConsole(
-        "info",
-        `Chat ${chatId} exists only locally - keeping it until explicit deletion`
-      );
+      // logToConsole(
+      //   "info",
+      //   `Chat ${chatId} exists only locally - keeping it until explicit deletion`
+      // );
     }
 
     if (hasChanges) {
