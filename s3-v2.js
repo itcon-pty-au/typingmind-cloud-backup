@@ -79,6 +79,9 @@ let operationState = {
   isCheckingChanges: false,
   lastError: null,
   operationStartTime: null,
+  queueProcessingPromise: null,
+  completedOperations: new Set(),
+  operationTimeouts: new Map(),
 };
 
 // Backup state tracking
@@ -2360,8 +2363,8 @@ function isAwsConfigured() {
   );
 }
 
-// Queue an operation for execution
-function queueOperation(name, operation) {
+// Queue an operation for execution with improved dependency handling
+function queueOperation(name, operation, dependencies = [], timeout = 30000) {
   // Check if sync is disabled
   if (localStorage.getItem("sync-mode") === "disabled") {
     logToConsole("skip", `Skipping operation ${name} - sync is disabled`);
@@ -2374,14 +2377,43 @@ function queueOperation(name, operation) {
     return;
   }
 
-  operationState.operationQueue.push({ name, operation });
+  // Filter out completed dependencies
+  dependencies = dependencies.filter(
+    (dep) => !operationState.completedOperations.has(dep)
+  );
+
+  // Create operation object with metadata
+  const operationObject = {
+    name,
+    operation,
+    dependencies,
+    timeout,
+    retryCount: 0,
+    maxRetries: 3,
+    addedAt: Date.now(),
+  };
+
+  // Add to queue based on dependencies
+  if (dependencies.length === 0) {
+    // No dependencies, add to front of queue for faster processing
+    operationState.operationQueue.unshift(operationObject);
+  } else {
+    // Has dependencies, add to end of queue
+    operationState.operationQueue.push(operationObject);
+  }
+
   // Only log important operations
   if (
     name.startsWith("initial") ||
     name.startsWith("manual") ||
     name.startsWith("visibility")
   ) {
-    logToConsole("info", `Added '${name}' to operation queue`);
+    logToConsole(
+      "info",
+      `Added '${name}' to operation queue${
+        dependencies.length ? ` (waiting for: ${dependencies.join(", ")})` : ""
+      }`
+    );
   }
 
   // Start processing if not already processing
@@ -2390,8 +2422,9 @@ function queueOperation(name, operation) {
   }
 }
 
-// Process operation queue
+// Process operation queue with improved race condition handling and timeouts
 async function processOperationQueue() {
+  // If already processing or queue is empty, return
   if (
     operationState.isProcessingQueue ||
     operationState.operationQueue.length === 0
@@ -2399,57 +2432,167 @@ async function processOperationQueue() {
     return;
   }
 
-  try {
-    operationState.isProcessingQueue = true;
-    // Only log queue processing for 2+ items to reduce noise
-    if (operationState.operationQueue.length > 1) {
-      logToConsole(
-        "info",
-        `Processing operation queue (${operationState.operationQueue.length} items)`
-      );
-    }
+  // If there's an existing promise, wait for it
+  if (operationState.queueProcessingPromise) {
+    return operationState.queueProcessingPromise;
+  }
 
-    while (operationState.operationQueue.length > 0) {
-      const nextOperation = operationState.operationQueue[0];
-      try {
-        // Only log important operations
-        if (
-          nextOperation.name.startsWith("initial") ||
-          nextOperation.name.startsWith("manual") ||
-          nextOperation.name.startsWith("visibility")
-        ) {
-          logToConsole("info", `Executing operation: ${nextOperation.name}`);
-        }
-        await nextOperation.operation();
-        operationState.operationQueue.shift();
+  // Create new processing promise
+  operationState.queueProcessingPromise = (async () => {
+    try {
+      operationState.isProcessingQueue = true;
 
-        // Add a small delay to ensure proper completion
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      } catch (error) {
-        logToConsole(
-          "error",
-          `Error executing operation ${nextOperation.name}:`,
-          error
+      while (operationState.operationQueue.length > 0) {
+        // Find next eligible operation (no pending dependencies)
+        const nextOpIndex = operationState.operationQueue.findIndex((op) =>
+          op.dependencies.every((dep) =>
+            operationState.completedOperations.has(dep)
+          )
         );
-        operationState.operationQueue.shift();
 
-        // Add a delay after errors to prevent rapid retries
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        if (nextOpIndex === -1) {
+          // No eligible operations, might be a dependency cycle
+          const pendingDeps = new Set(
+            operationState.operationQueue.flatMap((op) => op.dependencies)
+          );
+          const availableDeps = new Set(operationState.completedOperations);
+          const missingDeps = [...pendingDeps].filter(
+            (dep) => !availableDeps.has(dep)
+          );
+
+          logToConsole(
+            "error",
+            "Dependency cycle or missing dependencies detected",
+            {
+              missing: missingDeps,
+              pending: [...pendingDeps],
+              completed: [...availableDeps],
+            }
+          );
+
+          // Remove operations with missing dependencies
+          operationState.operationQueue = operationState.operationQueue.filter(
+            (op) => op.dependencies.every((dep) => availableDeps.has(dep))
+          );
+
+          if (operationState.operationQueue.length === 0) break;
+          continue;
+        }
+
+        const nextOperation = operationState.operationQueue[nextOpIndex];
+        const { name, operation, timeout } = nextOperation;
+
+        try {
+          // Set up operation timeout
+          const timeoutPromise = new Promise((_, reject) => {
+            const timeoutId = setTimeout(() => {
+              reject(
+                new Error(`Operation ${name} timed out after ${timeout}ms`)
+              );
+            }, timeout);
+            operationState.operationTimeouts.set(name, timeoutId);
+          });
+
+          // Only log important operations
+          if (
+            name.startsWith("initial") ||
+            name.startsWith("manual") ||
+            name.startsWith("visibility")
+          ) {
+            logToConsole("info", `Executing operation: ${name}`);
+          }
+
+          // Execute operation with timeout
+          await Promise.race([operation(), timeoutPromise]);
+
+          // Clear timeout
+          clearTimeout(operationState.operationTimeouts.get(name));
+          operationState.operationTimeouts.delete(name);
+
+          // Mark operation as completed
+          operationState.completedOperations.add(name);
+
+          // Remove from queue
+          operationState.operationQueue.splice(nextOpIndex, 1);
+
+          // Add small delay between operations
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } catch (error) {
+          // Clear timeout if it exists
+          if (operationState.operationTimeouts.has(name)) {
+            clearTimeout(operationState.operationTimeouts.get(name));
+            operationState.operationTimeouts.delete(name);
+          }
+
+          logToConsole("error", `Error executing operation ${name}:`, error);
+
+          // Handle retries
+          if (nextOperation.retryCount < nextOperation.maxRetries) {
+            nextOperation.retryCount++;
+            const delay = Math.min(
+              1000 * Math.pow(2, nextOperation.retryCount),
+              30000
+            );
+
+            logToConsole(
+              "info",
+              `Retrying operation ${name} (attempt ${nextOperation.retryCount}/${nextOperation.maxRetries}) in ${delay}ms`
+            );
+
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            continue; // Keep the operation in queue for retry
+          }
+
+          // If max retries reached, remove operation and continue
+          operationState.operationQueue.splice(nextOpIndex, 1);
+
+          // If this operation had dependents, we need to clean them up
+          const dependentOps = operationState.operationQueue.filter((op) =>
+            op.dependencies.includes(name)
+          );
+
+          if (dependentOps.length > 0) {
+            logToConsole(
+              "warning",
+              `Removing ${dependentOps.length} dependent operations due to failure of ${name}`
+            );
+
+            operationState.operationQueue =
+              operationState.operationQueue.filter(
+                (op) => !op.dependencies.includes(name)
+              );
+          }
+        }
+      }
+    } finally {
+      // Cleanup
+      operationState.isProcessingQueue = false;
+      operationState.queueProcessingPromise = null;
+
+      // Clear all timeouts
+      for (const [name, timeoutId] of operationState.operationTimeouts) {
+        clearTimeout(timeoutId);
+      }
+      operationState.operationTimeouts.clear();
+
+      // Reset other operation states if queue is empty
+      if (operationState.operationQueue.length === 0) {
+        operationState.isImporting = false;
+        operationState.isExporting = false;
+        operationState.isPendingSync = false;
+
+        // Cleanup completed operations older than 1 hour
+        const oneHourAgo = Date.now() - 3600000;
+        operationState.completedOperations.clear();
+
+        // Force a sync status update
+        const status = await checkSyncStatus();
+        updateSyncStatusDot(status);
       }
     }
-  } finally {
-    // Always reset processing state
-    operationState.isProcessingQueue = false;
-    // Reset other operation states if queue is empty
-    if (operationState.operationQueue.length === 0) {
-      operationState.isImporting = false;
-      operationState.isExporting = false;
-      operationState.isPendingSync = false;
-      // Force a sync status update
-      const status = await checkSyncStatus();
-      updateSyncStatusDot(status);
-    }
-  }
+  })();
+
+  return operationState.queueProcessingPromise;
 }
 
 // Start sync interval
@@ -4012,6 +4155,9 @@ async function saveSettings() {
       isCheckingChanges: false,
       lastError: null,
       operationStartTime: null,
+      queueProcessingPromise: null,
+      completedOperations: new Set(),
+      operationTimeouts: new Map(),
     };
 
     // Reset backup state
