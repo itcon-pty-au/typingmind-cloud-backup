@@ -2678,6 +2678,11 @@ async function performInitialSync() {
       // Cloud metadata exists but no chats - create fresh backup
       logToConsole("info", "Creating fresh backup with local data");
 
+      // Initialize cloud metadata chats object if it doesn't exist
+      if (!metadata.chats) {
+        metadata.chats = {};
+      }
+
       // Get all local chats and update cloud metadata
       const chats = await getAllChatsFromIndexedDB();
       for (const chat of chats) {
@@ -2697,8 +2702,11 @@ async function performInitialSync() {
         };
 
         // Upload the chat without passing metadata to prevent caching
-        await uploadChatToCloud(chat.id, null);
+        await uploadChatToCloud(chat.id, metadata);
       }
+
+      // Update metadata's lastSyncTime
+      metadata.lastSyncTime = Date.now();
 
       // Upload the updated metadata
       await uploadToS3(
@@ -2709,6 +2717,14 @@ async function performInitialSync() {
           ServerSideEncryption: "AES256",
         }
       );
+
+      // Update local metadata's lastSyncTime to match
+      localMetadata.lastSyncTime = metadata.lastSyncTime;
+      await saveLocalMetadata();
+
+      logToConsole("success", "Successfully uploaded local chats to cloud", {
+        chatsUploaded: Object.keys(metadata.chats).length,
+      });
 
       return;
     }
