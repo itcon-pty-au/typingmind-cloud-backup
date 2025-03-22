@@ -108,6 +108,7 @@ let pendingSettingsChanges = false;
 let activeIntervals = {
   sync: null,
   backup: null,
+  changeCheck: null,
 };
 
 // Clear all intervals
@@ -119,6 +120,10 @@ function clearAllIntervals() {
   if (activeIntervals.backup) {
     clearInterval(activeIntervals.backup);
     activeIntervals.backup = null;
+  }
+  if (activeIntervals.changeCheck) {
+    clearInterval(activeIntervals.changeCheck);
+    activeIntervals.changeCheck = null;
   }
 }
 
@@ -326,9 +331,10 @@ async function performFullInitialization() {
       queueOperation("initial-sync", performInitialSync);
     }
 
-    // Start monitoring IndexedDB for deletions
+    // Start monitoring IndexedDB for deletions and changes
     setupLocalStorageChangeListener();
     monitorIndexedDBForDeletions();
+    startPeriodicChangeCheck();
     setupVisibilityChangeHandler();
 
     // Clean up old metadata versions as the last initialization step
@@ -1026,6 +1032,23 @@ function monitorIndexedDBForDeletions() {
             confirmedCount: 1,
           });
           logToConsole("info", `New chat detected: ${chatId}`);
+
+          // Trigger metadata update and sync for new chat
+          updateChatMetadata(chatId, true)
+            .then(() => {
+              if (config.syncMode === "sync" || config.syncMode === "backup") {
+                queueOperation(`new-chat-sync-${chatId}`, () =>
+                  uploadChatToCloud(chatId)
+                );
+              }
+            })
+            .catch((error) => {
+              logToConsole(
+                "error",
+                `Error updating metadata for new chat ${chatId}:`,
+                error
+              );
+            });
         }
       }
 
@@ -6168,4 +6191,60 @@ async function cleanupCloudTombstones() {
     logToConsole("error", "Error cleaning up cloud tombstones", error);
     return 0;
   }
+}
+
+// Start periodic check for changes in IndexedDB
+function startPeriodicChangeCheck() {
+  // Clear any existing interval
+  if (activeIntervals.changeCheck) {
+    clearInterval(activeIntervals.changeCheck);
+    activeIntervals.changeCheck = null;
+  }
+
+  // Set interval for checking changes (every 2.5 seconds)
+  activeIntervals.changeCheck = setInterval(async () => {
+    if (document.hidden) return; // Skip if tab is not visible
+
+    try {
+      const chats = await getAllChatsFromIndexedDB();
+      const changedChats = [];
+
+      for (const chat of chats) {
+        if (!chat.id) continue;
+
+        // Get current chat hash
+        const currentHash = await generateHash(chat);
+
+        // Check if this chat has been updated since we last saw it
+        if (
+          !lastSeenUpdates[chat.id] ||
+          currentHash !== lastSeenUpdates[chat.id].hash ||
+          (currentHash === lastSeenUpdates[chat.id].hash &&
+            chat.updatedAt > lastSeenUpdates[chat.id].timestamp)
+        ) {
+          changedChats.push(chat.id);
+
+          // Update last seen data
+          lastSeenUpdates[chat.id] = {
+            hash: currentHash,
+            timestamp: chat.updatedAt || 0,
+          };
+
+          // Update metadata and queue for sync
+          await updateChatMetadata(chat.id, true);
+        }
+      }
+
+      if (changedChats.length > 0) {
+        logToConsole("info", "Detected changes in chats", {
+          changedChats: changedChats,
+          count: changedChats.length,
+        });
+      }
+    } catch (error) {
+      logToConsole("error", "Error checking for changes", error);
+    }
+  }, 2500);
+
+  logToConsole("info", "Started periodic change detection");
 }
