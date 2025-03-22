@@ -624,7 +624,6 @@ async function generateChatHash(chat) {
   const simplifiedChat = {
     messages: chat.messagesArray || [],
     title: chat.chatTitle,
-    updatedAt: chat.updatedAt, // Include updatedAt in hash
   };
 
   const msgStr = JSON.stringify(simplifiedChat);
