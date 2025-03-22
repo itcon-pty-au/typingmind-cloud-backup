@@ -2373,7 +2373,7 @@ function isAwsConfigured() {
 // Queue an operation for execution with improved dependency handling
 function queueOperation(name, operation, dependencies = [], timeout = 30000) {
   // Check if sync is disabled
-  if (localStorage.getItem("sync-mode") === "disabled") {
+  if (config.syncMode === "disabled") {
     logToConsole("skip", `Skipping operation ${name} - sync is disabled`);
     return;
   }
@@ -2409,24 +2409,8 @@ function queueOperation(name, operation, dependencies = [], timeout = 30000) {
     operationState.operationQueue.push(operationObject);
   }
 
-  // Only log important operations
-  if (
-    name.startsWith("initial") ||
-    name.startsWith("manual") ||
-    name.startsWith("visibility")
-  ) {
-    logToConsole(
-      "info",
-      `Added '${name}' to operation queue${
-        dependencies.length ? ` (waiting for: ${dependencies.join(", ")})` : ""
-      }`
-    );
-  }
-
-  // Start processing if not already processing
-  if (!operationState.isProcessingQueue) {
-    processOperationQueue();
-  }
+  // Start processing queue
+  processOperationQueue();
 }
 
 // Process operation queue with improved race condition handling and timeouts
@@ -3396,7 +3380,16 @@ async function updateChatMetadata(
   isModified = true,
   isDeleted = false
 ) {
+  if (!chatId) {
+    logToConsole("error", "No chat ID provided to updateChatMetadata");
+    return;
+  }
+
   const chat = await getChatFromIndexedDB(chatId);
+  if (!chat && !isDeleted) {
+    logToConsole("error", "Chat not found in IndexedDB:", chatId);
+    return;
+  }
 
   // Initialize metadata if it doesn't exist
   if (!localMetadata.chats[chatId]) {
