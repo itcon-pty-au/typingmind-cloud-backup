@@ -2933,7 +2933,7 @@ async function syncFromCloud() {
 
       // CASE 1: Handle explicit cloud tombstones
       if (cloudChatMeta.deleted === true) {
-        logToConsole("info", `Found cloud tombstone for chat ${chatId}`);
+        //logToConsole("info", `Found cloud tombstone for chat ${chatId}`);
 
         // If we have a local version that's newer than the cloud tombstone, it might be a restoration
         if (
@@ -3027,28 +3027,16 @@ async function syncFromCloud() {
     for (const chatId of localOnlyChats) {
       localChatsProcessed++;
       const localChatMeta = localMetadata.chats[chatId];
-      const GRACE_PERIOD = 10 * 60 * 1000; // 10 minutes grace period for new chats
-
-      // if (
-      //   localChatsProcessed % 10 === 0 ||
-      //   localChatsProcessed === totalLocalOnly
-      // ) {
-      //   logToConsole(
-      //     "info",
-      //     `Local chat processing: ${localChatsProcessed}/${totalLocalOnly}`
-      //   );
-      // }
 
       // Skip if chat has a local tombstone
       if (localChatMeta?.deleted === true) {
         continue;
       }
 
-      // If chat is within grace period or has pending changes, upload it
+      // Upload if chat has never been synced or has pending changes
       if (
         !localChatMeta ||
         !localMetadata.lastSyncTime ||
-        Date.now() - localChatMeta.lastModified < GRACE_PERIOD ||
         localChatMeta.lastModified > localChatMeta.syncedAt
       ) {
         logToConsole("info", `Uploading local chat ${chatId} to cloud`);
@@ -3060,13 +3048,6 @@ async function syncFromCloud() {
         }
         continue;
       }
-
-      // IMPORTANT: We do NOT delete chats just because they're missing from cloud
-      // They must have an explicit tombstone to be deleted
-      // logToConsole(
-      //   "info",
-      //   `Chat ${chatId} exists only locally - keeping it until explicit deletion`
-      // );
     }
 
     if (hasChanges) {
