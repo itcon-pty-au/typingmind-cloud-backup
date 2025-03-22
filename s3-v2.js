@@ -1140,10 +1140,15 @@ async function saveChatToIndexedDB(chat) {
         chat.id = chat.id.slice(5); // Remove CHAT_ prefix from chat.id
       }
 
+      // Always update the updatedAt timestamp when saving
+      chat.updatedAt = Date.now();
+
       const putRequest = store.put(chat, key);
 
       putRequest.onsuccess = () => {
         logToConsole("success", `Saved chat ${chat.id} to IndexedDB`);
+        // After saving, update metadata to ensure change is detected
+        updateChatMetadata(chat.id, true);
         resolve();
       };
 
