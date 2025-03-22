@@ -620,10 +620,14 @@ async function saveLocalMetadata() {
 async function generateChatHash(chat) {
   if (!chat || !chat.id) return null;
 
-  const chatCopy = { ...chat };
-  delete chatCopy.updatedAt;
+  // Create a simplified chat object with only the important parts that would trigger a sync
+  const simplifiedChat = {
+    messages: chat.messagesArray || [],
+    title: chat.chatTitle,
+    updatedAt: chat.updatedAt, // Include updatedAt in hash
+  };
 
-  const msgStr = JSON.stringify(chatCopy);
+  const msgStr = JSON.stringify(simplifiedChat);
   const msgBuffer = new TextEncoder().encode(msgStr);
   const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
