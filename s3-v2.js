@@ -1305,6 +1305,11 @@ async function uploadToS3(key, data, metadata) {
       Metadata: metadata,
     };
 
+    // Add Cache-Control header for metadata.json to prevent caching
+    if (key === "metadata.json") {
+      params.CacheControl = "no-cache, no-store, must-revalidate";
+    }
+
     // For large files, use multipart upload
     if (data.byteLength > 5 * 1024 * 1024) {
       //logToConsole(
