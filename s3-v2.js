@@ -3033,6 +3033,18 @@ async function syncFromCloud() {
         continue;
       }
 
+      // Log detailed sync state for debugging
+      logToConsole("info", `Local chat ${chatId} sync state:`, {
+        hasMetadata: !!localChatMeta,
+        hasLastSyncTime: !!localMetadata.lastSyncTime,
+        lastModified: localChatMeta?.lastModified,
+        lastSynced: localChatMeta?.syncedAt,
+        needsSync:
+          !localChatMeta ||
+          !localMetadata.lastSyncTime ||
+          localChatMeta.lastModified > localChatMeta.syncedAt,
+      });
+
       // Upload if chat has never been synced or has pending changes
       if (
         !localChatMeta ||
@@ -3047,7 +3059,15 @@ async function syncFromCloud() {
           logToConsole("error", `Error uploading chat ${chatId}:`, error);
         }
         continue;
+      } else {
+        logToConsole(
+          "info",
+          `Chat ${chatId} doesn't need upload - already synced and no changes`
+        );
       }
+
+      // IMPORTANT: We do NOT delete chats just because they're missing from cloud
+      // They must have an explicit tombstone to be deleted
     }
 
     if (hasChanges) {
