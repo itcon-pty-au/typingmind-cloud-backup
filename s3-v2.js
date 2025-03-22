@@ -3413,19 +3413,14 @@ async function updateChatMetadata(
     const currentHash = await generateChatHash(chat);
     const metadata = localMetadata.chats[chatId];
 
-    // Only update lastModified if the content actually changed
-    if (metadata.hash !== currentHash) {
-      metadata.lastModified = Date.now();
-      metadata.hash = currentHash;
+    // Always update lastModified and hash
+    metadata.lastModified = Date.now();
+    metadata.hash = currentHash;
 
-      // Reset syncedAt only if content changed
-      if (isModified) {
-        metadata.syncedAt = 0;
-        // Queue for sync only if content changed
-        queueOperation(`chat-changed-${chatId}`, () =>
-          uploadChatToCloud(chatId)
-        );
-      }
+    // Queue for sync if modified, regardless of hash change
+    if (isModified) {
+      metadata.syncedAt = 0;
+      queueOperation(`chat-changed-${chatId}`, () => uploadChatToCloud(chatId));
     }
 
     metadata.deleted = false;
@@ -5755,7 +5750,7 @@ async function uploadChatToCloud(
     }
 
     // Generate a new hash for the chat
-    const newHash = await generateContentHash(JSON.stringify(chatData));
+    const newHash = await generateChatHash(chatData);
 
     // Check if the chat already exists in cloud metadata and has the same hash
     // This prevents unnecessary uploads of unchanged chats
