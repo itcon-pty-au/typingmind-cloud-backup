@@ -2918,9 +2918,9 @@ async function syncFromCloud() {
     // Process cloud metadata entries first
     for (const [chatId, cloudChatMeta] of Object.entries(cloudMetadata.chats)) {
       processedChats++;
-      if (processedChats % 10 === 0 || processedChats === totalChats) {
-        logToConsole("info", `Processing: ${processedChats}/${totalChats}`);
-      }
+      // if (processedChats % 10 === 0 || processedChats === totalChats) {
+      //   logToConsole("info", `Processing: ${processedChats}/${totalChats}`);
+      // }
 
       const localChatMeta = localMetadata.chats[chatId];
       const chatExistsLocally = currentLocalChatIds.has(chatId);
