@@ -2684,17 +2684,17 @@ function startSyncInterval() {
     }
 
     try {
+      // Check for local changes - used by both sync and backup modes
+      const hasLocalChanges =
+        pendingSettingsChanges ||
+        Object.values(localMetadata.chats).some(
+          (chat) => !chat.deleted && chat.lastModified > (chat.syncedAt || 0)
+        );
+
       if (config.syncMode === "sync") {
         // In sync mode, check both directions
         // Get cloud metadata first
         const cloudMetadata = await downloadCloudMetadata();
-
-        // Check for local changes
-        const hasLocalChanges =
-          pendingSettingsChanges ||
-          Object.values(localMetadata.chats).some(
-            (chat) => !chat.deleted && chat.lastModified > (chat.syncedAt || 0)
-          );
 
         // Check for cloud changes
         const hasCloudChanges = await detectCloudChanges(cloudMetadata);
