@@ -475,7 +475,7 @@ async function initializeLastSeenUpdates() {
     if (!chat.id) continue;
     lastSeenUpdates[chat.id] = {
       updatedAt: chat.updatedAt || Date.now(),
-      hash: await generateChatHash(chat),
+      hash: await generateHash(chat),
     };
   }
   //logToConsole("success", "Last seen updates initialized");
@@ -595,7 +595,7 @@ async function initializeMetadataFromExistingData() {
     if (!chat.id) continue;
     localMetadata.chats[chat.id] = {
       updatedAt: chat.updatedAt || Date.now(),
-      hash: await generateChatHash(chat),
+      hash: await generateHash(chat),
       syncedAt: 0,
       isDeleted: false,
     };
@@ -617,17 +617,20 @@ async function saveLocalMetadata() {
 }
 
 // Generate hash for a chat
-async function generateChatHash(chat) {
-  if (!chat || !chat.id) return null;
+async function generateHash(content, type = "generic") {
+  let str;
+  if (type === "chat" && content.id) {
+    // For chats, only include specific fields to avoid unnecessary syncs
+    const simplifiedChat = {
+      messages: content.messagesArray || [],
+      title: content.chatTitle,
+    };
+    str = JSON.stringify(simplifiedChat);
+  } else {
+    str = typeof content === "string" ? content : JSON.stringify(content);
+  }
 
-  // Create a simplified chat object with only the important parts that would trigger a sync
-  const simplifiedChat = {
-    messages: chat.messagesArray || [],
-    title: chat.chatTitle,
-  };
-
-  const msgStr = JSON.stringify(simplifiedChat);
-  const msgBuffer = new TextEncoder().encode(msgStr);
+  const msgBuffer = new TextEncoder().encode(str);
   const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -2721,9 +2724,7 @@ async function performInitialSync() {
 
         // Add chat to cloud metadata
         metadata.chats[chat.id] = {
-          hash:
-            localChatMeta.hash ||
-            (await generateContentHash(JSON.stringify(chat))),
+          hash: localChatMeta.hash || (await generateHash(chat)),
           lastModified: localChatMeta.lastModified || Date.now(),
           syncedAt: Date.now(),
           deleted: false,
@@ -3214,7 +3215,7 @@ async function syncToCloud() {
             localMetadata.chats[chatId] = {};
           }
 
-          const newHash = await generateContentHash(JSON.stringify(chatData));
+          const newHash = await generateHash(chatData);
           localMetadata.chats[chatId] = {
             ...localMetadata.chats[chatId],
             lastModified: chatData.updatedAt || syncTimestamp,
@@ -3248,6 +3249,11 @@ async function syncToCloud() {
           await saveLocalMetadata();
         } catch (error) {
           logToConsole("error", `Error uploading chat ${chatId}:`, error);
+          // Reset syncedAt to 0 to force retry on next sync
+          if (localMetadata.chats[chatId]) {
+            localMetadata.chats[chatId].syncedAt = 0;
+            await saveLocalMetadata();
+          }
         }
       }
     }
@@ -3294,6 +3300,11 @@ async function syncToCloud() {
           await saveLocalMetadata();
         } catch (error) {
           logToConsole("error", `Error deleting chat ${chatId}:`, error);
+          // Reset syncedAt to 0 to force retry on next sync
+          if (localMetadata.chats[chatId]) {
+            localMetadata.chats[chatId].syncedAt = 0;
+            await saveLocalMetadata();
+          }
         }
       }
     }
@@ -3351,8 +3362,8 @@ async function detectChanges(localChats, cloudChats) {
       // New chat in cloud
       changes.push({ type: "add", chat: cloudChat });
     } else {
-      const cloudHash = await generateChatHash(cloudChat);
-      const localHash = await generateChatHash(localChat);
+      const cloudHash = await generateHash(cloudChat);
+      const localHash = await generateHash(localChat);
 
       if (cloudHash !== localHash) {
         // Chat was updated
@@ -3403,7 +3414,7 @@ async function updateChatMetadata(
 
   if (chat) {
     // Update metadata for existing chat
-    const currentHash = await generateChatHash(chat);
+    const currentHash = await generateHash(chat);
     const metadata = localMetadata.chats[chatId];
 
     // Always update lastModified and hash
@@ -5029,7 +5040,7 @@ async function initializeSettingsMonitoring() {
     if (!shouldExcludeSetting(key)) {
       const value = await getIndexedDBValue(key);
       if (value !== undefined) {
-        const hash = await generateContentHash(value);
+        const hash = await generateHash(value);
         // Only set lastModified if this is a new item or if the hash has changed
         if (
           !localMetadata.settings.items[key] ||
@@ -5051,7 +5062,7 @@ async function initializeSettingsMonitoring() {
     if (!shouldExcludeSetting(key)) {
       const value = localStorage.getItem(key);
       if (value !== null) {
-        const hash = await generateContentHash(value);
+        const hash = await generateHash(value);
         // Only set lastModified if this is a new item or if the hash has changed
         if (
           !localMetadata.settings.items[key] ||
@@ -5743,7 +5754,7 @@ async function uploadChatToCloud(
     }
 
     // Generate a new hash for the chat
-    const newHash = await generateChatHash(chatData);
+    const newHash = await generateHash(chatData);
 
     // Check if the chat already exists in cloud metadata and has the same hash
     // This prevents unnecessary uploads of unchanged chats
