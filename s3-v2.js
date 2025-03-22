@@ -2592,18 +2592,19 @@ async function processOperationQueue() {
 // Start sync interval
 function startSyncInterval() {
   // Clear any existing interval
-  if (window.syncInterval) {
-    clearInterval(window.syncInterval);
+  if (activeIntervals.sync) {
+    clearInterval(activeIntervals.sync);
+    activeIntervals.sync = null;
   }
 
   // Don't start interval if sync is disabled
-  if (localStorage.getItem("sync-mode") === "disabled") {
+  if (config.syncMode === "disabled") {
     logToConsole("info", "Sync intervals disabled - manual operations only");
     return;
   }
 
   // Set interval for syncing using user's configured interval
-  window.syncInterval = setInterval(async () => {
+  activeIntervals.sync = setInterval(async () => {
     if (document.hidden) return; // Skip if tab not visible
 
     // Skip if a sync operation is already in progress
