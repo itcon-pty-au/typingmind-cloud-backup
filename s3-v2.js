@@ -2589,6 +2589,50 @@ async function processOperationQueue() {
   return operationState.queueProcessingPromise;
 }
 
+// Detect changes in cloud metadata compared to local
+async function detectCloudChanges(cloudMetadata) {
+  if (!cloudMetadata || !cloudMetadata.chats) return false;
+
+  // Check settings changes
+  if (
+    cloudMetadata.settings &&
+    (!localMetadata.settings.syncedAt ||
+      cloudMetadata.settings.lastModified > localMetadata.settings.syncedAt)
+  ) {
+    return true;
+  }
+
+  // Check chat changes
+  for (const [chatId, cloudChatMeta] of Object.entries(cloudMetadata.chats)) {
+    const localChatMeta = localMetadata.chats[chatId];
+
+    // If chat doesn't exist locally or has different hash
+    if (
+      !localChatMeta ||
+      (cloudChatMeta.hash &&
+        localChatMeta.hash &&
+        cloudChatMeta.hash !== localChatMeta.hash) ||
+      // Or if cloud version is newer than our last sync
+      cloudChatMeta.lastModified > (localChatMeta?.syncedAt || 0)
+    ) {
+      return true;
+    }
+
+    // Check for cloud tombstones
+    if (cloudChatMeta.deleted === true) {
+      // If we don't have the tombstone or our tombstone is older
+      if (
+        !localChatMeta?.deleted ||
+        cloudChatMeta.deletedAt > localChatMeta.deletedAt
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 // Start sync interval
 function startSyncInterval() {
   // Clear any existing interval
@@ -2617,56 +2661,65 @@ function startSyncInterval() {
     }
 
     try {
-      // Check for local changes first
-      const hasLocalChanges =
-        pendingSettingsChanges ||
-        Object.values(localMetadata.chats).some(
-          (chat) => !chat.deleted && chat.lastModified > (chat.syncedAt || 0)
-        );
-
       if (config.syncMode === "sync") {
-        // In sync mode:
-        // 1. If there are local changes, sync to cloud
-        // 2. If metadata is out of date (over 1 min), check cloud
-        // 3. Otherwise skip this cycle
-        if (hasLocalChanges) {
-          logToConsole("info", "Local changes detected - syncing to cloud");
+        // In sync mode, check both directions
+        // Get cloud metadata first
+        const cloudMetadata = await downloadCloudMetadata();
+
+        // Check for local changes
+        const hasLocalChanges =
+          pendingSettingsChanges ||
+          Object.values(localMetadata.chats).some(
+            (chat) => !chat.deleted && chat.lastModified > (chat.syncedAt || 0)
+          );
+
+        // Check for cloud changes
+        const hasCloudChanges = await detectCloudChanges(cloudMetadata);
+
+        // Handle empty cloud special case
+        const cloudChatCount = Object.keys(cloudMetadata?.chats || {}).length;
+        const localChatCount = Object.keys(localMetadata.chats || {}).length;
+        if (
+          (cloudChatCount === 0 && localChatCount > 0) ||
+          cloudMetadata.lastSyncTime === 0
+        ) {
+          logToConsole(
+            "info",
+            "Cloud is empty/new but we have local chats - syncing to cloud"
+          );
+          queueOperation("cloud-empty-sync", syncToCloud);
+          return;
+        }
+
+        if (hasCloudChanges && hasLocalChanges) {
+          // Both sides have changes - queue both operations with proper dependencies
+          logToConsole(
+            "info",
+            "Changes detected on both sides - queuing bidirectional sync"
+          );
+
+          // First queue the cloud sync
+          const cloudSyncOp = "bidirectional-cloud-sync";
+          queueOperation(cloudSyncOp, syncFromCloud);
+
+          // Then queue the local sync with dependency on cloud sync
+          // This ensures local changes are processed after cloud changes are merged
+          queueOperation(
+            "bidirectional-local-sync",
+            syncToCloud,
+            [cloudSyncOp], // Make this operation dependent on cloud sync completion
+            60000 // 1 minute timeout
+          );
+
+          logToConsole("info", "Queued bidirectional sync operations");
+        } else if (hasCloudChanges) {
+          // Only cloud has changes
+          logToConsole("info", "Cloud changes detected - queuing cloud sync");
+          queueOperation("cloud-changes-sync", syncFromCloud);
+        } else if (hasLocalChanges) {
+          // Only local has changes
+          logToConsole("info", "Local changes detected - queuing local sync");
           queueOperation("local-changes-sync", syncToCloud);
-        } else {
-          // Check if we should sync from cloud based on metadata age
-          const metadataAge = Date.now() - (localMetadata.lastSyncTime || 0);
-          const METADATA_REFRESH_INTERVAL = 60000; // 1 minute
-
-          if (metadataAge >= METADATA_REFRESH_INTERVAL) {
-            // Get cloud metadata to check chat counts
-            const cloudMetadata = await downloadCloudMetadata();
-            const cloudChatCount = Object.keys(
-              cloudMetadata?.chats || {}
-            ).length;
-            const localChatCount = Object.keys(
-              localMetadata.chats || {}
-            ).length;
-
-            // If cloud is empty/new and we have local chats, sync to cloud instead
-            if (
-              (cloudChatCount === 0 && localChatCount > 0) ||
-              cloudMetadata.lastSyncTime === 0
-            ) {
-              logToConsole(
-                "info",
-                "Cloud is empty/new but we have local chats - syncing to cloud"
-              );
-              queueOperation("cloud-empty-sync", syncToCloud);
-            } else {
-              logToConsole(
-                "info",
-                "Checking for cloud updates (metadata age: " +
-                  Math.round(metadataAge / 1000) +
-                  "s)"
-              );
-              queueOperation("cloud-check", syncFromCloud);
-            }
-          }
         }
       } else if (config.syncMode === "backup" && hasLocalChanges) {
         // In backup mode, only sync to cloud when there are local changes
