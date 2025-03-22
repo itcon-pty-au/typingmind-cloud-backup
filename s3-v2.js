@@ -609,7 +609,7 @@ async function initializeMetadataFromExistingData() {
 async function saveLocalMetadata() {
   try {
     await setIndexedDBKey("sync-metadata", JSON.stringify(localMetadata));
-    logToConsole("success", "Local metadata saved");
+    //logToConsole("success", "Local metadata saved");
   } catch (error) {
     logToConsole("error", "Failed to save local metadata:", error);
     throw error;
