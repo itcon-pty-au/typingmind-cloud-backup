@@ -2829,8 +2829,8 @@ async function syncFromCloud() {
         "info",
         "Aborting sync from cloud - cloud is empty/new but we have local data"
       );
-      // Queue a sync to cloud instead
-      queueOperation("cloud-empty-sync", syncToCloud);
+      // Queue a sync to cloud instead with a longer timeout since we're syncing all data
+      queueOperation("cloud-empty-sync", syncToCloud, [], 300000); // 5 minute timeout
       return;
     }
 
