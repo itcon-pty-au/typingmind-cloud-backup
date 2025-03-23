@@ -2398,8 +2398,8 @@ function isAwsConfigured() {
 
 // Queue an operation for execution with improved dependency handling
 function queueOperation(name, operation, dependencies = [], timeout = 30000) {
-  // Check if sync is disabled
-  if (config.syncMode === "disabled") {
+  // Only skip non-manual operations when sync is disabled
+  if (config.syncMode === "disabled" && !name.startsWith("manual")) {
     logToConsole("skip", `Skipping operation ${name} - sync is disabled`);
     return;
   }
