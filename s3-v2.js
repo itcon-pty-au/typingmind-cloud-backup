@@ -4320,7 +4320,12 @@ function openSyncModal() {
 
   modal.querySelector("#save-settings").addEventListener("click", saveSettings);
   modal.querySelector("#sync-now").addEventListener("click", () => {
-    queueOperation("manual-sync", syncFromCloud);
+    // In sync mode, sync from cloud. In backup or disabled mode, sync to cloud
+    if (config.syncMode === "sync") {
+      queueOperation("manual-sync", syncFromCloud);
+    } else {
+      queueOperation("manual-backup", syncToCloud);
+    }
     updateSyncStatus();
   });
 
