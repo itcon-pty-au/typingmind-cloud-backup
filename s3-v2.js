@@ -2723,7 +2723,7 @@ function startSyncInterval() {
 
           // First queue the cloud sync
           const cloudSyncOp = "bidirectional-cloud-sync";
-          queueOperation(cloudSyncOp, syncFromCloud);
+          queueOperation(cloudSyncOp, syncFromCloud, [], 300000); // 5 minute timeout
 
           // Then queue the local sync with dependency on cloud sync
           // This ensures local changes are processed after cloud changes are merged
