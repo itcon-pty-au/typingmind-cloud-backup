@@ -319,16 +319,16 @@ async function performFullInitialization() {
     await initializeSettingsMonitoring();
     await setupLocalStorageChangeListener();
 
-    // Check for daily backup if applicable
-    if (config.syncMode !== "disabled") {
-      queueOperation("daily-backup-check", checkAndPerformDailyBackup);
-    }
-
     startSyncInterval();
 
-    // If in sync mode, also perform initial sync
+    // If in sync mode, perform initial sync first
     if (config.syncMode === "sync") {
-      queueOperation("initial-sync", performInitialSync);
+      await queueOperation("initial-sync", performInitialSync);
+    }
+
+    // Check for daily backup after sync operations
+    if (config.syncMode !== "disabled") {
+      queueOperation("daily-backup-check", checkAndPerformDailyBackup);
     }
 
     // Start monitoring IndexedDB for deletions and changes
