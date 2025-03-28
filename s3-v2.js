@@ -4337,6 +4337,35 @@ function openSyncModal() {
     }
   });
 
+  // Add change event listeners to sync mode radio buttons
+  const syncModeRadios = modal.querySelectorAll('input[name="sync-mode"]');
+  syncModeRadios.forEach((radio) => {
+    radio.addEventListener("change", function () {
+      // Update the sync-now button text based on the selected mode
+      const syncNowBtn = modal.querySelector("#sync-now");
+      if (syncNowBtn) {
+        syncNowBtn.textContent =
+          this.value === "sync" ? "Sync Now" : "Backup Now";
+      }
+
+      // Also update the cloud button text in the main UI
+      const cloudSyncBtn = document.querySelector(
+        '[data-element-id="cloud-sync-button"]'
+      );
+      if (cloudSyncBtn) {
+        const buttonText = cloudSyncBtn.querySelector("span:last-child");
+        if (buttonText) {
+          buttonText.innerText =
+            this.value === "disabled"
+              ? "Cloud"
+              : this.value === "sync"
+              ? "Sync"
+              : "Backup";
+        }
+      }
+    });
+  });
+
   // Set console logging checkbox state based on URL parameter
   const consoleLoggingCheckbox = modal.querySelector("#console-logging-toggle");
   consoleLoggingCheckbox.checked = isConsoleLoggingEnabled;
