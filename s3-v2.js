@@ -3595,7 +3595,7 @@ function insertSyncButton() {
         </svg>
         ${
           currentMode === "sync"
-            ? `<div id="sync-status-dot" class="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-zinc-900"></div>`
+            ? `<div id="sync-status-dot" class="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-zinc-900"></div>`
             : ""
         }
       </div>
@@ -3643,7 +3643,7 @@ function updateSyncStatusDot(status = "success") {
 
   // Remove existing classes
   dot.className =
-    "absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-zinc-900";
+    "absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-zinc-900";
 
   // Add status-specific classes
   switch (status) {
@@ -6054,7 +6054,7 @@ function updateSyncStatusDot(status) {
 
   // Remove existing classes
   dot.className =
-    "absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border border-zinc-900";
+    "absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-zinc-900";
 
   // Add status-specific classes
   switch (status) {
