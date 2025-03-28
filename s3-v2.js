@@ -3593,11 +3593,7 @@ function insertSyncButton() {
                  </g>`
           }
         </svg>
-        ${
-          currentMode === "sync"
-            ? `<div id="sync-status-dot" class="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-zinc-900"></div>`
-            : ""
-        }
+        ${currentMode === "sync" ? `<div id="sync-status-dot"></div>` : ""}
       </div>
       <span class="font-normal self-stretch text-center text-xs leading-4 md:leading-none ${
         currentMode === "disabled" ? "text-gray-400 dark:text-gray-500" : ""
@@ -3641,9 +3637,13 @@ function updateSyncStatusDot(status = "success") {
 
   dot.style.display = "block";
 
-  // Remove existing classes
-  dot.className =
-    "absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-zinc-900";
+  // Remove existing background classes
+  dot.classList.remove(
+    "bg-green-500",
+    "bg-yellow-500",
+    "bg-red-500",
+    "bg-gray-500"
+  );
 
   // Add status-specific classes
   switch (status) {
@@ -3719,6 +3719,17 @@ styleSheet.textContent = `
     padding: 1rem;
     overflow-y: auto;
     animation: fadeIn 0.2s ease-out;
+  }
+
+  /* Sync status dot styling */
+  #sync-status-dot {
+    position: absolute;
+    top: -0.15rem;
+    right: -0.15rem;
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: 9999px;
+    border: 1px solid rgb(24, 24, 27);
   }
 
   .cloud-sync-modal {
@@ -6052,23 +6063,27 @@ function updateSyncStatusDot(status) {
     dot.style.display = "block";
   }
 
-  // Remove existing classes
-  dot.className =
-    "absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-zinc-900";
+  // Remove existing background classes
+  dot.classList.remove(
+    "bg-green-500",
+    "bg-yellow-500",
+    "bg-red-500",
+    "bg-gray-500"
+  );
 
   // Add status-specific classes
   switch (status) {
     case "in-sync":
-      dot.classList.add("bg-green-500");
+      dot.classList.add("bg-green-500"); // In sync
       break;
     case "syncing":
-      dot.classList.add("bg-orange-500");
+      dot.classList.add("bg-yellow-500"); // Syncing
       break;
-    case "out-of-sync":
-      dot.classList.add("bg-red-500");
+    case "error":
+      dot.classList.add("bg-red-500"); // Not synced/error
       break;
     default:
-      dot.classList.add("bg-gray-500");
+      dot.classList.add("bg-gray-500"); // Unknown state
   }
 }
 
