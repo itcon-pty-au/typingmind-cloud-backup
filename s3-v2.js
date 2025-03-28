@@ -3725,11 +3725,10 @@ styleSheet.textContent = `
   #sync-status-dot {
     position: absolute;
     top: -0.15rem;
-    right: -0.15rem;
+    right: -0.6rem;
     width: 0.625rem;
     height: 0.625rem;
     border-radius: 9999px;
-    border: 1px solid rgb(24, 24, 27);
   }
 
   .cloud-sync-modal {
