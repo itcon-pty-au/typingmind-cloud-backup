@@ -4382,14 +4382,15 @@ function openSyncModal() {
 
 // Close modal
 function closeModal() {
-  const modal = document.querySelector('[data-element-id="sync-modal"]');
-  if (modal) {
-    modal.remove();
-    // Force a sync status check after modal is closed
-    checkSyncStatus().then((status) => {
-      updateSyncStatusDot(status);
-    });
-  }
+  const modal = document.querySelector(".cloud-sync-modal");
+  const overlay = document.querySelector(".modal-overlay");
+
+  if (modal) modal.remove();
+  if (overlay) overlay.remove();
+
+  checkSyncStatus().then((status) => {
+    updateSyncStatusDot(status);
+  });
 }
 
 // Save settings
