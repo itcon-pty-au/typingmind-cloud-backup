@@ -3557,30 +3557,28 @@ function setupVisibilityChangeHandler() {
 
 // Insert sync button
 function insertSyncButton() {
-  // Remove existing button if it exists
-  const existingButton = document.getElementById("cloud-sync-button");
-  if (existingButton) {
-    existingButton.remove();
-  }
+  // Check if button already exists
+  const existingButton = document.querySelector(
+    '[data-element-id="workspace-tab-cloudsync"]'
+  );
+  if (existingButton) return;
 
-  const currentMode = config.syncMode;
   const button = document.createElement("button");
-  button.id = "cloud-sync-button";
-  button.className = `min-w-[58px] sm:min-w-0 sm:aspect-auto aspect-square cursor-default h-12 md:h-[50px] flex-col justify-start items-start inline-flex focus:outline-0 focus:text-white w-full relative ${
-    currentMode === "disabled" ? "opacity-50" : ""
-  }`;
+  button.setAttribute("data-element-id", "workspace-tab-cloudsync");
+  button.className =
+    "relative flex items-center gap-1 rounded-md p-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300";
 
   button.innerHTML = `
     <span class="text-white/70 hover:bg-white/20 self-stretch h-12 md:h-[50px] px-0.5 py-1.5 rounded-xl flex-col justify-start items-center gap-1.5 flex transition-colors">
       <div class="relative">
         <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">
           ${
-            currentMode === "disabled"
+            config.syncMode === "disabled"
               ? `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M9 4.5A4.5 4.5 0 0114.5 9M9 13.5A4.5 4.5 0 013.5 9"/>
                   <path d="M2 2L16 16"/>
                  </g>`
-              : currentMode === "sync"
+              : config.syncMode === "sync"
               ? `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M9 4.5A4.5 4.5 0 0114.5 9M9 13.5A4.5 4.5 0 013.5 9"/>
                   <polyline points="9,2.5 9,4.5 11,4.5"/>
@@ -3593,11 +3591,11 @@ function insertSyncButton() {
                  </g>`
           }
         </svg>
-        ${currentMode === "sync" ? `<div id="sync-status-dot"></div>` : ""}
+        ${config.syncMode === "sync" ? `<div id="sync-status-dot"></div>` : ""}
       </div>
       <span class="font-normal self-stretch text-center text-xs leading-4 md:leading-none ${
-        currentMode === "disabled" ? "text-gray-400 dark:text-gray-500" : ""
-      }">${currentMode === "sync" ? "Sync" : "Backup"}</span>
+        config.syncMode === "disabled" ? "text-gray-400 dark:text-gray-500" : ""
+      }">${config.syncMode === "sync" ? "Sync" : "Backup"}</span>
     </span>
   `;
 
