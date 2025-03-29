@@ -3565,8 +3565,9 @@ function insertSyncButton() {
 
   const button = document.createElement("button");
   button.setAttribute("data-element-id", "workspace-tab-cloudsync");
-  button.className =
-    "relative flex items-center gap-1 rounded-md p-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300";
+  button.className = `min-w-[58px] sm:min-w-0 sm:aspect-auto aspect-square cursor-default h-12 md:h-[50px] flex-col justify-start items-start inline-flex focus:outline-0 focus:text-white w-full relative ${
+    config.syncMode === "disabled" ? "opacity-50" : ""
+  }`;
 
   button.innerHTML = `
     <span class="text-white/70 hover:bg-white/20 self-stretch h-12 md:h-[50px] px-0.5 py-1.5 rounded-xl flex-col justify-start items-center gap-1.5 flex transition-colors">
