@@ -3192,9 +3192,10 @@ async function syncFromCloud() {
         localProcessed: localChatsProcessed,
         duration: `${Math.round((Date.now() - syncTimestamp) / 1000)}s`,
       });
+      // If changes were made, the status will be updated by throttledCheckSyncStatus later
     } else {
       logToConsole("info", "No changes detected during sync from cloud");
-      updateSyncStatusDot("in-sync");
+      updateSyncStatusDot("in-sync"); // Explicitly set to green here when no changes
     }
 
     operationState.lastError = null; // Clear any previous errors
@@ -3202,14 +3203,14 @@ async function syncFromCloud() {
     logToConsole("success", "Sync completed successfully");
     operationState.lastSyncStatus = "success";
 
-    // Force immediate status check after successful sync
-    const status = await checkSyncStatus();
-    updateSyncStatusDot(status);
+    // REMOVED the immediate status check that was here:
+    // const status = await checkSyncStatus();
+    // updateSyncStatusDot(status);
   } catch (error) {
     logToConsole("error", "Sync failed:", error);
     operationState.lastError = error;
     operationState.lastSyncStatus = "error";
-    updateSyncStatusDot("error");
+    updateSyncStatusDot("error"); // Update to red on error
     throw error;
   } finally {
     operationState.isImporting = false;
@@ -3219,6 +3220,7 @@ async function syncFromCloud() {
       operationState.isPendingSync = false;
       queueOperation("pending-sync", syncFromCloud);
     }
+    // The throttled check will run periodically to keep the status correct
   }
 }
 
