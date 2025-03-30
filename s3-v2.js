@@ -2477,22 +2477,48 @@ async function processOperationQueue() {
             (dep) => !availableDeps.has(dep)
           );
 
+          // *** MODIFICATION START ***
           logToConsole(
             "error",
-            "Dependency cycle or missing dependencies detected",
+            `Dependency cycle or missing dependencies detected. Missing: ${JSON.stringify(
+              missingDeps
+            )}`,
             {
-              missing: missingDeps,
-              pending: [...pendingDeps],
-              completed: [...availableDeps],
+              // missing: missingDeps, // Keep original log structure if needed, but add explicit names
+              pendingOps: operationState.operationQueue.map((op) => ({
+                name: op.name,
+                deps: op.dependencies,
+              })),
+              completedOps: [...availableDeps],
+            }
+          );
+          // *** MODIFICATION END ***
+
+          // Remove operations with missing dependencies that are NOT themselves missing dependencies
+          // (This might be too aggressive, consider alternative cleanup)
+          operationState.operationQueue = operationState.operationQueue.filter(
+            (op) => {
+              const opMissingDeps = op.dependencies.filter(
+                (dep) => !availableDeps.has(dep)
+              );
+              if (opMissingDeps.length > 0) {
+                logToConsole(
+                  "warning",
+                  `Removing operation '${
+                    op.name
+                  }' due to missing dependencies: ${JSON.stringify(
+                    opMissingDeps
+                  )}`
+                );
+                return false; // Remove if it has missing deps
+              }
+              return true; // Keep otherwise
             }
           );
 
-          // Remove operations with missing dependencies
-          operationState.operationQueue = operationState.operationQueue.filter(
-            (op) => op.dependencies.every((dep) => availableDeps.has(dep))
-          );
-
           if (operationState.operationQueue.length === 0) break;
+          // Maybe add a small delay here before continuing?
+          await new Promise((resolve) => setTimeout(resolve, 500));
           continue;
         }
 
@@ -2562,6 +2588,7 @@ async function processOperationQueue() {
 
           // If max retries reached, remove operation and continue
           operationState.operationQueue.splice(nextOpIndex, 1);
+          operationState.completedOperations.delete(name); // Ensure failed op is not marked complete
 
           // If this operation had dependents, we need to clean them up
           const dependentOps = operationState.operationQueue.filter((op) =>
@@ -2571,9 +2598,10 @@ async function processOperationQueue() {
           if (dependentOps.length > 0) {
             logToConsole(
               "warning",
-              `Removing ${dependentOps.length} dependent operations due to failure of ${name}`
+              `Removing ${dependentOps.length} dependent operations due to failure of '${name}'`
             );
-
+            // Filter out operations that depend SOLELY on the failed one, or where the failed one is the only remaining dependency?
+            // Current logic removes any op that lists the failed one as a dependency. This might be too broad.
             operationState.operationQueue =
               operationState.operationQueue.filter(
                 (op) => !op.dependencies.includes(name)
@@ -2597,14 +2625,16 @@ async function processOperationQueue() {
         operationState.isImporting = false;
         operationState.isExporting = false;
         operationState.isPendingSync = false;
+        operationState.lastError = null; // Clear error if queue is empty
 
-        // Cleanup completed operations older than 1 hour
+        // Cleanup completed operations older than 1 hour (Consider if this is too aggressive or too lenient)
+        // Maybe only clear completed operations if there wasn't an error during this processing cycle?
         const oneHourAgo = Date.now() - 3600000;
-        operationState.completedOperations.clear();
+        // Temporarily disable aggressive cleanup to see if it helps with dependency tracking
+        // operationState.completedOperations.clear();
 
         // Force a sync status update
-        const status = await checkSyncStatus();
-        updateSyncStatusDot(status);
+        throttledCheckSyncStatus(); // Use throttled version
       }
     }
   })();
