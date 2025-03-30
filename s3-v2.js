@@ -412,12 +412,10 @@ async function initializeExtension() {
 
     // Load local metadata *before* deciding on initial sync
     initialMetadataSaveNeeded = await loadLocalMetadata();
-    value;
 
     // Proceed with full initialization steps *except* the initial sync queueing
     await initializeLastSeenUpdates();
     settingsMetadataSaveNeeded = await initializeSettingsMonitoring();
-    value;
 
     // Save metadata ONCE if needed after initial setup
     if (initialMetadataSaveNeeded || settingsMetadataSaveNeeded) {
@@ -5603,7 +5601,7 @@ async function handleSettingChange(key, value, source) {
     // Mark settings as changed only if hash changed
     pendingSettingsChanges = true;
     localMetadata.settings.lastModified = Date.now();
-    await saveLocalMetadata();
+    // await saveLocalMetadata(); // REMOVED immediate save
 
     // Immediately update sync status to show out-of-sync
     throttledCheckSyncStatus();
