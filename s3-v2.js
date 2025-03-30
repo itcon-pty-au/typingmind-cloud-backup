@@ -6341,3 +6341,9 @@ function startPeriodicChangeCheck() {
 
   logToConsole("info", "Started periodic change detection");
 }
+
+// Create a throttled version of checkSyncStatus
+const throttledCheckSyncStatus = throttle(async () => {
+  const status = await checkSyncStatus();
+  updateSyncStatusDot(status);
+}, 1000); // Throttle to once per second max
