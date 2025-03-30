@@ -3081,6 +3081,7 @@ async function syncFromCloud() {
     }
 
     let hasChanges = false;
+    let metadataNeedsSaving = false; // Add flag to track metadata changes
     let totalChats = Object.keys(cloudMetadata.chats).length;
     let processedChats = 0;
     let downloadedChats = 0;
@@ -3156,7 +3157,8 @@ async function syncFromCloud() {
         }
 
         localMetadata.settings.syncedAt = syncTimestamp;
-        saveLocalMetadata();
+        // saveLocalMetadata(); // REMOVED immediate save
+        metadataNeedsSaving = true; // Set flag instead
         hasChanges = true;
         logToConsole(
           "success",
@@ -3212,14 +3214,23 @@ async function syncFromCloud() {
         }
 
         // Update local metadata with tombstone
-        localMetadata.chats[chatId] = {
-          deleted: true,
-          deletedAt: cloudChatMeta.deletedAt,
-          lastModified: cloudChatMeta.lastModified,
-          syncedAt: syncTimestamp,
-          tombstoneVersion: cloudChatMeta.tombstoneVersion || 1,
-        };
-        saveLocalMetadata();
+        // Check if update is needed before setting flag
+        const currentMeta = localMetadata.chats[chatId];
+        if (
+          !currentMeta ||
+          !currentMeta.deleted ||
+          currentMeta.deletedAt < cloudChatMeta.deletedAt
+        ) {
+          localMetadata.chats[chatId] = {
+            deleted: true,
+            deletedAt: cloudChatMeta.deletedAt,
+            lastModified: cloudChatMeta.lastModified,
+            syncedAt: syncTimestamp,
+            tombstoneVersion: cloudChatMeta.tombstoneVersion || 1,
+          };
+          // saveLocalMetadata(); // REMOVED immediate save
+          metadataNeedsSaving = true; // Set flag instead
+        }
         continue;
       }
 
@@ -3256,10 +3267,20 @@ async function syncFromCloud() {
           if (!localMetadata.chats[chatId]) {
             localMetadata.chats[chatId] = {};
           }
-          localMetadata.chats[chatId].lastModified = cloudChatMeta.lastModified;
-          localMetadata.chats[chatId].syncedAt = syncTimestamp;
-          localMetadata.chats[chatId].hash = cloudChatMeta.hash;
-          saveLocalMetadata();
+          // Check if update is needed before setting flag
+          const currentMeta = localMetadata.chats[chatId];
+          if (
+            currentMeta.lastModified !== cloudChatMeta.lastModified ||
+            currentMeta.syncedAt !== syncTimestamp ||
+            currentMeta.hash !== cloudChatMeta.hash
+          ) {
+            localMetadata.chats[chatId].lastModified =
+              cloudChatMeta.lastModified;
+            localMetadata.chats[chatId].syncedAt = syncTimestamp;
+            localMetadata.chats[chatId].hash = cloudChatMeta.hash;
+            // saveLocalMetadata(); // REMOVED immediate save
+            metadataNeedsSaving = true; // Set flag instead
+          }
         }
       }
     }
@@ -3321,6 +3342,15 @@ async function syncFromCloud() {
       // They must have an explicit tombstone to be deleted
     }
 
+    // Save metadata once if any changes were made during loops
+    if (metadataNeedsSaving) {
+      logToConsole(
+        "info",
+        "Saving batched metadata changes from syncFromCloud"
+      );
+      await saveLocalMetadata();
+    }
+
     if (hasChanges) {
       localMetadata.lastSyncTime = syncTimestamp;
       cloudMetadata.lastSyncTime = syncTimestamp;
@@ -3353,7 +3383,8 @@ async function syncFromCloud() {
         localMetadata.settings.lastModified > localMetadata.settings.syncedAt
       ) {
         localMetadata.settings.syncedAt = localMetadata.settings.lastModified;
-        saveLocalMetadata();
+        // saveLocalMetadata(); // REMOVED immediate save
+        metadataNeedsSaving = true; // Set flag
         logToConsole(
           "debug",
           "Updated settings.syncedAt to match lastModified",
@@ -3361,6 +3392,10 @@ async function syncFromCloud() {
             syncedAt: localMetadata.settings.syncedAt,
           }
         );
+      }
+      // Save if the flag was set here
+      if (metadataNeedsSaving) {
+        await saveLocalMetadata();
       }
 
       updateSyncStatusDot("in-sync"); // Explicitly set to green here when no changes
