@@ -650,19 +650,27 @@ async function loadLocalMetadata() {
       try {
         localMetadata = JSON.parse(storedMetadata);
         // *** LOGGING START ***
+        // Helper function for formatting timestamps in logs
+        const formatLogTimestamp = (ts) =>
+          ts ? new Date(ts).toLocaleString() : ts === 0 ? "0 (Epoch)" : ts;
+
         logToConsole("debug", "Parsed localMetadata:", {
-          lastSyncTime: localMetadata.lastSyncTime,
+          lastSyncTime: formatLogTimestamp(localMetadata.lastSyncTime),
           hasChats: !!localMetadata.chats,
           chatCount: localMetadata.chats
             ? Object.keys(localMetadata.chats).length
             : 0,
           firstChatSyncedAt:
             localMetadata.chats && Object.keys(localMetadata.chats).length > 0
-              ? localMetadata.chats[Object.keys(localMetadata.chats)[0]]
-                  ?.syncedAt
+              ? formatLogTimestamp(
+                  localMetadata.chats[Object.keys(localMetadata.chats)[0]]
+                    ?.syncedAt
+                )
               : undefined,
           hasSettings: !!localMetadata.settings,
-          settingsSyncedAt: localMetadata.settings?.syncedAt,
+          settingsSyncedAt: formatLogTimestamp(
+            localMetadata.settings?.syncedAt
+          ),
         });
         // *** LOGGING END ***
       } catch (parseError) {
@@ -739,16 +747,22 @@ async function saveLocalMetadata() {
   try {
     // *** LOGGING START ***
     const metadataToSave = JSON.stringify(localMetadata);
+    // Helper function for formatting timestamps in logs
+    const formatLogTimestamp = (ts) =>
+      ts ? new Date(ts).toLocaleString() : ts === 0 ? "0 (Epoch)" : ts;
+
     logToConsole("debug", "Saving localMetadata:", {
-      lastSyncTime: localMetadata.lastSyncTime,
+      lastSyncTime: formatLogTimestamp(localMetadata.lastSyncTime),
       chatCount: localMetadata.chats
         ? Object.keys(localMetadata.chats).length
         : 0,
       firstChatSyncedAt:
         localMetadata.chats && Object.keys(localMetadata.chats).length > 0
-          ? localMetadata.chats[Object.keys(localMetadata.chats)[0]]?.syncedAt
+          ? formatLogTimestamp(
+              localMetadata.chats[Object.keys(localMetadata.chats)[0]]?.syncedAt
+            )
           : undefined,
-      settingsSyncedAt: localMetadata.settings?.syncedAt,
+      settingsSyncedAt: formatLogTimestamp(localMetadata.settings?.syncedAt),
       size: metadataToSave.length,
     });
     // *** LOGGING END ***
