@@ -3194,6 +3194,7 @@ async function syncFromCloud() {
       });
     } else {
       logToConsole("info", "No changes detected during sync from cloud");
+      updateSyncStatusDot("in-sync");
     }
 
     operationState.lastError = null; // Clear any previous errors
