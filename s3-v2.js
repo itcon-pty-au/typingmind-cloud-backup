@@ -635,19 +635,73 @@ function saveConfiguration() {
 
 // Load local metadata
 async function loadLocalMetadata() {
-  //logToConsole("start", "Loading local metadata...");
+  logToConsole("start", "Loading local metadata...");
 
   try {
     const storedMetadata = await getIndexedDBKey("sync-metadata");
+    // *** LOGGING START ***
+    logToConsole(
+      "debug",
+      "Raw storedMetadata from IndexedDB:",
+      storedMetadata ? storedMetadata.slice(0, 500) + "..." : null
+    );
+    // *** LOGGING END ***
     if (storedMetadata) {
-      localMetadata = JSON.parse(storedMetadata);
+      try {
+        localMetadata = JSON.parse(storedMetadata);
+        // *** LOGGING START ***
+        logToConsole("debug", "Parsed localMetadata:", {
+          lastSyncTime: localMetadata.lastSyncTime,
+          hasChats: !!localMetadata.chats,
+          chatCount: localMetadata.chats
+            ? Object.keys(localMetadata.chats).length
+            : 0,
+          firstChatSyncedAt:
+            localMetadata.chats && Object.keys(localMetadata.chats).length > 0
+              ? localMetadata.chats[Object.keys(localMetadata.chats)[0]]
+                  ?.syncedAt
+              : undefined,
+          hasSettings: !!localMetadata.settings,
+          settingsSyncedAt: localMetadata.settings?.syncedAt,
+        });
+        // *** LOGGING END ***
+      } catch (parseError) {
+        logToConsole(
+          "error",
+          "Failed to parse stored metadata, initializing from scratch",
+          parseError
+        );
+        await initializeMetadataFromExistingData();
+      }
     } else {
+      logToConsole(
+        "info",
+        "No stored metadata found, initializing from existing data."
+      );
       await initializeMetadataFromExistingData();
     }
-    logToConsole("success", "Local metadata loaded");
+    logToConsole("success", "Local metadata loading process completed"); // Changed log message
   } catch (error) {
     logToConsole("error", "Failed to load local metadata:", error);
-    throw error;
+    // Attempt to recover by initializing fresh metadata
+    try {
+      logToConsole(
+        "warning",
+        "Attempting to recover by initializing fresh metadata."
+      );
+      await initializeMetadataFromExistingData();
+      logToConsole(
+        "success",
+        "Successfully initialized fresh metadata after load error."
+      );
+    } catch (initError) {
+      logToConsole(
+        "error",
+        "Failed to initialize fresh metadata after load error:",
+        initError
+      );
+      throw error; // Re-throw original error if recovery fails
+    }
   }
 }
 
@@ -683,7 +737,22 @@ async function initializeMetadataFromExistingData() {
 // Save local metadata
 async function saveLocalMetadata() {
   try {
-    await setIndexedDBKey("sync-metadata", JSON.stringify(localMetadata));
+    // *** LOGGING START ***
+    const metadataToSave = JSON.stringify(localMetadata);
+    logToConsole("debug", "Saving localMetadata:", {
+      lastSyncTime: localMetadata.lastSyncTime,
+      chatCount: localMetadata.chats
+        ? Object.keys(localMetadata.chats).length
+        : 0,
+      firstChatSyncedAt:
+        localMetadata.chats && Object.keys(localMetadata.chats).length > 0
+          ? localMetadata.chats[Object.keys(localMetadata.chats)[0]]?.syncedAt
+          : undefined,
+      settingsSyncedAt: localMetadata.settings?.syncedAt,
+      size: metadataToSave.length,
+    });
+    // *** LOGGING END ***
+    await setIndexedDBKey("sync-metadata", metadataToSave);
     //logToConsole("success", "Local metadata saved");
   } catch (error) {
     logToConsole("error", "Failed to save local metadata:", error);
