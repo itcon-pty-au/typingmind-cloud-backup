@@ -21,6 +21,7 @@ const EXCLUDED_SETTINGS = [
   "TM_useGlobalChatLoading",
   "TM_crossTabLastSynced",
   "TM_useLastOpenedChatID",
+  "INSTANCE_ID",
 ];
 
 function shouldExcludeSetting(key) {
