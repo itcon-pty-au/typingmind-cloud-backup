@@ -5603,7 +5603,7 @@ async function handleSettingChange(key, value, source) {
     // Mark settings as changed only if hash changed
     pendingSettingsChanges = true;
     localMetadata.settings.lastModified = Date.now();
-    // await saveLocalMetadata(); // REMOVED immediate save
+    await saveLocalMetadata();
 
     // Immediately update sync status to show out-of-sync
     throttledCheckSyncStatus();
