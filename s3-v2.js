@@ -3668,7 +3668,7 @@ function updateSyncStatusDot(status = "success") {
 
   dot.style.display = "block";
 
-  // Remove existing background classes
+  // Remove potentially conflicting classes (optional but good practice)
   dot.classList.remove(
     "bg-green-500",
     "bg-yellow-500",
@@ -3676,19 +3676,20 @@ function updateSyncStatusDot(status = "success") {
     "bg-gray-500"
   );
 
-  // Add status-specific classes
+  // Set background color directly using inline style
   switch (status) {
-    case "success":
-      dot.classList.add("bg-green-500"); // In sync
+    case "in-sync":
+      dot.style.backgroundColor = "#22c55e"; // Tailwind green-500
       break;
-    case "in-progress":
-      dot.classList.add("bg-yellow-500"); // Syncing
+    case "syncing":
+      dot.style.backgroundColor = "#eab308"; // Tailwind yellow-500
       break;
-    case "error":
-      dot.classList.add("bg-red-500"); // Not synced/error
+    case "error": // Handle error state explicitly
+    case "out-of-sync":
+      dot.style.backgroundColor = "#ef4444"; // Tailwind red-500
       break;
-    default:
-      dot.classList.add("bg-gray-500"); // Unknown state
+    default: // Includes unknown states or initial loading
+      dot.style.backgroundColor = "#6b7280"; // Tailwind gray-500
   }
 }
 
@@ -6093,7 +6094,7 @@ function updateSyncStatusDot(status) {
     dot.style.display = "block";
   }
 
-  // Remove existing background classes
+  // Remove potentially conflicting classes (optional but good practice)
   dot.classList.remove(
     "bg-green-500",
     "bg-yellow-500",
@@ -6101,19 +6102,20 @@ function updateSyncStatusDot(status) {
     "bg-gray-500"
   );
 
-  // Add status-specific classes
+  // Set background color directly using inline style
   switch (status) {
     case "in-sync":
-      dot.classList.add("bg-green-500"); // In sync
+      dot.style.backgroundColor = "#22c55e"; // Tailwind green-500
       break;
     case "syncing":
-      dot.classList.add("bg-yellow-500"); // Syncing
+      dot.style.backgroundColor = "#eab308"; // Tailwind yellow-500
       break;
-    case "error":
-      dot.classList.add("bg-red-500"); // Not synced/error
+    case "error": // Handle error state explicitly
+    case "out-of-sync":
+      dot.style.backgroundColor = "#ef4444"; // Tailwind red-500
       break;
-    default:
-      dot.classList.add("bg-gray-500"); // Unknown state
+    default: // Includes unknown states or initial loading
+      dot.style.backgroundColor = "#6b7280"; // Tailwind gray-500
   }
 }
 
