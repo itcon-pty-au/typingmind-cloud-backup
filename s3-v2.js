@@ -6029,64 +6029,78 @@ async function uploadChatToCloud(
 
 // Add new sync status checking functions
 async function checkSyncStatus() {
-  // If sync is disabled, no status needed
-  if (config.syncMode !== "sync") {
+  // Skip check if sync is disabled
+  if (!isAwsConfigured()) {
     return "disabled";
   }
 
-  // If operations in progress -> syncing
-  if (
-    operationState.isImporting ||
-    operationState.isExporting ||
-    operationState.isProcessingQueue
-  ) {
-    return "syncing";
-  }
+  // Force a reload of local metadata to ensure it's fresh
+  await loadLocalMetadata();
 
   try {
-    // Check for local changes
-    const hasLocalChanges = Object.values(localMetadata.chats).some(
-      (chat) => !chat.deleted && chat.lastModified > (chat.syncedAt || 0)
-    );
+    // Check if settings are out of sync
+    let settingsOutOfSync = false;
 
-    // Check for pending settings changes
-    const hasSettingChanges =
-      localMetadata.settings.lastModified >
-      (localMetadata.settings.syncedAt || 0);
-
-    // Check for errors
-    if (operationState.lastError) {
-      return "out-of-sync";
+    if (
+      pendingSettingsChanges ||
+      (localMetadata.settings &&
+        localMetadata.settings.lastModified > localMetadata.settings.syncedAt)
+    ) {
+      settingsOutOfSync = true;
+      logToConsole("debug", "Settings are out of sync", {
+        pendingSettingsChanges,
+        lastModified: localMetadata.settings?.lastModified,
+        syncedAt: localMetadata.settings?.syncedAt,
+      });
     }
 
-    // If any changes detected -> out of sync
-    if (hasLocalChanges || hasSettingChanges) {
-      return "out-of-sync";
+    // Check if chats are out of sync
+    let chatsOutOfSync = false;
+    const chatIds = Object.keys(localMetadata.chats || {});
+
+    for (const chatId of chatIds) {
+      const chatMeta = localMetadata.chats[chatId];
+
+      if (chatMeta.lastModified > (chatMeta.syncedAt || 0)) {
+        chatsOutOfSync = true;
+        logToConsole("debug", "Chat is out of sync", {
+          chatId,
+          lastModified: chatMeta.lastModified,
+          syncedAt: chatMeta.syncedAt,
+        });
+        break; // One out-of-sync chat is enough
+      }
     }
 
-    // If we have a successful sync time and no changes -> in sync
-    if (localMetadata.lastSyncTime > 0) {
+    // Return the appropriate status
+    if (operationState.isExporting || operationState.isImporting) {
+      logToConsole("debug", "Status: syncing (operation in progress)");
+      return "syncing";
+    } else if (settingsOutOfSync || chatsOutOfSync) {
+      logToConsole("debug", "Status: out-of-sync", {
+        settingsOutOfSync,
+        chatsOutOfSync,
+      });
+      return "out-of-sync";
+    } else {
+      logToConsole("debug", "Status: in-sync");
       return "in-sync";
     }
-
-    // No sync time yet -> out of sync
-    return "out-of-sync";
   } catch (error) {
-    logToConsole("error", "Error checking sync status:", error);
-    return "out-of-sync";
+    console.error("Error checking sync status:", error);
+    return "error";
   }
 }
 
-// Add throttled version to prevent too frequent updates
-const throttledCheckSyncStatus = throttle(async () => {
-  const status = await checkSyncStatus();
-  updateSyncStatusDot(status);
-}, 5000); // Throttle to every 5 seconds
-
-// Update the status dot function to handle new states
 function updateSyncStatusDot(status) {
   const dot = document.getElementById("sync-status-dot");
   if (!dot) return;
+
+  // Log status change with more details
+  logToConsole("debug", `Updating sync dot to: ${status}`, {
+    previousClass: dot.className,
+    newStatus: status,
+  });
 
   // Handle visibility
   if (status === "disabled") {
@@ -6096,28 +6110,20 @@ function updateSyncStatusDot(status) {
     dot.style.display = "block";
   }
 
-  // Remove potentially conflicting classes (optional but good practice)
-  dot.classList.remove(
-    "bg-green-500",
-    "bg-yellow-500",
-    "bg-red-500",
-    "bg-gray-500"
-  );
-
-  // Set background color directly using inline style
+  // Apply color directly with style
   switch (status) {
     case "in-sync":
-      dot.style.backgroundColor = "#22c55e"; // Tailwind green-500
+      dot.style.backgroundColor = "#22c55e"; // green-500
       break;
     case "syncing":
-      dot.style.backgroundColor = "#eab308"; // Tailwind yellow-500
+      dot.style.backgroundColor = "#eab308"; // yellow-500
       break;
-    case "error": // Handle error state explicitly
+    case "error":
     case "out-of-sync":
-      dot.style.backgroundColor = "#ef4444"; // Tailwind red-500
+      dot.style.backgroundColor = "#ef4444"; // red-500
       break;
-    default: // Includes unknown states or initial loading
-      dot.style.backgroundColor = "#6b7280"; // Tailwind gray-500
+    default:
+      dot.style.backgroundColor = "#6b7280"; // gray-500
   }
 }
 
