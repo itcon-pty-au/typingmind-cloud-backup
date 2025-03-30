@@ -406,12 +406,26 @@ async function initializeExtension() {
       return;
     }
 
+    // Flags to track if metadata needs saving after initialization steps
+    let initialMetadataSaveNeeded = false;
+    let settingsMetadataSaveNeeded = false;
+
     // Load local metadata *before* deciding on initial sync
-    await loadLocalMetadata();
+    initialMetadataSaveNeeded = await loadLocalMetadata(); // Capture return value
 
     // Proceed with full initialization steps *except* the initial sync queueing
     await initializeLastSeenUpdates();
-    await initializeSettingsMonitoring();
+    settingsMetadataSaveNeeded = await initializeSettingsMonitoring(); // Capture return value
+
+    // Save metadata ONCE if needed after initial setup
+    if (initialMetadataSaveNeeded || settingsMetadataSaveNeeded) {
+      logToConsole(
+        "info",
+        "Saving batched metadata after initialization steps"
+      );
+      await saveLocalMetadata();
+    }
+
     await setupLocalStorageChangeListener();
 
     startSyncInterval(); // Start interval regardless
@@ -635,16 +649,16 @@ function saveConfiguration() {
 
 // Load local metadata
 async function loadLocalMetadata() {
-  logToConsole("start", "Loading local metadata...");
-
+  //logToConsole("start", "Loading local metadata...");
+  let metadataInitialized = false; // Flag to return
   try {
     const storedMetadata = await getIndexedDBKey("sync-metadata");
     // *** LOGGING START ***
-    logToConsole(
-      "debug",
-      "Raw storedMetadata from IndexedDB:",
-      storedMetadata ? storedMetadata.slice(0, 500) + "..." : null
-    );
+    // logToConsole(
+    //   "debug",
+    //   "Raw storedMetadata from IndexedDB:",
+    //   storedMetadata ? storedMetadata.slice(0, 500) + "..." : null
+    // );
     // *** LOGGING END ***
     if (storedMetadata) {
       try {
@@ -679,16 +693,16 @@ async function loadLocalMetadata() {
           "Failed to parse stored metadata, initializing from scratch",
           parseError
         );
-        await initializeMetadataFromExistingData();
+        metadataInitialized = await initializeMetadataFromExistingData(); // Capture return
       }
     } else {
       logToConsole(
         "info",
         "No stored metadata found, initializing from existing data."
       );
-      await initializeMetadataFromExistingData();
+      metadataInitialized = await initializeMetadataFromExistingData(); // Capture return
     }
-    logToConsole("success", "Local metadata loading process completed"); // Changed log message
+    //logToConsole("success", "Local metadata loading process completed");
   } catch (error) {
     logToConsole("error", "Failed to load local metadata:", error);
     // Attempt to recover by initializing fresh metadata
@@ -697,7 +711,7 @@ async function loadLocalMetadata() {
         "warning",
         "Attempting to recover by initializing fresh metadata."
       );
-      await initializeMetadataFromExistingData();
+      metadataInitialized = await initializeMetadataFromExistingData(); // Capture return
       logToConsole(
         "success",
         "Successfully initialized fresh metadata after load error."
@@ -711,6 +725,7 @@ async function loadLocalMetadata() {
       throw error; // Re-throw original error if recovery fails
     }
   }
+  return metadataInitialized; // Return the flag
 }
 
 // Initialize metadata from existing data
@@ -740,6 +755,7 @@ async function initializeMetadataFromExistingData() {
 
   await saveLocalMetadata();
   logToConsole("success", "Metadata initialized from existing data");
+  return true; // Indicate that metadata was initialized and needs saving
 }
 
 // Save local metadata
@@ -5490,6 +5506,7 @@ async function initializeSettingsMonitoring() {
   await saveLocalMetadata();
 
   logToConsole("success", "Settings monitoring initialized");
+  return true; // Indicate that metadata needs saving
 }
 
 // Generate hash for content
