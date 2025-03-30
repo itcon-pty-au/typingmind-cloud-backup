@@ -6364,3 +6364,20 @@ const throttledCheckSyncStatus = throttle(async () => {
   const status = await checkSyncStatus();
   updateSyncStatusDot(status);
 }, 1000); // Throttle to once per second max
+
+// Function to update URL with logging parameter
+function updateUrlLoggingParameter(enableLogging) {
+  // Get current URL and create a URL object for manipulation
+  const url = new URL(window.location.href);
+
+  if (enableLogging) {
+    // Add or update log parameter to true
+    url.searchParams.set("log", "true");
+  } else if (url.searchParams.has("log")) {
+    // Remove log parameter completely if it exists and we're disabling
+    url.searchParams.delete("log");
+  }
+
+  // Update the URL without causing a page reload
+  window.history.replaceState({}, "", url.toString());
+}
