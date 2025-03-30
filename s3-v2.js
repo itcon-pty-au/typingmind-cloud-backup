@@ -3669,15 +3669,17 @@ async function updateChatMetadata(
   isModified = true,
   isDeleted = false
 ) {
+  let metadataChanged = false; // Flag to track changes
+
   if (!chatId) {
     logToConsole("error", "No chat ID provided to updateChatMetadata");
-    return;
+    return false; // Indicate no change
   }
 
   const chat = await getChatFromIndexedDB(chatId);
   if (!chat && !isDeleted) {
     logToConsole("error", "Chat not found in IndexedDB:", chatId);
-    return;
+    return false; // Indicate no change
   }
 
   // Initialize metadata if it doesn't exist
@@ -3688,24 +3690,42 @@ async function updateChatMetadata(
       hash: null,
       deleted: false,
     };
+    metadataChanged = true; // Metadata was initialized
   }
 
   if (chat) {
     // Update metadata for existing chat
     const currentHash = await generateHash(chat);
     const metadata = localMetadata.chats[chatId];
+    const previousHash = metadata.hash;
+    const previousLastModified = metadata.lastModified;
 
     // Always update lastModified and hash
     metadata.lastModified = Date.now();
     metadata.hash = currentHash;
 
+    // Check if relevant metadata actually changed
+    if (
+      metadata.lastModified !== previousLastModified ||
+      metadata.hash !== previousHash ||
+      metadata.deleted
+    ) {
+      metadataChanged = true;
+    }
+
     // Queue for sync if modified, regardless of hash change
     if (isModified) {
-      metadata.syncedAt = 0;
+      if (metadata.syncedAt !== 0) {
+        metadata.syncedAt = 0; // Mark for sync only if not already marked
+        metadataChanged = true;
+      }
       queueOperation(`chat-changed-${chatId}`, () => uploadChatToCloud(chatId));
     }
 
-    metadata.deleted = false;
+    if (metadata.deleted) {
+      metadata.deleted = false; // Undelete if chat exists
+      metadataChanged = true;
+    }
 
     // Update lastSeenUpdates
     lastSeenUpdates[chatId] = {
@@ -3714,18 +3734,26 @@ async function updateChatMetadata(
     };
   } else if (isDeleted) {
     // Handle deletion
-    localMetadata.chats[chatId] = {
-      ...localMetadata.chats[chatId],
-      deleted: true,
-      deletedAt: Date.now(),
-      lastModified: Date.now(),
-      syncedAt: 0,
-    };
-    delete lastSeenUpdates[chatId];
+    if (!localMetadata.chats[chatId].deleted) {
+      // Only mark as changed if not already deleted
+      localMetadata.chats[chatId] = {
+        ...localMetadata.chats[chatId],
+        deleted: true,
+        deletedAt: Date.now(),
+        lastModified: Date.now(),
+        syncedAt: 0,
+      };
+      metadataChanged = true;
+      delete lastSeenUpdates[chatId];
+    }
   }
 
-  await saveLocalMetadata();
-  throttledCheckSyncStatus();
+  // REMOVED: await saveLocalMetadata();
+  if (metadataChanged) {
+    throttledCheckSyncStatus(); // Update status if changes were made
+  }
+
+  return metadataChanged; // Return whether metadata was changed
 }
 
 // Setup visibility change handler
@@ -6471,41 +6499,50 @@ function startPeriodicChangeCheck() {
   activeIntervals.changeCheck = setInterval(async () => {
     if (document.hidden) return; // Skip if tab is not visible
 
+    let changesDetected = false; // Flag for saving metadata later
+    const changedChatsLog = []; // Keep track for logging
+
     try {
       const chats = await getAllChatsFromIndexedDB();
-      const changedChats = [];
 
       for (const chat of chats) {
         if (!chat.id) continue;
 
         // Get current chat hash
         const currentHash = await generateHash(chat);
+        const lastSeen = lastSeenUpdates[chat.id];
 
         // Check if this chat has been updated since we last saw it
         if (
-          !lastSeenUpdates[chat.id] ||
-          currentHash !== lastSeenUpdates[chat.id].hash ||
-          (currentHash === lastSeenUpdates[chat.id].hash &&
-            chat.updatedAt > lastSeenUpdates[chat.id].timestamp)
+          !lastSeen ||
+          currentHash !== lastSeen.hash ||
+          (currentHash === lastSeen.hash && chat.updatedAt > lastSeen.timestamp) // Also check timestamp
         ) {
-          changedChats.push(chat.id);
-
-          // Update last seen data
+          // Update last seen data immediately
           lastSeenUpdates[chat.id] = {
             hash: currentHash,
-            timestamp: chat.updatedAt || 0,
+            timestamp: chat.updatedAt || Date.now(), // Use current time if updatedAt is missing
           };
 
-          // Update metadata and queue for sync
-          await updateChatMetadata(chat.id, true);
+          // Update metadata and check if it actually changed
+          const chatMetadataChanged = await updateChatMetadata(chat.id, true);
+          if (chatMetadataChanged) {
+            changesDetected = true; // Mark that we need to save later
+            changedChatsLog.push(chat.id); // Add to log list
+          }
         }
       }
 
-      if (changedChats.length > 0) {
-        logToConsole("info", "Detected changes in chats", {
-          changedChats: changedChats,
-          count: changedChats.length,
-        });
+      if (changesDetected) {
+        logToConsole(
+          "info",
+          "Detected changes in chats during periodic check",
+          {
+            changedChats: changedChatsLog,
+            count: changedChatsLog.length,
+          }
+        );
+        await saveLocalMetadata(); // Save metadata ONCE after the loop
       }
     } catch (error) {
       logToConsole("error", "Error checking for changes", error);
