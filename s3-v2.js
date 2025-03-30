@@ -406,10 +406,78 @@ async function initializeExtension() {
       return;
     }
 
-    // Proceed with full initialization if AWS is configured and not in disabled mode
-    await performFullInitialization();
+    // Load local metadata *before* deciding on initial sync
+    await loadLocalMetadata();
 
-    // Set up visibility change handler
+    // Proceed with full initialization steps *except* the initial sync queueing
+    await initializeLastSeenUpdates();
+    await initializeSettingsMonitoring();
+    await setupLocalStorageChangeListener();
+
+    startSyncInterval(); // Start interval regardless
+
+    // Decide whether to perform an initial sync
+    if (config.syncMode === "sync") {
+      // Only perform initial sync if metadata suggests it's the first run or state is very old/invalid
+      if (!localMetadata || localMetadata.lastSyncTime === 0) {
+        logToConsole(
+          "info",
+          "Performing initial sync due to missing or zero lastSyncTime."
+        );
+        await queueOperation("initial-sync", performInitialSync);
+      } else {
+        logToConsole(
+          "info",
+          "Skipping explicit initial sync, relying on visibility change and interval."
+        );
+        // Optional: Queue a regular sync check on startup if the tab is visible
+        if (document.visibilityState === "visible") {
+          queueOperation("startup-sync-check", syncFromCloud);
+        }
+      }
+    }
+
+    // Check for daily backup after potential sync operations might be queued
+    if (config.syncMode !== "disabled") {
+      queueOperation("daily-backup-check", checkAndPerformDailyBackup);
+    }
+
+    // Start monitoring IndexedDB for deletions and changes
+    // setupLocalStorageChangeListener(); // Already called
+    monitorIndexedDBForDeletions();
+    startPeriodicChangeCheck();
+    setupVisibilityChangeHandler(); // Already called, but ensures it's set up
+
+    // Clean up old metadata versions as the last initialization step
+    try {
+      await cleanupMetadataVersions();
+      logToConsole(
+        "success",
+        "Metadata cleanup completed during initialization"
+      );
+    } catch (cleanupError) {
+      logToConsole(
+        "warning",
+        "Non-critical: Metadata cleanup failed during initialization",
+        cleanupError
+      );
+    }
+
+    logToConsole("success", "Full initialization completed");
+
+    // Add tombstone cleanup as the last step
+    logToConsole("cleanup", "Starting tombstone cleanup...");
+    const localCleanupCount = cleanupOldTombstones();
+    const cloudCleanupCount = await cleanupCloudTombstones();
+
+    if (localCleanupCount > 0 || cloudCleanupCount > 0) {
+      logToConsole("success", "Tombstone cleanup completed", {
+        localTombstonesRemoved: localCleanupCount,
+        cloudTombstonesRemoved: cloudCleanupCount,
+      });
+    }
+
+    // Set up visibility change handler - moved earlier, but ensure it's present
     setupVisibilityChangeHandler();
 
     logToConsole("success", "Initialization completed successfully");
