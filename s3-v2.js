@@ -411,11 +411,13 @@ async function initializeExtension() {
     let settingsMetadataSaveNeeded = false;
 
     // Load local metadata *before* deciding on initial sync
-    initialMetadataSaveNeeded = await loadLocalMetadata(); // Capture return value
+    initialMetadataSaveNeeded = await loadLocalMetadata();
+    value;
 
     // Proceed with full initialization steps *except* the initial sync queueing
     await initializeLastSeenUpdates();
-    settingsMetadataSaveNeeded = await initializeSettingsMonitoring(); // Capture return value
+    settingsMetadataSaveNeeded = await initializeSettingsMonitoring();
+    value;
 
     // Save metadata ONCE if needed after initial setup
     if (initialMetadataSaveNeeded || settingsMetadataSaveNeeded) {
@@ -693,14 +695,14 @@ async function loadLocalMetadata() {
           "Failed to parse stored metadata, initializing from scratch",
           parseError
         );
-        metadataInitialized = await initializeMetadataFromExistingData(); // Capture return
+        metadataInitialized = await initializeMetadataFromExistingData();
       }
     } else {
       logToConsole(
         "info",
         "No stored metadata found, initializing from existing data."
       );
-      metadataInitialized = await initializeMetadataFromExistingData(); // Capture return
+      metadataInitialized = await initializeMetadataFromExistingData();
     }
     //logToConsole("success", "Local metadata loading process completed");
   } catch (error) {
@@ -711,7 +713,7 @@ async function loadLocalMetadata() {
         "warning",
         "Attempting to recover by initializing fresh metadata."
       );
-      metadataInitialized = await initializeMetadataFromExistingData(); // Capture return
+      metadataInitialized = await initializeMetadataFromExistingData();
       logToConsole(
         "success",
         "Successfully initialized fresh metadata after load error."
@@ -5601,7 +5603,7 @@ async function handleSettingChange(key, value, source) {
     // Mark settings as changed only if hash changed
     pendingSettingsChanges = true;
     localMetadata.settings.lastModified = Date.now();
-    await saveLocalMetadata();
+    // await saveLocalMetadata(); // REMOVED immediate save
 
     // Immediately update sync status to show out-of-sync
     throttledCheckSyncStatus();
