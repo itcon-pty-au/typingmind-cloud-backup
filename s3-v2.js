@@ -753,7 +753,6 @@ async function initializeMetadataFromExistingData() {
     };
   }
 
-  await saveLocalMetadata();
   logToConsole("success", "Metadata initialized from existing data");
   return true; // Indicate that metadata was initialized and needs saving
 }
