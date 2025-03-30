@@ -3195,6 +3195,23 @@ async function syncFromCloud() {
       // If changes were made, the status will be updated by throttledCheckSyncStatus later
     } else {
       logToConsole("info", "No changes detected during sync from cloud");
+
+      // Update settings.syncedAt to match lastModified to prevent immediate "out-of-sync" status
+      if (
+        localMetadata.settings &&
+        localMetadata.settings.lastModified > localMetadata.settings.syncedAt
+      ) {
+        localMetadata.settings.syncedAt = localMetadata.settings.lastModified;
+        saveLocalMetadata();
+        logToConsole(
+          "debug",
+          "Updated settings.syncedAt to match lastModified",
+          {
+            syncedAt: localMetadata.settings.syncedAt,
+          }
+        );
+      }
+
       updateSyncStatusDot("in-sync"); // Explicitly set to green here when no changes
     }
 
