@@ -4432,6 +4432,7 @@ function openSyncModal() {
   consoleLoggingCheckbox.checked = isConsoleLoggingEnabled;
   consoleLoggingCheckbox.addEventListener("change", (e) => {
     isConsoleLoggingEnabled = e.target.checked;
+    updateUrlLoggingParameter(isConsoleLoggingEnabled);
   });
 
   // Prevent clicks inside modal from closing it
@@ -4449,9 +4450,13 @@ function closeModal() {
   if (modal) modal.remove();
   if (overlay) overlay.remove();
 
-  checkSyncStatus().then((status) => {
-    updateSyncStatusDot(status);
-  });
+  // Ensure the sync status dot is updated correctly after the modal is closed
+  setTimeout(() => {
+    checkSyncStatus().then((status) => {
+      logToConsole("debug", `Updating sync dot after modal close: ${status}`);
+      updateSyncStatusDot(status);
+    });
+  }, 100); // Short delay to ensure it happens after any other post-close operations
 }
 
 // Save settings
