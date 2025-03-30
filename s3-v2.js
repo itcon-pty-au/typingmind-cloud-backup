@@ -1193,14 +1193,20 @@ function monitorIndexedDBForDeletions() {
             potentialDeletions.delete(chatId);
           }
         } else {
-          // This is a newly detected chat
+          // This is a newly detected chat - **IGNORE IT HERE**
+          // The periodicChangeCheck will handle new chats.
+          // We only add it to knownChats so we can detect if it disappears later.
           knownChats.set(chatId, {
             detectedAt: now,
             confirmedCount: 1,
           });
-          logToConsole("info", `New chat detected: ${chatId}`);
+          logToConsole(
+            "info",
+            `Deletion monitor observed new chat (will be handled by change check): ${chatId}`
+          );
 
-          // Trigger metadata update and sync for new chat
+          // REMOVED THE FOLLOWING BLOCK that triggered updates/uploads for new chats:
+          /*
           updateChatMetadata(chatId, true)
             .then(() => {
               if (config.syncMode === "sync" || config.syncMode === "backup") {
@@ -1216,6 +1222,7 @@ function monitorIndexedDBForDeletions() {
                 error
               );
             });
+          */
         }
       }
 
@@ -6178,9 +6185,12 @@ async function uploadChatToCloud(
 
       // Still update local metadata to mark it as synced
       if (localMetadata.chats[chatId]) {
-        localMetadata.chats[chatId].syncedAt = Date.now();
-        localMetadata.chats[chatId].hash = newHash;
-        saveLocalMetadata();
+        // Only update if necessary to avoid triggering saves
+        if (localMetadata.chats[chatId].syncedAt !== Date.now()) {
+          localMetadata.chats[chatId].syncedAt = Date.now();
+          localMetadata.chats[chatId].hash = newHash; // Ensure hash is also up-to-date
+          // saveLocalMetadata(); // REMOVED SAVE
+        }
       }
 
       return true;
@@ -6228,7 +6238,7 @@ async function uploadChatToCloud(
       logToConsole("info", `Restored previously deleted chat ${chatId}`);
     }
 
-    saveLocalMetadata();
+    // saveLocalMetadata(); // REMOVED SAVE
 
     // Update lastSeenUpdates to prevent re-detection of the same changes
     lastSeenUpdates[chatId] = {
