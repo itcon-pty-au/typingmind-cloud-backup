@@ -3313,6 +3313,7 @@ async function syncFromCloud() {
     );
     let localChatsProcessed = 0;
     const totalLocalOnly = localOnlyChats.length;
+    let hasUnsyncedChats = false;
 
     if (totalLocalOnly > 0) {
       logToConsole("info", `Processing ${totalLocalOnly} local-only chats`);
@@ -3336,33 +3337,29 @@ async function syncFromCloud() {
         needsSync:
           !localChatMeta ||
           !localMetadata.lastSyncTime ||
-          localChatMeta.lastModified > localChatMeta.syncedAt,
+          localChatMeta.lastModified > localChatMeta.syncedAt ||
+          !localChatMeta.syncedAt,
       });
 
-      // Upload if chat has never been synced or has pending changes
+      // Check if chat needs to be synced
       if (
         !localChatMeta ||
         !localMetadata.lastSyncTime ||
         localChatMeta.lastModified > localChatMeta.syncedAt ||
-        !localChatMeta.syncedAt // Add explicit check for unsynced chats
+        !localChatMeta.syncedAt
       ) {
-        logToConsole("info", `Uploading local chat ${chatId} to cloud`);
-        try {
-          await uploadChatToCloud(chatId);
-          hasChanges = true;
-        } catch (error) {
-          logToConsole("error", `Error uploading chat ${chatId}:`, error);
-        }
-        continue;
-      } else {
+        hasUnsyncedChats = true;
         logToConsole(
           "info",
-          `Chat ${chatId} doesn't need upload - already synced and no changes`
+          `Found unsynced chat ${chatId} - will queue sync to cloud`
         );
       }
+    }
 
-      // IMPORTANT: We do NOT delete chats just because they're missing from cloud
-      // They must have an explicit tombstone to be deleted
+    // If we found unsynced chats, queue a sync to cloud operation
+    if (hasUnsyncedChats) {
+      logToConsole("info", "Found unsynced chats - queuing sync to cloud");
+      queueOperation("unsynced-chats-sync", syncToCloud);
     }
 
     // Save metadata once if any changes were made during loops
