@@ -2905,6 +2905,12 @@ function startSyncInterval() {
         // Check for cloud changes
         const hasCloudChanges = await detectCloudChanges(cloudMetadata);
 
+        logToConsole("debug", "Sync interval flags:", {
+          hasCloudChanges,
+          hasLocalChanges,
+          pendingSettingsChanges,
+        });
+
         // Handle empty cloud special case
         const cloudChatCount = Object.keys(cloudMetadata?.chats || {}).length;
         const localChatCount = Object.keys(localMetadata.chats || {}).length;
