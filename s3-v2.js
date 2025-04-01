@@ -3343,7 +3343,8 @@ async function syncFromCloud() {
       if (
         !localChatMeta ||
         !localMetadata.lastSyncTime ||
-        localChatMeta.lastModified > localChatMeta.syncedAt
+        localChatMeta.lastModified > localChatMeta.syncedAt ||
+        !localChatMeta.syncedAt // Add explicit check for unsynced chats
       ) {
         logToConsole("info", `Uploading local chat ${chatId} to cloud`);
         try {
