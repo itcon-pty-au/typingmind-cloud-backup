@@ -2833,27 +2833,88 @@ async function detectCloudChanges(cloudMetadata) {
   for (const [chatId, cloudChatMeta] of Object.entries(cloudMetadata.chats)) {
     const localChatMeta = localMetadata.chats[chatId];
 
-    // If chat doesn't exist locally or has different hash
-    if (
-      !localChatMeta ||
-      (cloudChatMeta.hash &&
-        localChatMeta.hash &&
-        cloudChatMeta.hash !== localChatMeta.hash) ||
-      // Or if cloud version is newer than our last sync
-      cloudChatMeta.lastModified > (localChatMeta?.syncedAt || 0)
-    ) {
-      return true;
-    }
-
-    // Check for cloud tombstones
+    // Check for cloud tombstones first
     if (cloudChatMeta.deleted === true) {
       // If we don't have the tombstone or our tombstone is older
       if (
         !localChatMeta?.deleted ||
-        cloudChatMeta.deletedAt > localChatMeta.deletedAt
+        cloudChatMeta.deletedAt > (localChatMeta?.deletedAt || 0) // Compare with local deletedAt if available
       ) {
+        logToConsole(
+          "debug",
+          `Cloud change detected: Newer tombstone for ${chatId}`
+        );
         return true;
       }
+      // Otherwise, if local tombstone is newer or same, no change needed from cloud perspective
+      continue; // Move to next chat if tombstone handled
+    }
+
+    // If cloud is not deleted, check for hash differences or existence issues
+    // Cloud change if:
+    // 1. Chat doesn't exist locally
+    // 2. Local hash is missing
+    // 3. Cloud hash is missing
+    // 4. Hashes differ
+    if (
+      !localChatMeta || // Doesn't exist locally
+      (localChatMeta && !localChatMeta.hash) || // Local hash missing
+      (cloudChatMeta && !cloudChatMeta.hash) || // Cloud hash missing
+      (localChatMeta &&
+        cloudChatMeta.hash &&
+        localChatMeta.hash &&
+        cloudChatMeta.hash !== localChatMeta.hash) // Hashes differ
+    ) {
+      logToConsole(
+        "debug",
+        `Cloud change detected: Hash/existence difference for ${chatId}`
+      );
+      return true;
+    }
+
+    // REMOVED OLD HASH/TIMESTAMP CHECK BLOCK:
+    // // If chat doesn't exist locally or has different hash
+    // if (
+    //   !localChatMeta ||
+    //   (cloudChatMeta.hash &&
+    //     localChatMeta.hash &&
+    //     cloudChatMeta.hash !== localChatMeta.hash) ||
+    //   // Or if cloud version is newer than our last sync (REMOVED)
+    //   // cloudChatMeta.lastModified > (localChatMeta?.syncedAt || 0)
+    // ) {
+    //   // Check for cloud tombstones specifically (moved above)
+    //   // if (cloudChatMeta.deleted === true && (!localChatMeta?.deleted || cloudChatMeta.deletedAt > localChatMeta.deletedAt)) {
+    //   //    return true;
+    //   // }
+    //   // Only return true if it's not a tombstone case handled above
+    //   if (!cloudChatMeta.deleted) {
+    //       return true;
+    //   }
+    // }
+    //
+    // // Check for cloud tombstones (moved above)
+    // if (cloudChatMeta.deleted === true) {
+    //   // If we don't have the tombstone or our tombstone is older
+    //   if (
+    //     !localChatMeta?.deleted ||
+    //     cloudChatMeta.deletedAt > localChatMeta.deletedAt
+    //   ) {
+    //     return true;
+    //   }
+    // }
+  }
+
+  // Also check if a chat exists locally but NOT in cloud metadata (and is not deleted locally)
+  for (const chatId in localMetadata.chats) {
+    if (!cloudMetadata.chats[chatId] && !localMetadata.chats[chatId].deleted) {
+      logToConsole(
+        "debug",
+        `Cloud change detected: Chat ${chatId} exists locally but not in cloud.`
+      );
+      // This indicates local needs to sync *to* cloud, not *from*.
+      // detectCloudChanges is about pulling changes, so this isn't a cloud change *to pull*.
+      // However, the overall status *is* out-of-sync.
+      // Let's not return true here, syncToCloud handles uploads.
     }
   }
 
@@ -3273,11 +3334,17 @@ async function syncFromCloud() {
 
       // CASE 3: Handle normal sync cases (no tombstones)
       if (
-        !chatExistsLocally ||
-        !localChatMeta ||
-        cloudChatMeta.hash !== localChatMeta.hash ||
-        !localChatMeta.syncedAt ||
-        cloudChatMeta.lastModified > localChatMeta.syncedAt
+        !chatExistsLocally || // 1. Missing locally
+        !localChatMeta || // 2. Missing local metadata (implies missing locally or error)
+        // 3. Cloud has hash AND (local missing hash OR hashes differ)
+        (cloudChatMeta.hash &&
+          (!localChatMeta.hash || cloudChatMeta.hash !== localChatMeta.hash))
+        // REMOVED OLD CONDITION:
+        // !chatExistsLocally ||
+        // !localChatMeta ||
+        // cloudChatMeta.hash !== localChatMeta.hash ||
+        // !localChatMeta.syncedAt ||
+        // cloudChatMeta.lastModified > localChatMeta.syncedAt
       ) {
         const cloudChat = await downloadChatFromCloud(chatId);
         if (cloudChat) {
@@ -3524,14 +3591,21 @@ async function syncToCloud() {
 
       // Upload if:
       // 1. No cloud metadata
-      // 2. Different hash
-      // 3. Never synced
-      // 4. Local changes not synced
+      // 2. Cloud has hash AND (local missing hash OR hashes differ)
+      // 3. Local metadata is missing (shouldn't happen often, but implies need to sync)
       if (
         !cloudChatMeta ||
-        (localChatMeta && cloudChatMeta.hash !== localChatMeta.hash) ||
-        !localChatMeta?.syncedAt ||
-        localChatMeta.lastModified > localChatMeta.syncedAt
+        (cloudChatMeta &&
+          cloudChatMeta.hash &&
+          (!localChatMeta ||
+            !localChatMeta.hash ||
+            cloudChatMeta.hash !== localChatMeta.hash)) ||
+        !localChatMeta
+        // REMOVED OLD CONDITION:
+        // !cloudChatMeta ||
+        // (localChatMeta && cloudChatMeta.hash !== localChatMeta.hash) ||
+        // !localChatMeta?.syncedAt ||
+        // localChatMeta.lastModified > localChatMeta.syncedAt
       ) {
         chatsToUpload.push(chat.id);
       }
