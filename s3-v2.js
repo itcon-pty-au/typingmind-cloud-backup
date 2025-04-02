@@ -3491,7 +3491,46 @@ async function syncFromCloud() {
           hasChanges = true;
           downloadedChats++;
 
-          // Update local metadata
+          // *** ADDED: Force immediate metadata save after download/merge ***
+          try {
+            const newHash = await generateHash(chatToSave);
+            logToConsole(
+              "debug",
+              `Hash calculated for immediate save in syncFromCloud for ${chatId}`,
+              { hash: newHash }
+            );
+            const metaString = await getIndexedDBKey("sync-metadata");
+            let currentLocalMeta = JSON.parse(metaString || "{}");
+            if (!currentLocalMeta.chats) currentLocalMeta.chats = {};
+            if (!currentLocalMeta.chats[chatId])
+              currentLocalMeta.chats[chatId] = {};
+            currentLocalMeta.chats[chatId].hash = newHash;
+            currentLocalMeta.chats[chatId].syncedAt = syncTimestamp;
+            currentLocalMeta.chats[chatId].lastModified =
+              chatToSave.updatedAt || syncTimestamp; // Update lastModified as well
+            currentLocalMeta.chats[chatId].deleted = false; // Ensure not marked deleted
+            delete currentLocalMeta.chats[chatId].deletedAt;
+            delete currentLocalMeta.chats[chatId].tombstoneVersion;
+            await setIndexedDBKey(
+              "sync-metadata",
+              JSON.stringify(currentLocalMeta)
+            );
+            logToConsole(
+              "debug",
+              `Immediately saved metadata for ${chatId} after merge.`
+            );
+            metadataNeedsSaving = false; // Reset flag as we saved specifically
+          } catch (metaSaveError) {
+            logToConsole(
+              "error",
+              `Failed immediate metadata save for ${chatId}`,
+              metaSaveError
+            );
+            metadataNeedsSaving = true; // Need fallback save if this failed
+          }
+          // *** END ADDED ***
+
+          // Update local metadata (in-memory only now, persistence handled above)
           if (!localMetadata.chats[chatId]) {
             localMetadata.chats[chatId] = {};
           }
