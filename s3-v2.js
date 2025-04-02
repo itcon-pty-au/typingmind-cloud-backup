@@ -432,7 +432,7 @@ async function initializeExtension() {
         const chatData = localChatsMapForHash.get(cleanChatId);
         if (chatData && !localMetadata.chats[chatId].deleted) {
           try {
-            const newHash = await generateHash(chatData);
+            const newHash = await generateHash(chatData, "chat");
             if (localMetadata.chats[chatId].hash !== newHash) {
               localMetadata.chats[chatId].hash = newHash;
               // Don't mark as modified here, just update the hash for comparison
