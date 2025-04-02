@@ -6818,7 +6818,14 @@ function startPeriodicChangeCheck() {
           };
 
           // Update metadata and check if it actually changed
-          const chatMetadataChanged = await updateChatMetadata(chat.id, true);
+          // *** MODIFIED: Pass the chat object ***
+          const chatMetadataChanged = await updateChatMetadata(
+            chat.id,
+            true,
+            false,
+            null,
+            chat
+          );
           if (chatMetadataChanged) {
             changesDetected = true; // Mark that we need to save later
             changedChatsLog.push(chat.id); // Add to log list
