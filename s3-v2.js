@@ -837,8 +837,10 @@ async function generateHash(content, type = "generic") {
   let str;
   if (type === "chat" && content.id) {
     // For chats, only include specific fields to avoid unnecessary syncs
+    // *** MODIFIED: Ensure messagesArray is used, falling back to messages ***
+    let messagesToHash = content.messagesArray || content.messages || [];
     const simplifiedChat = {
-      messages: content.messagesArray || [],
+      messages: messagesToHash, // Consistently use 'messages' key inside the simplified object for hashing
       title: content.chatTitle,
     };
     str = JSON.stringify(simplifiedChat);
@@ -3387,13 +3389,24 @@ async function syncFromCloud() {
         // 3. Cloud has hash AND (local missing hash OR hashes differ)
         (cloudChatMeta.hash &&
           (!localChatMeta.hash || cloudChatMeta.hash !== localChatMeta.hash))
-        // REMOVED OLD CONDITION:
-        // !chatExistsLocally ||
-        // !localChatMeta ||
-        // cloudChatMeta.hash !== localChatMeta.hash ||
-        // !localChatMeta.syncedAt ||
-        // cloudChatMeta.lastModified > localChatMeta.syncedAt
       ) {
+        // *** ADDED START: Log download reason ***
+        let downloadReason = "Unknown";
+        if (!chatExistsLocally) downloadReason = "Chat missing locally";
+        else if (!localChatMeta) downloadReason = "Missing local metadata";
+        else if (!localChatMeta.hash) downloadReason = "Local hash missing";
+        else if (cloudChatMeta.hash !== localChatMeta.hash)
+          downloadReason = "Hash mismatch";
+        logToConsole(
+          "info",
+          `Queueing download for chat ${chatId}. Reason: ${downloadReason}`,
+          {
+            localHash: localChatMeta?.hash,
+            cloudHash: cloudChatMeta?.hash,
+          }
+        );
+        // *** ADDED END ***
+
         const cloudChat = await downloadChatFromCloud(chatId);
         if (cloudChat) {
           let chatToSave = cloudChat;
@@ -6318,7 +6331,7 @@ async function uploadChatToCloud(
     }
 
     // Generate a new hash for the chat
-    const newHash = await generateHash(chatData);
+    const newHash = await generateHash(chatData, "chat"); // Ensure 'chat' type is passed
 
     // Check if the chat already exists in cloud metadata and has the same hash
     // This prevents unnecessary uploads of unchanged chats
@@ -6358,8 +6371,8 @@ async function uploadChatToCloud(
     await s3.putObject(params).promise();
 
     logToConsole("success", `Uploaded chat ${chatId} to cloud`, {
-      messageCount:
-        chatData.messagesArray?.length || chatData.messages?.length || 0,
+      // *** MODIFIED: Use standardized messagesArray ***
+      messageCount: chatData.messagesArray.length,
       title: chatData.chatTitle || "(Untitled)",
       size: encryptedData.length,
     });
@@ -6563,14 +6576,31 @@ window.addEventListener("visibilitychange", () => {
 
 // Merge two versions of a chat, combining their messages and metadata
 async function mergeChats(localChat, cloudChat) {
+  // *** ADDED START: Standardize messages to messagesArray ***
+  if (!localChat.messagesArray && localChat.messages) {
+    localChat.messagesArray = localChat.messages;
+    // delete localChat.messages; // Optional: remove the old key
+  } else if (!localChat.messagesArray) {
+    localChat.messagesArray = []; // Ensure it exists
+  }
+
+  if (!cloudChat.messagesArray && cloudChat.messages) {
+    cloudChat.messagesArray = cloudChat.messages;
+    // delete cloudChat.messages; // Optional: remove the old key
+  } else if (!cloudChat.messagesArray) {
+    cloudChat.messagesArray = []; // Ensure it exists
+  }
+  // *** ADDED END ***
+
   logToConsole("info", "Merging chat versions", {
     chatId: localChat.id,
-    localMessages: (localChat.messagesArray || []).length,
-    cloudMessages: (cloudChat.messagesArray || []).length,
+    // *** MODIFIED: Use standardized messagesArray ***
+    localMessages: localChat.messagesArray.length,
+    cloudMessages: cloudChat.messagesArray.length,
   });
 
   // Create a fresh copy to work with
-  const mergedChat = JSON.parse(JSON.stringify(localChat));
+  const mergedChat = JSON.parse(JSON.stringify(localChat)); // Uses localChat which now has messagesArray
 
   // Use the most recent metadata
   mergedChat.updatedAt = Math.max(
@@ -6586,19 +6616,21 @@ async function mergeChats(localChat, cloudChat) {
     mergedChat.chatTitle = cloudChat.chatTitle;
   }
 
-  // Handle message merging
-  if (!mergedChat.messagesArray) mergedChat.messagesArray = [];
-  if (!cloudChat.messagesArray) cloudChat.messagesArray = [];
+  // Handle message merging - relies on messagesArray which is now guaranteed
+  if (!mergedChat.messagesArray) mergedChat.messagesArray = []; // Should already exist, but safety check
+  // No need for cloudChat check, done above
 
   // Create a map of message IDs we already have
   const messageMap = new Map();
   for (const msg of mergedChat.messagesArray) {
+    // Use messagesArray
     const msgId = msg.id || JSON.stringify(msg);
     messageMap.set(msgId, true);
   }
 
   // Add messages from cloud that don't exist locally
   for (const cloudMsg of cloudChat.messagesArray) {
+    // Use messagesArray
     const msgId = cloudMsg.id || JSON.stringify(cloudMsg);
     if (!messageMap.has(msgId)) {
       mergedChat.messagesArray.push(cloudMsg);
@@ -6608,6 +6640,7 @@ async function mergeChats(localChat, cloudChat) {
 
   // Sort messages by timestamp or index
   mergedChat.messagesArray.sort((a, b) => {
+    // Use messagesArray
     // First by timestamp if available
     if (a.timestamp && b.timestamp) {
       return a.timestamp - b.timestamp;
@@ -6621,6 +6654,7 @@ async function mergeChats(localChat, cloudChat) {
   });
 
   logToConsole("success", "Chat merge completed", {
+    // *** MODIFIED: Use standardized messagesArray ***
     messageCount: mergedChat.messagesArray.length,
   });
 
