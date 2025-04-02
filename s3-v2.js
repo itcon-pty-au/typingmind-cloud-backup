@@ -889,8 +889,24 @@ async function generateHash(content, type = "generic") {
     // Stringify the fully stabilized object structure
     // Use sorted keys for the top-level object as well
     str = JSON.stringify(stableChat, Object.keys(stableChat).sort());
+
+    // *** ADDED: Log the final string being hashed ***
+    // Log potentially large string - consider only logging start/end or if hashes differ in testing
+    logToConsole("debug", `Final string generated for hashing ${content.id}`, {
+      stringToHash: str,
+    });
+    // *** END ADDED ***
   } else {
     str = typeof content === "string" ? content : JSON.stringify(content);
+    // *** ADDED: Log non-chat string too for completeness ***
+    logToConsole(
+      "debug",
+      `Final string generated for hashing (non-chat, type: ${typeof content}) (length: ${
+        str?.length || "N/A"
+      })`,
+      { stringToHash: str }
+    );
+    // *** END ADDED ***
   }
 
   const msgBuffer = new TextEncoder().encode(str);
