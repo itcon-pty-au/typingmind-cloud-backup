@@ -838,9 +838,10 @@ async function generateHash(content, type = "generic") {
   if (type === "chat" && content.id) {
     // For chats, only include specific fields to avoid unnecessary syncs
     // *** MODIFIED: Ensure messagesArray is used, falling back to messages ***
-    let messagesToHash = content.messagesArray || content.messages || [];
+    // *** MODIFIED: Prioritize populated messages if messagesArray is empty ***
+    // *** REVERTED & CHANGED: Consistently use messages property ***
     const simplifiedChat = {
-      messages: messagesToHash, // Consistently use 'messages' key inside the simplified object for hashing
+      messages: content.messages || [], // Use messages property directly
       title: content.chatTitle,
     };
     // *** ADDED: Log object being hashed ***
@@ -1159,9 +1160,9 @@ async function getChatFromIndexedDB(chatId) {
           {
             hasChat: !!fetchedChat,
             hasMessages: !!fetchedChat?.messages,
-            messagesLength: fetchedChat?.messages?.length,
-            hasMessagesArray: !!fetchedChat?.messagesArray,
-            messagesArrayLength: fetchedChat?.messagesArray?.length,
+            messagesLength: fetchedChat?.messages?.length, // Focus on messages
+            // hasMessagesArray: !!fetchedChat?.messagesArray,
+            // messagesArrayLength: fetchedChat?.messagesArray?.length,
             // keys: fetchedChat ? Object.keys(fetchedChat) : null // Optionally log all keys
           }
         );
@@ -6219,9 +6220,9 @@ async function downloadChatFromCloud(chatId) {
       logToConsole("debug", `Chat parsed from cloud download: ${chatId}`, {
         hasChat: !!chatData,
         hasMessages: !!chatData?.messages,
-        messagesLength: chatData?.messages?.length,
-        hasMessagesArray: !!chatData?.messagesArray,
-        messagesArrayLength: chatData?.messagesArray?.length,
+        messagesLength: chatData?.messages?.length, // Focus on messages
+        // hasMessagesArray: !!chatData?.messagesArray,
+        // messagesArrayLength: chatData?.messagesArray?.length,
         // keys: chatData ? Object.keys(chatData) : null // Optionally log all keys
       });
       // *** END ADDED ***
@@ -6406,7 +6407,7 @@ async function uploadChatToCloud(
 
     logToConsole("success", `Uploaded chat ${chatId} to cloud`, {
       // *** MODIFIED: Use standardized messagesArray ***
-      messageCount: chatData.messagesArray.length,
+      messageCount: chatData.messages?.length || 0,
       title: chatData.chatTitle || "(Untitled)",
       size: encryptedData.length,
     });
@@ -6611,30 +6612,21 @@ window.addEventListener("visibilitychange", () => {
 // Merge two versions of a chat, combining their messages and metadata
 async function mergeChats(localChat, cloudChat) {
   // *** ADDED START: Standardize messages to messagesArray ***
-  if (!localChat.messagesArray && localChat.messages) {
-    localChat.messagesArray = localChat.messages;
-    // delete localChat.messages; // Optional: remove the old key
-  } else if (!localChat.messagesArray) {
-    localChat.messagesArray = []; // Ensure it exists
-  }
-
-  if (!cloudChat.messagesArray && cloudChat.messages) {
-    cloudChat.messagesArray = cloudChat.messages;
-    // delete cloudChat.messages; // Optional: remove the old key
-  } else if (!cloudChat.messagesArray) {
-    cloudChat.messagesArray = []; // Ensure it exists
-  }
-  // *** ADDED END ***
+  // *** MODIFIED: Prioritize populated messages if messagesArray is empty ***
+  // *** REMOVED messagesArray standardization logic ***
 
   logToConsole("info", "Merging chat versions", {
     chatId: localChat.id,
     // *** MODIFIED: Use standardized messagesArray ***
-    localMessages: localChat.messagesArray.length,
-    cloudMessages: cloudChat.messagesArray.length,
+    // *** MODIFIED: Log based on messages property ***
+    localMessages: localChat.messages?.length || 0,
+    cloudMessages: cloudChat.messages?.length || 0,
   });
 
   // Create a fresh copy to work with
   const mergedChat = JSON.parse(JSON.stringify(localChat)); // Uses localChat which now has messagesArray
+  // *** MODIFIED: Ensure mergedChat.messages exists ***
+  if (!mergedChat.messages) mergedChat.messages = [];
 
   // Use the most recent metadata
   mergedChat.updatedAt = Math.max(
@@ -6651,30 +6643,34 @@ async function mergeChats(localChat, cloudChat) {
   }
 
   // Handle message merging - relies on messagesArray which is now guaranteed
-  if (!mergedChat.messagesArray) mergedChat.messagesArray = []; // Should already exist, but safety check
-  // No need for cloudChat check, done above
+  // *** MODIFIED: Merge logic based on messages property ***
+  if (!mergedChat.messages) mergedChat.messages = []; // Ensure exists
+  const cloudMessagesToMerge = cloudChat.messages || [];
 
   // Create a map of message IDs we already have
   const messageMap = new Map();
-  for (const msg of mergedChat.messagesArray) {
+  for (const msg of mergedChat.messages) {
     // Use messagesArray
+    // *** MODIFIED: Use messages ***
     const msgId = msg.id || JSON.stringify(msg);
     messageMap.set(msgId, true);
   }
 
   // Add messages from cloud that don't exist locally
-  for (const cloudMsg of cloudChat.messagesArray) {
+  for (const cloudMsg of cloudMessagesToMerge) {
     // Use messagesArray
+    // *** MODIFIED: Use messages ***
     const msgId = cloudMsg.id || JSON.stringify(cloudMsg);
     if (!messageMap.has(msgId)) {
-      mergedChat.messagesArray.push(cloudMsg);
+      mergedChat.messages.push(cloudMsg);
       messageMap.set(msgId, true);
     }
   }
 
   // Sort messages by timestamp or index
-  mergedChat.messagesArray.sort((a, b) => {
+  mergedChat.messages.sort((a, b) => {
     // Use messagesArray
+    // *** MODIFIED: Sort messages ***
     // First by timestamp if available
     if (a.timestamp && b.timestamp) {
       return a.timestamp - b.timestamp;
@@ -6689,7 +6685,8 @@ async function mergeChats(localChat, cloudChat) {
 
   logToConsole("success", "Chat merge completed", {
     // *** MODIFIED: Use standardized messagesArray ***
-    messageCount: mergedChat.messagesArray.length,
+    // *** MODIFIED: Use messages property ***
+    messageCount: mergedChat.messages?.length || 0,
   });
 
   return mergedChat;
