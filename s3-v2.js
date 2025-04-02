@@ -3553,7 +3553,7 @@ async function syncFromCloud() {
           ServerSideEncryption: "AES256",
         }
       );
-      //saveLocalMetadata();
+      await saveLocalMetadata();
 
       logToConsole("success", "Sync summary:", {
         totalChatsProcessed: processedChats,
@@ -3866,6 +3866,7 @@ async function syncToCloud() {
         }
       );
       //await saveLocalMetadata();
+      await saveLocalMetadata();
 
       logToConsole("success", "Sync to cloud completed with changes", {
         uploadedChats,
@@ -4055,7 +4056,7 @@ async function updateChatMetadata(
 
   if (metadataChanged) {
     throttledCheckSyncStatus(); // Update status if changes were made
-    await saveLocalMetadata(); // <<< ADD THIS LINE
+    // await saveLocalMetadata(); // <<< REMOVE THIS LINE
   }
 
   return metadataChanged; // Return whether metadata was changed
