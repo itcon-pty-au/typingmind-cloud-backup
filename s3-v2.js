@@ -3509,7 +3509,8 @@ async function syncFromCloud() {
 
           // *** ADDED: Force immediate metadata save after download/merge ***
           try {
-            const newHash = await generateHash(chatToSave);
+            // *** Pass 'chat' type ***
+            const newHash = await generateHash(chatToSave, "chat");
             logToConsole(
               "debug",
               `Hash calculated for immediate save in syncFromCloud for ${chatId}`,
@@ -3999,8 +4000,9 @@ async function detectChanges(localChats, cloudChats) {
       // New chat in cloud
       changes.push({ type: "add", chat: cloudChat });
     } else {
-      const cloudHash = await generateHash(cloudChat);
-      const localHash = await generateHash(localChat);
+      // *** Pass 'chat' type ***
+      const cloudHash = await generateHash(cloudChat, "chat");
+      const localHash = await generateHash(localChat, "chat");
 
       if (cloudHash !== localHash) {
         // Chat was updated
@@ -4068,8 +4070,8 @@ async function updateChatMetadata(
   // *** MODIFIED: Use the passed 'chat' (which is chatObject) ***
   if (chat) {
     // Update metadata for existing chat
-    const currentHash = await generateHash(chat); // Use passed object
-    // *** ADDED: Log calculated hash ***
+    // *** Pass 'chat' type ***
+    const currentHash = await generateHash(chat, "chat");
     logToConsole(
       "debug",
       `Calculated hash in updateChatMetadata for ${chatId}`,
@@ -4078,7 +4080,6 @@ async function updateChatMetadata(
         source: syncTimestamp ? "syncFromCloud" : "localChange",
       }
     );
-    // *** END ADDED ***
     const metadata = localMetadata.chats[chatId];
     const previousHash = metadata.hash;
     const previousLastModified = metadata.lastModified;
