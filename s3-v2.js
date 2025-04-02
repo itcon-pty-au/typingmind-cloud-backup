@@ -843,6 +843,11 @@ async function generateHash(content, type = "generic") {
       messages: messagesToHash, // Consistently use 'messages' key inside the simplified object for hashing
       title: content.chatTitle,
     };
+    // *** ADDED: Log object being hashed ***
+    logToConsole("debug", `Hashing simplified chat object for: ${content.id}`, {
+      simplifiedChat,
+    });
+    // *** END ADDED ***
     str = JSON.stringify(simplifiedChat);
   } else {
     str = typeof content === "string" ? content : JSON.stringify(content);
@@ -1146,7 +1151,22 @@ async function getChatFromIndexedDB(chatId) {
       const getRequest = store.get(key);
 
       getRequest.onsuccess = () => {
-        resolve(getRequest.result);
+        // *** ADDED: Log fetched chat structure ***
+        const fetchedChat = getRequest.result;
+        logToConsole(
+          "debug",
+          `Chat fetched from IndexedDB (getChatFromIndexedDB): ${key}`,
+          {
+            hasChat: !!fetchedChat,
+            hasMessages: !!fetchedChat?.messages,
+            messagesLength: fetchedChat?.messages?.length,
+            hasMessagesArray: !!fetchedChat?.messagesArray,
+            messagesArrayLength: fetchedChat?.messagesArray?.length,
+            // keys: fetchedChat ? Object.keys(fetchedChat) : null // Optionally log all keys
+          }
+        );
+        // *** END ADDED ***
+        resolve(fetchedChat);
       };
 
       getRequest.onerror = () => {
@@ -6191,6 +6211,17 @@ async function downloadChatFromCloud(chatId) {
       const encryptedContent = new Uint8Array(data.Body);
       const decryptedText = await decryptData(encryptedContent);
       const chatData = JSON.parse(decryptedText); // Parse the decrypted text into JSON
+
+      // *** ADDED: Log parsed chat structure ***
+      logToConsole("debug", `Chat parsed from cloud download: ${chatId}`, {
+        hasChat: !!chatData,
+        hasMessages: !!chatData?.messages,
+        messagesLength: chatData?.messages?.length,
+        hasMessagesArray: !!chatData?.messagesArray,
+        messagesArrayLength: chatData?.messagesArray?.length,
+        // keys: chatData ? Object.keys(chatData) : null // Optionally log all keys
+      });
+      // *** END ADDED ***
 
       // Ensure the chat has an ID that matches its key
       if (!chatData.id) {
