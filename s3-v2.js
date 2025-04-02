@@ -1166,6 +1166,9 @@ async function getChatFromIndexedDB(chatId) {
           }
         );
         // *** END ADDED ***
+        // *** ADDED: Standardize chat object ***
+        fetchedChat = standardizeChatMessages(fetchedChat);
+        // *** END ADDED ***
         resolve(fetchedChat);
       };
 
@@ -6847,3 +6850,39 @@ function updateUrlLoggingParameter(enableLogging) {
   // Update the URL without causing a page reload
   window.history.replaceState({}, "", url.toString());
 }
+
+// *** ADDED: Helper function to standardize message array ***
+function standardizeChatMessages(chat) {
+  if (!chat) return chat; // Return null/undefined if input is invalid
+
+  // Prioritize populated messages if messagesArray is missing or empty
+  if (
+    chat.messages &&
+    chat.messages.length > 0 &&
+    (!chat.messagesArray || chat.messagesArray.length === 0)
+  ) {
+    logToConsole(
+      "debug",
+      `Standardizing chat ${chat.id}: Copying from messages to messagesArray`
+    );
+    chat.messagesArray = chat.messages;
+    // We won't delete chat.messages here to be safe, but messagesArray is now the source of truth
+  }
+
+  // Ensure messagesArray property exists if it didn't initially
+  if (!chat.messagesArray) {
+    logToConsole(
+      "debug",
+      `Standardizing chat ${chat.id}: Initializing empty messagesArray`
+    );
+    chat.messagesArray = [];
+  }
+
+  // Optional: Clear the old 'messages' property if desired, uncomment with caution:
+  // if (chat.messages && chat.messagesArray && chat.messagesArray.length > 0) {
+  //     delete chat.messages;
+  // }
+
+  return chat;
+}
+// *** END ADDED ***
