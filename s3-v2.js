@@ -3974,6 +3974,16 @@ async function updateChatMetadata(
   if (chat) {
     // Update metadata for existing chat
     const currentHash = await generateHash(chat); // Use passed object
+    // *** ADDED: Log calculated hash ***
+    logToConsole(
+      "debug",
+      `Calculated hash in updateChatMetadata for ${chatId}`,
+      {
+        hash: currentHash,
+        source: syncTimestamp ? "syncFromCloud" : "localChange",
+      }
+    );
+    // *** END ADDED ***
     const metadata = localMetadata.chats[chatId];
     const previousHash = metadata.hash;
     const previousLastModified = metadata.lastModified;
