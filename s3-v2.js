@@ -607,7 +607,8 @@ async function initializeLastSeenUpdates() {
     if (!chat.id) continue;
     lastSeenUpdates[chat.id] = {
       updatedAt: chat.updatedAt || Date.now(),
-      hash: await generateHash(chat),
+      // *** Pass 'chat' type ***
+      hash: await generateHash(chat, "chat"),
     };
   }
   //logToConsole("success", "Last seen updates initialized");
@@ -790,7 +791,7 @@ async function initializeMetadataFromExistingData() {
     if (!chat.id) continue;
     localMetadata.chats[chat.id] = {
       updatedAt: chat.updatedAt || Date.now(),
-      hash: await generateHash(chat),
+      hash: await generateHash(chat, "chat"),
       syncedAt: 0,
       isDeleted: false,
     };
@@ -3209,7 +3210,7 @@ async function performInitialSync() {
 
         // Add chat to cloud metadata
         metadata.chats[chat.id] = {
-          hash: localChatMeta.hash || (await generateHash(chat)),
+          hash: localChatMeta.hash || (await generateHash(chat, "chat")),
           lastModified: localChatMeta.lastModified || Date.now(),
           syncedAt: Date.now(),
           deleted: false,
@@ -3852,7 +3853,7 @@ async function syncToCloud() {
             localMetadata.chats[chatId] = {};
           }
 
-          const newHash = await generateHash(chatData);
+          const newHash = await generateHash(chatData, "chat");
           localMetadata.chats[chatId] = {
             ...localMetadata.chats[chatId],
             lastModified: chatData.updatedAt || syncTimestamp,
@@ -5800,7 +5801,7 @@ async function initializeSettingsMonitoring() {
     if (!shouldExcludeSetting(key)) {
       const value = await getIndexedDBValue(key);
       if (value !== undefined) {
-        const hash = await generateHash(value);
+        const hash = await generateHash(value, "chat");
         // Only set lastModified if this is a new item or if the hash has changed
         if (
           !localMetadata.settings.items[key] ||
@@ -5822,7 +5823,7 @@ async function initializeSettingsMonitoring() {
     if (!shouldExcludeSetting(key)) {
       const value = localStorage.getItem(key);
       if (value !== null) {
-        const hash = await generateHash(value);
+        const hash = await generateHash(value, "chat");
         // Only set lastModified if this is a new item or if the hash has changed
         if (
           !localMetadata.settings.items[key] ||
@@ -6942,7 +6943,8 @@ function startPeriodicChangeCheck() {
         if (!chat.id) continue;
 
         // Get current chat hash
-        const currentHash = await generateHash(chat);
+        // *** Pass 'chat' type ***
+        const currentHash = await generateHash(chat, "chat");
         const lastSeen = lastSeenUpdates[chat.id];
 
         // Check if this chat has been updated since we last saw it
