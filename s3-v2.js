@@ -840,16 +840,55 @@ async function generateHash(content, type = "generic") {
     // *** MODIFIED: Ensure messagesArray is used, falling back to messages ***
     // *** MODIFIED: Prioritize populated messages if messagesArray is empty ***
     // *** REVERTED & CHANGED: Consistently use messages property ***
-    const simplifiedChat = {
-      messages: content.messages || [], // Use messages property directly
-      title: content.chatTitle,
+    let messagesToProcess = content.messages || [];
+
+    // Create a stable representation of the chat for hashing
+    const stableChat = {
+      // Ensure consistent title property (using || for safety)
+      title: content.title || content.chatTitle || "",
+      // Process messages: Sort the array AND sort keys within each message object
+      messages: messagesToProcess
+        .map((msg) => {
+          if (!msg || typeof msg !== "object") return msg; // Handle potential non-objects
+
+          // Create a new object with keys sorted alphabetically
+          const stableMsg = {};
+          Object.keys(msg)
+            .sort()
+            .forEach((key) => {
+              // Exclude volatile properties if they exist and shouldn't affect the content hash
+              // Example: if (key === 'internal_id' || key === 'render_timestamp') return;
+              stableMsg[key] = msg[key];
+            });
+          return stableMsg;
+        })
+        .sort((a, b) => {
+          // Define a stable sort order for messages (e.g., timestamp, then content)
+          // Primary sort: timestamp (if available)
+          if (a?.timestamp && b?.timestamp) {
+            if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
+          }
+          // Secondary sort: message index (if available)
+          if (a?.index !== undefined && b?.index !== undefined) {
+            if (a.index !== b.index) return a.index - b.index;
+          }
+          // Fallback sort: stringified content (ensures identical messages sort consistently)
+          // Use sorted keys within stringify for ultimate stability
+          const stringifyStable = (obj) =>
+            JSON.stringify(obj, Object.keys(obj || {}).sort());
+          return stringifyStable(a).localeCompare(stringifyStable(b));
+        }),
     };
-    // *** ADDED: Log object being hashed ***
-    logToConsole("debug", `Hashing simplified chat object for: ${content.id}`, {
-      simplifiedChat,
-    });
-    // *** END ADDED ***
-    str = JSON.stringify(simplifiedChat);
+
+    logToConsole(
+      "debug",
+      `Hashing STABLE simplified chat object for: ${content.id}`,
+      { stableChat }
+    );
+
+    // Stringify the fully stabilized object structure
+    // Use sorted keys for the top-level object as well
+    str = JSON.stringify(stableChat, Object.keys(stableChat).sort());
   } else {
     str = typeof content === "string" ? content : JSON.stringify(content);
   }
