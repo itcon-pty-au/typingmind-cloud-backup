@@ -835,6 +835,16 @@ async function saveLocalMetadata() {
 
 // Generate hash for a chat
 async function generateHash(content, type = "generic") {
+  // *** ADDED: Log the input content object ***
+  if (type === "chat") {
+    logToConsole(
+      "debug",
+      `Input content to generateHash for chat ${content?.id}`,
+      { inputContent: content }
+    );
+  }
+  // *** END ADDED ***
+
   let str;
   if (type === "chat" && content.id) {
     // For chats, only include specific fields to avoid unnecessary syncs
