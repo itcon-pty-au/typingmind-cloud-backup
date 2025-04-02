@@ -3667,18 +3667,48 @@ async function syncToCloud() {
     for (const chat of chats) {
       if (!chat.id) continue;
 
-      const localChatMeta = localMetadata.chats[chat.id];
-      const cloudChatMeta = cloudMetadata.chats[chat.id];
+      // Fetch the potentially updated local metadata *for this specific chat* right before comparison
+      const currentLocalMeta = await getIndexedDBKey("sync-metadata").then(
+        (metaStr) => {
+          try {
+            return JSON.parse(metaStr)?.chats?.[chat.id];
+          } catch {
+            return null;
+          }
+        }
+      );
+
+      // Use the just-fetched local metadata for comparison
+      const localChatMeta = currentLocalMeta; // Use the freshly read meta
+      const cloudChatMeta = cloudMetadata.chats[chat.id]; // Cloud meta was loaded at start
+
+      // *** ADDED: Detailed log for syncToCloud decision ***
+      logToConsole("debug", `syncToCloud Check: ${chat.id}`, {
+        cloudMetaExists: !!cloudChatMeta,
+        cloudHash: cloudChatMeta?.hash,
+        localMetaExists: !!localChatMeta,
+        localHash: localChatMeta?.hash, // Log the hash from the freshly read meta
+        hashesDiffer: !!(
+          cloudChatMeta?.hash &&
+          localChatMeta?.hash &&
+          cloudChatMeta.hash !== localChatMeta.hash
+        ),
+        shouldUpload:
+          !cloudChatMeta ||
+          (cloudChatMeta?.hash &&
+            (!localChatMeta ||
+              !localChatMeta?.hash ||
+              cloudChatMeta.hash !== localChatMeta.hash)),
+      });
+      // *** END ADDED ***
 
       // Skip if this chat has a cloud tombstone
-      if (cloudChatMeta?.deleted === true) {
-        // If our local version is newer, we might be restoring it
-        if (
-          !localChatMeta ||
-          localChatMeta.lastModified <= cloudChatMeta.deletedAt
-        ) {
-          continue;
-        }
+      if (
+        cloudChatMeta?.deleted === true &&
+        (!localChatMeta ||
+          localChatMeta.lastModified <= cloudChatMeta.deletedAt)
+      ) {
+        continue;
       }
 
       // Upload if:
@@ -3699,6 +3729,9 @@ async function syncToCloud() {
         // !localChatMeta?.syncedAt ||
         // localChatMeta.lastModified > localChatMeta.syncedAt
       ) {
+        // *** ADDED: Log when adding to upload queue ***
+        logToConsole("info", `syncToCloud: Adding ${chat.id} to upload queue.`);
+        // *** END ADDED ***
         chatsToUpload.push(chat.id);
       }
     }
