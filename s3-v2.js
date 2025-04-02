@@ -1422,7 +1422,14 @@ async function saveChatToIndexedDB(chat, syncTimestamp = null) {
         // After saving, update metadata to ensure change is detected
         // *** MODIFIED: Pass syncTimestamp and set isModified based on whether syncTimestamp exists ***
         const isCloudOriginated = !!syncTimestamp;
-        updateChatMetadata(chat.id, !isCloudOriginated, false, syncTimestamp)
+        // Pass the 'chat' object itself as the last argument
+        updateChatMetadata(
+          chat.id,
+          !isCloudOriginated,
+          false,
+          syncTimestamp,
+          chat
+        )
           .then(() => resolve()) // Resolve after metadata update
           .catch(reject); // Reject if metadata update fails
       };
@@ -3892,7 +3899,8 @@ async function updateChatMetadata(
   chatId,
   isModified = true, // Indicates if the change originated locally
   isDeleted = false,
-  syncTimestamp = null // Timestamp if the change originated from cloud sync
+  syncTimestamp = null, // Timestamp if the change originated from cloud sync
+  chatObject = null // *** ADDED: Accept the chat object directly ***
 ) {
   let metadataChanged = false; // Flag to track changes
 
@@ -3901,9 +3909,20 @@ async function updateChatMetadata(
     return false; // Indicate no change
   }
 
-  const chat = await getChatFromIndexedDB(chatId);
+  // *** REMOVED: Internal fetch - use passed chatObject instead ***
+  // const chat = await getChatFromIndexedDB(chatId);
+  // Use chatObject if provided (meaning it was just saved), otherwise handle deletion case
+  const chat = chatObject; // Use the passed object
+
+  // *** Adjust condition: check chatObject existence unless handling deletion ***
   if (!chat && !isDeleted) {
-    logToConsole("error", "Chat not found in IndexedDB:", chatId);
+    // If chatObject wasn't passed and it's not a deletion, log error
+    // (This case might occur if called from somewhere other than saveChatToIndexedDB without passing the object)
+    logToConsole(
+      "error",
+      "Chat object not provided to updateChatMetadata for non-deletion",
+      chatId
+    );
     return false; // Indicate no change
   }
 
@@ -3918,9 +3937,10 @@ async function updateChatMetadata(
     metadataChanged = true; // Metadata was initialized
   }
 
+  // *** MODIFIED: Use the passed 'chat' (which is chatObject) ***
   if (chat) {
     // Update metadata for existing chat
-    const currentHash = await generateHash(chat);
+    const currentHash = await generateHash(chat); // Use passed object
     const metadata = localMetadata.chats[chatId];
     const previousHash = metadata.hash;
     const previousLastModified = metadata.lastModified;
@@ -3971,7 +3991,7 @@ async function updateChatMetadata(
 
     // Update lastSeenUpdates
     lastSeenUpdates[chatId] = {
-      hash: currentHash,
+      hash: currentHash, // Use hash from passed object
       timestamp: Date.now(),
     };
   } else if (isDeleted) {
