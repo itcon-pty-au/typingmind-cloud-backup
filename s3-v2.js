@@ -417,11 +417,54 @@ async function initializeExtension() {
     await initializeLastSeenUpdates();
     settingsMetadataSaveNeeded = await initializeSettingsMonitoring();
 
-    // Save metadata ONCE if needed after initial setup
-    if (initialMetadataSaveNeeded || settingsMetadataSaveNeeded) {
+    // *** ADDED START: Recalculate local chat hashes ***
+    logToConsole("info", "Recalculating local chat metadata hashes...");
+    let hashesRecalculated = false;
+    const allLocalChatsForHash = await getAllChatsFromIndexedDB();
+    const localChatsMapForHash = new Map(
+      allLocalChatsForHash.map((chat) => [chat.id.replace(/^CHAT_/, ""), chat])
+    ); // Ensure ID consistency
+
+    if (localMetadata.chats) {
+      for (const chatId in localMetadata.chats) {
+        // Ensure we are comparing apples to apples (remove potential CHAT_ prefix)
+        const cleanChatId = chatId.replace(/^CHAT_/, "");
+        const chatData = localChatsMapForHash.get(cleanChatId);
+        if (chatData && !localMetadata.chats[chatId].deleted) {
+          try {
+            const newHash = await generateHash(chatData);
+            if (localMetadata.chats[chatId].hash !== newHash) {
+              localMetadata.chats[chatId].hash = newHash;
+              // Don't mark as modified here, just update the hash for comparison
+              hashesRecalculated = true;
+            }
+          } catch (hashError) {
+            logToConsole(
+              "error",
+              `Error generating hash for chat ${cleanChatId} during init recalc`,
+              hashError
+            );
+          }
+        } else if (!chatData && !localMetadata.chats[chatId].deleted) {
+          logToConsole(
+            "warning",
+            `Chat ${cleanChatId} found in metadata but not in IndexedDB during hash recalc.`
+          );
+        }
+      }
+    }
+    // *** ADDED END ***
+
+    // Save metadata ONCE if needed after initial setup OR if hashes were recalculated
+    // *** MODIFIED: Combine save logic ***
+    if (
+      initialMetadataSaveNeeded ||
+      settingsMetadataSaveNeeded ||
+      hashesRecalculated
+    ) {
       logToConsole(
         "info",
-        "Saving batched metadata after initialization steps"
+        "Saving batched metadata after initialization steps (init/settings/hash recalc)"
       );
       await saveLocalMetadata();
     }
@@ -1319,7 +1362,7 @@ function monitorIndexedDBForDeletions() {
 }
 
 // Save a chat to IndexedDB
-async function saveChatToIndexedDB(chat) {
+async function saveChatToIndexedDB(chat, syncTimestamp = null) {
   return new Promise((resolve, reject) => {
     if (!chat || !chat.id) {
       reject(
@@ -1351,15 +1394,19 @@ async function saveChatToIndexedDB(chat) {
       putRequest.onsuccess = () => {
         logToConsole("success", `Saved chat ${chat.id} to IndexedDB`);
         // After saving, update metadata to ensure change is detected
-        updateChatMetadata(chat.id, true);
-        resolve();
+        // *** MODIFIED: Pass syncTimestamp and set isModified based on whether syncTimestamp exists ***
+        const isCloudOriginated = !!syncTimestamp;
+        updateChatMetadata(chat.id, !isCloudOriginated, false, syncTimestamp)
+          .then(() => resolve()) // Resolve after metadata update
+          .catch(reject); // Reject if metadata update fails
       };
 
       putRequest.onerror = () => reject(putRequest.error);
 
-      transaction.oncomplete = () => {
-        db.close();
-      };
+      // *** REMOVED transaction.oncomplete resolve, handled in putRequest.onsuccess ***
+      // transaction.oncomplete = () => {
+      //   db.close();
+      // };
     };
 
     request.onupgradeneeded = (event) => {
@@ -1403,9 +1450,10 @@ async function deleteChatFromIndexedDB(chatId) {
 
       deleteRequest.onerror = () => reject(deleteRequest.error);
 
-      transaction.oncomplete = () => {
-        db.close();
-      };
+      // *** REMOVED transaction.oncomplete resolve, handled in deleteRequest.onsuccess ***
+      // transaction.oncomplete = () => {
+      //   db.close();
+      // };
     };
   });
 }
@@ -3356,7 +3404,7 @@ async function syncFromCloud() {
             chatToSave = await mergeChats(localChat, cloudChat);
           }
 
-          await saveChatToIndexedDB(chatToSave);
+          await saveChatToIndexedDB(chatToSave, syncTimestamp);
           hasChanges = true;
           downloadedChats++;
 
@@ -3805,8 +3853,9 @@ async function detectChanges(localChats, cloudChats) {
 // Update chat metadata
 async function updateChatMetadata(
   chatId,
-  isModified = true,
-  isDeleted = false
+  isModified = true, // Indicates if the change originated locally
+  isDeleted = false,
+  syncTimestamp = null // Timestamp if the change originated from cloud sync
 ) {
   let metadataChanged = false; // Flag to track changes
 
@@ -3838,31 +3887,48 @@ async function updateChatMetadata(
     const metadata = localMetadata.chats[chatId];
     const previousHash = metadata.hash;
     const previousLastModified = metadata.lastModified;
+    const previousSyncedAt = metadata.syncedAt; // Store previous syncedAt
 
     // Always update lastModified and hash
-    metadata.lastModified = Date.now();
+    metadata.lastModified = Date.now(); // Use current time for modification tracking
     metadata.hash = currentHash;
+
+    // *** MODIFIED: Set syncedAt based on syncTimestamp or isModified flag ***
+    if (syncTimestamp) {
+      metadata.syncedAt = syncTimestamp; // Use the provided sync timestamp for cloud-originated changes
+    } else if (isModified) {
+      // Only mark for sync (set syncedAt=0) if explicitly modified locally
+      metadata.syncedAt = 0;
+    } // else: keep existing syncedAt if not modified locally and no syncTimestamp provided (e.g., initial hash recalc)
 
     // Check if relevant metadata actually changed
     if (
       metadata.lastModified !== previousLastModified ||
       metadata.hash !== previousHash ||
-      metadata.deleted
+      metadata.syncedAt !== previousSyncedAt || // Check syncedAt change too
+      metadata.deleted // Check if undeleted
     ) {
       metadataChanged = true;
     }
 
-    // Queue for sync if modified, regardless of hash change
-    if (isModified) {
+    // *** MODIFIED: Only queue upload if modified LOCALLY (isModified=true) AND no syncTimestamp provided ***
+    if (isModified && !syncTimestamp) {
+      // Ensure syncedAt is 0 before queueing, just in case
       if (metadata.syncedAt !== 0) {
-        metadata.syncedAt = 0; // Mark for sync only if not already marked
+        metadata.syncedAt = 0;
         metadataChanged = true;
       }
+      logToConsole(
+        "info",
+        `Queueing upload for locally modified chat ${chatId}`
+      );
       queueOperation(`chat-changed-${chatId}`, () => uploadChatToCloud(chatId));
     }
 
     if (metadata.deleted) {
       metadata.deleted = false; // Undelete if chat exists
+      delete metadata.deletedAt; // Remove deletion timestamp
+      delete metadata.tombstoneVersion; // Remove tombstone version
       metadataChanged = true;
     }
 
@@ -3887,7 +3953,6 @@ async function updateChatMetadata(
     }
   }
 
-  // REMOVED: await saveLocalMetadata();
   if (metadataChanged) {
     throttledCheckSyncStatus(); // Update status if changes were made
   }
