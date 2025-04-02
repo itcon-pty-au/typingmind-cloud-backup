@@ -6213,9 +6213,9 @@ async function downloadChatFromCloud(chatId) {
       const data = await s3.getObject(params).promise();
       const encryptedContent = new Uint8Array(data.Body);
       const decryptedText = await decryptData(encryptedContent);
-      const chatData = JSON.parse(decryptedText); // Parse the decrypted text into JSON
+      // *** Change const to let here ***
+      let chatData = JSON.parse(decryptedText);
 
-      // *** ADDED: Log parsed chat structure ***
       logToConsole("debug", `Chat parsed from cloud download: ${chatId}`, {
         hasChat: !!chatData,
         hasMessages: !!chatData?.messages,
