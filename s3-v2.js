@@ -6854,8 +6854,20 @@ async function mergeChats(localChat, cloudChat) {
     return 0;
   });
 
+  // *** ADDED: Ensure consistency after merge ***
+  // Make messagesArray identical to the final messages array
+  mergedChat.messagesArray = mergedChat.messages;
+  logToConsole(
+    "debug",
+    `Ensured messagesArray consistency in mergeChats for ${mergedChat.id}`,
+    {
+      finalMessagesCount: mergedChat.messages?.length,
+      finalMessagesArrayCount: mergedChat.messagesArray?.length,
+    }
+  );
+  // *** END ADDED ***
+
   logToConsole("success", "Chat merge completed", {
-    // *** MODIFIED: Use standardized messagesArray ***
     // *** MODIFIED: Use messages property ***
     messageCount: mergedChat.messages?.length || 0,
   });
