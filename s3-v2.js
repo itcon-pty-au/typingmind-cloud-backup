@@ -1152,7 +1152,7 @@ async function getChatFromIndexedDB(chatId) {
 
       getRequest.onsuccess = () => {
         // *** ADDED: Log fetched chat structure ***
-        const fetchedChat = getRequest.result;
+        let fetchedChat = getRequest.result;
         logToConsole(
           "debug",
           `Chat fetched from IndexedDB (getChatFromIndexedDB): ${key}`,
