@@ -6164,24 +6164,106 @@ async function downloadSettingsFromCloud() {
 
     try {
       const data = await s3.getObject(params).promise();
+      logToConsole("info", "Downloaded settings file from cloud.");
       const encryptedContent = new Uint8Array(data.Body);
-      const settingsData = await decryptData(encryptedContent);
+      // DecryptData returns a string (the original JSON string)
+      const decryptedJsonString = await decryptData(encryptedContent);
 
+      let settingsData;
+      try {
+        // *** CORRECTED: Parse the JSON string into an object ***
+        settingsData = JSON.parse(decryptedJsonString);
+        logToConsole("debug", "Successfully parsed downloaded settings JSON.");
+      } catch (error) {
+        logToConsole(
+          "error",
+          "Failed to parse settings.json content after decryption. Content is not valid JSON. Settings update skipped.",
+          { error: error.message, content: decryptedJsonString } // Log the problematic string
+        );
+        // Stop further processing if JSON is invalid
+        return null;
+      }
+
+      // Now settingsData should be a valid JavaScript object (or null/undefined if parsing failed)
+      // We can still keep the object check for extra safety, though parsing is the main fix.
+      if (
+        settingsData &&
+        typeof settingsData === "object" &&
+        !Array.isArray(settingsData)
+      ) {
+        let settingsApplied = false; // Track if any changes were made
+        logToConsole("debug", "Processing parsed settings data.", settingsData);
+
+        const settingPromises = Object.entries(settingsData).map(
+          async ([key, settingValue]) => {
+            // The rest of the loop logic remains the same...
+            if (settingValue && typeof settingValue === "object") {
+              const localValue = await getIndexedDBValue(key);
+              if (
+                JSON.stringify(localValue) !== JSON.stringify(settingValue.data)
+              ) {
+                logToConsole(
+                  "info",
+                  `Applying downloaded setting: ${key}`,
+                  settingValue.source
+                );
+                await handleSettingChange(
+                  key,
+                  settingValue.data,
+                  settingValue.source
+                );
+                settingsApplied = true;
+              } else {
+                logToConsole(
+                  "debug",
+                  `Skipping setting ${key}: Local version identical.`
+                );
+              }
+            } else {
+              logToConsole(
+                "warn",
+                `Skipping invalid setting format for key: ${key}`,
+                settingValue
+              );
+            }
+          }
+        );
+
+        await Promise.all(settingPromises);
+        if (settingsApplied) {
+          logToConsole("info", "Finished applying downloaded settings.");
+        } else {
+          logToConsole(
+            "info",
+            "No applicable setting changes found in downloaded settings."
+          );
+        }
+      } else if (settingsData) {
+        // Only log error if settingsData existed but wasn't a valid object *after* parsing (should be rare)
+        logToConsole(
+          "error",
+          "Parsed settings data was not a valid object. Skipping settings update.",
+          { parsedType: typeof settingsData }
+        );
+      }
+
+      // *** Removed redundant metadata update here, should happen in the calling function (syncFromCloud) ***
+      // localMetadata.settings.syncedAt = Date.now();
+      // localMetadata.settings.lastModified = Date.now();
+      // await saveLocalMetadata();
+
+      // *** Adjusted log message for clarity ***
+      logToConsole("success", "Settings download and processing complete.");
       return settingsData;
     } catch (error) {
-      if (error.code === "NoSuchKey") {
-        logToConsole(
-          "info",
-          "No settings.json found in cloud, creating it now"
-        );
-        // Create it now by uploading current settings
-        const now = Date.now();
-        await uploadSettingsToCloud(now);
-        return {};
-      }
+      // ... (existing catch block) ...
+
+      logToConsole("error", "Error downloading settings", error);
       throw error;
     }
   } catch (error) {
+    // ... (existing catch block) ...
+
     logToConsole("error", "Error downloading settings", error);
     throw error;
   }
