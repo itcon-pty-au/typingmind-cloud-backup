@@ -2857,14 +2857,7 @@ async function processOperationQueue() {
             operationState.operationTimeouts.set(name, timeoutId);
           });
 
-          // Only log important operations
-          if (
-            name.startsWith("initial") ||
-            name.startsWith("manual") ||
-            name.startsWith("visibility")
-          ) {
-            logToConsole("info", `Executing operation: ${name}`);
-          }
+          logToConsole("info", `Executing operation: ${name}`);
 
           // Execute operation with timeout
           await Promise.race([operation(), timeoutPromise]);
