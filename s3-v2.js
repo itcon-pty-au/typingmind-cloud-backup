@@ -5886,7 +5886,7 @@ async function initializeSettingsMonitoring() {
   // Save initial metadata
   await saveLocalMetadata();
 
-  logToConsole("success", "Settings monitoring initialized");
+  //logToConsole("success", "Settings monitoring initialized");
   return true; // Indicate that metadata needs saving
 }
 
@@ -6389,6 +6389,9 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
       "success",
       "Cloud metadata lastSyncTime updated after settings sync"
     );
+
+    // *** ADDED: Ensure local metadata is saved AFTER cloud upload success ***
+    await saveLocalMetadata();
 
     return true;
   } catch (error) {
