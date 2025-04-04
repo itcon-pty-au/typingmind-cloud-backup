@@ -836,13 +836,13 @@ async function saveLocalMetadata() {
 // Generate hash for a chat
 async function generateHash(content, type = "generic") {
   // *** ADDED: Log the input content object ***
-  if (type === "chat") {
-    logToConsole(
-      "debug",
-      `Input content to generateHash for chat ${content?.id}`,
-      { inputContent: content }
-    );
-  }
+  // if (type === "chat") {
+  //   logToConsole(
+  //     "debug",
+  //     `Input content to generateHash for chat ${content?.id}`,
+  //     { inputContent: content }
+  //   );
+  // }
   // *** END ADDED ***
 
   let str;
@@ -891,11 +891,11 @@ async function generateHash(content, type = "generic") {
         }),
     };
 
-    logToConsole(
-      "debug",
-      `Hashing STABLE simplified chat object for: ${content.id}`,
-      { stableChat }
-    );
+    // logToConsole(
+    //   "debug",
+    //   `Hashing STABLE simplified chat object for: ${content.id}`,
+    //   { stableChat }
+    // );
 
     // Stringify the fully stabilized object structure
     // Use sorted keys for the top-level object as well
@@ -903,20 +903,20 @@ async function generateHash(content, type = "generic") {
 
     // *** ADDED: Log the final string being hashed ***
     // Log potentially large string - consider only logging start/end or if hashes differ in testing
-    logToConsole("debug", `Final string generated for hashing ${content.id}`, {
-      stringToHash: str,
-    });
+    // logToConsole("debug", `Final string generated for hashing ${content.id}`, {
+    //   stringToHash: str,
+    // });
     // *** END ADDED ***
   } else {
     str = typeof content === "string" ? content : JSON.stringify(content);
     // *** ADDED: Log non-chat string too for completeness ***
-    logToConsole(
-      "debug",
-      `Final string generated for hashing (non-chat, type: ${typeof content}) (length: ${
-        str?.length || "N/A"
-      })`,
-      { stringToHash: str }
-    );
+    // logToConsole(
+    //   "debug",
+    //   `Final string generated for hashing (non-chat, type: ${typeof content}) (length: ${
+    //     str?.length || "N/A"
+    //   })`,
+    //   { stringToHash: str }
+    // );
     // *** END ADDED ***
   }
 
