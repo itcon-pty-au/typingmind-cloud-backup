@@ -483,10 +483,10 @@ async function initializeExtension() {
         );
         await queueOperation("initial-sync", performInitialSync);
       } else {
-        // logToConsole(
-        //   "info",
-        //   "Skipping explicit initial sync, relying on visibility change and interval."
-        // );
+        logToConsole(
+          "info",
+          "Skipping explicit initial sync, relying on visibility change and interval."
+        );
         // Optional: Queue a regular sync check on startup if the tab is visible
         if (document.visibilityState === "visible") {
           queueOperation("startup-sync-check", syncFromCloud);
