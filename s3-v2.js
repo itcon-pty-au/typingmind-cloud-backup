@@ -6334,6 +6334,18 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
 
     db.close();
 
+    // *** ADDED: Update local metadata item hashes BEFORE upload ***
+    for (const [key, settingObj] of Object.entries(settingsData)) {
+      const newHash = await generateContentHash(settingObj.data);
+      if (!localMetadata.settings.items[key]) {
+        localMetadata.settings.items[key] = {}; // Initialize if needed
+      }
+      localMetadata.settings.items[key].hash = newHash;
+      localMetadata.settings.items[key].lastModified = now;
+      localMetadata.settings.items[key].syncedAt = now;
+    }
+    // *** END ADDED ***
+
     // Check if we have any settings to upload
     if (Object.keys(settingsData).length === 0) {
       logToConsole("info", "No settings to upload, skipping sync");
