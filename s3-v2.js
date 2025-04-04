@@ -3838,6 +3838,16 @@ async function syncToCloud() {
         logToConsole("info", `syncToCloud: Adding ${chat.id} to upload queue.`);
         // *** END ADDED ***
         chatsToUpload.push(chat.id);
+      } else if (localChatMeta && localChatMeta.syncedAt === 0) {
+        // Hashes match, but local meta says it needs sync. Clean up the flag.
+        logToConsole(
+          "debug",
+          `syncToCloud: Chat ${chat.id} hashes match cloud, updating local syncedAt timestamp.`
+        );
+        localMetadata.chats[chat.id].syncedAt = syncTimestamp; // Use the syncToCloud timestamp
+        localMetadata.chats[chat.id].lastModified = syncTimestamp; // Align lastModified too
+        // No need to save here, the final saveLocalMetadata at the end of syncToCloud will handle it.
+        // We also don't need to update the cloud metadata hash/time, as they already match.
       }
     }
 
