@@ -3752,6 +3752,7 @@ async function syncToCloud() {
         // Reset flags only after successful upload
         pendingSettingsChanges = false;
         localMetadata.settings.syncedAt = syncTimestamp;
+        localMetadata.settings.lastModified = syncTimestamp; // <<< ADD THIS LINE to align timestamps
         await saveLocalMetadata();
         hasChanges = true;
       } catch (error) {
@@ -6352,6 +6353,7 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
 
     // Update local metadata
     localMetadata.settings.syncedAt = now;
+    localMetadata.settings.lastModified = now; // <<< ADD THIS LINE to align timestamps
     saveLocalMetadata();
 
     // Update cloud metadata
