@@ -2948,14 +2948,11 @@ async function processOperationQueue() {
         operationState.isPendingSync = false;
         operationState.lastError = null; // Clear error if queue is empty
 
-        // Cleanup completed operations older than 1 hour (Consider if this is too aggressive or too lenient)
-        // Maybe only clear completed operations if there wasn't an error during this processing cycle?
-        const oneHourAgo = Date.now() - 3600000;
         // Temporarily disable aggressive cleanup to see if it helps with dependency tracking
         // operationState.completedOperations.clear();
 
         // Force a sync status update
-        throttledCheckSyncStatus(); // Use throttled version
+        checkSyncStatus(); // <-- ADD THIS Call directly for immediate update
       }
     }
   })();
