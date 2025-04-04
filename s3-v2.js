@@ -489,15 +489,6 @@ async function initializeExtension() {
         );
         // Optional: Queue a regular sync check on startup if the tab is visible
 
-        logToConsole(
-          "debug",
-          "Checking whether to perform explicit initial sync",
-          {
-            syncMode: config.syncMode,
-            initialSyncPerformed: initialSyncPerformed,
-          }
-        );
-
         if (document.visibilityState === "visible") {
           queueOperation("startup-sync-check", syncFromCloud);
           initialSyncPerformed = true; // <<< ADD THIS LINE
