@@ -5934,6 +5934,19 @@ async function checkIndexedDBChanges() {
 
             // Only consider it changed if hash is different
             if (!metadata || metadata.hash !== hash) {
+              // *** ADDED: Log hash comparison details ***
+              logToConsole(
+                "debug",
+                `checkIndexedDBChanges: Hash mismatch detected for key: ${key}`,
+                {
+                  key: key,
+                  newValueHash: hash,
+                  storedMetadataHash: metadata?.hash,
+                  // currentValue: typeof value === 'string' ? value.substring(0, 100) : value, // Log value type or preview
+                  // storedMetadataItem: metadata ? JSON.stringify(metadata) : null // Log stringified metadata
+                }
+              );
+              // *** END ADDED ***
               changedKeys.add(key);
             }
           }
