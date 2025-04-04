@@ -418,7 +418,7 @@ async function initializeExtension() {
     settingsMetadataSaveNeeded = await initializeSettingsMonitoring();
 
     // *** ADDED START: Recalculate local chat hashes ***
-    logToConsole("info", "Recalculating local chat metadata hashes...");
+    //logToConsole("info", "Recalculating local chat metadata hashes...");
     let hashesRecalculated = false;
     const allLocalChatsForHash = await getAllChatsFromIndexedDB();
     const localChatsMapForHash = new Map(
@@ -462,10 +462,10 @@ async function initializeExtension() {
       settingsMetadataSaveNeeded ||
       hashesRecalculated
     ) {
-      logToConsole(
-        "info",
-        "Saving batched metadata after initialization steps (init/settings/hash recalc)"
-      );
+      // logToConsole(
+      //   "info",
+      //   "Saving batched metadata after initialization steps (init/settings/hash recalc)"
+      // );
       await saveLocalMetadata();
     }
 
@@ -483,10 +483,10 @@ async function initializeExtension() {
         );
         await queueOperation("initial-sync", performInitialSync);
       } else {
-        logToConsole(
-          "info",
-          "Skipping explicit initial sync, relying on visibility change and interval."
-        );
+        // logToConsole(
+        //   "info",
+        //   "Skipping explicit initial sync, relying on visibility change and interval."
+        // );
         // Optional: Queue a regular sync check on startup if the tab is visible
         if (document.visibilityState === "visible") {
           queueOperation("startup-sync-check", syncFromCloud);
@@ -810,20 +810,20 @@ async function saveLocalMetadata() {
     const formatLogTimestamp = (ts) =>
       ts ? new Date(ts).toLocaleString() : ts === 0 ? "0 (Epoch)" : ts;
 
-    logToConsole("debug", "Saving localMetadata:", {
-      lastSyncTime: formatLogTimestamp(localMetadata.lastSyncTime),
-      chatCount: localMetadata.chats
-        ? Object.keys(localMetadata.chats).length
-        : 0,
-      firstChatSyncedAt:
-        localMetadata.chats && Object.keys(localMetadata.chats).length > 0
-          ? formatLogTimestamp(
-              localMetadata.chats[Object.keys(localMetadata.chats)[0]]?.syncedAt
-            )
-          : undefined,
-      settingsSyncedAt: formatLogTimestamp(localMetadata.settings?.syncedAt),
-      size: metadataToSave.length,
-    });
+    // logToConsole("debug", "Saving localMetadata:", {
+    //   lastSyncTime: formatLogTimestamp(localMetadata.lastSyncTime),
+    //   chatCount: localMetadata.chats
+    //     ? Object.keys(localMetadata.chats).length
+    //     : 0,
+    //   firstChatSyncedAt:
+    //     localMetadata.chats && Object.keys(localMetadata.chats).length > 0
+    //       ? formatLogTimestamp(
+    //           localMetadata.chats[Object.keys(localMetadata.chats)[0]]?.syncedAt
+    //         )
+    //       : undefined,
+    //   settingsSyncedAt: formatLogTimestamp(localMetadata.settings?.syncedAt),
+    //   size: metadataToSave.length,
+    // });
     // *** LOGGING END ***
     await setIndexedDBKey("sync-metadata", metadataToSave);
     //logToConsole("success", "Local metadata saved");
@@ -6821,20 +6821,20 @@ async function checkSyncStatus() {
 
     // Return the appropriate status
     if (operationState.isExporting || operationState.isImporting) {
-      logToConsole(
-        "debug",
-        "checkSyncStatus returning: syncing (operation in progress)"
-      ); // ADDED LOG
+      // logToConsole(
+      //   "debug",
+      //   "checkSyncStatus returning: syncing (operation in progress)"
+      // ); // ADDED LOG
       return "syncing";
     } else if (settingsOutOfSync || chatsOutOfSync) {
-      logToConsole("debug", "checkSyncStatus returning: out-of-sync", {
-        // ADDED LOG
-        settingsOutOfSync,
-        chatsOutOfSync,
-      });
+      // logToConsole("debug", "checkSyncStatus returning: out-of-sync", {
+      //   // ADDED LOG
+      //   settingsOutOfSync,
+      //   chatsOutOfSync,
+      // });
       return "out-of-sync";
     } else {
-      logToConsole("debug", "checkSyncStatus returning: in-sync"); // ADDED LOG
+      // logToConsole("debug", "checkSyncStatus returning: in-sync"); // ADDED LOG
       return "in-sync";
     }
   } catch (error) {
