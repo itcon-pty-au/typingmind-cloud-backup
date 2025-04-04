@@ -6390,9 +6390,6 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
       "Cloud metadata lastSyncTime updated after settings sync"
     );
 
-    // *** ADDED: Ensure local metadata is saved AFTER cloud upload success ***
-    await saveLocalMetadata();
-
     return true;
   } catch (error) {
     logToConsole("error", "Error uploading settings", error);
