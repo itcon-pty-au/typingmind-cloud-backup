@@ -5855,7 +5855,8 @@ async function initializeSettingsMonitoring() {
     if (!shouldExcludeSetting(key)) {
       const value = await getIndexedDBValue(key);
       if (value !== undefined) {
-        const hash = await generateHash(value, "chat");
+        // const hash = await generateHash(value, "chat"); <-- OLD, Incorrect for settings
+        const hash = await generateContentHash(value); // <-- NEW, Consistent hash logic
         // Only set lastModified if this is a new item or if the hash has changed
         if (
           !localMetadata.settings.items[key] ||
@@ -5877,7 +5878,8 @@ async function initializeSettingsMonitoring() {
     if (!shouldExcludeSetting(key)) {
       const value = localStorage.getItem(key);
       if (value !== null) {
-        const hash = await generateHash(value, "chat");
+        // const hash = await generateHash(value, "chat"); <-- OLD, Incorrect for settings
+        const hash = await generateContentHash(value); // <-- NEW, Consistent hash logic
         // Only set lastModified if this is a new item or if the hash has changed
         if (
           !localMetadata.settings.items[key] ||
