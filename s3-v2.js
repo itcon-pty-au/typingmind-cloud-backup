@@ -712,11 +712,9 @@ async function loadLocalMetadata() {
         const formatLogTimestamp = (ts) =>
           ts ? new Date(ts).toLocaleString() : ts === 0 ? "0 (Epoch)" : ts;
 
-        logToConsole("info", "Parsed localMetadata:", {
+        logToConsole("debug", "Parsed localMetadata:", {
           lastSyncTime: formatLogTimestamp(localMetadata.lastSyncTime),
-          hasChats:
-            !!localMetadata.chats &&
-            Object.keys(localMetadata.chats).length > 0,
+          hasChats: !!localMetadata.chats,
           chatCount: localMetadata.chats
             ? Object.keys(localMetadata.chats).length
             : 0,
@@ -731,30 +729,8 @@ async function loadLocalMetadata() {
           settingsSyncedAt: formatLogTimestamp(
             localMetadata.settings?.syncedAt
           ),
-          size: storedMetadata?.length || 0,
         });
         // *** LOGGING END ***
-
-        // *** ADDED: Log TM_useFolderList hash immediately after loading ***
-        if (localMetadata?.settings?.items?.["TM_useFolderList"]) {
-          logToConsole(
-            "debug",
-            "loadLocalMetadata: Hash for TM_useFolderList in loaded metadata",
-            {
-              hash: localMetadata.settings.items["TM_useFolderList"].hash,
-              syncedAt:
-                localMetadata.settings.items["TM_useFolderList"].syncedAt,
-            }
-          );
-        } else {
-          logToConsole(
-            "debug",
-            "loadLocalMetadata: TM_useFolderList not found in items of loaded metadata."
-          );
-        }
-        // *** END ADDED ***
-
-        return true; // Metadata loaded successfully
       } catch (parseError) {
         logToConsole(
           "error",
@@ -820,60 +796,6 @@ async function initializeMetadataFromExistingData() {
       isDeleted: false,
     };
   }
-
-  // *** ADDED: Populate settings from IndexedDB and localStorage ***
-  try {
-    // Initialize metadata for all IndexedDB items
-    const db = await openIndexedDB();
-    const transaction = db.transaction("keyval", "readonly");
-    const store = transaction.objectStore("keyval");
-    const keys = await new Promise((resolve, reject) => {
-      const request = store.getAllKeys();
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-    });
-
-    for (const key of keys) {
-      if (!shouldExcludeSetting(key)) {
-        const value = await getIndexedDBValue(key);
-        if (value !== undefined) {
-          const hash = await generateContentHash(value);
-          localMetadata.settings.items[key] = {
-            hash,
-            lastModified: Date.now(), // Set initial lastModified
-            syncedAt: 0, // Initialize syncedAt to 0
-            source: "indexeddb",
-          };
-        }
-      }
-    }
-
-    // Initialize metadata for all localStorage items
-    for (const key of Object.keys(localStorage)) {
-      if (!shouldExcludeSetting(key)) {
-        const value = localStorage.getItem(key);
-        if (value !== null) {
-          const hash = await generateContentHash(value);
-          localMetadata.settings.items[key] = {
-            hash,
-            lastModified: Date.now(), // Set initial lastModified
-            syncedAt: 0, // Initialize syncedAt to 0
-            source: "localstorage",
-          };
-        }
-      }
-    }
-    // Set the overall settings lastModified timestamp
-    localMetadata.settings.lastModified = Date.now();
-  } catch (settingsError) {
-    logToConsole(
-      "error",
-      "Error populating settings during metadata initialization:",
-      settingsError
-    );
-    // Decide if we should continue or throw. For now, log and continue.
-  }
-  // *** END ADDED ***
 
   logToConsole("success", "Metadata initialized from existing data");
   return true; // Indicate that metadata was initialized and needs saving
@@ -5909,8 +5831,7 @@ async function initializeSettingsMonitoring() {
     if (!shouldExcludeSetting(key)) {
       const value = await getIndexedDBValue(key);
       if (value !== undefined) {
-        // const hash = await generateHash(value, "chat"); <-- OLD, Incorrect for settings
-        const hash = await generateContentHash(value); // <-- NEW, Consistent hash logic
+        const hash = await generateHash(value, "chat");
         // Only set lastModified if this is a new item or if the hash has changed
         if (
           !localMetadata.settings.items[key] ||
@@ -5932,8 +5853,7 @@ async function initializeSettingsMonitoring() {
     if (!shouldExcludeSetting(key)) {
       const value = localStorage.getItem(key);
       if (value !== null) {
-        // const hash = await generateHash(value, "chat"); <-- OLD, Incorrect for settings
-        const hash = await generateContentHash(value); // <-- NEW, Consistent hash logic
+        const hash = await generateHash(value, "chat");
         // Only set lastModified if this is a new item or if the hash has changed
         if (
           !localMetadata.settings.items[key] ||
@@ -6014,19 +5934,6 @@ async function checkIndexedDBChanges() {
 
             // Only consider it changed if hash is different
             if (!metadata || metadata.hash !== hash) {
-              // *** ADDED: Log hash comparison details ***
-              logToConsole(
-                "debug",
-                `checkIndexedDBChanges: Hash mismatch detected for key: ${key}`,
-                {
-                  key: key,
-                  newValueHash: hash,
-                  storedMetadataHash: metadata?.hash,
-                  // currentValue: typeof value === 'string' ? value.substring(0, 100) : value, // Log value type or preview
-                  // storedMetadataItem: metadata ? JSON.stringify(metadata) : null // Log stringified metadata
-                }
-              );
-              // *** END ADDED ***
               changedKeys.add(key);
             }
           }
@@ -6483,37 +6390,8 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
       "Cloud metadata lastSyncTime updated after settings sync"
     );
 
-    // *** ADDED: Log cloud metadata timestamps just uploaded ***
-    logToConsole(
-      "debug",
-      "uploadSettingsToCloud: Cloud metadata timestamps uploaded",
-      {
-        lastSyncTime: cloudMetadata.lastSyncTime,
-        settingsSyncedAt: cloudMetadata.settings?.syncedAt,
-      }
-    );
-    // *** END ADDED ***
-
     // *** ADDED: Ensure local metadata is saved AFTER cloud upload success ***
     await saveLocalMetadata();
-
-    // *** ADDED: Log TM_useFolderList hash AFTER save attempts in uploadSettingsToCloud ***
-    if (localMetadata.settings.items["TM_useFolderList"]) {
-      logToConsole(
-        "debug",
-        "uploadSettingsToCloud: Hash for TM_useFolderList in localMetadata AFTER saves",
-        {
-          hash: localMetadata.settings.items["TM_useFolderList"].hash,
-          syncedAt: localMetadata.settings.items["TM_useFolderList"].syncedAt,
-        }
-      );
-    } else {
-      logToConsole(
-        "debug",
-        "uploadSettingsToCloud: TM_useFolderList not found in localMetadata items after saves."
-      );
-    }
-    // *** END ADDED ***
 
     return true;
   } catch (error) {
