@@ -4327,32 +4327,36 @@ function updateSyncStatus() {
       return;
     }
 
-    // If operations in progress, show yellow
-    if (
-      operationState.isImporting ||
-      operationState.isExporting ||
-      operationState.isProcessingQueue
-    ) {
-      updateSyncStatusDot("in-progress");
-      return;
-    }
+    // REMOVED Check for operations in progress
+    // if (
+    //   operationState.isImporting ||
+    //   operationState.isExporting ||
+    //   operationState.isProcessingQueue
+    // ) {
+    //   updateSyncStatusDot("in-progress");
+    //   return;
+    // }
 
-    // Check sync status
+    // Check sync status FIRST
     const status = await checkSyncStatus();
+    logToConsole("debug", `updateSyncStatus received status: ${status}`); // Added log
 
     // Update dot based on status
     switch (status) {
       case "in-sync":
-        updateSyncStatusDot("success");
+        updateSyncStatusDot("success"); // map to green
         break;
       case "syncing":
-        updateSyncStatusDot("in-progress");
+        updateSyncStatusDot("syncing"); // map to yellow
         break;
       case "out-of-sync":
-        updateSyncStatusDot("error");
+        updateSyncStatusDot("out-of-sync"); // map to red
         break;
-      default:
-        updateSyncStatusDot("hidden");
+      case "error":
+        updateSyncStatusDot("error"); // map to red
+        break;
+      default: // disabled, not-configured, unknown
+        updateSyncStatusDot("hidden"); // map to grey
     }
   }, 100);
 }
