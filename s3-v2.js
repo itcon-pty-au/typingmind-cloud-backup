@@ -6774,6 +6774,10 @@ async function uploadChatToCloud(
 async function checkSyncStatus() {
   // Skip check if sync is disabled
   if (!isAwsConfigured()) {
+    logToConsole(
+      "debug",
+      "checkSyncStatus returning: disabled (AWS not configured)"
+    ); // ADDED LOG
     return "disabled";
   }
 
@@ -6790,7 +6794,7 @@ async function checkSyncStatus() {
         localMetadata.settings.lastModified > localMetadata.settings.syncedAt)
     ) {
       settingsOutOfSync = true;
-      logToConsole("debug", "Settings are out of sync", {
+      logToConsole("debug", "checkSyncStatus: Settings are out of sync", {
         pendingSettingsChanges,
         lastModified: localMetadata.settings?.lastModified,
         syncedAt: localMetadata.settings?.syncedAt,
@@ -6806,7 +6810,7 @@ async function checkSyncStatus() {
 
       if (chatMeta.lastModified > (chatMeta.syncedAt || 0)) {
         chatsOutOfSync = true;
-        logToConsole("debug", "Chat is out of sync", {
+        logToConsole("debug", "checkSyncStatus: Chat is out of sync", {
           chatId,
           lastModified: chatMeta.lastModified,
           syncedAt: chatMeta.syncedAt,
@@ -6817,20 +6821,25 @@ async function checkSyncStatus() {
 
     // Return the appropriate status
     if (operationState.isExporting || operationState.isImporting) {
-      logToConsole("debug", "Status: syncing (operation in progress)");
+      logToConsole(
+        "debug",
+        "checkSyncStatus returning: syncing (operation in progress)"
+      ); // ADDED LOG
       return "syncing";
     } else if (settingsOutOfSync || chatsOutOfSync) {
-      logToConsole("debug", "Status: out-of-sync", {
+      logToConsole("debug", "checkSyncStatus returning: out-of-sync", {
+        // ADDED LOG
         settingsOutOfSync,
         chatsOutOfSync,
       });
       return "out-of-sync";
     } else {
-      logToConsole("debug", "Status: in-sync");
+      logToConsole("debug", "checkSyncStatus returning: in-sync"); // ADDED LOG
       return "in-sync";
     }
   } catch (error) {
     console.error("Error checking sync status:", error);
+    logToConsole("debug", "checkSyncStatus returning: error due to exception"); // ADDED LOG
     return "error";
   }
 }
@@ -6865,7 +6874,11 @@ function updateSyncStatusDot(status) {
     case "out-of-sync":
       dot.style.backgroundColor = "#ef4444"; // red-500
       break;
-    default:
+    default: // Includes unknown states or initial loading
+      logToConsole(
+        "debug",
+        `updateSyncStatusDot hit default case for status: ${status}`
+      ); // ADDED LOG
       dot.style.backgroundColor = "#6b7280"; // gray-500
   }
 }
