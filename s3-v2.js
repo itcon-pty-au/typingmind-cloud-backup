@@ -1335,10 +1335,10 @@ function monitorIndexedDBForDeletions() {
             detectedAt: now,
             confirmedCount: 1,
           });
-          logToConsole(
-            "info",
-            `Deletion monitor observed new chat (will be handled by change check): ${chatId}`
-          );
+          // logToConsole(
+          //   "info",
+          //   `Deletion monitor observed new chat (will be handled by change check): ${chatId}`
+          // );
 
           // REMOVED THE FOLLOWING BLOCK that triggered updates/uploads for new chats:
           /*
@@ -4091,14 +4091,14 @@ async function updateChatMetadata(
     // Update metadata for existing chat
     // *** Pass 'chat' type ***
     const currentHash = await generateHash(chat, "chat");
-    logToConsole(
-      "debug",
-      `Calculated hash in updateChatMetadata for ${chatId}`,
-      {
-        hash: currentHash,
-        source: syncTimestamp ? "syncFromCloud" : "localChange",
-      }
-    );
+    // logToConsole(
+    //   "debug",
+    //   `Calculated hash in updateChatMetadata for ${chatId}`,
+    //   {
+    //     hash: currentHash,
+    //     source: syncTimestamp ? "syncFromCloud" : "localChange",
+    //   }
+    // );
     const metadata = localMetadata.chats[chatId];
     const previousHash = metadata.hash;
     const previousLastModified = metadata.lastModified;
@@ -4340,7 +4340,7 @@ function updateSyncStatus() {
 
     // Check sync status FIRST
     const status = await checkSyncStatus();
-    logToConsole("debug", `updateSyncStatus received status: ${status}`); // Added log
+    // logToConsole("debug", `updateSyncStatus received status: ${status}`); // Added log
 
     // Update dot based on status
     switch (status) {
@@ -6420,11 +6420,11 @@ async function downloadCloudMetadata() {
           : new TextDecoder().decode(content)
       );
 
-      logToConsole("success", "Downloaded cloud metadata", {
-        chats: Object.keys(metadata.chats || {}).length,
-        lastSyncTime: new Date(metadata.lastSyncTime).toLocaleString(),
-        hasSettings: !!metadata.settings,
-      });
+      // logToConsole("success", "Downloaded cloud metadata", {
+      //   chats: Object.keys(metadata.chats || {}).length,
+      //   lastSyncTime: new Date(metadata.lastSyncTime).toLocaleString(),
+      //   hasSettings: !!metadata.settings,
+      // });
       return metadata;
     } catch (error) {
       // Handle case where metadata.json doesn't exist yet
@@ -6579,7 +6579,7 @@ async function uploadChatToCloud(
   existingCloudMetadata = null,
   syncTimestamp = null
 ) {
-  logToConsole("upload", `Uploading chat ${chatId} to cloud`);
+  // logToConsole("upload", `Uploading chat ${chatId} to cloud`);
 
   try {
     operationState.isExporting = true;
@@ -6849,10 +6849,10 @@ function updateSyncStatusDot(status) {
   if (!dot) return;
 
   // Log status change with more details
-  logToConsole("debug", `Updating sync dot to: ${status}`, {
-    previousClass: dot.className,
-    newStatus: status,
-  });
+  // logToConsole("debug", `Updating sync dot to: ${status}`, {
+  //   previousClass: dot.className,
+  //   newStatus: status,
+  // });
 
   // Handle visibility
   if (status === "disabled") {
@@ -7177,10 +7177,10 @@ function standardizeChatMessages(chat) {
     chat.messages.length > 0 &&
     (!chat.messagesArray || chat.messagesArray.length === 0)
   ) {
-    logToConsole(
-      "debug",
-      `Standardizing chat ${chat.id}: Copying from messages to messagesArray`
-    );
+    // logToConsole(
+    //   "debug",
+    //   `Standardizing chat ${chat.id}: Copying from messages to messagesArray`
+    // );
     chat.messagesArray = chat.messages;
     // We won't delete chat.messages here to be safe, but messagesArray is now the source of truth
   }
