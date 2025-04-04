@@ -3534,8 +3534,7 @@ async function syncFromCloud() {
               currentLocalMeta.chats[chatId] = {};
             currentLocalMeta.chats[chatId].hash = newHash;
             currentLocalMeta.chats[chatId].syncedAt = syncTimestamp;
-            currentLocalMeta.chats[chatId].lastModified =
-              chatToSave.updatedAt || syncTimestamp; // Update lastModified as well
+            currentLocalMeta.chats[chatId].lastModified = syncTimestamp;
             currentLocalMeta.chats[chatId].deleted = false; // Ensure not marked deleted
             delete currentLocalMeta.chats[chatId].deletedAt;
             delete currentLocalMeta.chats[chatId].tombstoneVersion;
@@ -3789,23 +3788,23 @@ async function syncToCloud() {
       const cloudChatMeta = cloudMetadata.chats[chat.id]; // Cloud meta was loaded at start
 
       // *** ADDED: Detailed log for syncToCloud decision ***
-      logToConsole("debug", `syncToCloud Check: ${chat.id}`, {
-        cloudMetaExists: !!cloudChatMeta,
-        cloudHash: cloudChatMeta?.hash,
-        localMetaExists: !!localChatMeta,
-        localHash: localChatMeta?.hash, // Log the hash from the freshly read meta
-        hashesDiffer: !!(
-          cloudChatMeta?.hash &&
-          localChatMeta?.hash &&
-          cloudChatMeta.hash !== localChatMeta.hash
-        ),
-        shouldUpload:
-          !cloudChatMeta ||
-          (cloudChatMeta?.hash &&
-            (!localChatMeta ||
-              !localChatMeta?.hash ||
-              cloudChatMeta.hash !== localChatMeta.hash)),
-      });
+      // logToConsole("debug", `syncToCloud Check: ${chat.id}`, {
+      //   cloudMetaExists: !!cloudChatMeta,
+      //   cloudHash: cloudChatMeta?.hash,
+      //   localMetaExists: !!localChatMeta,
+      //   localHash: localChatMeta?.hash, // Log the hash from the freshly read meta
+      //   hashesDiffer: !!(
+      //     cloudChatMeta?.hash &&
+      //     localChatMeta?.hash &&
+      //     cloudChatMeta.hash !== localChatMeta.hash
+      //   ),
+      //   shouldUpload:
+      //     !cloudChatMeta ||
+      //     (cloudChatMeta?.hash &&
+      //       (!localChatMeta ||
+      //         !localChatMeta?.hash ||
+      //         cloudChatMeta.hash !== localChatMeta.hash)),
+      // });
       // *** END ADDED ***
 
       // Skip if this chat has a cloud tombstone
@@ -4102,11 +4101,19 @@ async function updateChatMetadata(
 
     // *** MODIFIED: Set syncedAt based on syncTimestamp or isModified flag ***
     if (syncTimestamp) {
-      metadata.syncedAt = syncTimestamp; // Use the provided sync timestamp for cloud-originated changes
+      // Cloud-originated change
+      metadata.syncedAt = syncTimestamp;
+      metadata.lastModified = syncTimestamp; // <<< Set lastModified to match sync time
     } else if (isModified) {
-      // Only mark for sync (set syncedAt=0) if explicitly modified locally
+      // Local change
       metadata.syncedAt = 0;
-    } // else: keep existing syncedAt if not modified locally and no syncTimestamp provided (e.g., initial hash recalc)
+      metadata.lastModified = Date.now(); // Use current time
+    } else {
+      // No change, e.g., initial hash recalc
+      metadata.lastModified = previousLastModified;
+      metadata.syncedAt = previousSyncedAt;
+    }
+    metadata.hash = currentHash; // Always update hash
 
     // Check if relevant metadata actually changed
     if (
