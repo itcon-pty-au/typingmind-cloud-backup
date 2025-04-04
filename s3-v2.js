@@ -4345,7 +4345,7 @@ function updateSyncStatus() {
     // Update dot based on status
     switch (status) {
       case "in-sync":
-        updateSyncStatusDot("success"); // map to green
+        updateSyncStatusDot("in-sync"); // Use the status expected by updateSyncStatusDot <-- NEW
         break;
       case "syncing":
         updateSyncStatusDot("syncing"); // map to yellow
