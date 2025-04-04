@@ -712,9 +712,11 @@ async function loadLocalMetadata() {
         const formatLogTimestamp = (ts) =>
           ts ? new Date(ts).toLocaleString() : ts === 0 ? "0 (Epoch)" : ts;
 
-        logToConsole("debug", "Parsed localMetadata:", {
+        logToConsole("info", "Parsed localMetadata:", {
           lastSyncTime: formatLogTimestamp(localMetadata.lastSyncTime),
-          hasChats: !!localMetadata.chats,
+          hasChats:
+            !!localMetadata.chats &&
+            Object.keys(localMetadata.chats).length > 0,
           chatCount: localMetadata.chats
             ? Object.keys(localMetadata.chats).length
             : 0,
@@ -729,8 +731,30 @@ async function loadLocalMetadata() {
           settingsSyncedAt: formatLogTimestamp(
             localMetadata.settings?.syncedAt
           ),
+          size: storedMetadata?.length || 0,
         });
         // *** LOGGING END ***
+
+        // *** ADDED: Log TM_useFolderList hash immediately after loading ***
+        if (localMetadata?.settings?.items?.["TM_useFolderList"]) {
+          logToConsole(
+            "debug",
+            "loadLocalMetadata: Hash for TM_useFolderList in loaded metadata",
+            {
+              hash: localMetadata.settings.items["TM_useFolderList"].hash,
+              syncedAt:
+                localMetadata.settings.items["TM_useFolderList"].syncedAt,
+            }
+          );
+        } else {
+          logToConsole(
+            "debug",
+            "loadLocalMetadata: TM_useFolderList not found in items of loaded metadata."
+          );
+        }
+        // *** END ADDED ***
+
+        return true; // Metadata loaded successfully
       } catch (parseError) {
         logToConsole(
           "error",
@@ -6403,8 +6427,37 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
       "Cloud metadata lastSyncTime updated after settings sync"
     );
 
+    // *** ADDED: Log cloud metadata timestamps just uploaded ***
+    logToConsole(
+      "debug",
+      "uploadSettingsToCloud: Cloud metadata timestamps uploaded",
+      {
+        lastSyncTime: cloudMetadata.lastSyncTime,
+        settingsSyncedAt: cloudMetadata.settings?.syncedAt,
+      }
+    );
+    // *** END ADDED ***
+
     // *** ADDED: Ensure local metadata is saved AFTER cloud upload success ***
     await saveLocalMetadata();
+
+    // *** ADDED: Log TM_useFolderList hash AFTER save attempts in uploadSettingsToCloud ***
+    if (localMetadata.settings.items["TM_useFolderList"]) {
+      logToConsole(
+        "debug",
+        "uploadSettingsToCloud: Hash for TM_useFolderList in localMetadata AFTER saves",
+        {
+          hash: localMetadata.settings.items["TM_useFolderList"].hash,
+          syncedAt: localMetadata.settings.items["TM_useFolderList"].syncedAt,
+        }
+      );
+    } else {
+      logToConsole(
+        "debug",
+        "uploadSettingsToCloud: TM_useFolderList not found in localMetadata items after saves."
+      );
+    }
+    // *** END ADDED ***
 
     return true;
   } catch (error) {
