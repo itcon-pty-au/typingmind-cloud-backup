@@ -821,6 +821,60 @@ async function initializeMetadataFromExistingData() {
     };
   }
 
+  // *** ADDED: Populate settings from IndexedDB and localStorage ***
+  try {
+    // Initialize metadata for all IndexedDB items
+    const db = await openIndexedDB();
+    const transaction = db.transaction("keyval", "readonly");
+    const store = transaction.objectStore("keyval");
+    const keys = await new Promise((resolve, reject) => {
+      const request = store.getAllKeys();
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+
+    for (const key of keys) {
+      if (!shouldExcludeSetting(key)) {
+        const value = await getIndexedDBValue(key);
+        if (value !== undefined) {
+          const hash = await generateContentHash(value);
+          localMetadata.settings.items[key] = {
+            hash,
+            lastModified: Date.now(), // Set initial lastModified
+            syncedAt: 0, // Initialize syncedAt to 0
+            source: "indexeddb",
+          };
+        }
+      }
+    }
+
+    // Initialize metadata for all localStorage items
+    for (const key of Object.keys(localStorage)) {
+      if (!shouldExcludeSetting(key)) {
+        const value = localStorage.getItem(key);
+        if (value !== null) {
+          const hash = await generateContentHash(value);
+          localMetadata.settings.items[key] = {
+            hash,
+            lastModified: Date.now(), // Set initial lastModified
+            syncedAt: 0, // Initialize syncedAt to 0
+            source: "localstorage",
+          };
+        }
+      }
+    }
+    // Set the overall settings lastModified timestamp
+    localMetadata.settings.lastModified = Date.now();
+  } catch (settingsError) {
+    logToConsole(
+      "error",
+      "Error populating settings during metadata initialization:",
+      settingsError
+    );
+    // Decide if we should continue or throw. For now, log and continue.
+  }
+  // *** END ADDED ***
+
   logToConsole("success", "Metadata initialized from existing data");
   return true; // Indicate that metadata was initialized and needs saving
 }
