@@ -1,8 +1,5 @@
 // TypingMind Cloud Sync & Backup v2.0.0
 // Combines features from s3.js and YATSE for comprehensive sync and backup
-
-// ==================== CONSTANTS & STATE ====================
-
 const EXTENSION_VERSION = "2.0.0";
 const EXCLUDED_SETTINGS = [
   "aws-bucket",
@@ -23,7 +20,6 @@ const EXCLUDED_SETTINGS = [
   "TM_useLastOpenedChatID",
   "INSTANCE_ID",
 ];
-
 function shouldExcludeSetting(key) {
   return (
     EXCLUDED_SETTINGS.includes(key) ||
@@ -33,8 +29,6 @@ function shouldExcludeSetting(key) {
     !isNaN(key)
   );
 }
-
-// Add global config object
 let config = {
   syncMode: "disabled",
   syncInterval: 15,
@@ -45,11 +39,8 @@ let config = {
   endpoint: "",
   encryptionKey: "",
 };
-
 let isConsoleLoggingEnabled =
   new URLSearchParams(window.location.search).get("log") === "true";
-
-// Core sync state
 let localMetadata = {
   chats: {},
   settings: {
@@ -59,17 +50,13 @@ let localMetadata = {
   },
   lastSyncTime: 0,
 };
-
-// Add persistent IndexedDB connection
 let persistentDB = null;
 let dbConnectionPromise = null;
 let dbConnectionRetries = 0;
 const MAX_DB_RETRIES = 3;
-const DB_RETRY_DELAY = 1000; // 1 second base delay
-const DB_CONNECTION_TIMEOUT = 10000; // 10 second timeout
+const DB_RETRY_DELAY = 1000;
+const DB_CONNECTION_TIMEOUT = 10000;
 let dbHeartbeatInterval = null;
-
-// Operation state tracking
 let operationState = {
   isImporting: false,
   isExporting: false,
@@ -84,8 +71,6 @@ let operationState = {
   completedOperations: new Set(),
   operationTimeouts: new Map(),
 };
-
-// Backup state tracking
 let backupState = {
   isBackupInProgress: false,
   lastDailyBackup: null,
@@ -93,26 +78,16 @@ let backupState = {
   backupInterval: null,
   isBackupIntervalRunning: false,
 };
-
-// Track last seen updates for change detection
 let lastSeenUpdates = {};
-
-// Track file sizes
 let cloudFileSize = 0;
 let localFileSize = 0;
 let isLocalDataModified = false;
-
-// Track settings changes between syncs
 let pendingSettingsChanges = false;
-
-// Track active intervals
 let activeIntervals = {
   sync: null,
   backup: null,
   changeCheck: null,
 };
-
-// Clear all intervals
 function clearAllIntervals() {
   if (activeIntervals.sync) {
     clearInterval(activeIntervals.sync);
@@ -127,10 +102,6 @@ function clearAllIntervals() {
     activeIntervals.changeCheck = null;
   }
 }
-
-// ==================== LOGGING SYSTEM ====================
-
-// Log icons for different types
 const LOG_ICONS = {
   info: "ℹ️",
   success: "✅",
@@ -152,39 +123,27 @@ const LOG_ICONS = {
   restore: "📥",
   sync: "🔄",
 };
-
-// Enhanced logging function
 function logToConsole(type, message, data = null) {
   if (!isConsoleLoggingEnabled) return;
-
-  // By default, only show priority 1-3 logs unless debug mode is enabled
   if (!isConsoleLoggingEnabled) return;
-
   const timestamp = new Date().toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
     hour12: false,
   });
-
   const icon = LOG_ICONS[type] || "ℹ️";
   const logMessage = `${icon} ${timestamp} ${message}`;
-
-  // Add to mobile log container if it exists
   const mobileLog = document.getElementById("mobile-log-container");
   if (mobileLog) {
     const logEntry = document.createElement("div");
     logEntry.className = `log-entry log-${type}`;
     logEntry.textContent = `${timestamp}: ${message}`;
     mobileLog.appendChild(logEntry);
-
-    // Keep only last 100 entries
     while (mobileLog.children.length > 100) {
       mobileLog.removeChild(mobileLog.firstChild);
     }
   }
-
-  // Console output with appropriate method
   switch (type) {
     case "error":
       console.error(logMessage, data);
@@ -196,11 +155,8 @@ function logToConsole(type, message, data = null) {
       console.log(logMessage, data);
   }
 }
-
-// Create mobile log container for debugging
 function createMobileLogContainer() {
   if (document.getElementById("mobile-log-container")) return;
-
   const container = document.createElement("div");
   container.id = "mobile-log-container";
   container.style.cssText = `
@@ -218,8 +174,6 @@ function createMobileLogContainer() {
     z-index: 9999;
     display: none;
   `;
-
-  // Add drag handle
   const dragHandle = document.createElement("div");
   dragHandle.style.cssText = `
     position: absolute;
@@ -234,12 +188,9 @@ function createMobileLogContainer() {
   `;
   dragHandle.textContent = "⋮";
   container.appendChild(dragHandle);
-
-  // Add drag functionality
   let isDragging = false;
   let startY = 0;
   let startHeight = 0;
-
   function initDrag(e) {
     isDragging = true;
     startY = e.clientY || e.touches[0].clientY;
@@ -249,14 +200,12 @@ function createMobileLogContainer() {
     document.addEventListener("mouseup", stopDrag);
     document.addEventListener("touchend", stopDrag);
   }
-
   function doDrag(e) {
     if (!isDragging) return;
     const y = e.clientY || e.touches[0].clientY;
     const newHeight = startHeight - (y - startY);
     container.style.maxHeight = Math.max(100, Math.min(600, newHeight)) + "px";
   }
-
   function stopDrag() {
     isDragging = false;
     document.removeEventListener("mousemove", doDrag);
@@ -264,20 +213,14 @@ function createMobileLogContainer() {
     document.removeEventListener("mouseup", stopDrag);
     document.removeEventListener("touchend", stopDrag);
   }
-
   dragHandle.addEventListener("mousedown", initDrag);
   dragHandle.addEventListener("touchstart", initDrag);
-
   document.body.appendChild(container);
-
-  // Add double-tap listener to show/hide on mobile
   setupDoubleTapListener(document.body, () => {
     container.style.display =
       container.style.display === "none" ? "block" : "none";
   });
 }
-
-// Double tap detection for mobile log toggle
 function setupDoubleTapListener(element, callback) {
   let lastTap = 0;
   element.addEventListener("touchend", (e) => {
@@ -290,12 +233,9 @@ function setupDoubleTapListener(element, callback) {
     lastTap = currentTime;
   });
 }
-
-// Initialize logging state
 function initializeLoggingState() {
   const urlParams = new URLSearchParams(window.location.search);
   const logParam = urlParams.get("log");
-
   if (logParam === "true") {
     isConsoleLoggingEnabled = true;
     logToConsole(
@@ -305,40 +245,25 @@ function initializeLoggingState() {
     createMobileLogContainer();
   }
 }
-
-// ==================== INITIALIZATION ====================
-
 async function performFullInitialization() {
   try {
-    // Load configuration first
     loadConfiguration();
-
-    // Then proceed with other initialization
     await loadAwsSdk();
     await loadLocalMetadata();
     await initializeLastSeenUpdates();
     await initializeSettingsMonitoring();
     await setupLocalStorageChangeListener();
-
     startSyncInterval();
-
-    // If in sync mode, perform initial sync first
     if (config.syncMode === "sync") {
       await queueOperation("initial-sync", performInitialSync);
     }
-
-    // Check for daily backup after sync operations
     if (config.syncMode !== "disabled") {
       queueOperation("daily-backup-check", checkAndPerformDailyBackup);
     }
-
-    // Start monitoring IndexedDB for deletions and changes
     setupLocalStorageChangeListener();
     monitorIndexedDBForDeletions();
     startPeriodicChangeCheck();
     setupVisibilityChangeHandler();
-
-    // Clean up old metadata versions as the last initialization step
     try {
       await cleanupMetadataVersions();
       logToConsole(
@@ -352,43 +277,28 @@ async function performFullInitialization() {
         cleanupError
       );
     }
-
     logToConsole("success", "Full initialization completed");
-
-    // Add tombstone cleanup as the last step
     logToConsole("cleanup", "Starting tombstone cleanup...");
     const localCleanupCount = cleanupOldTombstones();
     const cloudCleanupCount = await cleanupCloudTombstones();
-
     if (localCleanupCount > 0 || cloudCleanupCount > 0) {
       logToConsole("success", "Tombstone cleanup completed", {
         localTombstonesRemoved: localCleanupCount,
         cloudTombstonesRemoved: cloudCleanupCount,
       });
     }
-
     return true;
   } catch (error) {
     logToConsole("error", "Error during full initialization:", error);
     return false;
   }
 }
-
 async function initializeExtension() {
-  // Initialize logging first
   initializeLoggingState();
-
   try {
-    // Load AWS SDK
     await loadAwsSdk();
-
-    // Load configuration first
     loadConfiguration();
-
-    // Create UI elements after config is loaded
     insertSyncButton();
-
-    // Check AWS configuration first
     if (!isAwsConfigured()) {
       logToConsole(
         "info",
@@ -396,8 +306,6 @@ async function initializeExtension() {
       );
       return;
     }
-
-    // Check if disabled mode
     if (config.syncMode === "disabled") {
       logToConsole(
         "info",
@@ -405,29 +313,18 @@ async function initializeExtension() {
       );
       return;
     }
-
-    // Flags to track if metadata needs saving after initialization steps
     let initialMetadataSaveNeeded = false;
     let settingsMetadataSaveNeeded = false;
-
-    // Load local metadata *before* deciding on initial sync
     initialMetadataSaveNeeded = await loadLocalMetadata();
-
-    // Proceed with full initialization steps *except* the initial sync queueing
     await initializeLastSeenUpdates();
     settingsMetadataSaveNeeded = await initializeSettingsMonitoring();
-
-    // *** ADDED START: Recalculate local chat hashes ***
-    //logToConsole("info", "Recalculating local chat metadata hashes...");
     let hashesRecalculated = false;
     const allLocalChatsForHash = await getAllChatsFromIndexedDB();
     const localChatsMapForHash = new Map(
       allLocalChatsForHash.map((chat) => [chat.id.replace(/^CHAT_/, ""), chat])
-    ); // Ensure ID consistency
-
+    );
     if (localMetadata.chats) {
       for (const chatId in localMetadata.chats) {
-        // Ensure we are comparing apples to apples (remove potential CHAT_ prefix)
         const cleanChatId = chatId.replace(/^CHAT_/, "");
         const chatData = localChatsMapForHash.get(cleanChatId);
         if (chatData && !localMetadata.chats[chatId].deleted) {
@@ -435,7 +332,6 @@ async function initializeExtension() {
             const newHash = await generateHash(chatData, "chat");
             if (localMetadata.chats[chatId].hash !== newHash) {
               localMetadata.chats[chatId].hash = newHash;
-              // Don't mark as modified here, just update the hash for comparison
               hashesRecalculated = true;
             }
           } catch (hashError) {
@@ -453,29 +349,16 @@ async function initializeExtension() {
         }
       }
     }
-    // *** ADDED END ***
-
-    // Save metadata ONCE if needed after initial setup OR if hashes were recalculated
-    // *** MODIFIED: Combine save logic ***
     if (
       initialMetadataSaveNeeded ||
       settingsMetadataSaveNeeded ||
       hashesRecalculated
     ) {
-      // logToConsole(
-      //   "info",
-      //   "Saving batched metadata after initialization steps (init/settings/hash recalc)"
-      // );
       await saveLocalMetadata();
     }
-
     await setupLocalStorageChangeListener();
-
-    startSyncInterval(); // Start interval regardless
-
-    // Decide whether to perform an initial sync
+    startSyncInterval();
     if (config.syncMode === "sync") {
-      // Only perform initial sync if metadata suggests it's the first run or state is very old/invalid
       if (!localMetadata || localMetadata.lastSyncTime === 0) {
         logToConsole(
           "info",
@@ -487,25 +370,17 @@ async function initializeExtension() {
           "info",
           "Skipping explicit initial sync, relying on visibility change and interval."
         );
-        // Optional: Queue a regular sync check on startup if the tab is visible
         if (document.visibilityState === "visible") {
           queueOperation("startup-sync-check", syncFromCloud);
         }
       }
     }
-
-    // Check for daily backup after potential sync operations might be queued
     if (config.syncMode !== "disabled") {
       queueOperation("daily-backup-check", checkAndPerformDailyBackup);
     }
-
-    // Start monitoring IndexedDB for deletions and changes
-    // setupLocalStorageChangeListener(); // Already called
     monitorIndexedDBForDeletions();
     startPeriodicChangeCheck();
-    setupVisibilityChangeHandler(); // Already called, but ensures it's set up
-
-    // Clean up old metadata versions as the last initialization step
+    setupVisibilityChangeHandler();
     try {
       await cleanupMetadataVersions();
       logToConsole(
@@ -519,41 +394,28 @@ async function initializeExtension() {
         cleanupError
       );
     }
-
     logToConsole("success", "Full initialization completed");
-
-    // Add tombstone cleanup as the last step
     logToConsole("cleanup", "Starting tombstone cleanup...");
     const localCleanupCount = cleanupOldTombstones();
     const cloudCleanupCount = await cleanupCloudTombstones();
-
     if (localCleanupCount > 0 || cloudCleanupCount > 0) {
       logToConsole("success", "Tombstone cleanup completed", {
         localTombstonesRemoved: localCleanupCount,
         cloudTombstonesRemoved: cloudCleanupCount,
       });
     }
-
-    // Set up visibility change handler - moved earlier, but ensure it's present
     setupVisibilityChangeHandler();
-
     logToConsole("success", "Initialization completed successfully");
   } catch (error) {
     logToConsole("error", "Error initializing extension:", error);
     throw error;
   }
 }
-
-// Initialize when DOM is ready
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", initializeExtension);
 } else {
   initializeExtension();
 }
-
-// ==================== CORE SYNC ENGINE ====================
-
-// Throttle function to limit the rate of function calls
 function throttle(func, limit) {
   let inThrottle;
   return function (...args) {
@@ -564,61 +426,42 @@ function throttle(func, limit) {
     }
   };
 }
-
-// Load AWS SDK
 async function loadAwsSdk() {
   if (window.AWS) return;
-
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = "https://sdk.amazonaws.com/js/aws-sdk-2.1048.0.min.js";
     script.onload = () => {
-      //logToConsole("success", "AWS SDK loaded successfully");
       resolve();
     };
     script.onerror = () => reject(new Error("Failed to load AWS SDK"));
     document.head.appendChild(script);
   });
 }
-
-// Load JSZip for backup compression
 async function loadJSZip() {
   if (window.JSZip) return window.JSZip;
-
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src =
       "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
     script.onload = () => {
-      //logToConsole("success", "JSZip loaded successfully");
       resolve(window.JSZip);
     };
     script.onerror = () => reject(new Error("Failed to load JSZip"));
     document.head.appendChild(script);
   });
 }
-
-// Initialize last seen updates tracking
 async function initializeLastSeenUpdates() {
-  //logToConsole("start", "Initializing last seen updates...");
   const chats = await getAllChatsFromIndexedDB();
-
   for (const chat of chats) {
     if (!chat.id) continue;
     lastSeenUpdates[chat.id] = {
       updatedAt: chat.updatedAt || Date.now(),
-      // *** Pass 'chat' type ***
       hash: await generateHash(chat, "chat"),
     };
   }
-  //logToConsole("success", "Last seen updates initialized");
 }
-
-// Load configuration from localStorage
 function loadConfiguration() {
-  //logToConsole("start", "Loading configuration...");
-
-  // Initialize default config if not exists
   if (!config) {
     config = {
       syncMode: "disabled",
@@ -631,18 +474,11 @@ function loadConfiguration() {
       encryptionKey: "",
     };
   }
-
-  // Check URL parameters first
   const urlParams = new URLSearchParams(window.location.search);
   const urlSyncMode = urlParams.get("syncMode");
-
-  // Validate URL sync mode if present
   if (urlSyncMode && ["disabled", "backup", "sync"].includes(urlSyncMode)) {
-    // Save to localStorage so it persists
     localStorage.setItem("sync-mode", urlSyncMode);
     logToConsole("info", `Sync mode set from URL parameter: ${urlSyncMode}`);
-
-    // Remove the syncMode parameter from URL
     urlParams.delete("syncMode");
     const newUrl =
       window.location.pathname +
@@ -650,7 +486,6 @@ function loadConfiguration() {
       window.location.hash;
     window.history.replaceState({}, "", newUrl);
   }
-
   const storedConfig = {
     bucketName: localStorage.getItem("aws-bucket"),
     region: localStorage.getItem("aws-region"),
@@ -661,24 +496,11 @@ function loadConfiguration() {
     encryptionKey: localStorage.getItem("encryption-key"),
     syncMode: localStorage.getItem("sync-mode") || "disabled",
   };
-
-  // Update config with stored values
   config = { ...config, ...storedConfig };
-
-  // Ensure sync mode is properly set in config
   config.syncMode = localStorage.getItem("sync-mode") || "disabled";
-
-  // logToConsole("success", "Configuration loaded", {
-  //   syncMode: config.syncMode,
-  // });
-
   return config;
 }
-
-// Save configuration to localStorage
 function saveConfiguration() {
-  //logToConsole("start", "Saving configuration...");
-
   localStorage.setItem("aws-bucket", config.bucketName);
   localStorage.setItem("aws-region", config.region);
   localStorage.setItem("aws-access-key", config.accessKey);
@@ -687,31 +509,16 @@ function saveConfiguration() {
   localStorage.setItem("backup-interval", config.syncInterval.toString());
   localStorage.setItem("encryption-key", config.encryptionKey);
   localStorage.setItem("sync-mode", config.syncMode);
-
-  //logToConsole("success", "Configuration saved");
 }
-
-// Load local metadata
 async function loadLocalMetadata() {
-  //logToConsole("start", "Loading local metadata...");
-  let metadataInitialized = false; // Flag to return
+  let metadataInitialized = false;
   try {
     const storedMetadata = await getIndexedDBKey("sync-metadata");
-    // *** LOGGING START ***
-    // logToConsole(
-    //   "debug",
-    //   "Raw storedMetadata from IndexedDB:",
-    //   storedMetadata ? storedMetadata.slice(0, 500) + "..." : null
-    // );
-    // *** LOGGING END ***
     if (storedMetadata) {
       try {
         localMetadata = JSON.parse(storedMetadata);
-        // *** LOGGING START ***
-        // Helper function for formatting timestamps in logs
         const formatLogTimestamp = (ts) =>
           ts ? new Date(ts).toLocaleString() : ts === 0 ? "0 (Epoch)" : ts;
-
         logToConsole("debug", "Parsed localMetadata:", {
           lastSyncTime: formatLogTimestamp(localMetadata.lastSyncTime),
           hasChats: !!localMetadata.chats,
@@ -730,7 +537,6 @@ async function loadLocalMetadata() {
             localMetadata.settings?.syncedAt
           ),
         });
-        // *** LOGGING END ***
       } catch (parseError) {
         logToConsole(
           "error",
@@ -746,10 +552,8 @@ async function loadLocalMetadata() {
       );
       metadataInitialized = await initializeMetadataFromExistingData();
     }
-    //logToConsole("success", "Local metadata loading process completed");
   } catch (error) {
     logToConsole("error", "Failed to load local metadata:", error);
-    // Attempt to recover by initializing fresh metadata
     try {
       logToConsole(
         "warning",
@@ -766,16 +570,12 @@ async function loadLocalMetadata() {
         "Failed to initialize fresh metadata after load error:",
         initError
       );
-      throw error; // Re-throw original error if recovery fails
+      throw error;
     }
   }
-  return metadataInitialized; // Return the flag
+  return metadataInitialized;
 }
-
-// Initialize metadata from existing data
 async function initializeMetadataFromExistingData() {
-  //logToConsole("start", "Initializing metadata from existing data...");
-
   const chats = await getAllChatsFromIndexedDB();
   localMetadata = {
     chats: {},
@@ -786,7 +586,6 @@ async function initializeMetadataFromExistingData() {
     },
     lastSyncTime: 0,
   };
-
   for (const chat of chats) {
     if (!chat.id) continue;
     localMetadata.chats[chat.id] = {
@@ -796,173 +595,81 @@ async function initializeMetadataFromExistingData() {
       isDeleted: false,
     };
   }
-
   logToConsole("success", "Metadata initialized from existing data");
-  return true; // Indicate that metadata was initialized and needs saving
+  return true;
 }
-
-// Save local metadata
 async function saveLocalMetadata() {
   try {
-    // *** LOGGING START ***
     const metadataToSave = JSON.stringify(localMetadata);
-    // Helper function for formatting timestamps in logs
     const formatLogTimestamp = (ts) =>
       ts ? new Date(ts).toLocaleString() : ts === 0 ? "0 (Epoch)" : ts;
-
-    // logToConsole("debug", "Saving localMetadata:", {
-    //   lastSyncTime: formatLogTimestamp(localMetadata.lastSyncTime),
-    //   chatCount: localMetadata.chats
-    //     ? Object.keys(localMetadata.chats).length
-    //     : 0,
-    //   firstChatSyncedAt:
-    //     localMetadata.chats && Object.keys(localMetadata.chats).length > 0
-    //       ? formatLogTimestamp(
-    //           localMetadata.chats[Object.keys(localMetadata.chats)[0]]?.syncedAt
-    //         )
-    //       : undefined,
-    //   settingsSyncedAt: formatLogTimestamp(localMetadata.settings?.syncedAt),
-    //   size: metadataToSave.length,
-    // });
-    // *** LOGGING END ***
     await setIndexedDBKey("sync-metadata", metadataToSave);
-    //logToConsole("success", "Local metadata saved");
   } catch (error) {
     logToConsole("error", "Failed to save local metadata:", error);
     throw error;
   }
 }
-
-// Generate hash for a chat
 async function generateHash(content, type = "generic") {
-  // *** ADDED: Log the input content object ***
-  // if (type === "chat") {
-  //   logToConsole(
-  //     "debug",
-  //     `Input content to generateHash for chat ${content?.id}`,
-  //     { inputContent: content }
-  //   );
-  // }
-  // *** END ADDED ***
-
   let str;
   if (type === "chat" && content.id) {
-    // For chats, only include specific fields to avoid unnecessary syncs
-    // *** MODIFIED: Ensure messagesArray is used, falling back to messages ***
-    // *** MODIFIED: Prioritize populated messages if messagesArray is empty ***
-    // *** REVERTED & CHANGED: Consistently use messages property ***
     let messagesToProcess = content.messages || [];
-
-    // Create a stable representation of the chat for hashing
     const stableChat = {
-      // Ensure consistent title property (using || for safety)
       title: content.title || content.chatTitle || "",
-      // Process messages: Sort the array AND sort keys within each message object
       messages: messagesToProcess
         .map((msg) => {
-          if (!msg || typeof msg !== "object") return msg; // Handle potential non-objects
-
-          // Create a new object with keys sorted alphabetically
+          if (!msg || typeof msg !== "object") return msg;
           const stableMsg = {};
           Object.keys(msg)
             .sort()
             .forEach((key) => {
-              // Exclude volatile properties if they exist and shouldn't affect the content hash
-              // Example: if (key === 'internal_id' || key === 'render_timestamp') return;
               stableMsg[key] = msg[key];
             });
           return stableMsg;
         })
         .sort((a, b) => {
-          // Define a stable sort order for messages (e.g., timestamp, then content)
-          // Primary sort: timestamp (if available)
           if (a?.timestamp && b?.timestamp) {
             if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
           }
-          // Secondary sort: message index (if available)
           if (a?.index !== undefined && b?.index !== undefined) {
             if (a.index !== b.index) return a.index - b.index;
           }
-          // Fallback sort: stringified content (ensures identical messages sort consistently)
-          // Use sorted keys within stringify for ultimate stability
           const stringifyStable = (obj) =>
             JSON.stringify(obj, Object.keys(obj || {}).sort());
           return stringifyStable(a).localeCompare(stringifyStable(b));
         }),
     };
-
-    // logToConsole(
-    //   "debug",
-    //   `Hashing STABLE simplified chat object for: ${content.id}`,
-    //   { stableChat }
-    // );
-
-    // Stringify the fully stabilized object structure
-    // Use sorted keys for the top-level object as well
     str = JSON.stringify(stableChat, Object.keys(stableChat).sort());
-
-    // *** ADDED: Log the final string being hashed ***
-    // Log potentially large string - consider only logging start/end or if hashes differ in testing
-    // logToConsole("debug", `Final string generated for hashing ${content.id}`, {
-    //   stringToHash: str,
-    // });
-    // *** END ADDED ***
   } else {
     str = typeof content === "string" ? content : JSON.stringify(content);
-    // *** ADDED: Log non-chat string too for completeness ***
-    // logToConsole(
-    //   "debug",
-    //   `Final string generated for hashing (non-chat, type: ${typeof content}) (length: ${
-    //     str?.length || "N/A"
-    //   })`,
-    //   { stringToHash: str }
-    // );
-    // *** END ADDED ***
   }
-
   const msgBuffer = new TextEncoder().encode(str);
   const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
-
-// Setup localStorage change listener
 async function setupLocalStorageChangeListener() {
   window.addEventListener("storage", (e) => {
     if (!e.key || shouldExcludeSetting(e.key)) {
       return;
     }
-
-    // Mark settings as changed, will be synced during interval
     pendingSettingsChanges = true;
     logToConsole("info", `LocalStorage change detected: ${e.key}`);
-    // Immediately update sync status to show out-of-sync
     throttledCheckSyncStatus();
   });
-
-  // Also monitor for programmatic changes
   const originalSetItem = localStorage.setItem;
   localStorage.setItem = function (key, value) {
     const oldValue = localStorage.getItem(key);
     originalSetItem.apply(this, arguments);
-
     if (!shouldExcludeSetting(key) && oldValue !== value) {
       pendingSettingsChanges = true;
       logToConsole("info", `LocalStorage programmatic change detected: ${key}`);
-      // Immediately update sync status to show out-of-sync
       throttledCheckSyncStatus();
     }
   };
 }
-
-// ==================== INDEXEDDB UTILITIES ====================
-
-// Get persistent IndexedDB connection with improved race condition handling
 async function getPersistentDB() {
-  // Return existing connection if available and healthy
   if (persistentDB) {
     try {
-      // Quick health check
       const transaction = persistentDB.transaction(["keyval"], "readonly");
       return persistentDB;
     } catch (error) {
@@ -973,21 +680,15 @@ async function getPersistentDB() {
       await cleanupDBConnection();
     }
   }
-
-  // Use existing connection promise if one is in progress
   if (dbConnectionPromise) {
     try {
       return await dbConnectionPromise;
     } catch (error) {
-      // If the existing promise failed, clear it and try again
       dbConnectionPromise = null;
     }
   }
-
-  // Create new connection promise
   dbConnectionPromise = (async () => {
     try {
-      // Attempt connection with timeout
       persistentDB = await Promise.race([
         openIndexedDB(),
         new Promise((_, reject) =>
@@ -997,28 +698,18 @@ async function getPersistentDB() {
           )
         ),
       ]);
-
-      // Setup connection monitoring
       setupDBConnectionMonitoring();
-
-      // Reset retry counter on successful connection
       dbConnectionRetries = 0;
       return persistentDB;
     } catch (error) {
-      // Clear connection promise since it failed
       dbConnectionPromise = null;
-
-      // Increment retry counter
       dbConnectionRetries++;
-
       if (dbConnectionRetries < MAX_DB_RETRIES) {
-        // Calculate exponential backoff with jitter
         const delay = Math.min(
           DB_RETRY_DELAY * Math.pow(2, dbConnectionRetries - 1) +
             Math.random() * 1000,
           5000
         );
-
         logToConsole(
           "warning",
           `IndexedDB connection attempt ${dbConnectionRetries} failed, retrying in ${Math.round(
@@ -1026,34 +717,24 @@ async function getPersistentDB() {
           )}s`,
           error
         );
-
         await new Promise((resolve) => setTimeout(resolve, delay));
-        return getPersistentDB(); // Retry connection
+        return getPersistentDB();
       }
-
       logToConsole("error", "Max IndexedDB connection retries reached", error);
       throw new Error(
         `Failed to establish IndexedDB connection after ${MAX_DB_RETRIES} attempts: ${error.message}`
       );
     }
   })();
-
   return dbConnectionPromise;
 }
-
-// Setup monitoring for the IndexedDB connection
 function setupDBConnectionMonitoring() {
-  // Clear any existing monitoring
   if (dbHeartbeatInterval) {
     clearInterval(dbHeartbeatInterval);
   }
-
-  // Setup periodic health checks
   dbHeartbeatInterval = setInterval(async () => {
     if (!persistentDB) return;
-
     try {
-      // Attempt a simple transaction to verify connection
       const transaction = persistentDB.transaction(["keyval"], "readonly");
       const store = transaction.objectStore("keyval");
       await new Promise((resolve, reject) => {
@@ -1069,34 +750,27 @@ function setupDBConnectionMonitoring() {
       );
       await cleanupDBConnection();
     }
-  }, 30000); // Check every 30 seconds
+  }, 30000);
 }
-
-// Cleanup stale database connection
 async function cleanupDBConnection() {
   try {
     if (dbHeartbeatInterval) {
       clearInterval(dbHeartbeatInterval);
       dbHeartbeatInterval = null;
     }
-
     if (persistentDB) {
       persistentDB.close();
       persistentDB = null;
     }
-
     dbConnectionPromise = null;
     logToConsole("info", "Cleaned up stale IndexedDB connection");
   } catch (error) {
     logToConsole("error", "Error cleaning up IndexedDB connection", error);
   }
 }
-
-// Modified openIndexedDB to handle connection management
 function openIndexedDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open("keyval-store", 1);
-
     request.onerror = () => {
       reject(
         new Error(
@@ -1106,39 +780,28 @@ function openIndexedDB() {
         )
       );
     };
-
     request.onsuccess = (event) => {
       const db = event.target.result;
-
-      // Add connection error handler
       db.onerror = (event) => {
         logToConsole("error", "IndexedDB error:", event.target.error);
         cleanupDBConnection();
       };
-
-      // Add close handler
       db.onclose = () => {
         logToConsole("info", "IndexedDB connection closed");
         cleanupDBConnection();
       };
-
-      // Add version change handler
       db.onversionchange = () => {
         logToConsole("info", "IndexedDB version changed, closing connection");
         cleanupDBConnection();
       };
-
       resolve(db);
     };
-
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
       if (!db.objectStoreNames.contains("keyval")) {
         db.createObjectStore("keyval");
       }
     };
-
-    // Add timeout for the open request
     setTimeout(() => {
       if (!persistentDB) {
         reject(new Error("IndexedDB open request timed out"));
@@ -1146,38 +809,28 @@ function openIndexedDB() {
     }, DB_CONNECTION_TIMEOUT);
   });
 }
-
-// Get all chats from IndexedDB
 async function getAllChatsFromIndexedDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open("keyval-store", 1);
-
     request.onerror = () => reject(request.error);
-
     request.onsuccess = (event) => {
       const db = event.target.result;
       const transaction = db.transaction(["keyval"], "readonly");
       const store = transaction.objectStore("keyval");
       const chats = [];
-
-      // Get all chat keys
       store.getAllKeys().onsuccess = (keyEvent) => {
         const keys = keyEvent.target.result;
         const chatKeys = keys.filter((key) => key.startsWith("CHAT_"));
-
         if (chatKeys.length === 0) {
           resolve([]);
           return;
         }
-
-        // Get all chat data
         store.getAll().onsuccess = (valueEvent) => {
           const values = valueEvent.target.result;
           for (let i = 0; i < keys.length; i++) {
             const key = keys[i];
             if (key.startsWith("CHAT_")) {
               const chat = values[i];
-              // Ensure chat has an id, removing CHAT_ prefix if present
               if (!chat.id) {
                 chat.id = key.startsWith("CHAT_") ? key.slice(5) : key;
               }
@@ -1187,12 +840,10 @@ async function getAllChatsFromIndexedDB() {
           resolve(chats);
         };
       };
-
       transaction.oncomplete = () => {
         db.close();
       };
     };
-
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
       if (!db.objectStoreNames.contains("keyval")) {
@@ -1201,24 +852,17 @@ async function getAllChatsFromIndexedDB() {
     };
   });
 }
-
-// Get a specific chat from IndexedDB
 async function getChatFromIndexedDB(chatId) {
   return new Promise((resolve, reject) => {
     const key = chatId.startsWith("CHAT_") ? chatId : `CHAT_${chatId}`;
     const request = indexedDB.open("keyval-store", 1);
-
     request.onerror = () => reject(request.error);
-
     request.onsuccess = (event) => {
       const db = event.target.result;
       const transaction = db.transaction(["keyval"], "readonly");
       const store = transaction.objectStore("keyval");
-
       const getRequest = store.get(key);
-
       getRequest.onsuccess = () => {
-        // *** ADDED: Log fetched chat structure ***
         let fetchedChat = getRequest.result;
         logToConsole(
           "debug",
@@ -1226,76 +870,50 @@ async function getChatFromIndexedDB(chatId) {
           {
             hasChat: !!fetchedChat,
             hasMessages: !!fetchedChat?.messages,
-            messagesLength: fetchedChat?.messages?.length, // Focus on messages
-            // hasMessagesArray: !!fetchedChat?.messagesArray,
-            // messagesArrayLength: fetchedChat?.messagesArray?.length,
-            // keys: fetchedChat ? Object.keys(fetchedChat) : null // Optionally log all keys
+            messagesLength: fetchedChat?.messages?.length,
           }
         );
-        // *** END ADDED ***
-        // *** ADDED: Standardize chat object ***
         fetchedChat = standardizeChatMessages(fetchedChat);
-        // *** END ADDED ***
         resolve(fetchedChat);
       };
-
       getRequest.onerror = () => {
         reject(getRequest.error);
       };
     };
   });
 }
-
-// Get a value from IndexedDB keyval store
 async function getIndexedDBKey(key) {
   const db = await openIndexedDB();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction("keyval", "readonly");
     const store = transaction.objectStore("keyval");
     const request = store.get(key);
-
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
   });
 }
-
-// Set a value in IndexedDB keyval store
 async function setIndexedDBKey(key, value) {
   const db = await openIndexedDB();
   return new Promise((resolve, reject) => {
     const transaction = db.transaction("keyval", "readwrite");
     const store = transaction.objectStore("keyval");
     const request = store.put(value, key);
-
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
   });
 }
-
-// Monitor IndexedDB for deletions
 function monitorIndexedDBForDeletions() {
-  //logToConsole("info", "Setting up IndexedDB deletion monitor");
-
-  // Keep track of current chats and their detection timestamps
-  let knownChats = new Map(); // Map of chatId -> { detectedAt: timestamp, confirmedCount: number }
-
-  // Minimum time a chat must be known before considering it for deletion
-  const MIN_CHAT_AGE_MS = 60 * 1000; // 60 seconds
-
-  // Require multiple consecutive detections before considering a chat truly deleted
+  let knownChats = new Map();
+  const MIN_CHAT_AGE_MS = 60 * 1000;
   const REQUIRED_MISSING_DETECTIONS = 2;
-
-  // Track potential deletions between checks
-  let potentialDeletions = new Map(); // chatId -> count of times seen as missing
-
-  // Initial population of known chats
+  let potentialDeletions = new Map();
   getAllChatsFromIndexedDB().then((chats) => {
     const now = Date.now();
     chats.forEach((chat) => {
       if (chat.id) {
         knownChats.set(chat.id, {
           detectedAt: now,
-          confirmedCount: 3, // Start with confirmed status for existing chats
+          confirmedCount: 3,
         });
       }
     });
@@ -1304,43 +922,24 @@ function monitorIndexedDBForDeletions() {
       `Initialized deletion monitor with ${knownChats.size} chats`
     );
   });
-
-  // Periodically check for deleted chats
   setInterval(async () => {
-    if (document.hidden) return; // Skip if tab is not visible
-
+    if (document.hidden) return;
     try {
       const now = Date.now();
-
-      // Get current chats
       const currentChats = await getAllChatsFromIndexedDB();
       const currentChatIds = new Set(currentChats.map((chat) => chat.id));
-
-      // Update detection timestamps for chats that are present
       for (const chatId of currentChatIds) {
         if (knownChats.has(chatId)) {
-          // This is a known chat, update its confirmed count
           const chatInfo = knownChats.get(chatId);
-          chatInfo.confirmedCount = Math.min(chatInfo.confirmedCount + 1, 5); // Cap at 5
-
-          // If it was in potential deletions, remove it
+          chatInfo.confirmedCount = Math.min(chatInfo.confirmedCount + 1, 5);
           if (potentialDeletions.has(chatId)) {
             potentialDeletions.delete(chatId);
           }
         } else {
-          // This is a newly detected chat - **IGNORE IT HERE**
-          // The periodicChangeCheck will handle new chats.
-          // We only add it to knownChats so we can detect if it disappears later.
           knownChats.set(chatId, {
             detectedAt: now,
             confirmedCount: 1,
           });
-          // logToConsole(
-          //   "info",
-          //   `Deletion monitor observed new chat (will be handled by change check): ${chatId}`
-          // );
-
-          // REMOVED THE FOLLOWING BLOCK that triggered updates/uploads for new chats:
           /*
           updateChatMetadata(chatId, true)
             .then(() => {
@@ -1360,52 +959,36 @@ function monitorIndexedDBForDeletions() {
           */
         }
       }
-
-      // Find chats that appear to be deleted (in knownChats but not in currentChatIds)
       for (const [chatId, chatInfo] of knownChats.entries()) {
         if (!currentChatIds.has(chatId)) {
-          // This chat was previously known but is now missing
-
-          // Only consider well-established chats (seen multiple times and not too new)
           const isEstablishedChat =
             chatInfo.confirmedCount >= 2 &&
             now - chatInfo.detectedAt > MIN_CHAT_AGE_MS;
-
           if (isEstablishedChat) {
-            // Track consecutive missing detections
             const missingCount = (potentialDeletions.get(chatId) || 0) + 1;
             potentialDeletions.set(chatId, missingCount);
-
-            // Only consider it deleted after multiple consecutive missing detections
             if (missingCount >= REQUIRED_MISSING_DETECTIONS) {
-              // Skip if already has a tombstone
               if (
                 localMetadata.chats[chatId] &&
                 localMetadata.chats[chatId].deleted === true
               ) {
-                // Already has a tombstone, just remove from our tracking
                 knownChats.delete(chatId);
                 potentialDeletions.delete(chatId);
                 continue;
               }
-
               logToConsole(
                 "cleanup",
                 `Confirmed deletion of chat ${chatId} (missing ${missingCount} times), creating tombstone`
               );
-
-              // Create tombstone entry
               localMetadata.chats[chatId] = {
                 deleted: true,
                 deletedAt: Date.now(),
                 lastModified: Date.now(),
-                syncedAt: 0, // Set to 0 to ensure it's synced to cloud
+                syncedAt: 0,
                 tombstoneVersion: 1,
                 deletionSource: "indexeddb-monitor",
               };
               saveLocalMetadata();
-
-              // Only queue deletion from cloud if sync is enabled
               if (config.syncMode === "sync" || config.syncMode === "backup") {
                 logToConsole(
                   "cleanup",
@@ -1415,8 +998,6 @@ function monitorIndexedDBForDeletions() {
                   deleteChatFromCloud(chatId)
                 );
               }
-
-              // Remove from our tracking
               knownChats.delete(chatId);
               potentialDeletions.delete(chatId);
             } else {
@@ -1426,12 +1007,9 @@ function monitorIndexedDBForDeletions() {
               );
             }
           } else {
-            // This is a new chat that disappeared too quickly - might be a refresh or false positive
-            // Remove it from tracking if it's been missing too long
             if (potentialDeletions.has(chatId)) {
               const missingCount = potentialDeletions.get(chatId) + 1;
               if (missingCount > 5) {
-                // After 5 checks, just forget about it
                 knownChats.delete(chatId);
                 potentialDeletions.delete(chatId);
                 logToConsole(
@@ -1450,10 +1028,8 @@ function monitorIndexedDBForDeletions() {
     } catch (error) {
       logToConsole("error", "Error in deletion monitor", error);
     }
-  }, 10000); // Check every 10 seconds
+  }, 10000);
 }
-
-// Save a chat to IndexedDB
 async function saveChatToIndexedDB(chat, syncTimestamp = null) {
   return new Promise((resolve, reject) => {
     if (!chat || !chat.id) {
@@ -1462,33 +1038,21 @@ async function saveChatToIndexedDB(chat, syncTimestamp = null) {
       );
       return;
     }
-
     const key = chat.id.startsWith("CHAT_") ? chat.id : `CHAT_${chat.id}`;
     const request = indexedDB.open("keyval-store", 1);
-
     request.onerror = () => reject(request.error);
-
     request.onsuccess = (event) => {
       const db = event.target.result;
       const transaction = db.transaction(["keyval"], "readwrite");
       const store = transaction.objectStore("keyval");
-
-      // Ensure chat.id is consistent with the key
       if (chat.id.startsWith("CHAT_") && key !== chat.id) {
-        chat.id = chat.id.slice(5); // Remove CHAT_ prefix from chat.id
+        chat.id = chat.id.slice(5);
       }
-
-      // Always update the updatedAt timestamp when saving
       chat.updatedAt = Date.now();
-
       const putRequest = store.put(chat, key);
-
       putRequest.onsuccess = () => {
         logToConsole("success", `Saved chat ${chat.id} to IndexedDB`);
-        // After saving, update metadata to ensure change is detected
-        // *** MODIFIED: Pass syncTimestamp and set isModified based on whether syncTimestamp exists ***
         const isCloudOriginated = !!syncTimestamp;
-        // Pass the 'chat' object itself as the last argument
         updateChatMetadata(
           chat.id,
           !isCloudOriginated,
@@ -1496,18 +1060,11 @@ async function saveChatToIndexedDB(chat, syncTimestamp = null) {
           syncTimestamp,
           chat
         )
-          .then(() => resolve()) // Resolve after metadata update
-          .catch(reject); // Reject if metadata update fails
+          .then(() => resolve())
+          .catch(reject);
       };
-
       putRequest.onerror = () => reject(putRequest.error);
-
-      // *** REMOVED transaction.oncomplete resolve, handled in putRequest.onsuccess ***
-      // transaction.oncomplete = () => {
-      //   db.close();
-      // };
     };
-
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
       if (!db.objectStoreNames.contains("keyval")) {
@@ -1516,50 +1073,31 @@ async function saveChatToIndexedDB(chat, syncTimestamp = null) {
     };
   });
 }
-
-// Delete a chat from IndexedDB
 async function deleteChatFromIndexedDB(chatId) {
   return new Promise((resolve, reject) => {
     if (!chatId) {
       reject(new Error("Cannot delete chat: chatId is undefined"));
       return;
     }
-
-    // Ensure we have the CHAT_ prefix
     const key =
       typeof chatId === "string" && chatId.startsWith("CHAT_")
         ? chatId
         : `CHAT_${chatId}`;
-
     const request = indexedDB.open("keyval-store", 1);
-
     request.onerror = () => reject(request.error);
-
     request.onsuccess = (event) => {
       const db = event.target.result;
       const transaction = db.transaction(["keyval"], "readwrite");
       const store = transaction.objectStore("keyval");
-
       const deleteRequest = store.delete(key);
-
       deleteRequest.onsuccess = () => {
         logToConsole("success", `Deleted chat ${chatId} from IndexedDB`);
         resolve();
       };
-
       deleteRequest.onerror = () => reject(deleteRequest.error);
-
-      // *** REMOVED transaction.oncomplete resolve, handled in deleteRequest.onsuccess ***
-      // transaction.oncomplete = () => {
-      //   db.close();
-      // };
     };
   });
 }
-
-// ==================== AWS S3 INTEGRATION ====================
-
-// Initialize AWS S3 client
 function initializeS3Client() {
   if (
     !config.accessKey ||
@@ -1569,35 +1107,26 @@ function initializeS3Client() {
   ) {
     throw new Error("AWS configuration is incomplete");
   }
-
   const s3Config = {
     accessKeyId: config.accessKey,
     secretAccessKey: config.secretKey,
     region: config.region,
   };
-
   if (config.endpoint) {
     s3Config.endpoint = config.endpoint;
     s3Config.s3ForcePathStyle = true;
   }
-
   return new AWS.S3(s3Config);
 }
-
-// List objects in S3 bucket
 async function listS3Objects(prefix = "") {
   const s3 = initializeS3Client();
-
   try {
     const params = {
       Bucket: config.bucketName,
       Prefix: prefix,
     };
-
     const response = await s3.listObjectsV2(params).promise();
     const objects = response.Contents || [];
-
-    // Get metadata for each object
     const objectsWithMetadata = await Promise.all(
       objects.map(async (obj) => {
         try {
@@ -1625,27 +1154,21 @@ async function listS3Objects(prefix = "") {
         }
       })
     );
-
     return objectsWithMetadata;
   } catch (error) {
     logToConsole("error", "Failed to list S3 objects:", error);
     throw error;
   }
 }
-
-// Upload data to S3
 async function uploadToS3(key, data, metadata) {
   const s3 = initializeS3Client();
-
   try {
-    // Determine content type based on file extension
     let contentType = "application/octet-stream";
     if (key.endsWith(".json")) {
       contentType = "application/json";
     } else if (key.endsWith(".zip")) {
       contentType = "application/zip";
     }
-
     const params = {
       Bucket: config.bucketName,
       Key: key,
@@ -1654,81 +1177,54 @@ async function uploadToS3(key, data, metadata) {
       ServerSideEncryption: "AES256",
       Metadata: metadata,
     };
-
-    // Add Cache-Control header for metadata.json to prevent caching
     if (key === "metadata.json") {
       params.CacheControl = "no-cache, no-store, must-revalidate";
     }
-
-    // For large files, use multipart upload
     if (data.byteLength > 5 * 1024 * 1024) {
-      //logToConsole(
-      //  "info",
-      //  `File size > 5MB, using multipart upload for ${key}`
-      //);
-
-      // Clean up any incomplete multipart uploads before starting a new one
       await cleanupIncompleteMultipartUploads();
-
       const uploadId = await startMultipartUpload(key);
       const partSize = 5 * 1024 * 1024;
       const parts = [];
-
       for (let i = 0; i < data.byteLength; i += partSize) {
         const end = Math.min(i + partSize, data.byteLength);
         const chunk = data.slice(i, end);
         const partNumber = Math.floor(i / partSize) + 1;
-
         const part = await uploadPart(key, uploadId, partNumber, chunk);
         parts.push(part);
-
         const progress = Math.min(
           100,
           Math.round((end / data.byteLength) * 100)
         );
-        //logToConsole("info", `Upload progress: ${progress}%`);
       }
-
       await completeMultipartUpload(key, uploadId, parts);
     } else {
       await s3.putObject(params).promise();
     }
-
     logToConsole("success", `Successfully uploaded to S3: ${key}`);
   } catch (error) {
     logToConsole("error", `Failed to upload to S3: ${key}`, error);
     throw error;
   }
 }
-
-// Download data from S3
 async function downloadFromS3(key) {
   const s3 = initializeS3Client();
-
   try {
     const params = {
       Bucket: config.bucketName,
       Key: key,
     };
-
     const response = await s3.getObject(params).promise();
-
-    // Convert AWS metadata (x-amz-meta-*) to our format
     const cleanMetadata = {};
     for (const [key, value] of Object.entries(response.Metadata || {})) {
       const cleanKey = key.replace("x-amz-meta-", "");
       cleanMetadata[cleanKey] = value;
     }
-
-    // Special handling for metadata.json - no decryption needed
     if (key === "metadata.json") {
       return {
         data: response.Body,
         metadata: cleanMetadata,
       };
     }
-
-    // For all other files, return as is
     return {
       data: response.Body,
       metadata: cleanMetadata,
@@ -1742,17 +1238,13 @@ async function downloadFromS3(key) {
     throw error;
   }
 }
-
-// Delete object from S3
 async function deleteFromS3(key) {
   const s3 = initializeS3Client();
-
   try {
     const params = {
       Bucket: config.bucketName,
       Key: key,
     };
-
     await s3.deleteObject(params).promise();
     logToConsole("success", `Successfully deleted from S3: ${key}`);
   } catch (error) {
@@ -1760,27 +1252,21 @@ async function deleteFromS3(key) {
     throw error;
   }
 }
-
-// Start multipart upload to S3
 async function startMultipartUpload(key) {
   const s3 = initializeS3Client();
-
   try {
-    // Determine content type based on file extension
     let contentType = "application/octet-stream";
     if (key.endsWith(".json")) {
       contentType = "application/json";
     } else if (key.endsWith(".zip")) {
       contentType = "application/zip";
     }
-
     const params = {
       Bucket: config.bucketName,
       Key: key,
       ContentType: contentType,
       ServerSideEncryption: "AES256",
     };
-
     const response = await s3.createMultipartUpload(params).promise();
     return response.UploadId;
   } catch (error) {
@@ -1788,16 +1274,13 @@ async function startMultipartUpload(key) {
     throw error;
   }
 }
-
-// Upload part to multipart upload
 async function uploadPart(key, uploadId, partNumber, data) {
   const s3 = initializeS3Client();
   const maxRetries = 3;
-  const baseDelay = 1000; // 1 second base delay
+  const baseDelay = 1000;
   let retryCount = 0;
   let lastError = null;
   let uploadSuccess = false;
-
   while (!uploadSuccess && retryCount <= maxRetries) {
     try {
       const params = {
@@ -1807,7 +1290,6 @@ async function uploadPart(key, uploadId, partNumber, data) {
         PartNumber: partNumber,
         Body: data,
       };
-
       if (retryCount > 0) {
         logToConsole(
           "info",
@@ -1816,15 +1298,8 @@ async function uploadPart(key, uploadId, partNumber, data) {
           })`
         );
       }
-
       const response = await s3.uploadPart(params).promise();
       uploadSuccess = true;
-
-      //logToConsole(
-      //  "success",
-      //  `Successfully uploaded part ${partNumber} (ETag: ${response.ETag})`
-      //);
-
       return {
         ETag: response.ETag,
         PartNumber: partNumber,
@@ -1839,46 +1314,36 @@ async function uploadPart(key, uploadId, partNumber, data) {
         }):`,
         error
       );
-
       if (retryCount > maxRetries) {
         logToConsole(
           "error",
           `All retries failed for part ${partNumber}, aborting multipart upload`
         );
-
         try {
           await abortMultipartUpload(key, uploadId);
         } catch (abortError) {
           logToConsole("error", "Error aborting multipart upload:", abortError);
         }
-
         throw new Error(
           `Failed to upload part ${partNumber} after ${
             maxRetries + 1
           } attempts: ${lastError.message}`
         );
       }
-
-      // Exponential backoff with jitter
       const delay = Math.min(
         baseDelay * Math.pow(2, retryCount - 1) + Math.random() * 1000,
         30000
       );
-
       logToConsole(
         "info",
         `Retrying part ${partNumber} in ${Math.round(delay / 1000)} seconds`
       );
-
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
 }
-
-// Complete multipart upload
 async function completeMultipartUpload(key, uploadId, parts) {
   const s3 = initializeS3Client();
-
   try {
     const params = {
       Bucket: config.bucketName,
@@ -1888,7 +1353,6 @@ async function completeMultipartUpload(key, uploadId, parts) {
         Parts: parts,
       },
     };
-
     await s3.completeMultipartUpload(params).promise();
     logToConsole("success", "Multipart upload completed successfully");
   } catch (error) {
@@ -1896,18 +1360,14 @@ async function completeMultipartUpload(key, uploadId, parts) {
     throw error;
   }
 }
-
-// Abort multipart upload
 async function abortMultipartUpload(key, uploadId) {
   const s3 = initializeS3Client();
-
   try {
     const params = {
       Bucket: config.bucketName,
       Key: key,
       UploadId: uploadId,
     };
-
     await s3.abortMultipartUpload(params).promise();
     logToConsole("warning", "Multipart upload aborted");
   } catch (error) {
@@ -1915,29 +1375,22 @@ async function abortMultipartUpload(key, uploadId) {
     throw error;
   }
 }
-
-// Cleanup incomplete multipart uploads
 async function cleanupIncompleteMultipartUploads() {
-  //logToConsole("cleanup", "Checking for incomplete multipart uploads...");
   const s3 = initializeS3Client();
-
   try {
     const multipartUploads = await s3
       .listMultipartUploads({
         Bucket: config.bucketName,
       })
       .promise();
-
     if (multipartUploads.Uploads && multipartUploads.Uploads.length > 0) {
       logToConsole(
         "cleanup",
         `Found ${multipartUploads.Uploads.length} incomplete multipart uploads`
       );
-
       for (const upload of multipartUploads.Uploads) {
         const uploadAge = Date.now() - new Date(upload.Initiated).getTime();
         const fiveMinutes = 5 * 60 * 1000;
-
         if (uploadAge > fiveMinutes) {
           try {
             await s3
@@ -1947,7 +1400,6 @@ async function cleanupIncompleteMultipartUploads() {
                 UploadId: upload.UploadId,
               })
               .promise();
-
             logToConsole(
               "success",
               `Aborted incomplete upload for ${upload.Key} (${Math.round(
@@ -1971,16 +1423,11 @@ async function cleanupIncompleteMultipartUploads() {
         }
       }
     } else {
-      //logToConsole("info", "No incomplete multipart uploads found");
     }
   } catch (error) {
     logToConsole("error", "Error cleaning up multipart uploads:", error);
   }
 }
-
-// ==================== ENCRYPTION UTILITIES ====================
-
-// Derive encryption key from password
 async function deriveKey(password) {
   const enc = new TextEncoder();
   const keyMaterial = await window.crypto.subtle.importKey(
@@ -1990,7 +1437,6 @@ async function deriveKey(password) {
     false,
     ["deriveBits", "deriveKey"]
   );
-
   const salt = enc.encode("typingmind-backup-salt");
   return window.crypto.subtle.deriveKey(
     {
@@ -2005,22 +1451,17 @@ async function deriveKey(password) {
     ["encrypt", "decrypt"]
   );
 }
-
-// Encrypt data
 async function encryptData(data) {
   const encryptionKey = localStorage.getItem("encryption-key");
-
   if (!encryptionKey) {
     logToConsole("warning", "No encryption key found");
     throw new Error("Encryption key not configured");
   }
-
   try {
     const key = await deriveKey(encryptionKey);
     const enc = new TextEncoder();
     const iv = window.crypto.getRandomValues(new Uint8Array(12));
     const encodedData = enc.encode(JSON.stringify(data));
-
     const encryptedContent = await window.crypto.subtle.encrypt(
       {
         name: "AES-GCM",
@@ -2029,8 +1470,6 @@ async function encryptData(data) {
       key,
       encodedData
     );
-
-    // Prepend marker and IV to encrypted data
     const marker = new TextEncoder().encode("ENCRYPTED:");
     const combinedData = new Uint8Array(
       marker.length + iv.length + encryptedContent.byteLength
@@ -2041,36 +1480,29 @@ async function encryptData(data) {
       new Uint8Array(encryptedContent),
       marker.length + iv.length
     );
-
     return combinedData;
   } catch (error) {
     logToConsole("error", "Encryption failed:", error);
     throw error;
   }
 }
-
-// Decrypt data
 async function decryptData(data) {
   const marker = "ENCRYPTED:";
   const dataString = new TextDecoder().decode(data.slice(0, marker.length));
   const bucketName = localStorage.getItem("aws-bucket");
-
   logToConsole("tag", "Checking encryption marker:", {
     expectedMarker: marker,
     foundMarker: dataString,
     isEncrypted: dataString === marker,
   });
-
   if (dataString !== marker) {
     logToConsole("info", "Data is not encrypted, returning as-is");
     return JSON.parse(new TextDecoder().decode(data));
   }
-
   if (!bucketName) {
     logToConsole("info", "Backup not configured, skipping decryption");
     throw new Error("Backup not configured");
   }
-
   const encryptionKey = localStorage.getItem("encryption-key");
   if (!encryptionKey) {
     logToConsole("error", "Encrypted data found but no key provided");
@@ -2085,12 +1517,10 @@ async function decryptData(data) {
     );
     throw new Error("Encryption key not configured");
   }
-
   try {
     const key = await deriveKey(encryptionKey);
     const iv = data.slice(marker.length, marker.length + 12);
     const encryptedData = data.slice(marker.length + 12);
-
     const decryptedContent = await window.crypto.subtle.decrypt(
       {
         name: "AES-GCM",
@@ -2099,11 +1529,8 @@ async function decryptData(data) {
       key,
       encryptedData
     );
-
     const decryptedText = new TextDecoder().decode(decryptedContent);
     logToConsole("success", "Decryption successful");
-
-    // Return the decrypted text as is - let the caller handle parsing
     return decryptedText;
   } catch (error) {
     logToConsole("error", "Decryption failed:", error);
@@ -2112,31 +1539,19 @@ async function decryptData(data) {
     );
   }
 }
-
-// ==================== BACKUP SYSTEM ====================
-
-// Start backup intervals
 function startBackupIntervals() {
-  startSyncInterval(); // Reuse the same interval mechanism
+  startSyncInterval();
 }
-
-// Check if daily backup is needed and perform it if necessary
 async function checkAndPerformDailyBackup() {
   try {
-    // Get the last backup date in YYYYMMDD format
     const lastBackupStr = localStorage.getItem("last-daily-backup");
-
-    // Get current date in YYYYMMDD format
     const now = new Date();
     const currentDateStr = `${now.getFullYear()}${String(
       now.getMonth() + 1
     ).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-
-    // If no backup has been performed or last backup was on a different date
     if (!lastBackupStr || lastBackupStr !== currentDateStr) {
       logToConsole("info", "Starting daily backup...");
       await performDailyBackup();
-      // Update last backup date in YYYYMMDD format
       localStorage.setItem("last-daily-backup", currentDateStr);
       logToConsole("success", "Daily backup completed");
     } else {
@@ -2146,31 +1561,17 @@ async function checkAndPerformDailyBackup() {
     logToConsole("error", "Error checking/performing daily backup:", error);
   }
 }
-
-// Perform daily backup
 async function performDailyBackup() {
-  //logToConsole("start", "Starting daily backup...");
   backupState.isBackupInProgress = true;
-
   try {
-    // Ensure JSZip is loaded before creating backup
     await loadJSZip();
-
-    // Format date as YYYYMMDD for the filename
     const today = new Date();
     const dateString = `${today.getFullYear()}${String(
       today.getMonth() + 1
     ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-
-    // Use the correct filename format: typingmind-backup-YYYYMMDD.zip
     const key = `typingmind-backup-${dateString}.zip`;
-
-    // Export data from both localStorage and IndexedDB
     const data = await exportBackupData();
-
-    // Create and upload the backup
     const success = await createDailyBackup(key, data);
-
     if (success) {
       await cleanupOldBackups("daily");
       backupState.lastDailyBackup = Date.now();
@@ -2187,34 +1588,27 @@ async function performDailyBackup() {
     backupState.isBackupInProgress = false;
   }
 }
-
-// Export backup data from localStorage and IndexedDB
 function exportBackupData() {
   return new Promise((resolve, reject) => {
     const exportData = {
       localStorage: { ...localStorage },
       indexedDB: {},
     };
-
     logToConsole("info", "Starting data export", {
       localStorageKeys: Object.keys(exportData.localStorage).length,
     });
-
     const request = indexedDB.open("keyval-store", 1);
     request.onerror = () => reject(request.error);
     request.onsuccess = function (event) {
       const db = event.target.result;
       const transaction = db.transaction(["keyval"], "readonly");
       const store = transaction.objectStore("keyval");
-
-      // Create a promise that resolves when all data is collected
       const collectData = new Promise((resolveData) => {
         store.getAllKeys().onsuccess = function (keyEvent) {
           const keys = keyEvent.target.result;
           logToConsole("info", "IndexedDB keys found", {
             count: keys.length,
           });
-
           store.getAll().onsuccess = function (valueEvent) {
             const values = valueEvent.target.result;
             keys.forEach((key, i) => {
@@ -2224,8 +1618,6 @@ function exportBackupData() {
           };
         };
       });
-
-      // Wait for both transaction completion and data collection
       Promise.all([
         collectData,
         new Promise((resolveTransaction) => {
@@ -2236,14 +1628,12 @@ function exportBackupData() {
           const hasLocalStorageData =
             Object.keys(exportData.localStorage).length > 0;
           const hasIndexedDBData = Object.keys(exportData.indexedDB).length > 0;
-
           logToConsole("info", "Export data summary", {
             localStorageKeys: Object.keys(exportData.localStorage).length,
             indexedDBKeys: Object.keys(exportData.indexedDB).length,
             hasLocalStorageData,
             hasIndexedDBData,
           });
-
           if (!hasLocalStorageData && !hasIndexedDBData) {
             reject(new Error("No data found in localStorage or IndexedDB"));
             return;
@@ -2251,24 +1641,17 @@ function exportBackupData() {
           resolve(exportData);
         })
         .catch(reject);
-
       transaction.onerror = () => reject(transaction.error);
     };
   });
 }
-
-// Create daily backup with the format matching s3.js
 async function createDailyBackup(key, data) {
   logToConsole("start", `Creating daily backup: ${key}`);
-
   try {
-    // Ensure JSZip is loaded
     const JSZip = await loadJSZip();
     if (!JSZip) {
       throw new Error("Failed to load JSZip library");
     }
-
-    // Check if encryption key is available
     const encryptionKey = localStorage.getItem("encryption-key");
     if (!encryptionKey) {
       logToConsole(
@@ -2277,19 +1660,11 @@ async function createDailyBackup(key, data) {
       );
       return false;
     }
-
-    // Calculate raw size for logging
     const rawSize = new Blob([JSON.stringify(data)]).size;
     logToConsole("info", `Raw data size: ${formatFileSize(rawSize)}`);
-
-    // Encrypt the data (encryptData will handle JSON stringification)
     logToConsole("info", "Encrypting backup data...");
     const encryptedData = await encryptData(data);
-
-    // Create ZIP file
     const zip = new JSZip();
-
-    // Add the encrypted data to the ZIP
     const jsonFileName = key.replace(".zip", ".json");
     zip.file(jsonFileName, encryptedData, {
       compression: "DEFLATE",
@@ -2298,20 +1673,14 @@ async function createDailyBackup(key, data) {
       },
       binary: true,
     });
-
-    // Generate the ZIP file
     const compressedContent = await zip.generateAsync({ type: "blob" });
     if (compressedContent.size < 100) {
       throw new Error(
         "Daily backup file is too small or empty. Upload cancelled."
       );
     }
-
-    // Convert Blob to ArrayBuffer for S3 upload
     const arrayBuffer = await compressedContent.arrayBuffer();
     const content = new Uint8Array(arrayBuffer);
-
-    // Prepare metadata for S3
     const uploadMetadata = {
       version: EXTENSION_VERSION,
       timestamp: String(Date.now()),
@@ -2320,10 +1689,7 @@ async function createDailyBackup(key, data) {
       compressedSize: String(compressedContent.size),
       encrypted: "true",
     };
-
-    // Upload to S3
     await uploadToS3(key, content, uploadMetadata);
-
     logToConsole("success", "Daily backup created successfully");
     return true;
   } catch (error) {
@@ -2331,22 +1697,14 @@ async function createDailyBackup(key, data) {
     return false;
   }
 }
-
-// Create manual snapshot
 async function createSnapshot(name) {
   logToConsole("start", "Creating snapshot...");
   backupState.isBackupInProgress = true;
-
   try {
-    // Load JSZip if not already loaded
     logToConsole("info", "Loading JSZip...");
     await loadJSZip();
     logToConsole("success", "JSZip loaded successfully");
-
-    // Export data from both localStorage and IndexedDB
     const data = await exportBackupData();
-
-    // Format timestamp in local timezone with DST handling
     const now = new Date();
     const timestamp =
       now.getFullYear().toString() +
@@ -2356,11 +1714,8 @@ async function createSnapshot(name) {
       now.getMinutes().toString().padStart(2, "0") +
       now.getSeconds().toString().padStart(2, "0") +
       now.getMilliseconds().toString().padStart(3, "0");
-
     const key = `s-${name}-${timestamp}.zip`;
     logToConsole("info", `Creating snapshot with key: ${key}`);
-
-    // Check if encryption key is available
     const encryptionKey = localStorage.getItem("encryption-key");
     if (!encryptionKey) {
       logToConsole(
@@ -2369,19 +1724,11 @@ async function createSnapshot(name) {
       );
       return false;
     }
-
-    // Calculate raw size for logging
     const rawSize = new Blob([JSON.stringify(data)]).size;
     logToConsole("info", `Raw data size: ${formatFileSize(rawSize)}`);
-
-    // Encrypt the data (encryptData will handle JSON stringification)
     logToConsole("info", "Encrypting snapshot data...");
     const encryptedData = await encryptData(data);
-
-    // Create ZIP file
     const zip = new JSZip();
-
-    // Add the encrypted data to the ZIP
     const jsonFileName = key.replace(".zip", ".json");
     zip.file(jsonFileName, encryptedData, {
       compression: "DEFLATE",
@@ -2390,18 +1737,12 @@ async function createSnapshot(name) {
       },
       binary: true,
     });
-
-    // Generate the ZIP file
     const compressedContent = await zip.generateAsync({ type: "blob" });
     if (compressedContent.size < 100) {
       throw new Error("Snapshot file is too small or empty. Upload cancelled.");
     }
-
-    // Convert Blob to ArrayBuffer for S3 upload
     const arrayBuffer = await compressedContent.arrayBuffer();
     const content = new Uint8Array(arrayBuffer);
-
-    // Prepare metadata for S3
     const uploadMetadata = {
       version: EXTENSION_VERSION,
       timestamp: String(Date.now()),
@@ -2410,15 +1751,9 @@ async function createSnapshot(name) {
       compressedSize: String(compressedContent.size),
       encrypted: "true",
     };
-
-    // Upload to S3
     await uploadToS3(key, content, uploadMetadata);
-
     backupState.lastManualSnapshot = Date.now();
-
-    // Refresh the backup list in the modal
     await loadBackupList();
-
     logToConsole("success", "Snapshot created successfully");
     return true;
   } catch (error) {
@@ -2428,15 +1763,11 @@ async function createSnapshot(name) {
     backupState.isBackupInProgress = false;
   }
 }
-
-// Clean up old backups
 async function cleanupOldBackups(type) {
   logToConsole("start", `Cleaning up old ${type} backups...`);
-
   try {
     let prefix;
     let keepCount;
-
     switch (type) {
       case "daily":
         prefix = config.dailyBackupPrefix;
@@ -2445,60 +1776,40 @@ async function cleanupOldBackups(type) {
       default:
         return;
     }
-
     const objects = await listS3Objects(prefix);
     objects.sort((a, b) => b.LastModified - a.LastModified);
-
     for (let i = keepCount; i < objects.length; i++) {
       await deleteFromS3(objects[i].Key);
       logToConsole("cleanup", `Deleted old backup: ${objects[i].Key}`);
     }
-
     logToConsole("success", `Cleanup of old ${type} backups completed`);
   } catch (error) {
     logToConsole("error", `Failed to clean up old ${type} backups:`, error);
   }
 }
-
-// Restore from backup
 async function restoreFromBackup(key) {
   logToConsole("start", `Starting restore from backup: ${key}`);
-
   try {
-    // Temporarily disable sync
     operationState.isImporting = true;
-
-    // Download the backup file
     const backup = await downloadFromS3(key);
     if (!backup || !backup.data) {
       throw new Error("Backup not found or empty");
     }
-
     let backupContent;
     if (key.endsWith(".zip")) {
-      // Handle ZIP files
       const JSZip = await loadJSZip();
       const zip = await JSZip.loadAsync(backup.data);
-
-      // Find the JSON file in the ZIP
       const jsonFile = Object.keys(zip.files).find((f) => f.endsWith(".json"));
       if (!jsonFile) {
         throw new Error("No JSON file found in backup");
       }
-
-      // Extract the content
       backupContent = await zip.file(jsonFile).async("uint8array");
     } else {
-      // Handle regular files
       backupContent = backup.data;
     }
-
-    // Decrypt the content
     logToConsole("info", "Decrypting backup content...");
     const decryptedContent = await decryptData(backupContent);
     logToConsole("info", "Decrypted content type:", typeof decryptedContent);
-
-    // Parse the decrypted content as JSON
     let parsedContent;
     try {
       logToConsole("info", "Attempting to parse decrypted content...");
@@ -2523,23 +1834,16 @@ async function restoreFromBackup(key) {
       );
       throw new Error(`Failed to parse backup data: ${error.message}`);
     }
-
-    // Validate the backup structure
     if (!parsedContent || typeof parsedContent !== "object") {
       throw new Error("Invalid backup format: Root content is not an object");
     }
-
     if (!parsedContent.localStorage && !parsedContent.indexedDB) {
       throw new Error(
         "Invalid backup format: Missing both localStorage and indexedDB sections"
       );
     }
-
-    // Import the data to storage
     logToConsole("info", "Importing data to storage...");
     await importDataToStorage(parsedContent);
-
-    // Validate imported chats
     const chats = await getAllChatsFromIndexedDB();
     for (const chat of chats) {
       if (!chat.id) {
@@ -2547,28 +1851,18 @@ async function restoreFromBackup(key) {
         continue;
       }
     }
-
-    // Update last sync time
     const currentTime = new Date().toLocaleString();
     localStorage.setItem("last-cloud-sync", currentTime);
-
-    // Save metadata
     await saveLocalMetadata();
-
-    // Re-enable sync
     operationState.isImporting = false;
-
     logToConsole("success", "Backup restored successfully");
     return true;
   } catch (error) {
     logToConsole("error", "Restore failed:", error);
-    // Ensure sync is re-enabled even if restoration fails
     operationState.isImporting = false;
     throw error;
   }
 }
-
-// Import data to storage (both localStorage and IndexedDB)
 function importDataToStorage(data) {
   return new Promise((resolve, reject) => {
     const preserveKeys = [
@@ -2586,15 +1880,11 @@ function importDataToStorage(data) {
       "last-cloud-sync",
       "chat-sync-metadata",
     ];
-
     let settingsRestored = 0;
-
-    // Import localStorage data
     if (data.localStorage) {
       Object.entries(data.localStorage).forEach(([key, settingData]) => {
         if (!preserveKeys.includes(key)) {
           try {
-            // Handle both old format (direct value) and new format (data + source)
             const value =
               typeof settingData === "object" && settingData.data !== undefined
                 ? settingData.data
@@ -2603,13 +1893,9 @@ function importDataToStorage(data) {
               typeof settingData === "object" && settingData.source
                 ? settingData.source
                 : "localStorage";
-
             if (source === "indexeddb") {
-              // If it's meant for indexedDB, skip it here - it will be handled in the indexedDB section
               return;
             }
-
-            // Store in localStorage
             localStorage.setItem(key, value);
             settingsRestored++;
             logToConsole("info", `Restored setting to localStorage: ${key}`);
@@ -2623,8 +1909,6 @@ function importDataToStorage(data) {
         }
       });
     }
-
-    // Import IndexedDB data
     if (data.indexedDB) {
       const request = indexedDB.open("keyval-store");
       request.onerror = () => reject(request.error);
@@ -2632,7 +1916,6 @@ function importDataToStorage(data) {
         const db = event.target.result;
         const transaction = db.transaction(["keyval"], "readwrite");
         const objectStore = transaction.objectStore("keyval");
-
         transaction.oncomplete = () => {
           logToConsole("success", `Settings restore completed`, {
             totalRestored: settingsRestored,
@@ -2641,15 +1924,11 @@ function importDataToStorage(data) {
           resolve();
         };
         transaction.onerror = () => reject(transaction.error);
-
-        // Clear existing data
         const deleteRequest = objectStore.clear();
         deleteRequest.onsuccess = function () {
-          // Import new data
           Object.entries(data.indexedDB).forEach(([key, settingData]) => {
             if (!preserveKeys.includes(key)) {
               try {
-                // Handle both old format (direct value) and new format (data + source)
                 let value =
                   typeof settingData === "object" &&
                   settingData.data !== undefined
@@ -2659,13 +1938,9 @@ function importDataToStorage(data) {
                   typeof settingData === "object" && settingData.source
                     ? settingData.source
                     : "indexeddb";
-
                 if (source === "localStorage") {
-                  // If it's meant for localStorage, skip it here - it was handled in the localStorage section
                   return;
                 }
-
-                // Parse JSON strings if needed
                 if (
                   typeof value === "string" &&
                   (value.startsWith("{") || value.startsWith("["))
@@ -2680,7 +1955,6 @@ function importDataToStorage(data) {
                     );
                   }
                 }
-
                 objectStore.put(value, key);
                 settingsRestored++;
                 logToConsole("info", `Restored setting to IndexedDB: ${key}`);
@@ -2704,10 +1978,6 @@ function importDataToStorage(data) {
     }
   });
 }
-
-// ==================== SYNC ENGINE ====================
-
-// Check if AWS configuration is complete
 function isAwsConfigured() {
   return !!(
     config.accessKey &&
@@ -2716,27 +1986,18 @@ function isAwsConfigured() {
     config.bucketName
   );
 }
-
-// Queue an operation for execution with improved dependency handling
 function queueOperation(name, operation, dependencies = [], timeout = 30000) {
-  // Only skip non-manual operations when sync is disabled
   if (config.syncMode === "disabled" && !name.startsWith("manual")) {
     logToConsole("skip", `Skipping operation ${name} - sync is disabled`);
     return;
   }
-
-  // Check for duplicates
   if (operationState.operationQueue.some((op) => op.name === name)) {
     logToConsole("skip", `Skipping duplicate operation: ${name}`);
     return;
   }
-
-  // Filter out completed dependencies
   dependencies = dependencies.filter(
     (dep) => !operationState.completedOperations.has(dep)
   );
-
-  // Create operation object with metadata
   const operationObject = {
     name,
     operation,
@@ -2746,50 +2007,33 @@ function queueOperation(name, operation, dependencies = [], timeout = 30000) {
     maxRetries: 3,
     addedAt: Date.now(),
   };
-
-  // Add to queue based on dependencies
   if (dependencies.length === 0) {
-    // No dependencies, add to front of queue for faster processing
     operationState.operationQueue.unshift(operationObject);
   } else {
-    // Has dependencies, add to end of queue
     operationState.operationQueue.push(operationObject);
   }
-
-  // Start processing queue
   processOperationQueue();
 }
-
-// Process operation queue with improved race condition handling and timeouts
 async function processOperationQueue() {
-  // If already processing or queue is empty, return
   if (
     operationState.isProcessingQueue ||
     operationState.operationQueue.length === 0
   ) {
     return;
   }
-
-  // If there's an existing promise, wait for it
   if (operationState.queueProcessingPromise) {
     return operationState.queueProcessingPromise;
   }
-
-  // Create new processing promise
   operationState.queueProcessingPromise = (async () => {
     try {
       operationState.isProcessingQueue = true;
-
       while (operationState.operationQueue.length > 0) {
-        // Find next eligible operation (no pending dependencies)
         const nextOpIndex = operationState.operationQueue.findIndex((op) =>
           op.dependencies.every((dep) =>
             operationState.completedOperations.has(dep)
           )
         );
-
         if (nextOpIndex === -1) {
-          // No eligible operations, might be a dependency cycle
           const pendingDeps = new Set(
             operationState.operationQueue.flatMap((op) => op.dependencies)
           );
@@ -2797,15 +2041,12 @@ async function processOperationQueue() {
           const missingDeps = [...pendingDeps].filter(
             (dep) => !availableDeps.has(dep)
           );
-
-          // *** MODIFICATION START ***
           logToConsole(
             "error",
             `Dependency cycle or missing dependencies detected. Missing: ${JSON.stringify(
               missingDeps
             )}`,
             {
-              // missing: missingDeps, // Keep original log structure if needed, but add explicit names
               pendingOps: operationState.operationQueue.map((op) => ({
                 name: op.name,
                 deps: op.dependencies,
@@ -2813,10 +2054,6 @@ async function processOperationQueue() {
               completedOps: [...availableDeps],
             }
           );
-          // *** MODIFICATION END ***
-
-          // Remove operations with missing dependencies that are NOT themselves missing dependencies
-          // (This might be too aggressive, consider alternative cleanup)
           operationState.operationQueue = operationState.operationQueue.filter(
             (op) => {
               const opMissingDeps = op.dependencies.filter(
@@ -2831,23 +2068,18 @@ async function processOperationQueue() {
                     opMissingDeps
                   )}`
                 );
-                return false; // Remove if it has missing deps
+                return false;
               }
-              return true; // Keep otherwise
+              return true;
             }
           );
-
           if (operationState.operationQueue.length === 0) break;
-          // Maybe add a small delay here before continuing?
           await new Promise((resolve) => setTimeout(resolve, 500));
           continue;
         }
-
         const nextOperation = operationState.operationQueue[nextOpIndex];
         const { name, operation, timeout } = nextOperation;
-
         try {
-          // Set up operation timeout
           const timeoutPromise = new Promise((_, reject) => {
             const timeoutId = setTimeout(() => {
               reject(
@@ -2856,66 +2088,42 @@ async function processOperationQueue() {
             }, timeout);
             operationState.operationTimeouts.set(name, timeoutId);
           });
-
           logToConsole("info", `Executing operation: ${name}`);
-
-          // Execute operation with timeout
           await Promise.race([operation(), timeoutPromise]);
-
-          // Clear timeout
           clearTimeout(operationState.operationTimeouts.get(name));
           operationState.operationTimeouts.delete(name);
-
-          // Mark operation as completed
           operationState.completedOperations.add(name);
-
-          // Remove from queue
           operationState.operationQueue.splice(nextOpIndex, 1);
-
-          // Add small delay between operations
           await new Promise((resolve) => setTimeout(resolve, 100));
         } catch (error) {
-          // Clear timeout if it exists
           if (operationState.operationTimeouts.has(name)) {
             clearTimeout(operationState.operationTimeouts.get(name));
             operationState.operationTimeouts.delete(name);
           }
-
           logToConsole("error", `Error executing operation ${name}:`, error);
-
-          // Handle retries
           if (nextOperation.retryCount < nextOperation.maxRetries) {
             nextOperation.retryCount++;
             const delay = Math.min(
               1000 * Math.pow(2, nextOperation.retryCount),
               30000
             );
-
             logToConsole(
               "info",
               `Retrying operation ${name} (attempt ${nextOperation.retryCount}/${nextOperation.maxRetries}) in ${delay}ms`
             );
-
             await new Promise((resolve) => setTimeout(resolve, delay));
-            continue; // Keep the operation in queue for retry
+            continue;
           }
-
-          // If max retries reached, remove operation and continue
           operationState.operationQueue.splice(nextOpIndex, 1);
-          operationState.completedOperations.delete(name); // Ensure failed op is not marked complete
-
-          // If this operation had dependents, we need to clean them up
+          operationState.completedOperations.delete(name);
           const dependentOps = operationState.operationQueue.filter((op) =>
             op.dependencies.includes(name)
           );
-
           if (dependentOps.length > 0) {
             logToConsole(
               "warning",
               `Removing ${dependentOps.length} dependent operations due to failure of '${name}'`
             );
-            // Filter out operations that depend SOLELY on the failed one, or where the failed one is the only remaining dependency?
-            // Current logic removes any op that lists the failed one as a dependency. This might be too broad.
             operationState.operationQueue =
               operationState.operationQueue.filter(
                 (op) => !op.dependencies.includes(name)
@@ -2924,40 +2132,25 @@ async function processOperationQueue() {
         }
       }
     } finally {
-      // Cleanup
       operationState.isProcessingQueue = false;
       operationState.queueProcessingPromise = null;
-
-      // Clear all timeouts
       for (const [name, timeoutId] of operationState.operationTimeouts) {
         clearTimeout(timeoutId);
       }
       operationState.operationTimeouts.clear();
-
-      // Reset other operation states if queue is empty
       if (operationState.operationQueue.length === 0) {
         operationState.isImporting = false;
         operationState.isExporting = false;
         operationState.isPendingSync = false;
-        operationState.lastError = null; // Clear error if queue is empty
-
-        // Temporarily disable aggressive cleanup to see if it helps with dependency tracking
-        // operationState.completedOperations.clear();
-
-        // Force a sync status update
-        checkSyncStatus(); // <-- ADD THIS Call directly for immediate update
+        operationState.lastError = null;
+        checkSyncStatus();
       }
     }
   })();
-
   return operationState.queueProcessingPromise;
 }
-
-// Detect changes in cloud metadata compared to local
 async function detectCloudChanges(cloudMetadata) {
   if (!cloudMetadata || !cloudMetadata.chats) return false;
-
-  // Check settings changes
   if (
     cloudMetadata.settings &&
     (!localMetadata.settings.syncedAt ||
@@ -2965,17 +2158,12 @@ async function detectCloudChanges(cloudMetadata) {
   ) {
     return true;
   }
-
-  // Check chat changes
   for (const [chatId, cloudChatMeta] of Object.entries(cloudMetadata.chats)) {
     const localChatMeta = localMetadata.chats[chatId];
-
-    // Check for cloud tombstones first
     if (cloudChatMeta.deleted === true) {
-      // If we don't have the tombstone or our tombstone is older
       if (
         !localChatMeta?.deleted ||
-        cloudChatMeta.deletedAt > (localChatMeta?.deletedAt || 0) // Compare with local deletedAt if available
+        cloudChatMeta.deletedAt > (localChatMeta?.deletedAt || 0)
       ) {
         logToConsole(
           "debug",
@@ -2983,24 +2171,16 @@ async function detectCloudChanges(cloudMetadata) {
         );
         return true;
       }
-      // Otherwise, if local tombstone is newer or same, no change needed from cloud perspective
-      continue; // Move to next chat if tombstone handled
+      continue;
     }
-
-    // If cloud is not deleted, check for hash differences or existence issues
-    // Cloud change if:
-    // 1. Chat doesn't exist locally
-    // 2. Local hash is missing
-    // 3. Cloud hash is missing
-    // 4. Hashes differ
     if (
-      !localChatMeta || // Doesn't exist locally
-      (localChatMeta && !localChatMeta.hash) || // Local hash missing
-      (cloudChatMeta && !cloudChatMeta.hash) || // Cloud hash missing
+      !localChatMeta ||
+      (localChatMeta && !localChatMeta.hash) ||
+      (cloudChatMeta && !cloudChatMeta.hash) ||
       (localChatMeta &&
         cloudChatMeta.hash &&
         localChatMeta.hash &&
-        cloudChatMeta.hash !== localChatMeta.hash) // Hashes differ
+        cloudChatMeta.hash !== localChatMeta.hash)
     ) {
       logToConsole(
         "debug",
@@ -3008,75 +2188,28 @@ async function detectCloudChanges(cloudMetadata) {
       );
       return true;
     }
-
-    // REMOVED OLD HASH/TIMESTAMP CHECK BLOCK:
-    // // If chat doesn't exist locally or has different hash
-    // if (
-    //   !localChatMeta ||
-    //   (cloudChatMeta.hash &&
-    //     localChatMeta.hash &&
-    //     cloudChatMeta.hash !== localChatMeta.hash) ||
-    //   // Or if cloud version is newer than our last sync (REMOVED)
-    //   // cloudChatMeta.lastModified > (localChatMeta?.syncedAt || 0)
-    // ) {
-    //   // Check for cloud tombstones specifically (moved above)
-    //   // if (cloudChatMeta.deleted === true && (!localChatMeta?.deleted || cloudChatMeta.deletedAt > localChatMeta.deletedAt)) {
-    //   //    return true;
-    //   // }
-    //   // Only return true if it's not a tombstone case handled above
-    //   if (!cloudChatMeta.deleted) {
-    //       return true;
-    //   }
-    // }
-    //
-    // // Check for cloud tombstones (moved above)
-    // if (cloudChatMeta.deleted === true) {
-    //   // If we don't have the tombstone or our tombstone is older
-    //   if (
-    //     !localChatMeta?.deleted ||
-    //     cloudChatMeta.deletedAt > localChatMeta.deletedAt
-    //   ) {
-    //     return true;
-    //   }
-    // }
   }
-
-  // Also check if a chat exists locally but NOT in cloud metadata (and is not deleted locally)
   for (const chatId in localMetadata.chats) {
     if (!cloudMetadata.chats[chatId] && !localMetadata.chats[chatId].deleted) {
       logToConsole(
         "debug",
         `Cloud change detected: Chat ${chatId} exists locally but not in cloud.`
       );
-      // This indicates local needs to sync *to* cloud, not *from*.
-      // detectCloudChanges is about pulling changes, so this isn't a cloud change *to pull*.
-      // However, the overall status *is* out-of-sync.
-      // Let's not return true here, syncToCloud handles uploads.
     }
   }
-
   return false;
 }
-
-// Start sync interval
 function startSyncInterval() {
-  // Clear any existing interval
   if (activeIntervals.sync) {
     clearInterval(activeIntervals.sync);
     activeIntervals.sync = null;
   }
-
-  // Don't start interval if sync is disabled
   if (config.syncMode === "disabled") {
     logToConsole("info", "Sync intervals disabled - manual operations only");
     return;
   }
-
-  // Set interval for syncing using user's configured interval
   activeIntervals.sync = setInterval(async () => {
-    if (document.hidden) return; // Skip if tab not visible
-
-    // Skip if a sync operation is already in progress
+    if (document.hidden) return;
     if (
       operationState.isImporting ||
       operationState.isExporting ||
@@ -3084,32 +2217,22 @@ function startSyncInterval() {
     ) {
       return;
     }
-
     try {
-      // Check for local changes - used by both sync and backup modes
       const hasLocalChanges =
         pendingSettingsChanges ||
         Object.values(localMetadata.chats).some(
           (chat) =>
             !chat.deleted &&
-            (chat.lastModified > (chat.syncedAt || 0) || !chat.syncedAt) // Add || !chat.syncedAt
+            (chat.lastModified > (chat.syncedAt || 0) || !chat.syncedAt)
         );
-
       if (config.syncMode === "sync") {
-        // In sync mode, check both directions
-        // Get cloud metadata first
         const cloudMetadata = await downloadCloudMetadata();
-
-        // Check for cloud changes
         const hasCloudChanges = await detectCloudChanges(cloudMetadata);
-
         logToConsole("debug", "Sync interval flags:", {
           hasCloudChanges,
           hasLocalChanges,
           pendingSettingsChanges,
         });
-
-        // Handle empty cloud special case
         const cloudChatCount = Object.keys(cloudMetadata?.chats || {}).length;
         const localChatCount = Object.keys(localMetadata.chats || {}).length;
         if (
@@ -3123,39 +2246,28 @@ function startSyncInterval() {
           queueOperation("cloud-empty-sync", syncToCloud);
           return;
         }
-
         if (hasCloudChanges && hasLocalChanges) {
-          // Both sides have changes - queue both operations with proper dependencies
           logToConsole(
             "info",
             "Changes detected on both sides - queuing bidirectional sync"
           );
-
-          // First queue the cloud sync
           const cloudSyncOp = "bidirectional-cloud-sync";
-          queueOperation(cloudSyncOp, syncFromCloud, [], 300000); // 5 minute timeout
-
-          // Then queue the local sync with dependency on cloud sync
-          // This ensures local changes are processed after cloud changes are merged
+          queueOperation(cloudSyncOp, syncFromCloud, [], 300000);
           queueOperation(
             "bidirectional-local-sync",
             syncToCloud,
-            [cloudSyncOp], // Make this operation dependent on cloud sync completion
-            60000 // 1 minute timeout
+            [cloudSyncOp],
+            60000
           );
-
           logToConsole("info", "Queued bidirectional sync operations");
         } else if (hasCloudChanges) {
-          // Only cloud has changes
           logToConsole("info", "Cloud changes detected - queuing cloud sync");
           queueOperation("cloud-changes-sync", syncFromCloud);
         } else if (hasLocalChanges) {
-          // Only local has changes
           logToConsole("info", "Local changes detected - queuing local sync");
           queueOperation("local-changes-sync", syncToCloud);
         }
       } else if (config.syncMode === "backup" && hasLocalChanges) {
-        // In backup mode, only sync to cloud when there are local changes
         logToConsole("info", "Local changes detected - backing up to cloud");
         queueOperation("backup-modified-chats", syncToCloud);
       }
@@ -3163,60 +2275,41 @@ function startSyncInterval() {
       logToConsole("error", "Error in sync interval:", error);
     }
   }, config.syncInterval * 1000);
-
   logToConsole("info", `Started sync interval (${config.syncInterval}s)`);
 }
-
-// Perform initial sync
 async function performInitialSync() {
   logToConsole("start", "Performing initial sync...");
-
   try {
-    // Always get fresh metadata
     const metadata = await downloadCloudMetadata();
     const chatCount = Object.keys(metadata.chats || {}).length;
     const localChatCount = Object.keys(localMetadata.chats || {}).length;
-
     logToConsole("info", "Initial sync status", {
       cloudChats: chatCount,
       localChats: localChatCount,
     });
-
-    // If cloud has no chats but local has chats, OR if cloud metadata was just initialized (lastSyncTime is 0/1970)
     if (
       (chatCount === 0 && localChatCount > 0) ||
       metadata.lastSyncTime === 0
     ) {
-      // Cloud metadata exists but no chats or was just initialized - create fresh backup
       logToConsole(
         "info",
         "Creating fresh backup with local data - cloud is empty or newly initialized"
       );
-
-      // Initialize cloud metadata chats object if it doesn't exist
       if (!metadata.chats) {
         metadata.chats = {};
       }
-
-      // Get all local chats and update cloud metadata
       const chats = await getAllChatsFromIndexedDB();
       let uploadedCount = 0;
-
       for (const chat of chats) {
         if (!chat.id) continue;
-
         const localChatMeta = localMetadata.chats[chat.id];
         if (!localChatMeta) continue;
-
-        // Add chat to cloud metadata
         metadata.chats[chat.id] = {
           hash: localChatMeta.hash || (await generateHash(chat, "chat")),
           lastModified: localChatMeta.lastModified || Date.now(),
           syncedAt: Date.now(),
           deleted: false,
         };
-
-        // Upload the chat without passing metadata to prevent caching
         try {
           await uploadChatToCloud(chat.id, metadata);
           uploadedCount++;
@@ -3230,11 +2323,7 @@ async function performInitialSync() {
           logToConsole("error", `Failed to upload chat ${chat.id}:`, error);
         }
       }
-
-      // Update metadata's lastSyncTime
       metadata.lastSyncTime = Date.now();
-
-      // Upload the updated metadata
       await uploadToS3(
         "metadata.json",
         new TextEncoder().encode(JSON.stringify(metadata)),
@@ -3243,20 +2332,14 @@ async function performInitialSync() {
           ServerSideEncryption: "AES256",
         }
       );
-
-      // Update local metadata's lastSyncTime to match
       localMetadata.lastSyncTime = metadata.lastSyncTime;
       await saveLocalMetadata();
-
       logToConsole("success", "Successfully uploaded local chats to cloud", {
         chatsUploaded: uploadedCount,
         totalChats: chats.length,
       });
-
       return;
     }
-
-    // Cloud data exists and appears valid, proceed with normal sync
     logToConsole(
       "info",
       "Cloud data found and validated - performing normal sync"
@@ -3267,32 +2350,22 @@ async function performInitialSync() {
     throw error;
   }
 }
-
-// Sync from cloud
 async function syncFromCloud() {
   if (operationState.isImporting || operationState.isExporting) {
     logToConsole("skip", "Sync already in progress, queueing this sync");
     operationState.isPendingSync = true;
     return;
   }
-
   try {
     operationState.isImporting = true;
     operationState.isPendingSync = false;
-
     logToConsole("start", "Starting sync from cloud...");
-
-    // Use a single timestamp for the entire sync operation
     const syncTimestamp = Date.now();
-
-    // Download cloud metadata once and store it
     const cloudMetadata = await downloadCloudMetadata();
     if (!cloudMetadata || !cloudMetadata.chats) {
       logToConsole("info", "No cloud metadata found or invalid format");
       return;
     }
-
-    // Safety check: Don't sync from empty/new cloud if we have local data
     const cloudChatCount = Object.keys(cloudMetadata.chats).length;
     const localChatCount = Object.keys(localMetadata.chats || {}).length;
     if (
@@ -3303,19 +2376,15 @@ async function syncFromCloud() {
         "info",
         "Aborting sync from cloud - cloud is empty/new but we have local data"
       );
-      // Queue a sync to cloud instead with a longer timeout since we're syncing all data
-      queueOperation("cloud-empty-sync", syncToCloud, [], 300000); // 5 minute timeout
+      queueOperation("cloud-empty-sync", syncToCloud, [], 300000);
       return;
     }
-
     let hasChanges = false;
-    let metadataNeedsSaving = false; // Add flag to track metadata changes
+    let metadataNeedsSaving = false;
     let totalChats = Object.keys(cloudMetadata.chats).length;
     let processedChats = 0;
     let downloadedChats = 0;
     let deletedChats = 0;
-
-    // Check for settings changes first
     if (
       cloudMetadata.settings &&
       (!localMetadata.settings.syncedAt ||
@@ -3329,13 +2398,10 @@ async function syncFromCloud() {
           ? new Date(localMetadata.settings.syncedAt).toLocaleString()
           : "never",
       });
-
-      // Download and apply settings
       const cloudSettings = await downloadSettingsFromCloud();
       if (cloudSettings) {
         let settingsProcessed = 0;
         const totalSettings = Object.keys(cloudSettings).length;
-        // Apply settings while preserving security keys
         const preserveKeys = [
           "aws-bucket",
           "aws-access-key",
@@ -3345,13 +2411,10 @@ async function syncFromCloud() {
           "encryption-key",
           "chat-sync-metadata",
         ];
-
-        // Process each setting from cloud
         for (const [key, settingData] of Object.entries(cloudSettings)) {
           if (!preserveKeys.includes(key)) {
             try {
               if (key.startsWith("TM_use")) {
-                // Handle IndexedDB settings
                 let valueToStore = settingData.data;
                 if (
                   typeof valueToStore === "string" &&
@@ -3373,7 +2436,6 @@ async function syncFromCloud() {
                 }
                 await setIndexedDBKey(key, valueToStore);
               } else {
-                // Handle localStorage settings
                 let value = settingData.data;
                 localStorage.setItem(key, value);
               }
@@ -3383,10 +2445,8 @@ async function syncFromCloud() {
             }
           }
         }
-
         localMetadata.settings.syncedAt = syncTimestamp;
-        // saveLocalMetadata(); // REMOVED immediate save
-        metadataNeedsSaving = true; // Set flag instead
+        metadataNeedsSaving = true;
         hasChanges = true;
         logToConsole(
           "success",
@@ -3394,29 +2454,16 @@ async function syncFromCloud() {
         );
       }
     }
-
-    // Get all current chats from IndexedDB
     const currentLocalChats = await getAllChatsFromIndexedDB();
     const currentLocalChatIds = new Set(
       currentLocalChats.map((chat) => chat.id)
     );
     const cloudChatIds = new Set(Object.keys(cloudMetadata.chats));
-
-    // Process cloud metadata entries first
     for (const [chatId, cloudChatMeta] of Object.entries(cloudMetadata.chats)) {
       processedChats++;
-      // if (processedChats % 10 === 0 || processedChats === totalChats) {
-      //   logToConsole("info", `Processing: ${processedChats}/${totalChats}`);
-      // }
-
       const localChatMeta = localMetadata.chats[chatId];
       const chatExistsLocally = currentLocalChatIds.has(chatId);
-
-      // CASE 1: Handle explicit cloud tombstones
       if (cloudChatMeta.deleted === true) {
-        //logToConsole("info", `Found cloud tombstone for chat ${chatId}`);
-
-        // If we have a local version that's newer than the cloud tombstone, it might be a restoration
         if (
           localChatMeta &&
           !localChatMeta.deleted &&
@@ -3426,11 +2473,8 @@ async function syncFromCloud() {
             "info",
             `Local chat ${chatId} appears to be a restoration - keeping local version`
           );
-          // Will be uploaded in the upload phase
           continue;
         }
-
-        // Otherwise, respect the cloud tombstone
         if (chatExistsLocally) {
           logToConsole(
             "cleanup",
@@ -3440,9 +2484,6 @@ async function syncFromCloud() {
           deletedChats++;
           hasChanges = true;
         }
-
-        // Update local metadata with tombstone
-        // Check if update is needed before setting flag
         const currentMeta = localMetadata.chats[chatId];
         if (
           !currentMeta ||
@@ -3456,28 +2497,20 @@ async function syncFromCloud() {
             syncedAt: syncTimestamp,
             tombstoneVersion: cloudChatMeta.tombstoneVersion || 1,
           };
-          // saveLocalMetadata(); // REMOVED immediate save
-          metadataNeedsSaving = true; // Set flag instead
+          metadataNeedsSaving = true;
         }
         continue;
       }
-
-      // CASE 2: Handle local tombstones
       if (localChatMeta?.deleted === true) {
-        // Our deletion is newer than cloud's version, push our tombstone to cloud
         await deleteChatFromCloud(chatId);
         continue;
       }
-
-      // CASE 3: Handle normal sync cases (no tombstones)
       if (
-        !chatExistsLocally || // 1. Missing locally
-        !localChatMeta || // 2. Missing local metadata (implies missing locally or error)
-        // 3. Cloud has hash AND (local missing hash OR hashes differ)
+        !chatExistsLocally ||
+        !localChatMeta ||
         (cloudChatMeta.hash &&
           (!localChatMeta.hash || cloudChatMeta.hash !== localChatMeta.hash))
       ) {
-        // *** ADDED START: Log download reason ***
         let downloadReason = "Unknown";
         if (!chatExistsLocally) downloadReason = "Chat missing locally";
         else if (!localChatMeta) downloadReason = "Missing local metadata";
@@ -3492,25 +2525,17 @@ async function syncFromCloud() {
             cloudHash: cloudChatMeta?.hash,
           }
         );
-        // *** ADDED END ***
-
         const cloudChat = await downloadChatFromCloud(chatId);
         if (cloudChat) {
           let chatToSave = cloudChat;
-
-          // If we have a local version, merge them
           const localChat = await getChatFromIndexedDB(chatId);
           if (localChat) {
             chatToSave = await mergeChats(localChat, cloudChat);
           }
-
           await saveChatToIndexedDB(chatToSave, syncTimestamp);
           hasChanges = true;
           downloadedChats++;
-
-          // *** ADDED: Force immediate metadata save after download/merge ***
           try {
-            // *** Pass 'chat' type ***
             const newHash = await generateHash(chatToSave, "chat");
             logToConsole(
               "debug",
@@ -3525,7 +2550,7 @@ async function syncFromCloud() {
             currentLocalMeta.chats[chatId].hash = newHash;
             currentLocalMeta.chats[chatId].syncedAt = syncTimestamp;
             currentLocalMeta.chats[chatId].lastModified = syncTimestamp;
-            currentLocalMeta.chats[chatId].deleted = false; // Ensure not marked deleted
+            currentLocalMeta.chats[chatId].deleted = false;
             delete currentLocalMeta.chats[chatId].deletedAt;
             delete currentLocalMeta.chats[chatId].tombstoneVersion;
             await setIndexedDBKey(
@@ -3536,22 +2561,18 @@ async function syncFromCloud() {
               "debug",
               `Immediately saved metadata for ${chatId} after merge.`
             );
-            metadataNeedsSaving = false; // Reset flag as we saved specifically
+            metadataNeedsSaving = false;
           } catch (metaSaveError) {
             logToConsole(
               "error",
               `Failed immediate metadata save for ${chatId}`,
               metaSaveError
             );
-            metadataNeedsSaving = true; // Need fallback save if this failed
+            metadataNeedsSaving = true;
           }
-          // *** END ADDED ***
-
-          // Update local metadata (in-memory only now, persistence handled above)
           if (!localMetadata.chats[chatId]) {
             localMetadata.chats[chatId] = {};
           }
-          // Check if update is needed before setting flag
           const currentMeta = localMetadata.chats[chatId];
           if (
             currentMeta.lastModified !== cloudChatMeta.lastModified ||
@@ -3562,34 +2583,25 @@ async function syncFromCloud() {
               cloudChatMeta.lastModified;
             localMetadata.chats[chatId].syncedAt = syncTimestamp;
             localMetadata.chats[chatId].hash = cloudChatMeta.hash;
-            // saveLocalMetadata(); // REMOVED immediate save
-            metadataNeedsSaving = true; // Set flag instead
+            metadataNeedsSaving = true;
           }
         }
       }
     }
-
-    // Process local chats that don't exist in cloud
     const localOnlyChats = Array.from(currentLocalChatIds).filter(
       (id) => !cloudChatIds.has(id)
     );
     let localChatsProcessed = 0;
     const totalLocalOnly = localOnlyChats.length;
-
     if (totalLocalOnly > 0) {
       logToConsole("info", `Processing ${totalLocalOnly} local-only chats`);
     }
-
     for (const chatId of localOnlyChats) {
       localChatsProcessed++;
       const localChatMeta = localMetadata.chats[chatId];
-
-      // Skip if chat has a local tombstone
       if (localChatMeta?.deleted === true) {
         continue;
       }
-
-      // Log detailed sync state for debugging
       logToConsole("info", `Local chat ${chatId} sync state:`, {
         hasMetadata: !!localChatMeta,
         hasLastSyncTime: !!localMetadata.lastSyncTime,
@@ -3600,8 +2612,6 @@ async function syncFromCloud() {
           !localMetadata.lastSyncTime ||
           localChatMeta.lastModified > localChatMeta.syncedAt,
       });
-
-      // Upload if chat has never been synced or has pending changes
       if (
         !localChatMeta ||
         !localMetadata.lastSyncTime ||
@@ -3621,12 +2631,7 @@ async function syncFromCloud() {
           `Chat ${chatId} doesn't need upload - already synced and no changes`
         );
       }
-
-      // IMPORTANT: We do NOT delete chats just because they're missing from cloud
-      // They must have an explicit tombstone to be deleted
     }
-
-    // Save metadata once if any changes were made during loops
     if (metadataNeedsSaving) {
       logToConsole(
         "info",
@@ -3634,12 +2639,9 @@ async function syncFromCloud() {
       );
       await saveLocalMetadata();
     }
-
     if (hasChanges) {
       localMetadata.lastSyncTime = syncTimestamp;
       cloudMetadata.lastSyncTime = syncTimestamp;
-
-      // Save final state
       await uploadToS3(
         "metadata.json",
         new TextEncoder().encode(JSON.stringify(cloudMetadata)),
@@ -3649,7 +2651,6 @@ async function syncFromCloud() {
         }
       );
       await saveLocalMetadata();
-
       logToConsole("success", "Sync summary:", {
         totalChatsProcessed: processedChats,
         downloaded: downloadedChats,
@@ -3657,18 +2658,14 @@ async function syncFromCloud() {
         localProcessed: localChatsProcessed,
         duration: `${Math.round((Date.now() - syncTimestamp) / 1000)}s`,
       });
-      // If changes were made, the status will be updated by throttledCheckSyncStatus later
     } else {
       logToConsole("info", "No changes detected during sync from cloud");
-
-      // Update settings.syncedAt to match lastModified to prevent immediate "out-of-sync" status
       if (
         localMetadata.settings &&
         localMetadata.settings.lastModified > localMetadata.settings.syncedAt
       ) {
         localMetadata.settings.syncedAt = localMetadata.settings.lastModified;
-        // saveLocalMetadata(); // REMOVED immediate save
-        metadataNeedsSaving = true; // Set flag
+        metadataNeedsSaving = true;
         logToConsole(
           "debug",
           "Updated settings.syncedAt to match lastModified",
@@ -3677,93 +2674,64 @@ async function syncFromCloud() {
           }
         );
       }
-      // Save if the flag was set here
       if (metadataNeedsSaving) {
         await saveLocalMetadata();
       }
-
-      updateSyncStatusDot("in-sync"); // Explicitly set to green here when no changes
+      updateSyncStatusDot("in-sync");
     }
-
-    operationState.lastError = null; // Clear any previous errors
+    operationState.lastError = null;
     localStorage.setItem("last-cloud-sync", new Date().toLocaleString());
     logToConsole("success", "Sync completed successfully");
     operationState.lastSyncStatus = "success";
-
-    // REMOVED the immediate status check that was here:
-    // const status = await checkSyncStatus();
-    // updateSyncStatusDot(status);
   } catch (error) {
     logToConsole("error", "Sync failed:", error);
     operationState.lastError = error;
     operationState.lastSyncStatus = "error";
-    updateSyncStatusDot("error"); // Update to red on error
+    updateSyncStatusDot("error");
     throw error;
   } finally {
     operationState.isImporting = false;
-
-    // Check if another sync was requested while this one was running
     if (operationState.isPendingSync) {
       operationState.isPendingSync = false;
       queueOperation("pending-sync", syncFromCloud);
     }
-    // The throttled check will run periodically to keep the status correct
   }
 }
-
-// Sync to cloud
 async function syncToCloud() {
   if (operationState.isImporting || operationState.isExporting) {
     logToConsole("skip", "Sync in progress - skipping");
     return;
   }
-
   logToConsole("start", "Starting sync to cloud...");
   operationState.isExporting = true;
-  updateSyncStatus(); // Show in-progress status
-
+  updateSyncStatus();
   try {
-    // Use a single timestamp for the entire sync operation
     const syncTimestamp = Date.now();
-
-    // Reload local metadata to ensure we have latest changes
     await loadLocalMetadata();
-
-    // Always get fresh cloud metadata
     const cloudMetadata = await downloadCloudMetadata();
     let hasChanges = false;
     let uploadedChats = 0;
     let totalChatsToUpload = 0;
-
-    // Upload settings if they've changed
     if (
       pendingSettingsChanges ||
       localMetadata.settings.lastModified > localMetadata.settings.syncedAt
     ) {
       try {
         await uploadSettingsToCloud(syncTimestamp);
-        // Reset flags only after successful upload
         pendingSettingsChanges = false;
         localMetadata.settings.syncedAt = syncTimestamp;
-        localMetadata.settings.lastModified = syncTimestamp; // <<< ADD THIS LINE to align timestamps
+        localMetadata.settings.lastModified = syncTimestamp;
         await saveLocalMetadata();
         hasChanges = true;
       } catch (error) {
         logToConsole("error", "Failed to upload settings:", error);
-        // Don't reset flags if upload failed
         throw error;
       }
     }
-
-    // Get all local chats that need to be uploaded
     const chats = await getAllChatsFromIndexedDB();
     const chatsToUpload = [];
-
-    // First pass: identify chats that need uploading
     for (const chat of chats) {
       if (!chat.id) continue;
-
-      // Fetch the potentially updated local metadata *for this specific chat* right before comparison
       const currentLocalMeta = await getIndexedDBKey("sync-metadata").then(
         (metaStr) => {
           try {
@@ -3773,32 +2741,8 @@ async function syncToCloud() {
           }
         }
       );
-
-      // Use the just-fetched local metadata for comparison
-      const localChatMeta = currentLocalMeta; // Use the freshly read meta
-      const cloudChatMeta = cloudMetadata.chats[chat.id]; // Cloud meta was loaded at start
-
-      // *** ADDED: Detailed log for syncToCloud decision ***
-      // logToConsole("debug", `syncToCloud Check: ${chat.id}`, {
-      //   cloudMetaExists: !!cloudChatMeta,
-      //   cloudHash: cloudChatMeta?.hash,
-      //   localMetaExists: !!localChatMeta,
-      //   localHash: localChatMeta?.hash, // Log the hash from the freshly read meta
-      //   hashesDiffer: !!(
-      //     cloudChatMeta?.hash &&
-      //     localChatMeta?.hash &&
-      //     cloudChatMeta.hash !== localChatMeta.hash
-      //   ),
-      //   shouldUpload:
-      //     !cloudChatMeta ||
-      //     (cloudChatMeta?.hash &&
-      //       (!localChatMeta ||
-      //         !localChatMeta?.hash ||
-      //         cloudChatMeta.hash !== localChatMeta.hash)),
-      // });
-      // *** END ADDED ***
-
-      // Skip if this chat has a cloud tombstone
+      const localChatMeta = currentLocalMeta;
+      const cloudChatMeta = cloudMetadata.chats[chat.id];
       if (
         cloudChatMeta?.deleted === true &&
         (!localChatMeta ||
@@ -3806,11 +2750,6 @@ async function syncToCloud() {
       ) {
         continue;
       }
-
-      // Upload if:
-      // 1. No cloud metadata
-      // 2. Cloud has hash AND (local missing hash OR hashes differ)
-      // 3. Local metadata is missing (shouldn't happen often, but implies need to sync)
       if (
         !cloudChatMeta ||
         (cloudChatMeta &&
@@ -3819,51 +2758,34 @@ async function syncToCloud() {
             !localChatMeta.hash ||
             cloudChatMeta.hash !== localChatMeta.hash)) ||
         !localChatMeta
-        // REMOVED OLD CONDITION:
-        // !cloudChatMeta ||
-        // (localChatMeta && cloudChatMeta.hash !== localChatMeta.hash) ||
-        // !localChatMeta?.syncedAt ||
-        // localChatMeta.lastModified > localChatMeta.syncedAt
       ) {
-        // *** ADDED: Log when adding to upload queue ***
         logToConsole("info", `syncToCloud: Adding ${chat.id} to upload queue.`);
-        // *** END ADDED ***
         chatsToUpload.push(chat.id);
       } else if (localChatMeta && localChatMeta.syncedAt === 0) {
-        // Hashes match, but local meta says it needs sync. Clean up the flag.
         logToConsole(
           "debug",
           `syncToCloud: Chat ${chat.id} hashes match cloud, updating local syncedAt timestamp.`
         );
-        localMetadata.chats[chat.id].syncedAt = syncTimestamp; // Use the syncToCloud timestamp
-        localMetadata.chats[chat.id].lastModified = syncTimestamp; // Align lastModified too
+        localMetadata.chats[chat.id].syncedAt = syncTimestamp;
+        localMetadata.chats[chat.id].lastModified = syncTimestamp;
         hasChanges = true;
-        // No need to save here, the final saveLocalMetadata at the end of syncToCloud will handle it.
-        // We also don't need to update the cloud metadata hash/time, as they already match.
       }
     }
-
     totalChatsToUpload = chatsToUpload.length;
     if (totalChatsToUpload > 0) {
       logToConsole("info", `Found ${totalChatsToUpload} chats to upload`);
       hasChanges = true;
-
-      // Second pass: upload all identified chats
       for (const chatId of chatsToUpload) {
         try {
-          // Upload chat data without updating metadata
           const chatData = await getChatFromIndexedDB(chatId);
           const encryptedData = await encryptData(chatData);
           await uploadToS3(`chats/${chatId}.json`, encryptedData, {
             ContentType: "application/json",
             ServerSideEncryption: "AES256",
           });
-
-          // Update local metadata
           if (!localMetadata.chats[chatId]) {
             localMetadata.chats[chatId] = {};
           }
-
           const newHash = await generateHash(chatData, "chat");
           localMetadata.chats[chatId] = {
             ...localMetadata.chats[chatId],
@@ -3871,21 +2793,16 @@ async function syncToCloud() {
             syncedAt: syncTimestamp,
             hash: newHash,
           };
-
-          // Update cloud metadata (but don't upload yet)
           if (!cloudMetadata.chats) cloudMetadata.chats = {};
           cloudMetadata.chats[chatId] = {
             lastModified: chatData.updatedAt || syncTimestamp,
             syncedAt: syncTimestamp,
             hash: newHash,
           };
-
-          // Update lastSeenUpdates to prevent re-detection
           lastSeenUpdates[chatId] = {
             updatedAt: syncTimestamp,
             hash: newHash,
           };
-
           uploadedChats++;
           if (uploadedChats % 5 === 0 || uploadedChats === totalChatsToUpload) {
             logToConsole(
@@ -3893,12 +2810,9 @@ async function syncToCloud() {
               `Uploaded ${uploadedChats}/${totalChatsToUpload} chats`
             );
           }
-
-          // Save local metadata after each successful upload
           await saveLocalMetadata();
         } catch (error) {
           logToConsole("error", `Error uploading chat ${chatId}:`, error);
-          // Reset syncedAt to 0 to force retry on next sync
           if (localMetadata.chats[chatId]) {
             localMetadata.chats[chatId].syncedAt = 0;
             await saveLocalMetadata();
@@ -3906,8 +2820,6 @@ async function syncToCloud() {
         }
       }
     }
-
-    // Process local deletions
     let deletedChats = 0;
     for (const [chatId, localChatMeta] of Object.entries(localMetadata.chats)) {
       if (
@@ -3916,7 +2828,6 @@ async function syncToCloud() {
           (cloudMetadata.chats[chatId]?.deleted === true &&
             localChatMeta.tombstoneVersion >
               (cloudMetadata.chats[chatId]?.tombstoneVersion || 0))) &&
-        // Only delete if not synced or if tombstone version is newer
         (localChatMeta.syncedAt === 0 ||
           (cloudMetadata.chats[chatId]?.tombstoneVersion || 0) <
             localChatMeta.tombstoneVersion)
@@ -3924,8 +2835,6 @@ async function syncToCloud() {
         try {
           await deleteFromS3(`chats/${chatId}.json`);
           deletedChats++;
-
-          // Update cloud metadata (but don't upload yet)
           cloudMetadata.chats[chatId] = {
             deleted: true,
             deletedAt: syncTimestamp,
@@ -3936,20 +2845,15 @@ async function syncToCloud() {
               (cloudMetadata.chats[chatId]?.tombstoneVersion || 0) + 1
             ),
           };
-
-          // Update local metadata
           localMetadata.chats[chatId] = {
             ...localMetadata.chats[chatId],
             syncedAt: syncTimestamp,
             tombstoneVersion: cloudMetadata.chats[chatId].tombstoneVersion,
           };
           hasChanges = true;
-
-          // Save local metadata after each successful deletion
           await saveLocalMetadata();
         } catch (error) {
           logToConsole("error", `Error deleting chat ${chatId}:`, error);
-          // Reset syncedAt to 0 to force retry on next sync
           if (localMetadata.chats[chatId]) {
             localMetadata.chats[chatId].syncedAt = 0;
             await saveLocalMetadata();
@@ -3957,13 +2861,9 @@ async function syncToCloud() {
         }
       }
     }
-
     if (hasChanges) {
-      // Update sync timestamps
       localMetadata.lastSyncTime = syncTimestamp;
       cloudMetadata.lastSyncTime = syncTimestamp;
-
-      // Save all metadata changes at once
       await uploadToS3(
         "metadata.json",
         new TextEncoder().encode(JSON.stringify(cloudMetadata)),
@@ -3972,9 +2872,7 @@ async function syncToCloud() {
           ServerSideEncryption: "AES256",
         }
       );
-      //await saveLocalMetadata();
       await saveLocalMetadata();
-
       logToConsole("success", "Sync to cloud completed with changes", {
         uploadedChats,
         deletedChats,
@@ -3983,92 +2881,65 @@ async function syncToCloud() {
     } else {
       logToConsole("info", "No changes detected during sync to cloud");
     }
-
-    operationState.lastError = null; // Clear any previous errors
-    updateSyncStatus(); // Show success status
+    operationState.lastError = null;
+    updateSyncStatus();
   } catch (error) {
     logToConsole("error", "Sync to cloud failed:", error);
     operationState.lastError = error;
-    updateSyncStatus(); // Show error status
+    updateSyncStatus();
     throw error;
   } finally {
     operationState.isExporting = false;
   }
 }
-
-// Detect changes between local and cloud data
 async function detectChanges(localChats, cloudChats) {
   const changes = [];
   const localChatsMap = new Map(localChats.map((chat) => [chat.id, chat]));
   const cloudChatsMap = new Map(cloudChats.map((chat) => [chat.id, chat]));
   const processedIds = new Set();
-
-  // Check for updates and additions
   for (const [chatId, cloudChat] of cloudChatsMap) {
     processedIds.add(chatId);
     const localChat = localChatsMap.get(chatId);
-
     if (!localChat) {
-      // New chat in cloud
       changes.push({ type: "add", chat: cloudChat });
     } else {
-      // *** Pass 'chat' type ***
       const cloudHash = await generateHash(cloudChat, "chat");
       const localHash = await generateHash(localChat, "chat");
-
       if (cloudHash !== localHash) {
-        // Chat was updated
         if (cloudChat.updatedAt > localChat.updatedAt) {
           changes.push({ type: "update", chat: cloudChat });
         }
       }
     }
   }
-
-  // Check for deletions
   for (const [chatId, localChat] of localChatsMap) {
     if (!processedIds.has(chatId)) {
-      // Chat was deleted in cloud
       changes.push({ type: "delete", chatId });
     }
   }
-
   return changes;
 }
-
-// Update chat metadata
 async function updateChatMetadata(
   chatId,
-  isModified = true, // Indicates if the change originated locally
+  isModified = true,
   isDeleted = false,
-  syncTimestamp = null, // Timestamp if the change originated from cloud sync
-  chatObject = null // *** ADDED: Accept the chat object directly ***
+  syncTimestamp = null,
+  chatObject = null
 ) {
-  let metadataChanged = false; // Flag to track changes
-
+  let metadataChanged = false;
   if (!chatId) {
     logToConsole("error", "No chat ID provided to updateChatMetadata");
-    return false; // Indicate no change
+    return false;
   }
-
-  // *** REMOVED: Internal fetch - use passed chatObject instead ***
-  // const chat = await getChatFromIndexedDB(chatId);
-  // Use chatObject if provided (meaning it was just saved), otherwise handle deletion case
-  const chat = chatObject; // Use the passed object
-
-  // *** Adjust condition: check chatObject existence unless handling deletion ***
+  const chat = chatObject;
   if (!chat && !isDeleted) {
-    // If chatObject wasn't passed and it's not a deletion, log error
-    // (This case might occur if called from somewhere other than saveChatToIndexedDB without passing the object)
     logToConsole(
       "error",
       "Chat object not provided to updateChatMetadata for non-deletion",
       chatId
     );
-    return false; // Indicate no change
+    return false;
   }
-
-  // Initialize metadata if it doesn't exist
   if (!localMetadata.chats[chatId]) {
     localMetadata.chats[chatId] = {
       lastModified: Date.now(),
@@ -4076,60 +2947,36 @@ async function updateChatMetadata(
       hash: null,
       deleted: false,
     };
-    metadataChanged = true; // Metadata was initialized
+    metadataChanged = true;
   }
-
-  // *** MODIFIED: Use the passed 'chat' (which is chatObject) ***
   if (chat) {
-    // Update metadata for existing chat
-    // *** Pass 'chat' type ***
     const currentHash = await generateHash(chat, "chat");
-    // logToConsole(
-    //   "debug",
-    //   `Calculated hash in updateChatMetadata for ${chatId}`,
-    //   {
-    //     hash: currentHash,
-    //     source: syncTimestamp ? "syncFromCloud" : "localChange",
-    //   }
-    // );
     const metadata = localMetadata.chats[chatId];
     const previousHash = metadata.hash;
     const previousLastModified = metadata.lastModified;
-    const previousSyncedAt = metadata.syncedAt; // Store previous syncedAt
-
-    // Always update lastModified and hash
-    metadata.lastModified = Date.now(); // Use current time for modification tracking
+    const previousSyncedAt = metadata.syncedAt;
+    metadata.lastModified = Date.now();
     metadata.hash = currentHash;
-
-    // *** MODIFIED: Set syncedAt based on syncTimestamp or isModified flag ***
     if (syncTimestamp) {
-      // Cloud-originated change
       metadata.syncedAt = syncTimestamp;
-      metadata.lastModified = syncTimestamp; // <<< Set lastModified to match sync time
+      metadata.lastModified = syncTimestamp;
     } else if (isModified) {
-      // Local change
       metadata.syncedAt = 0;
-      metadata.lastModified = Date.now(); // Use current time
+      metadata.lastModified = Date.now();
     } else {
-      // No change, e.g., initial hash recalc
       metadata.lastModified = previousLastModified;
       metadata.syncedAt = previousSyncedAt;
     }
-    metadata.hash = currentHash; // Always update hash
-
-    // Check if relevant metadata actually changed
+    metadata.hash = currentHash;
     if (
       metadata.lastModified !== previousLastModified ||
       metadata.hash !== previousHash ||
-      metadata.syncedAt !== previousSyncedAt || // Check syncedAt change too
-      metadata.deleted // Check if undeleted
+      metadata.syncedAt !== previousSyncedAt ||
+      metadata.deleted
     ) {
       metadataChanged = true;
     }
-
-    // *** MODIFIED: Only queue upload if modified LOCALLY (isModified=true) AND no syncTimestamp provided ***
     if (isModified && !syncTimestamp) {
-      // Ensure syncedAt is 0 before queueing, just in case
       if (metadata.syncedAt !== 0) {
         metadata.syncedAt = 0;
         metadataChanged = true;
@@ -4140,23 +2987,18 @@ async function updateChatMetadata(
       );
       queueOperation(`chat-changed-${chatId}`, () => uploadChatToCloud(chatId));
     }
-
     if (metadata.deleted) {
-      metadata.deleted = false; // Undelete if chat exists
-      delete metadata.deletedAt; // Remove deletion timestamp
-      delete metadata.tombstoneVersion; // Remove tombstone version
+      metadata.deleted = false;
+      delete metadata.deletedAt;
+      delete metadata.tombstoneVersion;
       metadataChanged = true;
     }
-
-    // Update lastSeenUpdates
     lastSeenUpdates[chatId] = {
-      hash: currentHash, // Use hash from passed object
+      hash: currentHash,
       timestamp: Date.now(),
     };
   } else if (isDeleted) {
-    // Handle deletion
     if (!localMetadata.chats[chatId].deleted) {
-      // Only mark as changed if not already deleted
       localMetadata.chats[chatId] = {
         ...localMetadata.chats[chatId],
         deleted: true,
@@ -4168,16 +3010,11 @@ async function updateChatMetadata(
       delete lastSeenUpdates[chatId];
     }
   }
-
   if (metadataChanged) {
-    throttledCheckSyncStatus(); // Update status if changes were made
-    // await saveLocalMetadata(); // <<< REMOVE THIS LINE
+    throttledCheckSyncStatus();
   }
-
-  return metadataChanged; // Return whether metadata was changed
+  return metadataChanged;
 }
-
-// Setup visibility change handler
 function setupVisibilityChangeHandler() {
   document.addEventListener("visibilitychange", () => {
     const isVisible = document.visibilityState === "visible";
@@ -4185,9 +3022,7 @@ function setupVisibilityChangeHandler() {
       "visibility",
       `Page visibility changed: ${isVisible ? "visible" : "hidden"}`
     );
-
     if (isVisible) {
-      // Skip if in disabled mode
       if (config.syncMode === "disabled") {
         logToConsole(
           "info",
@@ -4195,31 +3030,22 @@ function setupVisibilityChangeHandler() {
         );
         return;
       }
-
-      // For sync mode, queue a sync operation
       if (config.syncMode === "sync") {
         queueOperation("visibility-sync", syncFromCloud);
       }
     }
   });
 }
-
-// ==================== UI COMPONENTS ====================
-
-// Insert sync button
 function insertSyncButton() {
-  // Check if button already exists
   const existingButton = document.querySelector(
     '[data-element-id="workspace-tab-cloudsync"]'
   );
   if (existingButton) return;
-
   const button = document.createElement("button");
   button.setAttribute("data-element-id", "workspace-tab-cloudsync");
   button.className = `min-w-[58px] sm:min-w-0 sm:aspect-auto aspect-square cursor-default h-12 md:h-[50px] flex-col justify-start items-start inline-flex focus:outline-0 focus:text-white w-full relative ${
     config.syncMode === "disabled" ? "opacity-50" : ""
   }`;
-
   button.innerHTML = `
     <span class="text-white/70 hover:bg-white/20 self-stretch h-12 md:h-[50px] px-0.5 py-1.5 rounded-xl flex-col justify-start items-center gap-1.5 flex transition-colors">
       <div class="relative">
@@ -4250,12 +3076,9 @@ function insertSyncButton() {
       }">${config.syncMode === "sync" ? "Sync" : "Backup"}</span>
     </span>
   `;
-
   button.addEventListener("click", () => {
     openSyncModal();
   });
-
-  // Try to insert after the Chat button
   const chatButton = document.querySelector(
     'button[data-element-id="workspace-tab-chat"]'
   );
@@ -4263,8 +3086,6 @@ function insertSyncButton() {
     chatButton.parentNode.insertBefore(button, chatButton.nextSibling);
     return;
   }
-
-  // Fallback: Try to insert after any button with an SVG icon
   const buttons = document.querySelectorAll("button");
   for (const btn of buttons) {
     if (btn.querySelector("svg")) {
@@ -4273,89 +3094,60 @@ function insertSyncButton() {
     }
   }
 }
-
-// Add updateSyncStatusDot function to update the status indicator
 function updateSyncStatusDot(status = "success") {
   const dot = document.getElementById("sync-status-dot");
   if (!dot) return;
-
-  // Only show dot in sync mode
   if (config.syncMode !== "sync") {
     dot.style.display = "none";
     return;
   }
-
   dot.style.display = "block";
-
-  // Remove potentially conflicting classes (optional but good practice)
   dot.classList.remove(
     "bg-green-500",
     "bg-yellow-500",
     "bg-red-500",
     "bg-gray-500"
   );
-
-  // Set background color directly using inline style
   switch (status) {
     case "in-sync":
-      dot.style.backgroundColor = "#22c55e"; // Tailwind green-500
+      dot.style.backgroundColor = "#22c55e";
       break;
     case "syncing":
-      dot.style.backgroundColor = "#eab308"; // Tailwind yellow-500
+      dot.style.backgroundColor = "#eab308";
       break;
-    case "error": // Handle error state explicitly
+    case "error":
     case "out-of-sync":
-      dot.style.backgroundColor = "#ef4444"; // Tailwind red-500
+      dot.style.backgroundColor = "#ef4444";
       break;
-    default: // Includes unknown states or initial loading
-      dot.style.backgroundColor = "#6b7280"; // Tailwind gray-500
+    default:
+      dot.style.backgroundColor = "#6b7280";
   }
 }
-
-// Update the updateSyncStatus function to include dot status
 function updateSyncStatus() {
   setTimeout(async () => {
-    // Only show dot in sync mode
     if (config.syncMode !== "sync") {
       updateSyncStatusDot("hidden");
       return;
     }
-
-    // REMOVED Check for operations in progress
-    // if (
-    //   operationState.isImporting ||
-    //   operationState.isExporting ||
-    //   operationState.isProcessingQueue
-    // ) {
-    //   updateSyncStatusDot("in-progress");
-    //   return;
-    // }
-
-    // Check sync status FIRST
     const status = await checkSyncStatus();
-    // logToConsole("debug", `updateSyncStatus received status: ${status}`); // Added log
-
-    // Update dot based on status
     switch (status) {
       case "in-sync":
-        updateSyncStatusDot("in-sync"); // Use the status expected by updateSyncStatusDot <-- NEW
+        updateSyncStatusDot("in-sync");
         break;
       case "syncing":
-        updateSyncStatusDot("syncing"); // map to yellow
+        updateSyncStatusDot("syncing");
         break;
       case "out-of-sync":
-        updateSyncStatusDot("out-of-sync"); // map to red
+        updateSyncStatusDot("out-of-sync");
         break;
       case "error":
-        updateSyncStatusDot("error"); // map to red
+        updateSyncStatusDot("error");
         break;
-      default: // disabled, not-configured, unknown
-        updateSyncStatusDot("hidden"); // map to grey
+      default:
+        updateSyncStatusDot("hidden");
     }
   }, 100);
 }
-
-// Add required CSS styles for modal
 const styleSheet = document.createElement("style");
 styleSheet.textContent = `
   .modal-overlay {
@@ -4375,8 +3167,6 @@ styleSheet.textContent = `
     overflow-y: auto;
     animation: fadeIn 0.2s ease-out;
   }
-
-  /* Sync status dot styling */
   #sync-status-dot {
     position: absolute;
     top: -0.15rem;
@@ -4385,7 +3175,6 @@ styleSheet.textContent = `
     height: 0.625rem;
     border-radius: 9999px;
   }
-
   .cloud-sync-modal {
     display: inline-block;
     width: 100%;
@@ -4403,13 +3192,10 @@ styleSheet.textContent = `
     z-index: 100000;
     border: 1px solid rgba(255, 255, 255, 0.1);
   }
-
-  /* Tooltip styles */
   [class*="hint--"] {
     position: relative;
     display: inline-block;
   }
-
   [class*="hint--"]::before,
   [class*="hint--"]::after {
     position: absolute;
@@ -4421,7 +3207,6 @@ styleSheet.textContent = `
     transition: 0.3s ease;
     transition-delay: 0ms;
   }
-
   [class*="hint--"]::before {
     content: '';
     position: absolute;
@@ -4429,7 +3214,6 @@ styleSheet.textContent = `
     border: 6px solid transparent;
     z-index: 100000;
   }
-
   [class*="hint--"]::after {
     content: attr(aria-label);
     background: #383838;
@@ -4444,8 +3228,6 @@ styleSheet.textContent = `
     width: auto !important;
     border-radius: 4px;
   }
-
-  /* Ensure specific tooltip classes don't override the width */
   .hint--top::after,
   .hint--top-right::after,
   .hint--top-left::after,
@@ -4456,111 +3238,89 @@ styleSheet.textContent = `
     min-width: 200px !important;
     width: auto !important;
   }
-
   [class*="hint--"]:hover::before,
   [class*="hint--"]:hover::after {
     visibility: visible;
     opacity: 1;
   }
-
   .hint--top::before {
     border-top-color: #383838;
     margin-bottom: -12px;
   }
-
   .hint--top::after {
     margin-bottom: -6px;
   }
-
   .hint--top::before,
   .hint--top::after {
     bottom: 100%;
     left: 50%;
     transform: translateX(-50%);
   }
-
   .hint--top-right::before {
     border-top-color: #383838;
     margin-bottom: -12px;
   }
-
   .hint--top-right::after {
     margin-bottom: -6px;
   }
-
   .hint--top-right::before,
   .hint--top-right::after {
     bottom: 100%;
     left: 0;
   }
-
   .hint--top-left::before {
     border-top-color: #383838;
     margin-bottom: -12px;
   }
-
   .hint--top-left::after {
     margin-bottom: -6px;
   }
-
   .hint--top-left::before,
   .hint--top-left::after {
     bottom: 100%;
     right: 0;
   }
-
   .hint--bottom::before {
     border-bottom-color: #383838;
     margin-top: -12px;
   }
-
   .hint--bottom::after {
     margin-top: -6px;
   }
-
   .hint--bottom::before,
   .hint--bottom::after {
     top: 100%;
     left: 50%;
     transform: translateX(-50%);
   }
-
   .hint--bottom-right::before {
     border-bottom-color: #383838;
     margin-top: -12px;
   }
-
   .hint--bottom-right::after {
     margin-top: -6px;
   }
-
   .hint--bottom-right::before,
   .hint--bottom-right::after {
     top: 100%;
     left: 0;
   }
-
   .hint--bottom-left::before {
     border-bottom-color: #383838;
     margin-top: -12px;
   }
-
   .hint--bottom-left::after {
     margin-top: -6px;
   }
-
   .hint--bottom-left::before,
   .hint--bottom-left::after {
     top: 100%;
     right: 0;
   }
-
-  /* Animation keyframes */
   @keyframes fadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
   }
-
   @keyframes slideIn {
     from { 
       opacity: 0;
@@ -4571,21 +3331,18 @@ styleSheet.textContent = `
       transform: translateY(0);
     }
   }
-
   .modal-header {
     display: flex;
     justify-content: center;
     align-items: center;
     margin-bottom: 0.75rem;
   }
-
   .modal-title {
     font-size: 1.25rem;
     font-weight: bold;
     text-align: center;
     color: white;
   }
-
   .modal-section {
     margin-top: 1rem;
     background-color: rgb(39, 39, 42);
@@ -4593,18 +3350,15 @@ styleSheet.textContent = `
     border-radius: 0.5rem;
     border: 1px solid rgb(63, 63, 70);
   }
-
   .modal-section-title {
     font-size: 0.875rem;
     font-weight: 500;
     color: rgb(161, 161, 170);
     margin-bottom: 0.25rem;
   }
-
   .form-group {
     margin-bottom: 0.75rem;
   }
-
   .form-group label {
     display: block;
     font-size: 0.875rem;
@@ -4612,7 +3366,6 @@ styleSheet.textContent = `
     color: rgb(161, 161, 170);
     margin-bottom: 0.25rem;
   }
-
   .form-group input,
   .form-group select {
     width: 100%;
@@ -4625,20 +3378,17 @@ styleSheet.textContent = `
     line-height: 1.25rem;
     outline: none;
   }
-
   .form-group input:focus,
   .form-group select:focus {
     border-color: rgb(59, 130, 246);
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
   }
-
   .button-group {
     display: flex;
     justify-content: space-between;
     gap: 0.5rem;
     margin-top: 1rem;
   }
-
   .button {
     display: inline-flex;
     align-items: center;
@@ -4651,31 +3401,25 @@ styleSheet.textContent = `
     cursor: pointer;
     transition: all 0.2s;
   }
-
   .button-primary {
     background-color: rgb(37, 99, 235);
     color: white;
   }
-
   .button-primary:hover {
     background-color: rgb(29, 78, 216);
   }
-
   .button-secondary {
     background-color: rgb(82, 82, 91);
     color: white;
   }
-
   .button-secondary:hover {
     background-color: rgb(63, 63, 70);
   }
-
   .button:disabled {
     background-color: rgb(82, 82, 91);
     cursor: not-allowed;
     opacity: 0.5;
   }
-
   .status-indicator {
     display: flex;
     align-items: center;
@@ -4686,7 +3430,6 @@ styleSheet.textContent = `
     border-radius: 0.5rem;
     border: 1px solid rgb(63, 63, 70);
   }
-
   .backup-list {
     max-height: 300px;
     overflow-y: auto;
@@ -4695,7 +3438,6 @@ styleSheet.textContent = `
     border-radius: 0.375rem;
     background-color: rgb(24, 24, 27);
   }
-
   .backup-item {
     display: flex;
     justify-content: space-between;
@@ -4704,20 +3446,16 @@ styleSheet.textContent = `
     border-bottom: 1px solid rgb(63, 63, 70);
     transition: background-color 0.2s;
   }
-
   .backup-item:hover {
     background-color: rgb(39, 39, 42);
   }
-
   .backup-item:last-child {
     border-bottom: none;
   }
-
   .backup-info {
     flex: 1;
     min-width: 0;
   }
-
   .backup-name {
     font-weight: 500;
     color: rgb(244, 244, 245);
@@ -4726,7 +3464,6 @@ styleSheet.textContent = `
     overflow: hidden;
     text-overflow: ellipsis;
   }
-
   .backup-type {
     display: inline-block;
     padding: 0.125rem 0.375rem;
@@ -4737,30 +3474,24 @@ styleSheet.textContent = `
     background-color: rgb(59, 130, 246);
     color: white;
   }
-
   .backup-item.snapshot .backup-type {
     background-color: rgb(16, 185, 129);
   }
-
   .backup-item.daily .backup-type {
     background-color: rgb(245, 158, 11);
   }
-
   .backup-item.time .backup-type {
     background-color: rgb(99, 102, 241);
   }
-
   .backup-date {
     font-size: 0.875rem;
     color: rgb(161, 161, 170);
   }
-
   .backup-actions {
     display: flex;
     gap: 0.5rem;
     margin-left: 1rem;
   }
-
   .backup-action {
     padding: 0.25rem 0.5rem;
     border: none;
@@ -4773,56 +3504,41 @@ styleSheet.textContent = `
     min-width: 4rem;
     text-align: center;
   }
-
   .restore-btn {
     background-color: rgb(16, 185, 129);
   }
-
   .restore-btn:hover:not(:disabled) {
     background-color: rgb(5, 150, 105);
   }
-
   .download-btn {
     background-color: rgb(59, 130, 246);
   }
-
   .download-btn:hover:not(:disabled) {
     background-color: rgb(37, 99, 235);
   }
-
   .delete-btn {
     background-color: rgb(239, 68, 68);
   }
-
   .delete-btn:hover:not(:disabled) {
     background-color: rgb(220, 38, 38);
   }
-
   .backup-action:disabled {
     opacity: 0.5;
     cursor: not-allowed;
     background-color: rgb(82, 82, 91);
   }
 `;
-
 document.head.appendChild(styleSheet);
-
-// Open sync modal
 function openSyncModal() {
-  // Check if modal already exists
   if (document.querySelector(".cloud-sync-modal")) {
     logToConsole("skip", "Modal already open - skipping");
     return;
   }
-
   logToConsole("start", "Opening sync modal...");
-
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
-
   const modal = document.createElement("div");
   modal.className = "cloud-sync-modal";
-
   modal.innerHTML = `
     <div class="text-gray-800 dark:text-white text-left text-sm">
       <div class="flex justify-center items-center mb-3">
@@ -4830,7 +3546,6 @@ function openSyncModal() {
         <button class="ml-2 text-blue-600 text-lg hint--bottom-left hint--rounded hint--large" 
           aria-label="Fill form & Save. If you are using Amazon S3 - fill in S3 Bucket Name, AWS Region, AWS Access Key, AWS Secret Key and Encryption key.&#10;&#10;Initial backup: You will need to click on Export to create your first backup in S3. Thereafter, automatic backups are done to S3 as per Backup Interval if the browser tab is active.&#10;&#10;Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the local data.&#10;&#10;&#10;&#10;Snapshot: Creates an instant no-touch backup that will not be overwritten.&#10;&#10;Download: You can select the backup data to be download and click on Download button to download it for local storage.&#10;&#10;Restore: Select the backup you want to restore and Click on Restore. The typingmind data will be restored to the selected backup data/date.">ⓘ</button>
       </div>
-
       <div class="space-y-3">
         <div class="mt-4 bg-gray-100 dark:bg-zinc-800 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600">
           <div class="flex items-center justify-between mb-1">
@@ -4855,7 +3570,6 @@ function openSyncModal() {
             </div>
           </div>
         </div>
-
         <div class="mt-4 bg-gray-100 dark:bg-zinc-800 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600">
           <div class="space-y-2">
             <div class="flex items-center space-x-4 mb-4">
@@ -4882,7 +3596,6 @@ function openSyncModal() {
                 <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="No automatic operations. Manual sync and snapshot operations still work.">ⓘ</button>
               </label>
             </div>
-
             <div class="flex space-x-4">
               <div class="w-2/3">
                 <label for="aws-bucket" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Bucket Name <span class="text-red-500">*</span></label>
@@ -4897,21 +3610,18 @@ function openSyncModal() {
                 }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
               </div>
             </div>
-
             <div>
               <label for="aws-access-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Access Key <span class="text-red-500">*</span></label>
               <input id="aws-access-key" name="aws-access-key" type="password" value="${
                 config.accessKey || ""
               }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
             </div>
-
             <div>
               <label for="aws-secret-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Secret Key <span class="text-red-500">*</span></label>
               <input id="aws-secret-key" name="aws-secret-key" type="password" value="${
                 config.secretKey || ""
               }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
             </div>
-
             <div>
               <label for="aws-endpoint" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
                 S3 Compatible Storage Endpoint
@@ -4921,7 +3631,6 @@ function openSyncModal() {
                 config.endpoint || ""
               }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off">
             </div>
-
             <div class="flex space-x-4">
               <div class="w-1/2">
                 <label for="sync-interval" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Sync Interval
@@ -4942,7 +3651,6 @@ function openSyncModal() {
             </div>
           </div>
         </div>
-
         <div class="flex items-center justify-end mb-4 space-x-2">
           <span class="text-sm text-gray-600 dark:text-gray-400">
             Console Logging
@@ -4950,7 +3658,6 @@ function openSyncModal() {
           </span>
           <input type="checkbox" id="console-logging-toggle" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer">
         </div>
-
         <div class="flex justify-between space-x-2 mt-4">
           <button id="save-settings" class="z-1 inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors">
             Save
@@ -4967,7 +3674,6 @@ function openSyncModal() {
             </button>
           </div>
         </div>
-
         <div class="text-center mt-4">
           <span id="last-sync-msg"></span>
         </div>
@@ -4975,17 +3681,12 @@ function openSyncModal() {
       </div>
     </div>
   `;
-
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
-
-  // Add event listeners
   modal.querySelector("#close-modal").addEventListener("click", closeModal);
   overlay.addEventListener("click", closeModal);
-
   modal.querySelector("#save-settings").addEventListener("click", saveSettings);
   modal.querySelector("#sync-now").addEventListener("click", () => {
-    // In sync mode, sync from cloud. In backup or disabled mode, sync to cloud
     if (config.syncMode === "sync") {
       queueOperation("manual-sync", syncFromCloud);
     } else {
@@ -4993,7 +3694,6 @@ function openSyncModal() {
     }
     updateSyncStatus();
   });
-
   modal.querySelector("#create-snapshot").addEventListener("click", () => {
     const name = prompt("Enter snapshot name:");
     if (name) {
@@ -5001,19 +3701,14 @@ function openSyncModal() {
       updateSyncStatus();
     }
   });
-
-  // Add change event listeners to sync mode radio buttons
   const syncModeRadios = modal.querySelectorAll('input[name="sync-mode"]');
   syncModeRadios.forEach((radio) => {
     radio.addEventListener("change", function () {
-      // Update the sync-now button text based on the selected mode
       const syncNowBtn = modal.querySelector("#sync-now");
       if (syncNowBtn) {
         syncNowBtn.textContent =
           this.value === "sync" ? "Sync Now" : "Backup Now";
       }
-
-      // Also update the cloud button text in the main UI
       const cloudSyncBtn = document.querySelector(
         '[data-element-id="cloud-sync-button"]'
       );
@@ -5030,40 +3725,28 @@ function openSyncModal() {
       }
     });
   });
-
-  // Set console logging checkbox state based on URL parameter
   const consoleLoggingCheckbox = modal.querySelector("#console-logging-toggle");
   consoleLoggingCheckbox.checked = isConsoleLoggingEnabled;
   consoleLoggingCheckbox.addEventListener("change", (e) => {
     isConsoleLoggingEnabled = e.target.checked;
     updateUrlLoggingParameter(isConsoleLoggingEnabled);
   });
-
-  // Prevent clicks inside modal from closing it
   modal.addEventListener("click", (e) => e.stopPropagation());
-
   loadBackupList();
   updateSyncStatus();
 }
-
-// Close modal
 function closeModal() {
   const modal = document.querySelector(".cloud-sync-modal");
   const overlay = document.querySelector(".modal-overlay");
-
   if (modal) modal.remove();
   if (overlay) overlay.remove();
-
-  // Ensure the sync status dot is updated correctly after the modal is closed
   setTimeout(() => {
     checkSyncStatus().then((status) => {
       logToConsole("debug", `Updating sync dot after modal close: ${status}`);
       updateSyncStatusDot(status);
     });
-  }, 100); // Short delay to ensure it happens after any other post-close operations
+  }, 100);
 }
-
-// Save settings
 async function saveSettings() {
   const newConfig = {
     bucketName: document.getElementById("aws-bucket").value,
@@ -5075,8 +3758,6 @@ async function saveSettings() {
     syncInterval: parseInt(document.getElementById("sync-interval").value),
     encryptionKey: document.getElementById("encryption-key").value,
   };
-
-  // Validate settings
   if (
     !newConfig.bucketName ||
     !newConfig.region ||
@@ -5086,22 +3767,14 @@ async function saveSettings() {
     alert("Please fill in all required AWS settings");
     return;
   }
-
   if (newConfig.syncInterval < 15) {
     alert("Sync interval must be at least 15 seconds");
     return;
   }
-
-  // Store old mode before updating config
   const oldMode = config.syncMode;
-
-  // Update config first
   config = { ...config, ...newConfig };
   saveConfiguration();
-
-  // Reset state when switching from disabled mode
   if (oldMode === "disabled" && newConfig.syncMode !== "disabled") {
-    // Reset operation state
     operationState = {
       isImporting: false,
       isExporting: false,
@@ -5116,8 +3789,6 @@ async function saveSettings() {
       completedOperations: new Set(),
       operationTimeouts: new Map(),
     };
-
-    // Reset backup state
     backupState = {
       isBackupInProgress: false,
       lastDailyBackup: null,
@@ -5125,23 +3796,16 @@ async function saveSettings() {
       backupInterval: null,
       isBackupIntervalRunning: false,
     };
-
-    // Reset file sizes
     cloudFileSize = 0;
     localFileSize = 0;
     isLocalDataModified = false;
     pendingSettingsChanges = false;
-
-    // Clear all intervals
     clearAllIntervals();
-
     logToConsole(
       "info",
       "State reset completed, proceeding with initialization"
     );
   }
-
-  // Update button text and dot visibility to match new mode
   const buttonText = document.querySelector(
     "#cloud-sync-button span:last-child"
   );
@@ -5153,46 +3817,29 @@ async function saveSettings() {
         ? "Sync"
         : "Backup";
   }
-
-  // Update sync status dot for new mode
   updateSyncStatus();
-
-  // Handle initialization and sync based on mode changes
   if (oldMode === "disabled" && newConfig.syncMode !== "disabled") {
     try {
-      // First perform initialization
       await performFullInitialization();
       logToConsole(
         "success",
         "Full initialization completed after mode switch"
       );
-
-      // Then determine sync direction based on metadata comparison
       if (isAwsConfigured()) {
-        // Clear any existing operations first
         operationState.operationQueue = [];
         operationState.isProcessingQueue = false;
-
         try {
-          // Get cloud metadata
           const cloudMetadata = await downloadCloudMetadata();
           const cloudLastSync = cloudMetadata?.lastSyncTime || 0;
-
-          // Get local metadata last sync time
           const localLastSync = localMetadata?.lastSyncTime || 0;
-
-          // Compare number of chats and last sync times
           const cloudChatCount = Object.keys(cloudMetadata?.chats || {}).length;
           const localChatCount = Object.keys(localMetadata?.chats || {}).length;
-
           logToConsole("info", "Comparing metadata for sync direction", {
             cloudLastSync: new Date(cloudLastSync).toLocaleString(),
             localLastSync: new Date(localLastSync).toLocaleString(),
             cloudChats: cloudChatCount,
             localChats: localChatCount,
           });
-
-          // Only sync from cloud if it has newer data AND has chats
           if (cloudLastSync > localLastSync && cloudChatCount > 0) {
             logToConsole(
               "info",
@@ -5203,7 +3850,6 @@ async function saveSettings() {
               await syncFromCloud();
             });
           } else if (localChatCount > 0) {
-            // If we have local chats, sync to cloud
             logToConsole("info", "Local data exists, syncing to cloud");
             queueOperation("force-initial-sync", async () => {
               logToConsole("start", "Performing forced sync to cloud");
@@ -5212,7 +3858,6 @@ async function saveSettings() {
           }
         } catch (error) {
           logToConsole("error", "Error determining sync direction:", error);
-          // Default to sync from cloud if we can't determine direction
           queueOperation("force-initial-sync", async () => {
             logToConsole("start", "Defaulting to sync from cloud after error");
             await syncFromCloud();
@@ -5230,39 +3875,27 @@ async function saveSettings() {
       );
     }
   } else if (isAwsConfigured()) {
-    // Just restart interval with new settings for mode changes between sync/backup
     startSyncInterval();
-
-    // If switching to sync mode from backup, determine sync direction
     if (config.syncMode === "sync" && oldMode === "backup") {
       try {
-        // Get cloud metadata
         const cloudMetadata = await downloadCloudMetadata();
         const cloudLastSync = cloudMetadata?.lastSyncTime || 0;
-
-        // Get local metadata last sync time
         const localLastSync = localMetadata?.lastSyncTime || 0;
-
-        // Compare number of chats and last sync times
         const cloudChatCount = Object.keys(cloudMetadata?.chats || {}).length;
         const localChatCount = Object.keys(localMetadata?.chats || {}).length;
-
         logToConsole("info", "Comparing metadata for backup to sync switch", {
           cloudLastSync: new Date(cloudLastSync).toLocaleString(),
           localLastSync: new Date(localLastSync).toLocaleString(),
           cloudChats: cloudChatCount,
           localChats: localChatCount,
         });
-
         if (cloudChatCount === 0 && localChatCount > 0) {
-          // Cloud is empty but we have local chats - sync to cloud
           logToConsole("info", "Cloud is empty, syncing local data to cloud");
           queueOperation("mode-switch-sync", async () => {
             logToConsole("start", "Performing sync to cloud after mode switch");
             await syncToCloud();
           });
         } else if (cloudLastSync > localLastSync) {
-          // Cloud has newer data - sync from cloud
           logToConsole("info", "Cloud has newer data, syncing from cloud");
           queueOperation("mode-switch-sync", async () => {
             logToConsole(
@@ -5272,14 +3905,12 @@ async function saveSettings() {
             await syncFromCloud();
           });
         } else if (localLastSync > cloudLastSync) {
-          // Local has newer data - sync to cloud
           logToConsole("info", "Local has newer data, syncing to cloud");
           queueOperation("mode-switch-sync", async () => {
             logToConsole("start", "Performing sync to cloud after mode switch");
             await syncToCloud();
           });
         } else {
-          // Times are equal, compare chat counts
           if (cloudChatCount > localChatCount) {
             logToConsole("info", "Cloud has more chats, syncing from cloud");
             queueOperation("mode-switch-sync", async () => {
@@ -5309,7 +3940,6 @@ async function saveSettings() {
           "Error determining sync direction for mode switch:",
           error
         );
-        // Default to sync from cloud if we can't determine direction
         queueOperation("mode-switch-sync", async () => {
           logToConsole(
             "start",
@@ -5320,28 +3950,18 @@ async function saveSettings() {
       }
     }
   }
-
   closeModal();
   logToConsole("success", "Settings saved");
-
-  // Force re-insert of sync button to ensure text is updated
   insertSyncButton();
-
-  // Check sync status after settings change
   throttledCheckSyncStatus();
 }
-
-// Get formatted last sync time
 function getLastSyncTime() {
   if (!localMetadata.lastSyncTime) {
     return "Never";
   }
-
   const lastSync = new Date(localMetadata.lastSyncTime);
   const now = new Date();
   const diff = now - lastSync;
-
-  // Format relative time for recent syncs
   if (diff < 60000) {
     return "Just now";
   } else if (diff < 3600000) {
@@ -5351,8 +3971,6 @@ function getLastSyncTime() {
     const hours = Math.floor(diff / 3600000);
     return `${hours} hour${hours === 1 ? "" : "s"} ago`;
   }
-
-  // For older syncs, show the full local date and time
   return lastSync.toLocaleString(undefined, {
     year: "numeric",
     month: "numeric",
@@ -5363,47 +3981,33 @@ function getLastSyncTime() {
     hour12: false,
   });
 }
-
-// Load backup list
 async function loadBackupList() {
   try {
     const backupList = document.getElementById("backup-files");
     if (!backupList) return;
-
-    // Show loading state
     backupList.innerHTML = '<option value="">Loading backups...</option>';
     backupList.disabled = true;
-
     const bucketName = localStorage.getItem("aws-bucket");
     const awsAccessKey = localStorage.getItem("aws-access-key");
     const awsSecretKey = localStorage.getItem("aws-secret-key");
-
     if (!bucketName || !awsAccessKey || !awsSecretKey) {
       backupList.innerHTML =
         '<option value="">Please configure AWS credentials first</option>';
       backupList.disabled = false;
       return;
     }
-
-    // Get all objects from S3
     const backups = await listS3Objects();
-
-    // Clear existing options
     backupList.innerHTML = "";
     backupList.disabled = false;
-
-    // Filter out chat folder items
     const filteredBackups = backups.filter(
       (backup) => !backup.Key.startsWith("chats/") && backup.Key !== "chats/"
     );
-
     if (filteredBackups.length === 0) {
       const option = document.createElement("option");
       option.value = "";
       option.text = "No backups found";
       backupList.appendChild(option);
     } else {
-      // Sort backups by timestamp (newest first)
       const sortedBackups = filteredBackups.sort((a, b) => {
         const timestampA =
           a.metadata?.timestamp || a.LastModified?.getTime() || 0;
@@ -5411,8 +4015,6 @@ async function loadBackupList() {
           b.metadata?.timestamp || b.LastModified?.getTime() || 0;
         return timestampB - timestampA;
       });
-
-      // Add sorted backups to the list
       sortedBackups.forEach((backup) => {
         const option = document.createElement("option");
         option.value = backup.Key;
@@ -5421,45 +4023,31 @@ async function loadBackupList() {
         backupList.appendChild(option);
       });
     }
-
-    // Update button states based on selection
     updateButtonStates();
-
-    // Add change listener to update button states
     backupList.addEventListener("change", updateButtonStates);
-
-    // Function to update button states
     function updateButtonStates() {
       const selectedValue = backupList.value || "";
       const downloadButton = document.getElementById("download-backup-btn");
       const restoreButton = document.getElementById("restore-backup-btn");
       const deleteButton = document.getElementById("delete-backup-btn");
-
-      // Check file types
       const isSnapshot = selectedValue.startsWith("s-");
       const isDailyBackup = selectedValue.startsWith("typingmind-backup-");
       const isChatsFolder = selectedValue === "chats/";
       const isSettingsFile = selectedValue === "settings.json";
       const isMetadataFile = selectedValue === "metadata.json";
-
       if (downloadButton) {
         downloadButton.disabled = !selectedValue;
       }
-
       if (restoreButton) {
         restoreButton.disabled =
           !selectedValue || (!isSnapshot && !isDailyBackup && !isSettingsFile);
       }
-
       if (deleteButton) {
-        // Enable delete for all files except protected ones
         const isProtectedFile =
           !selectedValue || isChatsFolder || isSettingsFile || isMetadataFile;
         deleteButton.disabled = isProtectedFile;
       }
     }
-
-    // Add button handlers
     setupButtonHandlers(backupList);
   } catch (error) {
     logToConsole("error", "Failed to load backup list:", error);
@@ -5469,27 +4057,19 @@ async function loadBackupList() {
     }
   }
 }
-
-// Helper function to set up button handlers
 function setupButtonHandlers(backupList) {
-  // Download button handler
   const downloadButton = document.getElementById("download-backup-btn");
   if (downloadButton) {
-    // Remove existing click handler
     const newDownloadButton = downloadButton.cloneNode(true);
     downloadButton.parentNode.replaceChild(newDownloadButton, downloadButton);
-
     newDownloadButton.onclick = async () => {
       const key = backupList.value;
       if (!key) {
         alert("Please select a backup to download");
         return;
       }
-
       try {
         const backup = await downloadFromS3(key);
-
-        // Handle download based on file type
         if (key.endsWith(".zip")) {
           handleZipDownload(backup, key);
         } else {
@@ -5501,21 +4081,16 @@ function setupButtonHandlers(backupList) {
       }
     };
   }
-
-  // Restore button handler
   const restoreButton = document.getElementById("restore-backup-btn");
   if (restoreButton) {
     const newRestoreButton = restoreButton.cloneNode(true);
     restoreButton.parentNode.replaceChild(newRestoreButton, restoreButton);
-
     newRestoreButton.onclick = async () => {
       const key = backupList.value;
       if (!key) {
         alert("Please select a backup to restore");
         return;
       }
-
-      // Special handling for settings.json
       if (key === "settings.json") {
         if (
           confirm(
@@ -5523,20 +4098,13 @@ function setupButtonHandlers(backupList) {
           )
         ) {
           try {
-            // Download the settings backup
             const backup = await downloadFromS3(key);
             if (!backup || !backup.data) {
               throw new Error("Settings backup not found or empty");
             }
-
-            // Decrypt the settings
             const decryptedContent = await decryptData(backup.data);
             const settingsData = JSON.parse(decryptedContent);
-
-            // Get cloud metadata to get the correct timestamps
             const cloudMetadata = await downloadCloudMetadata();
-
-            // Apply settings while preserving security keys
             const preserveKeys = [
               "aws-bucket",
               "aws-access-key",
@@ -5546,18 +4114,13 @@ function setupButtonHandlers(backupList) {
               "encryption-key",
               "chat-sync-metadata",
             ];
-
             let settingsRestored = 0;
-            // Apply each setting
             for (const [key, settingData] of Object.entries(settingsData)) {
               if (!preserveKeys.includes(key)) {
                 try {
-                  // Get the value and source from the backup
                   const value = settingData.data;
-                  const source = settingData.source || "localStorage"; // Default to localStorage if source not specified
-
+                  const source = settingData.source || "localStorage";
                   if (source === "indexeddb") {
-                    // Handle IndexedDB settings
                     let valueToStore = value;
                     if (
                       typeof valueToStore === "string" &&
@@ -5580,7 +4143,6 @@ function setupButtonHandlers(backupList) {
                       `Restored setting to IndexedDB: ${key}`
                     );
                   } else {
-                    // Handle localStorage settings
                     localStorage.setItem(key, value);
                     logToConsole(
                       "info",
@@ -5597,20 +4159,16 @@ function setupButtonHandlers(backupList) {
                 }
               }
             }
-
-            // Update local metadata with cloud timestamps to prevent unwanted syncs
             if (cloudMetadata.settings) {
               localMetadata.settings.lastModified =
                 cloudMetadata.settings.lastModified;
               localMetadata.settings.syncedAt = cloudMetadata.settings.syncedAt;
               await saveLocalMetadata();
             }
-
             logToConsole("success", "Settings restore completed", {
               totalRestored: settingsRestored,
               timestamp: new Date().toISOString(),
             });
-
             alert(
               `Settings restored successfully! (${settingsRestored} settings restored)`
             );
@@ -5622,8 +4180,6 @@ function setupButtonHandlers(backupList) {
         }
         return;
       }
-
-      // Regular backup restore handling
       if (
         confirm(
           "Are you sure you want to restore this backup? This will overwrite your current data."
@@ -5639,21 +4195,16 @@ function setupButtonHandlers(backupList) {
       }
     };
   }
-
-  // Delete button handler
   const deleteButton = document.getElementById("delete-backup-btn");
   if (deleteButton) {
-    // Remove existing click handler
     const newDeleteButton = deleteButton.cloneNode(true);
     deleteButton.parentNode.replaceChild(newDeleteButton, deleteButton);
-
     newDeleteButton.onclick = async () => {
       const key = backupList.value;
       if (!key) {
         alert("Please select a backup to delete");
         return;
       }
-
       if (
         confirm(
           "Are you sure you want to delete this backup? This cannot be undone."
@@ -5661,7 +4212,7 @@ function setupButtonHandlers(backupList) {
       ) {
         try {
           await deleteFromS3(key);
-          await loadBackupList(); // Refresh the list
+          await loadBackupList();
           alert("Backup deleted successfully!");
         } catch (error) {
           logToConsole("error", "Failed to delete backup:", error);
@@ -5671,24 +4222,16 @@ function setupButtonHandlers(backupList) {
     };
   }
 }
-
-// Helper functions for handling downloads
 async function handleZipDownload(backup, key) {
   try {
     const JSZip = await loadJSZip();
     const zip = await JSZip.loadAsync(backup.data);
-
-    // Find the JSON file in the ZIP
     const jsonFile = Object.keys(zip.files).find((f) => f.endsWith(".json"));
     if (!jsonFile) {
       throw new Error("No JSON file found in backup");
     }
-
-    // Extract and decrypt the content
     const fileContent = await zip.file(jsonFile).async("uint8array");
     const decryptedContent = await decryptData(fileContent);
-
-    // Download the decrypted content directly
     const blob = new Blob([JSON.stringify(decryptedContent, null, 2)], {
       type: "application/json",
     });
@@ -5698,13 +4241,9 @@ async function handleZipDownload(backup, key) {
     throw error;
   }
 }
-
 async function handleRegularFileDownload(backup, key) {
   try {
-    // Decrypt the content
     const decryptedContent = await decryptData(backup.data);
-
-    // For JSON files, ensure proper formatting for download
     if (key.endsWith(".json")) {
       const blob = new Blob([JSON.stringify(decryptedContent, null, 2)], {
         type: "application/json",
@@ -5718,53 +4257,35 @@ async function handleRegularFileDownload(backup, key) {
     downloadFile(key, backup.data);
   }
 }
-
-// Format file size
 function formatFileSize(bytes) {
   if (bytes === 0) return "0 B";
-
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }
-
-// Download file
 function downloadFile(filename, data) {
   logToConsole(
     "info",
     `Downloading file: ${filename}, data type: ${typeof data}`
   );
-
   let blob;
-
-  // Handle different data types
   if (data instanceof Blob) {
-    // If it's already a Blob, use it directly
     blob = data;
   } else if (typeof data === "string") {
-    // For string data, create a text blob
     blob = new Blob([data], { type: "text/plain" });
   } else if (typeof data === "object") {
-    // For objects, stringify with formatting
     try {
       const jsonString = JSON.stringify(data, null, 2);
       blob = new Blob([jsonString], { type: "application/json" });
     } catch (error) {
       logToConsole("error", "Failed to stringify object:", error);
-      // Fallback to basic toString
       blob = new Blob([String(data)], { type: "text/plain" });
     }
   } else {
-    // For any other type, convert to string
     blob = new Blob([String(data)], { type: "text/plain" });
   }
-
-  // Log the blob size
   logToConsole("info", `Download blob size: ${formatFileSize(blob.size)}`);
-
-  // Create download link
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -5774,10 +4295,6 @@ function downloadFile(filename, data) {
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
-
-// ==================== SETTINGS MONITORING ====================
-
-// Modified getIndexedDBValue to use persistent connection
 async function getIndexedDBValue(key) {
   const db = await getPersistentDB();
   return new Promise((resolve, reject) => {
@@ -5785,19 +4302,15 @@ async function getIndexedDBValue(key) {
       const transaction = db.transaction("keyval", "readonly");
       const store = transaction.objectStore("keyval");
       const request = store.get(key);
-
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve(request.result);
     } catch (error) {
-      persistentDB = null; // Reset connection on error
+      persistentDB = null;
       reject(error);
     }
   });
 }
-
-// Monitor settings changes
 async function initializeSettingsMonitoring() {
-  // Ensure metadata structure exists
   if (!localMetadata.settings) {
     localMetadata.settings = {
       items: {},
@@ -5805,12 +4318,9 @@ async function initializeSettingsMonitoring() {
       syncedAt: 0,
     };
   }
-
   if (!localMetadata.settings.items) {
     localMetadata.settings.items = {};
   }
-
-  // Initialize metadata for all IndexedDB items
   const db = await openIndexedDB();
   const transaction = db.transaction("keyval", "readonly");
   const store = transaction.objectStore("keyval");
@@ -5819,13 +4329,11 @@ async function initializeSettingsMonitoring() {
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
   });
-
   for (const key of keys) {
     if (!shouldExcludeSetting(key)) {
       const value = await getIndexedDBValue(key);
       if (value !== undefined) {
         const hash = await generateHash(value, "chat");
-        // Only set lastModified if this is a new item or if the hash has changed
         if (
           !localMetadata.settings.items[key] ||
           localMetadata.settings.items[key].hash !== hash
@@ -5840,14 +4348,11 @@ async function initializeSettingsMonitoring() {
       }
     }
   }
-
-  // Initialize metadata for all localStorage items
   for (const key of Object.keys(localStorage)) {
     if (!shouldExcludeSetting(key)) {
       const value = localStorage.getItem(key);
       if (value !== null) {
         const hash = await generateHash(value, "chat");
-        // Only set lastModified if this is a new item or if the hash has changed
         if (
           !localMetadata.settings.items[key] ||
           localMetadata.settings.items[key].hash !== hash
@@ -5862,8 +4367,6 @@ async function initializeSettingsMonitoring() {
       }
     }
   }
-
-  // Set up localStorage change listener
   window.addEventListener("storage", (e) => {
     if (!e.key || shouldExcludeSetting(e.key)) {
       return;
@@ -5872,18 +4375,10 @@ async function initializeSettingsMonitoring() {
       handleSettingChange(e.key, e.newValue, "localstorage")
     );
   });
-
-  // Set up periodic check for IndexedDB changes
   setInterval(checkIndexedDBChanges, 5000);
-
-  // Save initial metadata
   await saveLocalMetadata();
-
-  //logToConsole("success", "Settings monitoring initialized");
-  return true; // Indicate that metadata needs saving
+  return true;
 }
-
-// Generate hash for content
 async function generateContentHash(content) {
   const str = typeof content === "string" ? content : JSON.stringify(content);
   const msgBuffer = new TextEncoder().encode(str);
@@ -5891,15 +4386,11 @@ async function generateContentHash(content) {
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
-
-// Modified checkIndexedDBChanges to batch changes
 async function checkIndexedDBChanges() {
   let db = null;
   try {
     db = await getPersistentDB();
     const changedKeys = new Set();
-
-    // Get all keys
     const transaction = db.transaction("keyval", "readonly");
     const store = transaction.objectStore("keyval");
     const keys = await new Promise((resolve, reject) => {
@@ -5907,8 +4398,6 @@ async function checkIndexedDBChanges() {
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve(request.result);
     });
-
-    // Process each key sequentially with its own transaction
     for (const key of keys) {
       if (!shouldExcludeSetting(key)) {
         try {
@@ -5916,16 +4405,12 @@ async function checkIndexedDBChanges() {
             const transaction = db.transaction("keyval", "readonly");
             const store = transaction.objectStore("keyval");
             const request = store.get(key);
-
             request.onerror = () => reject(request.error);
             request.onsuccess = () => resolve(request.result);
           });
-
           if (value !== undefined) {
             const hash = await generateContentHash(value);
             const metadata = localMetadata.settings.items[key];
-
-            // Only consider it changed if hash is different
             if (!metadata || metadata.hash !== hash) {
               changedKeys.add(key);
             }
@@ -5936,8 +4421,6 @@ async function checkIndexedDBChanges() {
         }
       }
     }
-
-    // Queue a single operation for all changed keys
     if (changedKeys.size > 0) {
       const firstKey = Array.from(changedKeys)[0];
       queueOperation("settings-sync", async () =>
@@ -5953,33 +4436,20 @@ async function checkIndexedDBChanges() {
     persistentDB = null;
   }
 }
-
-// Handle setting change
 async function handleSettingChange(key, value, source) {
   if (shouldExcludeSetting(key)) return;
-
-  // Generate hash for new value
   const newHash = await generateContentHash(value);
   const metadata = localMetadata.settings.items[key];
-
-  // Only proceed if the hash has actually changed
   if (!metadata || metadata.hash !== newHash) {
-    // Update metadata with new hash
     localMetadata.settings.items[key] = {
       hash: newHash,
       lastModified: Date.now(),
-      syncedAt: 0, // Changed from lastSynced to syncedAt to match uploadSettingsToCloud
+      syncedAt: 0,
       source: source,
     };
-
-    // Mark settings as changed only if hash changed
     pendingSettingsChanges = true;
     localMetadata.settings.lastModified = Date.now();
-    // await saveLocalMetadata(); // REMOVED immediate save
-
-    // Immediately update sync status to show out-of-sync
     throttledCheckSyncStatus();
-
     logToConsole(
       "info",
       `Setting change detected from ${source}: ${key} (hash changed)`
@@ -5991,23 +4461,17 @@ async function handleSettingChange(key, value, source) {
     );
   }
 }
-
 async function cleanupMetadataVersions() {
   try {
     const s3 = initializeS3Client();
-
-    // List all versions of metadata.json
     const params = {
       Bucket: config.bucketName,
       Prefix: "metadata.json",
     };
-
-    // Get bucket versioning status first
     const versioningStatus = await s3
       .getBucketVersioning({ Bucket: config.bucketName })
       .promise();
     const isVersioningEnabled = versioningStatus.Status === "Enabled";
-
     if (!isVersioningEnabled) {
       logToConsole(
         "info",
@@ -6015,35 +4479,22 @@ async function cleanupMetadataVersions() {
       );
       return;
     }
-
-    // List all versions including delete markers
     const versions = await s3.listObjectVersions(params).promise();
-
-    // Combine both versions and delete markers, excluding the current version
     let allVersions = [];
-
     if (versions.Versions) {
-      // Get all non-current versions of metadata.json only
       allVersions.push(
         ...versions.Versions.filter(
           (v) => !v.IsLatest && v.Key === "metadata.json"
         )
       );
     }
-
     if (versions.DeleteMarkers) {
-      // Get delete markers for metadata.json only
       allVersions.push(
         ...versions.DeleteMarkers.filter((v) => v.Key === "metadata.json")
       );
     }
-
-    // Sort by date (newest first)
     allVersions.sort((a, b) => b.LastModified - a.LastModified);
-
-    // Keep the most recent version and delete others
     const versionsToDelete = allVersions.slice(1);
-
     if (versionsToDelete.length > 0) {
       const deleteParams = {
         Bucket: config.bucketName,
@@ -6055,36 +4506,27 @@ async function cleanupMetadataVersions() {
           Quiet: true,
         },
       };
-
       await s3.deleteObjects(deleteParams).promise();
       logToConsole(
         "success",
         `Deleted ${versionsToDelete.length} old metadata versions`
       );
     }
-
     logToConsole("success", "Metadata version cleanup completed");
   } catch (error) {
     logToConsole("error", "Error cleaning up metadata versions:", error);
     throw error;
   }
 }
-
 async function deleteChatFromCloud(chatId) {
   logToConsole("cleanup", `Deleting chat ${chatId} from cloud`);
-
   try {
     const s3 = initializeS3Client();
-
-    // First, ensure we have the latest cloud metadata
     const cloudMetadata = await downloadCloudMetadata();
-
-    // Delete chat file from S3
     const deleteParams = {
       Bucket: config.bucketName,
       Key: `chats/${chatId}.json`,
     };
-
     try {
       await s3.deleteObject(deleteParams).promise();
       logToConsole(
@@ -6097,15 +4539,10 @@ async function deleteChatFromCloud(chatId) {
       }
       logToConsole("info", `Chat file ${chatId} already deleted from S3`);
     }
-
-    // Create or update the tombstone entry in cloud metadata
     if (!cloudMetadata.chats) {
       cloudMetadata.chats = {};
     }
-
     const now = Date.now();
-
-    // Create a tombstone entry with complete information
     cloudMetadata.chats[chatId] = {
       deleted: true,
       deletedAt: now,
@@ -6114,8 +4551,6 @@ async function deleteChatFromCloud(chatId) {
       tombstoneVersion:
         (cloudMetadata.chats[chatId]?.tombstoneVersion || 0) + 1,
     };
-
-    // Upload updated metadata to cloud
     await uploadToS3(
       "metadata.json",
       new TextEncoder().encode(JSON.stringify(cloudMetadata)),
@@ -6124,19 +4559,16 @@ async function deleteChatFromCloud(chatId) {
         ServerSideEncryption: "AES256",
       }
     );
-
-    // Update local metadata with the same timestamps
     if (localMetadata.chats) {
       localMetadata.chats[chatId] = {
         deleted: true,
         deletedAt: now,
         lastModified: now,
-        syncedAt: now, // Set syncedAt to now instead of 0
+        syncedAt: now,
         tombstoneVersion: cloudMetadata.chats[chatId].tombstoneVersion,
       };
       saveLocalMetadata();
     }
-
     logToConsole("success", `Successfully deleted chat ${chatId} from cloud`);
     return true;
   } catch (error) {
@@ -6144,54 +4576,40 @@ async function deleteChatFromCloud(chatId) {
     throw error;
   }
 }
-
 async function downloadSettingsFromCloud() {
   logToConsole("download", "Downloading settings.json from cloud");
-
   try {
     const s3 = initializeS3Client();
-
-    // Download settings file
     const params = {
       Bucket: config.bucketName,
       Key: "settings.json",
     };
-
     try {
       const data = await s3.getObject(params).promise();
       logToConsole("info", "Downloaded settings file from cloud.");
       const encryptedContent = new Uint8Array(data.Body);
-      // DecryptData returns a string (the original JSON string)
       const decryptedJsonString = await decryptData(encryptedContent);
-
       let settingsData;
       try {
-        // *** CORRECTED: Parse the JSON string into an object ***
         settingsData = JSON.parse(decryptedJsonString);
         logToConsole("debug", "Successfully parsed downloaded settings JSON.");
       } catch (error) {
         logToConsole(
           "error",
           "Failed to parse settings.json content after decryption. Content is not valid JSON. Settings update skipped.",
-          { error: error.message, content: decryptedJsonString } // Log the problematic string
+          { error: error.message, content: decryptedJsonString }
         );
-        // Stop further processing if JSON is invalid
         return null;
       }
-
-      // Now settingsData should be a valid JavaScript object (or null/undefined if parsing failed)
-      // We can still keep the object check for extra safety, though parsing is the main fix.
       if (
         settingsData &&
         typeof settingsData === "object" &&
         !Array.isArray(settingsData)
       ) {
-        let settingsApplied = false; // Track if any changes were made
+        let settingsApplied = false;
         logToConsole("debug", "Processing parsed settings data.", settingsData);
-
         const settingPromises = Object.entries(settingsData).map(
           async ([key, settingValue]) => {
-            // The rest of the loop logic remains the same...
             if (settingValue && typeof settingValue === "object") {
               const localValue = await getIndexedDBValue(key);
               if (
@@ -6223,7 +4641,6 @@ async function downloadSettingsFromCloud() {
             }
           }
         );
-
         await Promise.all(settingPromises);
         if (settingsApplied) {
           logToConsole("info", "Finished applying downloaded settings.");
@@ -6234,44 +4651,29 @@ async function downloadSettingsFromCloud() {
           );
         }
       } else if (settingsData) {
-        // Only log error if settingsData existed but wasn't a valid object *after* parsing (should be rare)
         logToConsole(
           "error",
           "Parsed settings data was not a valid object. Skipping settings update.",
           { parsedType: typeof settingsData }
         );
       }
-
-      // *** Removed redundant metadata update here, should happen in the calling function (syncFromCloud) ***
-      // localMetadata.settings.syncedAt = Date.now();
-      // localMetadata.settings.lastModified = Date.now();
-      // await saveLocalMetadata();
-
-      // *** Adjusted log message for clarity ***
       logToConsole("success", "Settings download and processing complete.");
       return settingsData;
     } catch (error) {
-      // ... (existing catch block) ...
-
       logToConsole("error", "Error downloading settings", error);
       throw error;
     }
   } catch (error) {
-    // ... (existing catch block) ...
-
     logToConsole("error", "Error downloading settings", error);
     throw error;
   }
 }
-
 async function uploadSettingsToCloud(syncTimestamp = null) {
   try {
     operationState.isExporting = true;
     const s3 = initializeS3Client();
     const settingsData = {};
     const now = syncTimestamp || Date.now();
-
-    // Get all localStorage items
     for (const key of Object.keys(localStorage)) {
       if (!shouldExcludeSetting(key)) {
         const value = localStorage.getItem(key);
@@ -6284,8 +4686,6 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
         }
       }
     }
-
-    // Get all IndexedDB items
     const db = await openIndexedDB();
     const transaction = db.transaction("keyval", "readonly");
     const store = transaction.objectStore("keyval");
@@ -6294,7 +4694,6 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve(request.result);
     });
-
     for (const key of keys) {
       if (!shouldExcludeSetting(key)) {
         try {
@@ -6324,51 +4723,37 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
         }
       }
     }
-
     db.close();
-
-    // *** ADDED: Update local metadata item hashes BEFORE upload ***
     for (const [key, settingObj] of Object.entries(settingsData)) {
       const newHash = await generateContentHash(settingObj.data);
       if (!localMetadata.settings.items[key]) {
-        localMetadata.settings.items[key] = {}; // Initialize if needed
+        localMetadata.settings.items[key] = {};
       }
       localMetadata.settings.items[key].hash = newHash;
       localMetadata.settings.items[key].lastModified = now;
       localMetadata.settings.items[key].syncedAt = now;
     }
-    // *** END ADDED ***
-
-    // Check if we have any settings to upload
     if (Object.keys(settingsData).length === 0) {
       logToConsole("info", "No settings to upload, skipping sync");
       return true;
     }
-
-    // Encrypt and upload settings
     const encryptedData = await encryptData(settingsData);
     await uploadToS3("settings.json", encryptedData, {
       ContentType: "application/json",
       ServerSideEncryption: "AES256",
     });
-
     logToConsole("success", "Uploaded settings to cloud", {
       settingsCount: Object.keys(settingsData).length,
     });
-
-    // Update local metadata
     localMetadata.settings.syncedAt = now;
-    localMetadata.settings.lastModified = now; // <<< ADD THIS LINE to align timestamps
+    localMetadata.settings.lastModified = now;
     saveLocalMetadata();
-
-    // Update cloud metadata
     const cloudMetadata = await downloadCloudMetadata();
     cloudMetadata.settings = {
       lastModified: now,
       syncedAt: now,
     };
-    cloudMetadata.lastSyncTime = now; // Update global lastSyncTime
-
+    cloudMetadata.lastSyncTime = now;
     await uploadToS3(
       "metadata.json",
       new TextEncoder().encode(JSON.stringify(cloudMetadata)),
@@ -6377,68 +4762,50 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
         ServerSideEncryption: "AES256",
       }
     );
-
     logToConsole(
       "success",
       "Cloud metadata lastSyncTime updated after settings sync"
     );
-
     return true;
   } catch (error) {
     logToConsole("error", "Error uploading settings", error);
     throw error;
   } finally {
-    operationState.isExporting = false; // Add this
+    operationState.isExporting = false;
   }
 }
-
 async function downloadCloudMetadata() {
   try {
     const s3 = initializeS3Client();
-
-    // Download metadata file
     const params = {
       Bucket: config.bucketName,
       Key: "metadata.json",
     };
-
     try {
       const data = await s3.getObject(params).promise();
       const content = data.Body;
-
-      // Parse metadata directly without decryption
       const metadata = JSON.parse(
         typeof content === "string"
           ? content
           : new TextDecoder().decode(content)
       );
-
-      // logToConsole("success", "Downloaded cloud metadata", {
-      //   chats: Object.keys(metadata.chats || {}).length,
-      //   lastSyncTime: new Date(metadata.lastSyncTime).toLocaleString(),
-      //   hasSettings: !!metadata.settings,
-      // });
       return metadata;
     } catch (error) {
-      // Handle case where metadata.json doesn't exist yet
       if (error.code === "NoSuchKey" || error.name === "NoSuchKey") {
         logToConsole(
           "info",
           "No cloud metadata found, creating initial metadata"
         );
-        // Create initial metadata
         const initialMetadata = {
           version: "1.0",
-          lastSyncTime: 0, // Set to 0 instead of Date.now()
+          lastSyncTime: 0,
           chats: {},
           settings: {
-            lastModified: 0, // Set to 0 instead of Date.now()
-            syncedAt: 0, // Set to 0 instead of Date.now()
+            lastModified: 0,
+            syncedAt: 0,
           },
         };
-
         try {
-          // Upload initial metadata without encryption
           await uploadToS3(
             "metadata.json",
             new TextEncoder().encode(JSON.stringify(initialMetadata)),
@@ -6461,7 +4828,6 @@ async function downloadCloudMetadata() {
       throw error;
     }
   } catch (error) {
-    // Check if this is an AWS credentials error
     if (
       error.code === "CredentialsError" ||
       error.message?.includes("credentials")
@@ -6476,37 +4842,24 @@ async function downloadCloudMetadata() {
     throw error;
   }
 }
-
 async function downloadChatFromCloud(chatId) {
   logToConsole("download", `Downloading chat ${chatId} from cloud`);
-
   try {
     const s3 = initializeS3Client();
-
-    // Download chat file
     const params = {
       Bucket: config.bucketName,
       Key: `chats/${chatId}.json`,
     };
-
     try {
       const data = await s3.getObject(params).promise();
       const encryptedContent = new Uint8Array(data.Body);
       const decryptedText = await decryptData(encryptedContent);
-      // *** Change const to let here ***
       let chatData = JSON.parse(decryptedText);
-
       logToConsole("debug", `Chat parsed from cloud download: ${chatId}`, {
         hasChat: !!chatData,
         hasMessages: !!chatData?.messages,
-        messagesLength: chatData?.messages?.length, // Focus on messages
-        // hasMessagesArray: !!chatData?.messagesArray,
-        // messagesArrayLength: chatData?.messagesArray?.length,
-        // keys: chatData ? Object.keys(chatData) : null // Optionally log all keys
+        messagesLength: chatData?.messages?.length,
       });
-      // *** END ADDED ***
-
-      // Ensure the chat has an ID that matches its key
       if (!chatData.id) {
         chatData.id = chatId;
       } else if (chatData.id !== chatId) {
@@ -6516,21 +4869,17 @@ async function downloadChatFromCloud(chatId) {
         );
         chatData.id = chatId;
       }
-
       logToConsole("success", `Downloaded chat ${chatId} from cloud`);
       return chatData;
     } catch (error) {
       if (error.code === "NoSuchKey") {
         logToConsole("warning", `Chat ${chatId} not found in cloud`);
-
-        // Get current cloud metadata to mark this chat as deleted
         const cloudMetadata = await downloadCloudMetadata();
         if (
           cloudMetadata.chats &&
           cloudMetadata.chats[chatId] &&
           !cloudMetadata.chats[chatId].deleted
         ) {
-          // Create a tombstone entry in cloud metadata
           cloudMetadata.chats[chatId] = {
             deleted: true,
             deletedAt: Date.now(),
@@ -6540,8 +4889,6 @@ async function downloadChatFromCloud(chatId) {
               (cloudMetadata.chats[chatId]?.tombstoneVersion || 0) + 1,
             deletionSource: "file-missing",
           };
-
-          // Upload updated metadata to cloud
           await uploadToS3(
             "metadata.json",
             new TextEncoder().encode(JSON.stringify(cloudMetadata)),
@@ -6550,7 +4897,6 @@ async function downloadChatFromCloud(chatId) {
               ServerSideEncryption: "AES256",
             }
           );
-
           logToConsole(
             "info",
             `Created tombstone for missing chat ${chatId} in cloud metadata`
@@ -6565,50 +4911,36 @@ async function downloadChatFromCloud(chatId) {
     throw error;
   }
 }
-
-// Upload a chat to cloud
 async function uploadChatToCloud(
   chatId,
   existingCloudMetadata = null,
   syncTimestamp = null
 ) {
-  // logToConsole("upload", `Uploading chat ${chatId} to cloud`);
-
   try {
     operationState.isExporting = true;
     const s3 = initializeS3Client();
-
-    // Always download fresh cloud metadata
     const cloudMetadata = await downloadCloudMetadata();
     logToConsole("info", "Downloaded fresh cloud metadata");
-
     if (
       cloudMetadata.chats &&
       cloudMetadata.chats[chatId] &&
       cloudMetadata.chats[chatId].deleted === true
     ) {
-      // Check if our local version is newer (might be a restoration)
       const localChatInfo = localMetadata.chats[chatId];
       const cloudDeletion = cloudMetadata.chats[chatId];
-
       if (!localChatInfo || localChatInfo.deleted === true) {
-        // This chat is also deleted locally or not in our metadata, respect the cloud tombstone
         logToConsole(
           "info",
           `Skipping upload of chat ${chatId} as it has a cloud tombstone`
         );
         return false;
       }
-
-      // If the local chat was modified after the cloud deletion, we might be restoring it
       if (localChatInfo.lastModified > cloudDeletion.deletedAt) {
         logToConsole(
           "info",
           `Local chat ${chatId} appears to be newer than cloud tombstone, proceeding with upload as restoration`
         );
-        // Continue with upload - will overwrite the tombstone
       } else {
-        // Local chat is older than cloud deletion, respect the tombstone
         logToConsole(
           "info",
           `Local chat ${chatId} is older than cloud tombstone, will be deleted locally instead`
@@ -6617,8 +4949,6 @@ async function uploadChatToCloud(
         return false;
       }
     }
-
-    // Get chat data
     const chatData = await getChatFromIndexedDB(chatId);
     if (!chatData) {
       logToConsole(
@@ -6627,15 +4957,11 @@ async function uploadChatToCloud(
       );
       return false;
     }
-
-    // Ensure chat has proper ID
     if (!chatData.id) {
       chatData.id = chatId;
     } else if (chatData.id.startsWith("CHAT_")) {
       chatData.id = chatData.id.slice(5);
     }
-
-    // Double check ID consistency
     if (chatData.id !== chatId) {
       logToConsole(
         "warning",
@@ -6643,12 +4969,7 @@ async function uploadChatToCloud(
       );
       chatData.id = chatId;
     }
-
-    // Generate a new hash for the chat
-    const newHash = await generateHash(chatData, "chat"); // Ensure 'chat' type is passed
-
-    // Check if the chat already exists in cloud metadata and has the same hash
-    // This prevents unnecessary uploads of unchanged chats
+    const newHash = await generateHash(chatData, "chat");
     if (
       cloudMetadata.chats &&
       cloudMetadata.chats[chatId] &&
@@ -6656,24 +4977,15 @@ async function uploadChatToCloud(
       !cloudMetadata.chats[chatId].deleted
     ) {
       logToConsole("info", `Chat ${chatId} hasn't changed, skipping upload`);
-
-      // Still update local metadata to mark it as synced
       if (localMetadata.chats[chatId]) {
-        // Only update if necessary to avoid triggering saves
         if (localMetadata.chats[chatId].syncedAt !== Date.now()) {
           localMetadata.chats[chatId].syncedAt = Date.now();
-          localMetadata.chats[chatId].hash = newHash; // Ensure hash is also up-to-date
-          // saveLocalMetadata(); // REMOVED SAVE
+          localMetadata.chats[chatId].hash = newHash;
         }
       }
-
       return true;
     }
-
-    // Encrypt chat data
     const encryptedData = await encryptData(chatData);
-
-    // Upload to S3
     const params = {
       Bucket: config.bucketName,
       Key: `chats/${chatId}.json`,
@@ -6681,58 +4993,37 @@ async function uploadChatToCloud(
       ContentType: "application/json",
       ServerSideEncryption: "AES256",
     };
-
     await s3.putObject(params).promise();
-
     logToConsole("success", `Uploaded chat ${chatId} to cloud`, {
-      // *** MODIFIED: Use standardized messagesArray ***
       messageCount: chatData.messages?.length || 0,
       title: chatData.chatTitle || "(Untitled)",
       size: encryptedData.length,
     });
-
-    // Update local metadata
     if (!localMetadata.chats[chatId]) {
       localMetadata.chats[chatId] = {};
     }
-
-    // Use provided sync timestamp or generate new one
     const now = syncTimestamp || Date.now();
     const lastModified = chatData.updatedAt || now;
-
     localMetadata.chats[chatId].lastModified = lastModified;
     localMetadata.chats[chatId].syncedAt = now;
     localMetadata.chats[chatId].hash = newHash;
-
-    // Clear any deleted flag if it existed (this is a restoration)
     if (localMetadata.chats[chatId].deleted) {
       delete localMetadata.chats[chatId].deleted;
       delete localMetadata.chats[chatId].deletedAt;
       delete localMetadata.chats[chatId].tombstoneVersion;
       logToConsole("info", `Restored previously deleted chat ${chatId}`);
     }
-
-    // saveLocalMetadata(); // REMOVED SAVE
-
-    // Update lastSeenUpdates to prevent re-detection of the same changes
     lastSeenUpdates[chatId] = {
       updatedAt: now,
       hash: newHash,
     };
-
-    // Update cloud metadata
     if (!cloudMetadata.chats) cloudMetadata.chats = {};
-
-    // Remove any tombstone and update metadata
     cloudMetadata.chats[chatId] = {
       lastModified: lastModified,
       syncedAt: now,
       hash: newHash,
     };
-
-    // Update lastSyncTime to prevent unnecessary re-downloads
     cloudMetadata.lastSyncTime = now;
-
     await uploadToS3(
       "metadata.json",
       new TextEncoder().encode(JSON.stringify(cloudMetadata)),
@@ -6741,12 +5032,9 @@ async function uploadChatToCloud(
         ServerSideEncryption: "AES256",
       }
     );
-
     return true;
   } catch (error) {
     logToConsole("error", `Error uploading chat ${chatId}`, error);
-
-    // Update metadata to mark this chat for retry later
     if (localMetadata.chats[chatId]) {
       localMetadata.chats[chatId].uploadError = error.message;
       localMetadata.chats[chatId].uploadErrorTime = Date.now();
@@ -6754,33 +5042,23 @@ async function uploadChatToCloud(
         (localMetadata.chats[chatId].uploadRetryCount || 0) + 1;
       saveLocalMetadata();
     }
-
     logToConsole("error", `Error uploading chat ${chatId}:`, error);
-
     throw error;
   } finally {
-    operationState.isExporting = false; // Add this
+    operationState.isExporting = false;
   }
 }
-
-// Add new sync status checking functions
 async function checkSyncStatus() {
-  // Skip check if sync is disabled
   if (!isAwsConfigured()) {
     logToConsole(
       "debug",
       "checkSyncStatus returning: disabled (AWS not configured)"
-    ); // ADDED LOG
+    );
     return "disabled";
   }
-
-  // Force a reload of local metadata to ensure it's fresh
   await loadLocalMetadata();
-
   try {
-    // Check if settings are out of sync
     let settingsOutOfSync = false;
-
     if (
       pendingSettingsChanges ||
       (localMetadata.settings &&
@@ -6793,14 +5071,10 @@ async function checkSyncStatus() {
         syncedAt: localMetadata.settings?.syncedAt,
       });
     }
-
-    // Check if chats are out of sync
     let chatsOutOfSync = false;
     const chatIds = Object.keys(localMetadata.chats || {});
-
     for (const chatId of chatIds) {
       const chatMeta = localMetadata.chats[chatId];
-
       if (chatMeta.lastModified > (chatMeta.syncedAt || 0)) {
         chatsOutOfSync = true;
         logToConsole("debug", "checkSyncStatus: Chat is out of sync", {
@@ -6808,175 +5082,109 @@ async function checkSyncStatus() {
           lastModified: chatMeta.lastModified,
           syncedAt: chatMeta.syncedAt,
         });
-        break; // One out-of-sync chat is enough
+        break;
       }
     }
-
-    // Return the appropriate status
     if (operationState.isExporting || operationState.isImporting) {
-      // logToConsole(
-      //   "debug",
-      //   "checkSyncStatus returning: syncing (operation in progress)"
-      // ); // ADDED LOG
       return "syncing";
     } else if (settingsOutOfSync || chatsOutOfSync) {
-      // logToConsole("debug", "checkSyncStatus returning: out-of-sync", {
-      //   // ADDED LOG
-      //   settingsOutOfSync,
-      //   chatsOutOfSync,
-      // });
       return "out-of-sync";
     } else {
-      // logToConsole("debug", "checkSyncStatus returning: in-sync"); // ADDED LOG
       return "in-sync";
     }
   } catch (error) {
     console.error("Error checking sync status:", error);
-    logToConsole("debug", "checkSyncStatus returning: error due to exception"); // ADDED LOG
+    logToConsole("debug", "checkSyncStatus returning: error due to exception");
     return "error";
   }
 }
-
 function updateSyncStatusDot(status) {
   const dot = document.getElementById("sync-status-dot");
   if (!dot) return;
-
-  // Log status change with more details
-  // logToConsole("debug", `Updating sync dot to: ${status}`, {
-  //   previousClass: dot.className,
-  //   newStatus: status,
-  // });
-
-  // Handle visibility
   if (status === "disabled") {
     dot.style.display = "none";
     return;
   } else {
     dot.style.display = "block";
   }
-
-  // Apply color directly with style
   switch (status) {
     case "in-sync":
-      dot.style.backgroundColor = "#22c55e"; // green-500
+      dot.style.backgroundColor = "#22c55e";
       break;
     case "syncing":
-      dot.style.backgroundColor = "#eab308"; // yellow-500
+      dot.style.backgroundColor = "#eab308";
       break;
     case "error":
     case "out-of-sync":
-      dot.style.backgroundColor = "#ef4444"; // red-500
+      dot.style.backgroundColor = "#ef4444";
       break;
-    default: // Includes unknown states or initial loading
+    default:
       logToConsole(
         "debug",
         `updateSyncStatusDot hit default case for status: ${status}`
-      ); // ADDED LOG
-      dot.style.backgroundColor = "#6b7280"; // gray-500
+      );
+      dot.style.backgroundColor = "#6b7280";
   }
 }
-
 function resetOperationStates() {
   operationState.isImporting = false;
   operationState.isExporting = false;
   operationState.isProcessingQueue = false;
   operationState.isPendingSync = false;
 }
-
-// Add this to your error handlers and cleanup code
 window.addEventListener("unload", resetOperationStates);
 window.addEventListener("visibilitychange", () => {
   if (document.hidden) {
-    // When tab becomes hidden, reset states to prevent them getting stuck
     resetOperationStates();
   }
 });
-
-// Add this to your error handlers and cleanup code
 window.addEventListener("unload", resetOperationStates);
 window.addEventListener("visibilitychange", () => {
   if (document.hidden) {
-    // When tab becomes hidden, reset states to prevent them getting stuck
     resetOperationStates();
   }
 });
-
-// Merge two versions of a chat, combining their messages and metadata
 async function mergeChats(localChat, cloudChat) {
-  // *** ADDED START: Standardize messages to messagesArray ***
-  // *** MODIFIED: Prioritize populated messages if messagesArray is empty ***
-  // *** REMOVED messagesArray standardization logic ***
-
   logToConsole("info", "Merging chat versions", {
     chatId: localChat.id,
-    // *** MODIFIED: Use standardized messagesArray ***
-    // *** MODIFIED: Log based on messages property ***
     localMessages: localChat.messages?.length || 0,
     cloudMessages: cloudChat.messages?.length || 0,
   });
-
-  // Create a fresh copy to work with
-  const mergedChat = JSON.parse(JSON.stringify(localChat)); // Uses localChat which now has messagesArray
-  // *** MODIFIED: Ensure mergedChat.messages exists ***
+  const mergedChat = JSON.parse(JSON.stringify(localChat));
   if (!mergedChat.messages) mergedChat.messages = [];
-
-  // Use the most recent metadata
   mergedChat.updatedAt = Math.max(
     localChat.updatedAt || 0,
     cloudChat.updatedAt || 0
   );
-
-  // Use the most recent title
   if (
     cloudChat.chatTitle &&
     (!localChat.chatTitle || cloudChat.updatedAt > localChat.updatedAt)
   ) {
     mergedChat.chatTitle = cloudChat.chatTitle;
   }
-
-  // Handle message merging - relies on messagesArray which is now guaranteed
-  // *** MODIFIED: Merge logic based on messages property ***
-  if (!mergedChat.messages) mergedChat.messages = []; // Ensure exists
+  if (!mergedChat.messages) mergedChat.messages = [];
   const cloudMessagesToMerge = cloudChat.messages || [];
-
-  // Create a map of message IDs we already have
   const messageMap = new Map();
   for (const msg of mergedChat.messages) {
-    // Use messagesArray
-    // *** MODIFIED: Use messages ***
     const msgId = msg.id || JSON.stringify(msg);
     messageMap.set(msgId, true);
   }
-
-  // Add messages from cloud that don't exist locally
   for (const cloudMsg of cloudMessagesToMerge) {
-    // Use messagesArray
-    // *** MODIFIED: Use messages ***
     const msgId = cloudMsg.id || JSON.stringify(cloudMsg);
     if (!messageMap.has(msgId)) {
       mergedChat.messages.push(cloudMsg);
       messageMap.set(msgId, true);
     }
   }
-
-  // Sort messages by timestamp or index
   mergedChat.messages.sort((a, b) => {
-    // Use messagesArray
-    // *** MODIFIED: Sort messages ***
-    // First by timestamp if available
     if (a.timestamp && b.timestamp) {
       return a.timestamp - b.timestamp;
     }
-    // Then by message index if available
     if (a.index !== undefined && b.index !== undefined) {
       return a.index - b.index;
     }
-    // Default to keeping existing order
     return 0;
   });
-
-  // *** ADDED: Ensure consistency after merge ***
-  // Make messagesArray identical to the final messages array
   mergedChat.messagesArray = mergedChat.messages;
   logToConsole(
     "debug",
@@ -6986,23 +5194,15 @@ async function mergeChats(localChat, cloudChat) {
       finalMessagesArrayCount: mergedChat.messagesArray?.length,
     }
   );
-  // *** END ADDED ***
-
   logToConsole("success", "Chat merge completed", {
-    // *** MODIFIED: Use messages property ***
     messageCount: mergedChat.messages?.length || 0,
   });
-
   return mergedChat;
 }
-
-// Clean up old tombstones
 function cleanupOldTombstones() {
   const now = Date.now();
-  const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
+  const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
   let cleanupCount = 0;
-
-  // Check local metadata for old tombstones
   for (const [chatId, metadata] of Object.entries(localMetadata.chats)) {
     if (
       metadata.deleted &&
@@ -7013,23 +5213,18 @@ function cleanupOldTombstones() {
       cleanupCount++;
     }
   }
-
   if (cleanupCount > 0) {
     saveLocalMetadata();
     logToConsole("cleanup", `Removed ${cleanupCount} old tombstone entries`);
   }
-
   return cleanupCount;
 }
-
-// Clean up cloud tombstones
 async function cleanupCloudTombstones() {
   try {
     const cloudMetadata = await downloadCloudMetadata();
     const now = Date.now();
-    const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000; // 30 days
+    const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
     let cleanupCount = 0;
-
     if (cloudMetadata.chats) {
       for (const [chatId, metadata] of Object.entries(cloudMetadata.chats)) {
         if (
@@ -7041,7 +5236,6 @@ async function cleanupCloudTombstones() {
           cleanupCount++;
         }
       }
-
       if (cleanupCount > 0) {
         await uploadToS3(
           "metadata.json",
@@ -7063,47 +5257,30 @@ async function cleanupCloudTombstones() {
     return 0;
   }
 }
-
-// Start periodic check for changes in IndexedDB
 function startPeriodicChangeCheck() {
-  // Clear any existing interval
   if (activeIntervals.changeCheck) {
     clearInterval(activeIntervals.changeCheck);
     activeIntervals.changeCheck = null;
   }
-
-  // Set interval for checking changes (every 2.5 seconds)
   activeIntervals.changeCheck = setInterval(async () => {
-    if (document.hidden) return; // Skip if tab is not visible
-
-    let changesDetected = false; // Flag for saving metadata later
-    const changedChatsLog = []; // Keep track for logging
-
+    if (document.hidden) return;
+    let changesDetected = false;
+    const changedChatsLog = [];
     try {
       const chats = await getAllChatsFromIndexedDB();
-
       for (const chat of chats) {
         if (!chat.id) continue;
-
-        // Get current chat hash
-        // *** Pass 'chat' type ***
         const currentHash = await generateHash(chat, "chat");
         const lastSeen = lastSeenUpdates[chat.id];
-
-        // Check if this chat has been updated since we last saw it
         if (
           !lastSeen ||
           currentHash !== lastSeen.hash ||
-          (currentHash === lastSeen.hash && chat.updatedAt > lastSeen.timestamp) // Also check timestamp
+          (currentHash === lastSeen.hash && chat.updatedAt > lastSeen.timestamp)
         ) {
-          // Update last seen data immediately
           lastSeenUpdates[chat.id] = {
             hash: currentHash,
-            timestamp: chat.updatedAt || Date.now(), // Use current time if updatedAt is missing
+            timestamp: chat.updatedAt || Date.now(),
           };
-
-          // Update metadata and check if it actually changed
-          // *** MODIFIED: Pass the chat object ***
           const chatMetadataChanged = await updateChatMetadata(
             chat.id,
             true,
@@ -7112,12 +5289,11 @@ function startPeriodicChangeCheck() {
             chat
           );
           if (chatMetadataChanged) {
-            changesDetected = true; // Mark that we need to save later
-            changedChatsLog.push(chat.id); // Add to log list
+            changesDetected = true;
+            changedChatsLog.push(chat.id);
           }
         }
       }
-
       if (changesDetected) {
         logToConsole(
           "info",
@@ -7127,58 +5303,36 @@ function startPeriodicChangeCheck() {
             count: changedChatsLog.length,
           }
         );
-        await saveLocalMetadata(); // Save metadata ONCE after the loop
+        await saveLocalMetadata();
       }
     } catch (error) {
       logToConsole("error", "Error checking for changes", error);
     }
   }, 2500);
-
   logToConsole("info", "Started periodic change detection");
 }
-
-// Create a throttled version of checkSyncStatus
 const throttledCheckSyncStatus = throttle(async () => {
   const status = await checkSyncStatus();
   updateSyncStatusDot(status);
-}, 1000); // Throttle to once per second max
-
-// Function to update URL with logging parameter
+}, 1000);
 function updateUrlLoggingParameter(enableLogging) {
-  // Get current URL and create a URL object for manipulation
   const url = new URL(window.location.href);
-
   if (enableLogging) {
-    // Add or update log parameter to true
     url.searchParams.set("log", "true");
   } else if (url.searchParams.has("log")) {
-    // Remove log parameter completely if it exists and we're disabling
     url.searchParams.delete("log");
   }
-
-  // Update the URL without causing a page reload
   window.history.replaceState({}, "", url.toString());
 }
-
-// *** ADDED: Helper function to standardize message array ***
 function standardizeChatMessages(chat) {
-  if (!chat) return chat; // Return null/undefined if input is invalid
-
-  // Prioritize populated messages if messagesArray is missing or empty
+  if (!chat) return chat;
   if (
     chat.messages &&
     chat.messages.length > 0 &&
     (!chat.messagesArray || chat.messagesArray.length === 0)
   ) {
-    // logToConsole(
-    //   "debug",
-    //   `Standardizing chat ${chat.id}: Copying from messages to messagesArray`
-    // );
     chat.messagesArray = chat.messages;
-    // We won't delete chat.messages here to be safe, but messagesArray is now the source of truth
   }
-
-  // Ensure messagesArray property exists if it didn't initially
   if (!chat.messagesArray) {
     logToConsole(
       "debug",
@@ -7186,12 +5340,5 @@ function standardizeChatMessages(chat) {
     );
     chat.messagesArray = [];
   }
-
-  // Optional: Clear the old 'messages' property if desired, uncomment with caution:
-  // if (chat.messages && chat.messagesArray && chat.messagesArray.length > 0) {
-  //     delete chat.messages;
-  // }
-
   return chat;
 }
-// *** END ADDED ***
