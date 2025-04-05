@@ -6359,7 +6359,8 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
     // Update local metadata
     localMetadata.settings.syncedAt = now;
     localMetadata.settings.lastModified = now; // <<< ADD THIS LINE to align timestamps
-    saveLocalMetadata();
+    pendingSettingsChanges = false; // Reset the flag after successful upload
+    await saveLocalMetadata();
 
     // Update cloud metadata
     const cloudMetadata = await downloadCloudMetadata();
