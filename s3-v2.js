@@ -2784,6 +2784,12 @@ async function processOperationQueue() {
       operationState.isProcessingQueue = true;
 
       while (operationState.operationQueue.length > 0) {
+        logToConsole("debug", "Queue before findIndex:", {
+          // ADDED LOG
+          queue: operationState.operationQueue.map((op) => op.name),
+          length: operationState.operationQueue.length,
+        });
+
         // Find next eligible operation (no pending dependencies)
         const nextOpIndex = operationState.operationQueue.findIndex((op) =>
           op.dependencies.every((dep) =>
@@ -2874,6 +2880,12 @@ async function processOperationQueue() {
 
           // Remove from queue
           operationState.operationQueue.splice(nextOpIndex, 1);
+          logToConsole("debug", "Queue after splice:", {
+            // ADDED LOG
+            opName: name,
+            queue: operationState.operationQueue.map((op) => op.name),
+            length: operationState.operationQueue.length,
+          });
 
           // Add small delay between operations
           await new Promise((resolve) => setTimeout(resolve, 100));
