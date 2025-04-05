@@ -537,9 +537,6 @@ async function initializeExtension() {
       });
     }
 
-    // Set up visibility change handler - moved earlier, but ensure it's present
-    setupVisibilityChangeHandler();
-
     logToConsole("success", "Initialization completed successfully");
   } catch (error) {
     logToConsole("error", "Error initializing extension:", error);
