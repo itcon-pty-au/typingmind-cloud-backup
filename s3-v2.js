@@ -233,7 +233,7 @@ function setupDoubleTapListener(element, callback) {
     lastTap = currentTime;
   });
 }
-async function initializeLoggingState() {
+function initializeLoggingState() {
   const urlParams = new URLSearchParams(window.location.search);
   const logParam = urlParams.get("log");
   if (logParam === "true") {
@@ -247,35 +247,9 @@ async function initializeLoggingState() {
 }
 async function performFullInitialization() {
   try {
-    const metadataLoaded = await loadLocalMetadata();
-    if (!metadataLoaded) {
-      logToConsole("info", "Initializing metadata from existing data");
-      await initializeMetadataFromExistingData();
-    }
-    if (!localMetadata.settings) {
-      localMetadata.settings = { items: {}, lastModified: 0, syncedAt: 0 };
-    } else if (!localMetadata.settings.items) {
-      localMetadata.settings.items = {};
-    }
-    const formatLogTimestamp = (ts) =>
-      ts ? new Date(ts).toLocaleString() : ts === 0 ? "0 (Epoch)" : ts;
-    logToConsole("info", "Parsed localMetadata:", {
-      lastSyncTime: formatLogTimestamp(localMetadata.lastSyncTime),
-      hasChats: !!localMetadata.chats,
-      chatCount: localMetadata.chats
-        ? Object.keys(localMetadata.chats).length
-        : 0,
-      firstChatSyncedAt:
-        localMetadata.chats && Object.keys(localMetadata.chats).length > 0
-          ? formatLogTimestamp(
-              localMetadata.chats[Object.keys(localMetadata.chats)[0]]?.syncedAt
-            )
-          : undefined,
-      hasSettings: !!localMetadata.settings,
-      settingsSyncedAt: formatLogTimestamp(localMetadata.settings?.syncedAt),
-    });
     loadConfiguration();
     await loadAwsSdk();
+    await loadLocalMetadata();
     await initializeLastSeenUpdates();
     await initializeSettingsMonitoring();
     await setupLocalStorageChangeListener();
@@ -537,52 +511,69 @@ function saveConfiguration() {
   localStorage.setItem("sync-mode", config.syncMode);
 }
 async function loadLocalMetadata() {
+  let metadataInitialized = false;
   try {
-    let metadataStr = localStorage.getItem("sync-metadata");
-    if (!metadataStr) {
+    const storedMetadata = await getIndexedDBKey("sync-metadata");
+    if (storedMetadata) {
       try {
-        metadataStr = await getIndexedDBKey("sync-metadata");
-        if (metadataStr) {
-          logToConsole(
-            "info",
-            "Found metadata in IndexedDB, migrating to localStorage"
-          );
-        }
-      } catch (e) {
-        logToConsole("info", "No existing metadata found in IndexedDB");
+        localMetadata = JSON.parse(storedMetadata);
+        const formatLogTimestamp = (ts) =>
+          ts ? new Date(ts).toLocaleString() : ts === 0 ? "0 (Epoch)" : ts;
+        logToConsole("debug", "Parsed localMetadata:", {
+          lastSyncTime: formatLogTimestamp(localMetadata.lastSyncTime),
+          hasChats: !!localMetadata.chats,
+          chatCount: localMetadata.chats
+            ? Object.keys(localMetadata.chats).length
+            : 0,
+          firstChatSyncedAt:
+            localMetadata.chats && Object.keys(localMetadata.chats).length > 0
+              ? formatLogTimestamp(
+                  localMetadata.chats[Object.keys(localMetadata.chats)[0]]
+                    ?.syncedAt
+                )
+              : undefined,
+          hasSettings: !!localMetadata.settings,
+          settingsSyncedAt: formatLogTimestamp(
+            localMetadata.settings?.syncedAt
+          ),
+        });
+      } catch (parseError) {
+        logToConsole(
+          "error",
+          "Failed to parse stored metadata, initializing from scratch",
+          parseError
+        );
+        metadataInitialized = await initializeMetadataFromExistingData();
       }
+    } else {
+      logToConsole(
+        "info",
+        "No stored metadata found, initializing from existing data."
+      );
+      metadataInitialized = await initializeMetadataFromExistingData();
     }
-
-    if (metadataStr) {
-      try {
-        const parsedMetadata = JSON.parse(metadataStr);
-        if (!parsedMetadata.settings) {
-          parsedMetadata.settings = { items: {}, lastModified: 0, syncedAt: 0 };
-        } else if (!parsedMetadata.settings.items) {
-          parsedMetadata.settings.items = {};
-        }
-        if (parsedMetadata.settings.items.TM_useDeletedChatIDs) {
-          logToConsole("info", "Loaded metadata for TM_useDeletedChatIDs:", {
-            hash: parsedMetadata.settings.items.TM_useDeletedChatIDs.hash,
-            syncedAt:
-              parsedMetadata.settings.items.TM_useDeletedChatIDs.syncedAt,
-          });
-        }
-        localMetadata = parsedMetadata;
-        if (metadataStr !== localStorage.getItem("sync-metadata")) {
-          localStorage.setItem("sync-metadata", metadataStr);
-        }
-        return true;
-      } catch (error) {
-        logToConsole("error", "Error parsing stored metadata", error);
-      }
-    }
-    logToConsole("info", "No existing metadata found, using defaults");
-    return false;
   } catch (error) {
-    logToConsole("error", "Failed to load local metadata", error);
-    return false;
+    logToConsole("error", "Failed to load local metadata:", error);
+    try {
+      logToConsole(
+        "warning",
+        "Attempting to recover by initializing fresh metadata."
+      );
+      metadataInitialized = await initializeMetadataFromExistingData();
+      logToConsole(
+        "success",
+        "Successfully initialized fresh metadata after load error."
+      );
+    } catch (initError) {
+      logToConsole(
+        "error",
+        "Failed to initialize fresh metadata after load error:",
+        initError
+      );
+      throw error;
+    }
   }
+  return metadataInitialized;
 }
 async function initializeMetadataFromExistingData() {
   const chats = await getAllChatsFromIndexedDB();
@@ -609,24 +600,13 @@ async function initializeMetadataFromExistingData() {
 }
 async function saveLocalMetadata() {
   try {
-    if (localMetadata.settings && localMetadata.settings.items) {
-      for (const [key, item] of Object.entries(localMetadata.settings.items)) {
-        if (key === "TM_useDeletedChatIDs") {
-          logToConsole("info", `Saving metadata for ${key}:`, {
-            hash: item.hash,
-            syncedAt: item.syncedAt,
-            lastModified: item.lastModified,
-          });
-        }
-      }
-    }
-    const metadataCopy = JSON.parse(JSON.stringify(localMetadata));
-    localStorage.setItem("sync-metadata", JSON.stringify(metadataCopy));
-    logToConsole("info", "Saved local metadata to localStorage");
-    return true;
+    const metadataToSave = JSON.stringify(localMetadata);
+    const formatLogTimestamp = (ts) =>
+      ts ? new Date(ts).toLocaleString() : ts === 0 ? "0 (Epoch)" : ts;
+    await setIndexedDBKey("sync-metadata", metadataToSave);
   } catch (error) {
-    logToConsole("error", "Failed to save local metadata", error);
-    return false;
+    logToConsole("error", "Failed to save local metadata:", error);
+    throw error;
   }
 }
 async function generateHash(content, type = "generic") {
@@ -4353,9 +4333,7 @@ async function initializeSettingsMonitoring() {
     if (!shouldExcludeSetting(key)) {
       const value = await getIndexedDBValue(key);
       if (value !== undefined) {
-        const valueForHash =
-          typeof value === "string" ? value : JSON.stringify(value);
-        const hash = await generateContentHash(valueForHash);
+        const hash = await generateHash(value, "chat");
         if (
           !localMetadata.settings.items[key] ||
           localMetadata.settings.items[key].hash !== hash
@@ -4374,7 +4352,7 @@ async function initializeSettingsMonitoring() {
     if (!shouldExcludeSetting(key)) {
       const value = localStorage.getItem(key);
       if (value !== null) {
-        const hash = await generateContentHash(value);
+        const hash = await generateHash(value, "chat");
         if (
           !localMetadata.settings.items[key] ||
           localMetadata.settings.items[key].hash !== hash
@@ -4402,27 +4380,7 @@ async function initializeSettingsMonitoring() {
   return true;
 }
 async function generateContentHash(content) {
-  let str = content;
-  try {
-    if (typeof content === "string") {
-      try {
-        const parsed = JSON.parse(content);
-        if (typeof parsed === "object" && parsed !== null) {
-          str = JSON.stringify(parsed, Object.keys(parsed).sort());
-        } else {
-          str = content;
-        }
-      } catch (e) {
-        str = content;
-      }
-    } else if (content && typeof content === "object") {
-      str = JSON.stringify(content, Object.keys(content).sort());
-    } else {
-      str = String(content);
-    }
-  } catch (error) {
-    str = String(content);
-  }
+  const str = typeof content === "string" ? content : JSON.stringify(content);
   const msgBuffer = new TextEncoder().encode(str);
   const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
@@ -4451,28 +4409,8 @@ async function checkIndexedDBChanges() {
             request.onsuccess = () => resolve(request.result);
           });
           if (value !== undefined) {
-            let valueForHash;
-            if (typeof value === "string") {
-              valueForHash = value;
-            } else if (typeof value === "object") {
-              valueForHash = JSON.stringify(
-                value,
-                value !== null ? Object.keys(value).sort() : null
-              );
-            } else {
-              valueForHash = String(value);
-            }
-            const hash = await generateContentHash(valueForHash);
+            const hash = await generateContentHash(value);
             const metadata = localMetadata.settings.items[key];
-            if (key === "TM_useDeletedChatIDs") {
-              logToConsole("info", `Checking ${key}:`, {
-                valueType: typeof value,
-                valueIsArray: Array.isArray(value),
-                hash: hash,
-                metadataHash: metadata?.hash,
-                value: valueForHash.substring(0, 100) + "...",
-              });
-            }
             if (!metadata || metadata.hash !== hash) {
               changedKeys.add(key);
             }
@@ -4485,33 +4423,28 @@ async function checkIndexedDBChanges() {
     }
     if (changedKeys.size > 0) {
       const firstKey = Array.from(changedKeys)[0];
-      await queueOperation("settings-sync", async () => {
-        await handleSettingChange(
+      queueOperation("settings-sync", async () =>
+        handleSettingChange(
           firstKey,
           await getIndexedDBValue(firstKey),
           "indexeddb"
-        );
-        await saveLocalMetadata();
-      });
+        )
+      );
     }
   } catch (error) {
     logToConsole("error", "Error checking IndexedDB changes:", error);
     persistentDB = null;
   }
 }
-async function handleSettingChange(key, value, source, precomputedHash = null) {
+async function handleSettingChange(key, value, source) {
   if (shouldExcludeSetting(key)) return;
-  const newHash =
-    precomputedHash ||
-    (await generateContentHash(
-      typeof value === "string" ? value : JSON.stringify(value)
-    ));
+  const newHash = await generateContentHash(value);
   const metadata = localMetadata.settings.items[key];
   if (!metadata || metadata.hash !== newHash) {
     localMetadata.settings.items[key] = {
       hash: newHash,
       lastModified: Date.now(),
-      syncedAt: precomputedHash ? Date.now() : 0,
+      syncedAt: 0,
       source: source,
     };
     pendingSettingsChanges = true;
@@ -4679,44 +4612,9 @@ async function downloadSettingsFromCloud() {
           async ([key, settingValue]) => {
             if (settingValue && typeof settingValue === "object") {
               const localValue = await getIndexedDBValue(key);
-              let cloudValueStr = settingValue.data;
-              try {
-                const parsedCloud = JSON.parse(cloudValueStr);
-                if (typeof parsedCloud === "object" && parsedCloud !== null) {
-                  cloudValueStr = JSON.stringify(
-                    parsedCloud,
-                    Object.keys(parsedCloud).sort()
-                  );
-                }
-              } catch (e) {}
-              const cloudHash = await generateContentHash(cloudValueStr);
-
-              let localValueStr;
-              if (localValue === undefined) {
-                localValueStr = "";
-              } else if (typeof localValue === "string") {
-                localValueStr = localValue;
-              } else if (typeof localValue === "object") {
-                localValueStr = JSON.stringify(
-                  localValue,
-                  Object.keys(localValue || {}).sort()
-                );
-              } else {
-                localValueStr = String(localValue);
-              }
-              const localHash = await generateContentHash(localValueStr);
-              if (key === "TM_useDeletedChatIDs") {
-                logToConsole("info", `Comparing downloaded ${key}:`, {
-                  cloudHash,
-                  localHash,
-                  match: cloudHash === localHash,
-                  localType: typeof localValue,
-                  cloudType: typeof settingValue.data,
-                  localSample: localValueStr.substring(0, 50) + "...",
-                  cloudSample: cloudValueStr.substring(0, 50) + "...",
-                });
-              }
-              if (localHash !== cloudHash) {
+              if (
+                JSON.stringify(localValue) !== JSON.stringify(settingValue.data)
+              ) {
                 logToConsole(
                   "info",
                   `Applying downloaded setting: ${key}`,
@@ -4725,8 +4623,7 @@ async function downloadSettingsFromCloud() {
                 await handleSettingChange(
                   key,
                   settingValue.data,
-                  settingValue.source,
-                  cloudHash
+                  settingValue.source
                 );
                 settingsApplied = true;
               } else {
@@ -4803,16 +4700,8 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
           const value = await getIndexedDBKey(key);
           if (value !== undefined) {
             try {
-              let serializedValue;
-              if (typeof value === "string") {
-                serializedValue = value;
-              } else if (typeof value === "object") {
-                serializedValue = JSON.stringify(value);
-              } else {
-                serializedValue = String(value);
-              }
               settingsData[key] = {
-                data: serializedValue,
+                data: typeof value === "string" ? value : JSON.stringify(value),
                 source: "indexeddb",
                 lastModified: now,
               };
@@ -4836,24 +4725,7 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
     }
     db.close();
     for (const [key, settingObj] of Object.entries(settingsData)) {
-      const valueStr = settingObj.data;
-      let valueForHash = valueStr;
-      try {
-        const parsed = JSON.parse(valueStr);
-        if (typeof parsed === "object" && parsed !== null) {
-          valueForHash = JSON.stringify(parsed, Object.keys(parsed).sort());
-        }
-      } catch (e) {
-        valueForHash = valueStr;
-      }
-      const newHash = await generateContentHash(valueForHash);
-      if (key === "TM_useDeletedChatIDs") {
-        logToConsole("info", `Uploading ${key}:`, {
-          valueType: typeof valueStr,
-          hashValue: valueForHash.substring(0, 100) + "...",
-          newHash: newHash,
-        });
-      }
+      const newHash = await generateContentHash(settingObj.data);
       if (!localMetadata.settings.items[key]) {
         localMetadata.settings.items[key] = {};
       }
@@ -4875,7 +4747,7 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
     });
     localMetadata.settings.syncedAt = now;
     localMetadata.settings.lastModified = now;
-    await saveLocalMetadata();
+    saveLocalMetadata();
     const cloudMetadata = await downloadCloudMetadata();
     cloudMetadata.settings = {
       lastModified: now,
