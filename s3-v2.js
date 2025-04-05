@@ -519,6 +519,21 @@ async function loadLocalMetadata() {
         localMetadata = JSON.parse(storedMetadata);
         const formatLogTimestamp = (ts) =>
           ts ? new Date(ts).toLocaleString() : ts === 0 ? "0 (Epoch)" : ts;
+        let settingsHashSamples = {};
+        if (localMetadata.settings?.items) {
+          const sampleKeys = Object.keys(localMetadata.settings.items).slice(
+            0,
+            3
+          );
+          if (sampleKeys.length > 0) {
+            settingsHashSamples = sampleKeys.reduce((acc, key) => {
+              acc[key] = localMetadata.settings.items[key]?.hash
+                ? `${localMetadata.settings.items[key].hash.substring(0, 8)}...`
+                : "none";
+              return acc;
+            }, {});
+          }
+        }
         logToConsole("debug", "Parsed localMetadata:", {
           lastSyncTime: formatLogTimestamp(localMetadata.lastSyncTime),
           hasChats: !!localMetadata.chats,
@@ -533,9 +548,13 @@ async function loadLocalMetadata() {
                 )
               : undefined,
           hasSettings: !!localMetadata.settings,
+          settingsCount: localMetadata.settings?.items
+            ? Object.keys(localMetadata.settings.items).length
+            : 0,
           settingsSyncedAt: formatLogTimestamp(
             localMetadata.settings?.syncedAt
           ),
+          settingsSamples: settingsHashSamples,
         });
       } catch (parseError) {
         logToConsole(
@@ -612,10 +631,67 @@ async function saveLocalMetadata() {
         : "unknown",
       metadataSize: metadataToSave.length,
     });
+    if (localMetadata.settings?.items) {
+      const sampleKeys = Object.keys(localMetadata.settings.items).slice(0, 3);
+      if (sampleKeys.length > 0) {
+        logToConsole(
+          "debug",
+          "Sample hashes being saved:",
+          sampleKeys.reduce((acc, key) => {
+            acc[key] = localMetadata.settings.items[key]?.hash
+              ? `${localMetadata.settings.items[key].hash.substring(0, 8)}...`
+              : "none";
+            return acc;
+          }, {})
+        );
+      }
+    }
     const formatLogTimestamp = (ts) =>
       ts ? new Date(ts).toLocaleString() : ts === 0 ? "0 (Epoch)" : ts;
     await setIndexedDBKey("sync-metadata", metadataToSave);
-    logToConsole("success", "Local metadata saved to IndexedDB");
+    const verifyMetadata = await getIndexedDBKey("sync-metadata");
+    if (!verifyMetadata) {
+      throw new Error(
+        "Metadata save verification failed: No data returned from read verification"
+      );
+    }
+    try {
+      const parsedVerify = JSON.parse(verifyMetadata);
+      const sampleKey = Object.keys(localMetadata.settings?.items || {})[0];
+
+      if (
+        sampleKey &&
+        parsedVerify?.settings?.items?.[sampleKey]?.hash !==
+          localMetadata.settings?.items?.[sampleKey]?.hash
+      ) {
+        logToConsole("warning", "Metadata verification found hash mismatch", {
+          key: sampleKey,
+          expectedHash: localMetadata.settings?.items?.[sampleKey]?.hash
+            ? `${localMetadata.settings.items[sampleKey].hash.substring(
+                0,
+                8
+              )}...`
+            : "none",
+          savedHash: parsedVerify?.settings?.items?.[sampleKey]?.hash
+            ? `${parsedVerify.settings.items[sampleKey].hash.substring(
+                0,
+                8
+              )}...`
+            : "none",
+        });
+      } else {
+        logToConsole(
+          "success",
+          "Local metadata saved and verified in IndexedDB"
+        );
+      }
+    } catch (parseError) {
+      logToConsole(
+        "warning",
+        "Error parsing verification metadata",
+        parseError
+      );
+    }
   } catch (error) {
     logToConsole("error", "Failed to save local metadata:", error);
     throw error;
