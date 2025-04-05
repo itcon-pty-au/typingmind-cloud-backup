@@ -601,9 +601,21 @@ async function initializeMetadataFromExistingData() {
 async function saveLocalMetadata() {
   try {
     const metadataToSave = JSON.stringify(localMetadata);
+    logToConsole("debug", "Saving local metadata", {
+      settingsCount: Object.keys(localMetadata.settings?.items || {}).length,
+      chatsCount: Object.keys(localMetadata.chats || {}).length,
+      lastModified: localMetadata.settings?.lastModified
+        ? new Date(localMetadata.settings.lastModified).toISOString()
+        : "unknown",
+      syncedAt: localMetadata.settings?.syncedAt
+        ? new Date(localMetadata.settings.syncedAt).toISOString()
+        : "unknown",
+      metadataSize: metadataToSave.length,
+    });
     const formatLogTimestamp = (ts) =>
       ts ? new Date(ts).toLocaleString() : ts === 0 ? "0 (Epoch)" : ts;
     await setIndexedDBKey("sync-metadata", metadataToSave);
+    logToConsole("success", "Local metadata saved to IndexedDB");
   } catch (error) {
     logToConsole("error", "Failed to save local metadata:", error);
     throw error;
@@ -4471,14 +4483,28 @@ async function handleSettingChange(key, value, source) {
       typeof value === "string" ? value.length : JSON.stringify(value).length,
   });
   if (!metadata || metadata.hash !== newHash) {
+    const timestamp = Date.now();
+    logToConsole("debug", `Updating local metadata for setting ${key}`, {
+      previousHash: metadata?.hash
+        ? `${metadata.hash.substring(0, 8)}...${metadata.hash.substring(
+            metadata.hash.length - 8
+          )}`
+        : "none",
+      newHash: `${newHash.substring(0, 8)}...${newHash.substring(
+        newHash.length - 8
+      )}`,
+      timestamp: new Date(timestamp).toISOString(),
+      source: source,
+    });
     localMetadata.settings.items[key] = {
       hash: newHash,
-      lastModified: Date.now(),
+      lastModified: timestamp,
       syncedAt: 0,
       source: source,
     };
     pendingSettingsChanges = true;
-    localMetadata.settings.lastModified = Date.now();
+    localMetadata.settings.lastModified = timestamp;
+    saveLocalMetadata();
     throttledCheckSyncStatus();
     logToConsole(
       "info",
@@ -4795,9 +4821,21 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
       }
     }
     db.close();
+    logToConsole(
+      "debug",
+      "Preparing to update metadata hashes for cloud upload"
+    );
+    const hashUpdates = [];
     for (const [key, settingObj] of Object.entries(settingsData)) {
       const newHash = await generateContentHash(settingObj.data);
       const oldHash = localMetadata.settings.items[key]?.hash;
+      hashUpdates.push({
+        key,
+        oldHash: oldHash ? `${oldHash.substring(0, 8)}...` : "none",
+        newHash: `${newHash.substring(0, 8)}...`,
+        source: settingObj.source,
+        changed: oldHash !== newHash,
+      });
       logToConsole("debug", `Setting ${key} hash for upload`, {
         oldHash: oldHash ? `${oldHash.substring(0, 8)}...` : "none",
         newHash: `${newHash.substring(0, 8)}...`,
@@ -4811,6 +4849,11 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
       localMetadata.settings.items[key].lastModified = now;
       localMetadata.settings.items[key].syncedAt = now;
     }
+    logToConsole("info", "Updated hash metadata for cloud upload", {
+      totalSettings: hashUpdates.length,
+      changedHashes: hashUpdates.filter((u) => u.changed).length,
+      timestamp: new Date(now).toISOString(),
+    });
     if (Object.keys(settingsData).length === 0) {
       logToConsole("info", "No settings to upload, skipping sync");
       return true;
@@ -4836,6 +4879,13 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
       syncedAt: now,
     };
     cloudMetadata.lastSyncTime = now;
+    logToConsole("debug", "Uploading settings metadata to cloud", {
+      timestamp: new Date(now).toISOString(),
+      settingsLastModified: new Date(
+        cloudMetadata.settings.lastModified
+      ).toISOString(),
+      settingsSyncedAt: new Date(cloudMetadata.settings.syncedAt).toISOString(),
+    });
     await uploadToS3(
       "metadata.json",
       new TextEncoder().encode(JSON.stringify(cloudMetadata)),
@@ -4846,7 +4896,11 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
     );
     logToConsole(
       "success",
-      "Cloud metadata lastSyncTime updated after settings sync"
+      "Cloud metadata lastSyncTime updated after settings sync",
+      {
+        timestamp: new Date(now).toISOString(),
+        metadataSize: JSON.stringify(cloudMetadata).length,
+      }
     );
     return true;
   } catch (error) {
