@@ -4381,10 +4381,26 @@ async function initializeSettingsMonitoring() {
 }
 async function generateContentHash(content) {
   const str = typeof content === "string" ? content : JSON.stringify(content);
+  logToConsole(
+    "debug",
+    `Generating content hash, input type: ${typeof content}, length: ${
+      str.length
+    }`,
+    {
+      contentPreview: str.length > 100 ? str.substring(0, 100) + "..." : str,
+    }
+  );
   const msgBuffer = new TextEncoder().encode(str);
   const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  const hash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  logToConsole(
+    "debug",
+    `Content hash generated: ${hash.substring(0, 8)}...${hash.substring(
+      hash.length - 8
+    )}`
+  );
+  return hash;
 }
 async function checkIndexedDBChanges() {
   let db = null;
@@ -4440,6 +4456,20 @@ async function handleSettingChange(key, value, source) {
   if (shouldExcludeSetting(key)) return;
   const newHash = await generateContentHash(value);
   const metadata = localMetadata.settings.items[key];
+  logToConsole("debug", `Comparing setting hashes for ${key}`, {
+    existingHash: metadata?.hash
+      ? `${metadata.hash.substring(0, 8)}...${metadata.hash.substring(
+          metadata.hash.length - 8
+        )}`
+      : "none",
+    newHash: `${newHash.substring(0, 8)}...${newHash.substring(
+      newHash.length - 8
+    )}`,
+    source: source,
+    valueType: typeof value,
+    valueLength:
+      typeof value === "string" ? value.length : JSON.stringify(value).length,
+  });
   if (!metadata || metadata.hash !== newHash) {
     localMetadata.settings.items[key] = {
       hash: newHash,
@@ -4452,12 +4482,17 @@ async function handleSettingChange(key, value, source) {
     throttledCheckSyncStatus();
     logToConsole(
       "info",
-      `Setting change detected from ${source}: ${key} (hash changed)`
+      `Setting change detected from ${source}: ${key} (hash changed: ${
+        metadata?.hash ? metadata.hash.substring(0, 8) : "none"
+      } → ${newHash.substring(0, 8)})`
     );
   } else {
     logToConsole(
       "info",
-      `Setting change ignored from ${source}: ${key} (hash unchanged)`
+      `Setting change ignored from ${source}: ${key} (hash unchanged: ${newHash.substring(
+        0,
+        8
+      )})`
     );
   }
 }
@@ -4586,7 +4621,13 @@ async function downloadSettingsFromCloud() {
     };
     try {
       const data = await s3.getObject(params).promise();
-      logToConsole("info", "Downloaded settings file from cloud.");
+      const fileTimestamp = data.LastModified
+        ? new Date(data.LastModified).toISOString()
+        : "unknown";
+      logToConsole(
+        "info",
+        `Downloaded settings file from cloud. Last modified: ${fileTimestamp}`
+      );
       const encryptedContent = new Uint8Array(data.Body);
       const decryptedJsonString = await decryptData(encryptedContent);
       let settingsData;
@@ -4607,11 +4648,34 @@ async function downloadSettingsFromCloud() {
         !Array.isArray(settingsData)
       ) {
         let settingsApplied = false;
-        logToConsole("debug", "Processing parsed settings data.", settingsData);
+        const settingsCount = Object.keys(settingsData).length;
+        logToConsole(
+          "debug",
+          `Processing ${settingsCount} parsed settings from cloud`,
+          {
+            keys:
+              Object.keys(settingsData).slice(0, 10).join(", ") +
+              (settingsCount > 10 ? "..." : ""),
+          }
+        );
         const settingPromises = Object.entries(settingsData).map(
           async ([key, settingValue]) => {
             if (settingValue && typeof settingValue === "object") {
               const localValue = await getIndexedDBValue(key);
+              const localHash = localValue
+                ? await generateContentHash(localValue)
+                : "none";
+              const cloudHash = await generateContentHash(settingValue.data);
+
+              logToConsole("debug", `Comparing setting ${key}`, {
+                localHash:
+                  localHash !== "none"
+                    ? `${localHash.substring(0, 8)}...`
+                    : "none",
+                cloudHash: `${cloudHash.substring(0, 8)}...`,
+                source: settingValue.source,
+                lastModified: new Date(settingValue.lastModified).toISOString(),
+              });
               if (
                 JSON.stringify(localValue) !== JSON.stringify(settingValue.data)
               ) {
@@ -4629,13 +4693,16 @@ async function downloadSettingsFromCloud() {
               } else {
                 logToConsole(
                   "debug",
-                  `Skipping setting ${key}: Local version identical.`
+                  `Skipping setting ${key}: Local version identical. Hash: ${localHash.substring(
+                    0,
+                    8
+                  )}`
                 );
               }
             } else {
               logToConsole(
                 "warn",
-                `Skipping invalid setting format for key: ${key}`,
+                `Invalid setting format for ${key}`,
                 settingValue
               );
             }
@@ -4664,7 +4731,7 @@ async function downloadSettingsFromCloud() {
       throw error;
     }
   } catch (error) {
-    logToConsole("error", "Error downloading settings", error);
+    logToConsole("error", "Error downloading settings from cloud", error);
     throw error;
   }
 }
@@ -4674,6 +4741,10 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
     const s3 = initializeS3Client();
     const settingsData = {};
     const now = syncTimestamp || Date.now();
+    logToConsole(
+      "debug",
+      `Beginning settings upload, timestamp: ${new Date(now).toISOString()}`
+    );
     for (const key of Object.keys(localStorage)) {
       if (!shouldExcludeSetting(key)) {
         const value = localStorage.getItem(key);
@@ -4726,6 +4797,13 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
     db.close();
     for (const [key, settingObj] of Object.entries(settingsData)) {
       const newHash = await generateContentHash(settingObj.data);
+      const oldHash = localMetadata.settings.items[key]?.hash;
+      logToConsole("debug", `Setting ${key} hash for upload`, {
+        oldHash: oldHash ? `${oldHash.substring(0, 8)}...` : "none",
+        newHash: `${newHash.substring(0, 8)}...`,
+        source: settingObj.source,
+        changed: oldHash !== newHash,
+      });
       if (!localMetadata.settings.items[key]) {
         localMetadata.settings.items[key] = {};
       }
@@ -4744,6 +4822,10 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
     });
     logToConsole("success", "Uploaded settings to cloud", {
       settingsCount: Object.keys(settingsData).length,
+      settingKeys:
+        Object.keys(settingsData).slice(0, 10).join(", ") +
+        (Object.keys(settingsData).length > 10 ? "..." : ""),
+      timestamp: new Date(now).toISOString(),
     });
     localMetadata.settings.syncedAt = now;
     localMetadata.settings.lastModified = now;
