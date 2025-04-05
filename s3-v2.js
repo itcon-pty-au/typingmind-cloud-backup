@@ -482,18 +482,16 @@ async function initializeExtension() {
           "Performing initial sync due to missing or zero lastSyncTime."
         );
         await queueOperation("initial-sync", performInitialSync);
-        initialSyncPerformed = true; // <<< ADD THIS LINE
       } else {
         logToConsole(
           "info",
           "Skipping explicit initial sync, relying on visibility change and interval."
         );
-        // Optional: Queue a regular sync check on startup if the tab is visible
+        // Optional: Queue a regular sync check on startup if the tab is visible. This is to ensure that the initial sync is done before daily sync is done.
 
-        // if (document.visibilityState === "visible") {
-        //   queueOperation("startup-sync-check", syncFromCloud);
-        //   initialSyncPerformed = true; // <<< ADD THIS LINE
-        // }
+        if (document.visibilityState === "visible") {
+          queueOperation("startup-sync-check", syncFromCloud);
+        }
       }
     }
 
