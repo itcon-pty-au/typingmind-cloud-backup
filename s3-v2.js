@@ -487,8 +487,7 @@ async function initializeExtension() {
           "info",
           "Skipping explicit initial sync, relying on visibility change and interval."
         );
-        // Optional: Queue a regular sync check on startup if the tab is visible. This is to ensure that the initial sync is done before daily sync is done.
-
+        // Optional: Queue a regular sync check on startup if the tab is visible
         if (document.visibilityState === "visible") {
           queueOperation("startup-sync-check", syncFromCloud);
         }
@@ -504,7 +503,7 @@ async function initializeExtension() {
     // setupLocalStorageChangeListener(); // Already called
     monitorIndexedDBForDeletions();
     startPeriodicChangeCheck();
-    setupVisibilityChangeHandler();
+    setupVisibilityChangeHandler(); // Already called, but ensures it's set up
 
     // Clean up old metadata versions as the last initialization step
     try {
@@ -534,6 +533,9 @@ async function initializeExtension() {
         cloudTombstonesRemoved: cloudCleanupCount,
       });
     }
+
+    // Set up visibility change handler - moved earlier, but ensure it's present
+    setupVisibilityChangeHandler();
 
     logToConsole("success", "Initialization completed successfully");
   } catch (error) {
