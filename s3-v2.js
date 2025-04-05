@@ -2892,8 +2892,10 @@ async function processOperationQueue() {
             length: operationState.operationQueue.length,
           });
 
-          // Add small delay between operations
-          await new Promise((resolve) => setTimeout(resolve, 100));
+          break; // <<< ADD THIS: Exit loop after one successful operation
+
+          // Add small delay between operations - REMOVED as break exits loop
+          // await new Promise((resolve) => setTimeout(resolve, 100));
         } catch (error) {
           // Clear timeout if it exists
           if (operationState.operationTimeouts.has(name)) {
@@ -2947,28 +2949,31 @@ async function processOperationQueue() {
         }
       }
     } finally {
-      // Cleanup
-      operationState.isProcessingQueue = false;
-      operationState.queueProcessingPromise = null;
-
-      // Clear all timeouts
+      // Cleanup timeouts should happen regardless
       for (const [name, timeoutId] of operationState.operationTimeouts) {
         clearTimeout(timeoutId);
       }
       operationState.operationTimeouts.clear();
 
-      // Reset other operation states if queue is empty
+      // Reset processing flag and promise *before* potentially re-queueing
+      operationState.isProcessingQueue = false;
+      operationState.queueProcessingPromise = null;
+
+      // Check if queue needs further processing or final cleanup
       if (operationState.operationQueue.length === 0) {
+        // Queue is empty, perform final cleanup
         operationState.isImporting = false;
         operationState.isExporting = false;
         operationState.isPendingSync = false;
         operationState.lastError = null; // Clear error if queue is empty
-
-        // Temporarily disable aggressive cleanup to see if it helps with dependency tracking
-        // operationState.completedOperations.clear();
-
-        // Force a sync status update
-        checkSyncStatus(); // <-- ADD THIS Call directly for immediate update
+        checkSyncStatus(); // Force a sync status update
+      } else {
+        // Queue still has items, schedule next run
+        logToConsole("debug", "Queue not empty, scheduling next process run", {
+          // ADDED LOG
+          length: operationState.operationQueue.length,
+        });
+        setTimeout(processOperationQueue, 50); // Re-trigger slightly later
       }
     }
   })();
