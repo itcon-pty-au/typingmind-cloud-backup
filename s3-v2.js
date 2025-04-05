@@ -4382,13 +4382,26 @@ async function initializeSettingsMonitoring() {
   return true;
 }
 async function generateContentHash(content) {
-  let str;
-  if (typeof content === "string") {
-    str = content;
-  } else if (content && typeof content === "object") {
-    str = JSON.stringify(content, Object.keys(content).sort());
-  } else {
-    str = JSON.stringify(content);
+  let str = content;
+  try {
+    if (typeof content === "string") {
+      try {
+        const parsed = JSON.parse(content);
+        if (typeof parsed === "object" && parsed !== null) {
+          str = JSON.stringify(parsed, Object.keys(parsed).sort());
+        } else {
+          str = content;
+        }
+      } catch (e) {
+        str = content;
+      }
+    } else if (content && typeof content === "object") {
+      str = JSON.stringify(content, Object.keys(content).sort());
+    } else {
+      str = String(content);
+    }
+  } catch (error) {
+    str = String(content);
   }
   const msgBuffer = new TextEncoder().encode(str);
   const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
@@ -4418,10 +4431,28 @@ async function checkIndexedDBChanges() {
             request.onsuccess = () => resolve(request.result);
           });
           if (value !== undefined) {
-            const valueForHash =
-              typeof value === "string" ? value : JSON.stringify(value);
+            let valueForHash;
+            if (typeof value === "string") {
+              valueForHash = value;
+            } else if (typeof value === "object") {
+              valueForHash = JSON.stringify(
+                value,
+                value !== null ? Object.keys(value).sort() : null
+              );
+            } else {
+              valueForHash = String(value);
+            }
             const hash = await generateContentHash(valueForHash);
             const metadata = localMetadata.settings.items[key];
+            if (key === "TM_useDeletedChatIDs") {
+              logToConsole("info", `Checking ${key}:`, {
+                valueType: typeof value,
+                valueIsArray: Array.isArray(value),
+                hash: hash,
+                metadataHash: metadata?.hash,
+                value: valueForHash.substring(0, 100) + "...",
+              });
+            }
             if (!metadata || metadata.hash !== hash) {
               changedKeys.add(key);
             }
@@ -4627,20 +4658,43 @@ async function downloadSettingsFromCloud() {
           async ([key, settingValue]) => {
             if (settingValue && typeof settingValue === "object") {
               const localValue = await getIndexedDBValue(key);
-              const cloudValueStr =
-                typeof settingValue.data === "string"
-                  ? settingValue.data
-                  : JSON.stringify(settingValue.data);
+              let cloudValueStr = settingValue.data;
+              try {
+                const parsedCloud = JSON.parse(cloudValueStr);
+                if (typeof parsedCloud === "object" && parsedCloud !== null) {
+                  cloudValueStr = JSON.stringify(
+                    parsedCloud,
+                    Object.keys(parsedCloud).sort()
+                  );
+                }
+              } catch (e) {}
               const cloudHash = await generateContentHash(cloudValueStr);
 
-              const localHash =
-                localValue !== undefined
-                  ? await generateContentHash(
-                      typeof localValue === "string"
-                        ? localValue
-                        : JSON.stringify(localValue)
-                    )
-                  : "";
+              let localValueStr;
+              if (localValue === undefined) {
+                localValueStr = "";
+              } else if (typeof localValue === "string") {
+                localValueStr = localValue;
+              } else if (typeof localValue === "object") {
+                localValueStr = JSON.stringify(
+                  localValue,
+                  Object.keys(localValue || {}).sort()
+                );
+              } else {
+                localValueStr = String(localValue);
+              }
+              const localHash = await generateContentHash(localValueStr);
+              if (key === "TM_useDeletedChatIDs") {
+                logToConsole("info", `Comparing downloaded ${key}:`, {
+                  cloudHash,
+                  localHash,
+                  match: cloudHash === localHash,
+                  localType: typeof localValue,
+                  cloudType: typeof settingValue.data,
+                  localSample: localValueStr.substring(0, 50) + "...",
+                  cloudSample: cloudValueStr.substring(0, 50) + "...",
+                });
+              }
               if (localHash !== cloudHash) {
                 logToConsole(
                   "info",
@@ -4728,8 +4782,16 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
           const value = await getIndexedDBKey(key);
           if (value !== undefined) {
             try {
+              let serializedValue;
+              if (typeof value === "string") {
+                serializedValue = value;
+              } else if (typeof value === "object") {
+                serializedValue = JSON.stringify(value);
+              } else {
+                serializedValue = String(value);
+              }
               settingsData[key] = {
-                data: typeof value === "string" ? value : JSON.stringify(value),
+                data: serializedValue,
                 source: "indexeddb",
                 lastModified: now,
               };
@@ -4753,11 +4815,24 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
     }
     db.close();
     for (const [key, settingObj] of Object.entries(settingsData)) {
-      const valueForHash =
-        typeof settingObj.data === "string"
-          ? settingObj.data
-          : JSON.stringify(settingObj.data);
+      const valueStr = settingObj.data;
+      let valueForHash = valueStr;
+      try {
+        const parsed = JSON.parse(valueStr);
+        if (typeof parsed === "object" && parsed !== null) {
+          valueForHash = JSON.stringify(parsed, Object.keys(parsed).sort());
+        }
+      } catch (e) {
+        valueForHash = valueStr;
+      }
       const newHash = await generateContentHash(valueForHash);
+      if (key === "TM_useDeletedChatIDs") {
+        logToConsole("info", `Uploading ${key}:`, {
+          valueType: typeof valueStr,
+          hashValue: valueForHash.substring(0, 100) + "...",
+          newHash: newHash,
+        });
+      }
       if (!localMetadata.settings.items[key]) {
         localMetadata.settings.items[key] = {};
       }
