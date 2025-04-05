@@ -2878,9 +2878,14 @@ async function processOperationQueue() {
           // Mark operation as completed
           operationState.completedOperations.add(name);
 
-          // Remove from queue
-          operationState.operationQueue.splice(nextOpIndex, 1);
-          logToConsole("debug", "Queue after splice:", {
+          // Remove from queue using filter instead of splice
+          // operationState.operationQueue.splice(nextOpIndex, 1); // <-- OLD
+          operationState.operationQueue = operationState.operationQueue.filter(
+            (op, index) => index !== nextOpIndex
+          ); // <-- NEW
+
+          logToConsole("debug", "Queue after filter:", {
+            // Updated log message
             // ADDED LOG
             opName: name,
             queue: operationState.operationQueue.map((op) => op.name),
@@ -2916,7 +2921,10 @@ async function processOperationQueue() {
           }
 
           // If max retries reached, remove operation and continue
-          operationState.operationQueue.splice(nextOpIndex, 1);
+          // operationState.operationQueue.splice(nextOpIndex, 1); // <-- OLD
+          operationState.operationQueue = operationState.operationQueue.filter(
+            (op, index) => index !== nextOpIndex
+          ); // <-- NEW
           operationState.completedOperations.delete(name); // Ensure failed op is not marked complete
 
           // If this operation had dependents, we need to clean them up
