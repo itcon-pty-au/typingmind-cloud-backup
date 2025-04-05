@@ -4333,7 +4333,9 @@ async function initializeSettingsMonitoring() {
     if (!shouldExcludeSetting(key)) {
       const value = await getIndexedDBValue(key);
       if (value !== undefined) {
-        const hash = await generateHash(value, "chat");
+        const valueForHash =
+          typeof value === "string" ? value : JSON.stringify(value);
+        const hash = await generateContentHash(valueForHash);
         if (
           !localMetadata.settings.items[key] ||
           localMetadata.settings.items[key].hash !== hash
@@ -4352,7 +4354,7 @@ async function initializeSettingsMonitoring() {
     if (!shouldExcludeSetting(key)) {
       const value = localStorage.getItem(key);
       if (value !== null) {
-        const hash = await generateHash(value, "chat");
+        const hash = await generateContentHash(value);
         if (
           !localMetadata.settings.items[key] ||
           localMetadata.settings.items[key].hash !== hash
@@ -4380,7 +4382,14 @@ async function initializeSettingsMonitoring() {
   return true;
 }
 async function generateContentHash(content) {
-  const str = typeof content === "string" ? content : JSON.stringify(content);
+  let str;
+  if (typeof content === "string") {
+    str = content;
+  } else if (content && typeof content === "object") {
+    str = JSON.stringify(content, Object.keys(content).sort());
+  } else {
+    str = JSON.stringify(content);
+  }
   const msgBuffer = new TextEncoder().encode(str);
   const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
@@ -4409,7 +4418,9 @@ async function checkIndexedDBChanges() {
             request.onsuccess = () => resolve(request.result);
           });
           if (value !== undefined) {
-            const hash = await generateContentHash(value);
+            const valueForHash =
+              typeof value === "string" ? value : JSON.stringify(value);
+            const hash = await generateContentHash(valueForHash);
             const metadata = localMetadata.settings.items[key];
             if (!metadata || metadata.hash !== hash) {
               changedKeys.add(key);
@@ -4436,15 +4447,19 @@ async function checkIndexedDBChanges() {
     persistentDB = null;
   }
 }
-async function handleSettingChange(key, value, source) {
+async function handleSettingChange(key, value, source, precomputedHash = null) {
   if (shouldExcludeSetting(key)) return;
-  const newHash = await generateContentHash(value);
+  const newHash =
+    precomputedHash ||
+    (await generateContentHash(
+      typeof value === "string" ? value : JSON.stringify(value)
+    ));
   const metadata = localMetadata.settings.items[key];
   if (!metadata || metadata.hash !== newHash) {
     localMetadata.settings.items[key] = {
       hash: newHash,
       lastModified: Date.now(),
-      syncedAt: 0,
+      syncedAt: precomputedHash ? Date.now() : 0,
       source: source,
     };
     pendingSettingsChanges = true;
@@ -4612,9 +4627,21 @@ async function downloadSettingsFromCloud() {
           async ([key, settingValue]) => {
             if (settingValue && typeof settingValue === "object") {
               const localValue = await getIndexedDBValue(key);
-              if (
-                JSON.stringify(localValue) !== JSON.stringify(settingValue.data)
-              ) {
+              const cloudValueStr =
+                typeof settingValue.data === "string"
+                  ? settingValue.data
+                  : JSON.stringify(settingValue.data);
+              const cloudHash = await generateContentHash(cloudValueStr);
+
+              const localHash =
+                localValue !== undefined
+                  ? await generateContentHash(
+                      typeof localValue === "string"
+                        ? localValue
+                        : JSON.stringify(localValue)
+                    )
+                  : "";
+              if (localHash !== cloudHash) {
                 logToConsole(
                   "info",
                   `Applying downloaded setting: ${key}`,
@@ -4623,7 +4650,8 @@ async function downloadSettingsFromCloud() {
                 await handleSettingChange(
                   key,
                   settingValue.data,
-                  settingValue.source
+                  settingValue.source,
+                  cloudHash
                 );
                 settingsApplied = true;
               } else {
@@ -4725,7 +4753,11 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
     }
     db.close();
     for (const [key, settingObj] of Object.entries(settingsData)) {
-      const newHash = await generateContentHash(settingObj.data);
+      const valueForHash =
+        typeof settingObj.data === "string"
+          ? settingObj.data
+          : JSON.stringify(settingObj.data);
+      const newHash = await generateContentHash(valueForHash);
       if (!localMetadata.settings.items[key]) {
         localMetadata.settings.items[key] = {};
       }
