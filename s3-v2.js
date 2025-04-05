@@ -482,6 +482,7 @@ async function initializeExtension() {
           "Performing initial sync due to missing or zero lastSyncTime."
         );
         await queueOperation("initial-sync", performInitialSync);
+        initialSyncPerformed = true; // <<< ADD THIS LINE
       } else {
         logToConsole(
           "info",
@@ -505,7 +506,7 @@ async function initializeExtension() {
     // setupLocalStorageChangeListener(); // Already called
     monitorIndexedDBForDeletions();
     startPeriodicChangeCheck();
-    setupVisibilityChangeHandler(); // Already called, but ensures it's set up
+    setupVisibilityChangeHandler();
 
     // Clean up old metadata versions as the last initialization step
     try {
