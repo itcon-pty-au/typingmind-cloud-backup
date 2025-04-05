@@ -2784,12 +2784,6 @@ async function processOperationQueue() {
       operationState.isProcessingQueue = true;
 
       while (operationState.operationQueue.length > 0) {
-        logToConsole("debug", "Queue before findIndex:", {
-          // ADDED LOG
-          queue: operationState.operationQueue.map((op) => op.name),
-          length: operationState.operationQueue.length,
-        });
-
         // Find next eligible operation (no pending dependencies)
         const nextOpIndex = operationState.operationQueue.findIndex((op) =>
           op.dependencies.every((dep) =>
@@ -2878,24 +2872,11 @@ async function processOperationQueue() {
           // Mark operation as completed
           operationState.completedOperations.add(name);
 
-          // Remove from queue using filter instead of splice
-          // operationState.operationQueue.splice(nextOpIndex, 1); // <-- OLD
-          operationState.operationQueue = operationState.operationQueue.filter(
-            (op, index) => index !== nextOpIndex
-          ); // <-- NEW
+          // Remove from queue
+          operationState.operationQueue.splice(nextOpIndex, 1);
 
-          logToConsole("debug", "Queue after filter:", {
-            // Updated log message
-            // ADDED LOG
-            opName: name,
-            queue: operationState.operationQueue.map((op) => op.name),
-            length: operationState.operationQueue.length,
-          });
-
-          break; // <<< ADD THIS: Exit loop after one successful operation
-
-          // Add small delay between operations - REMOVED as break exits loop
-          // await new Promise((resolve) => setTimeout(resolve, 100));
+          // Add small delay between operations
+          await new Promise((resolve) => setTimeout(resolve, 100));
         } catch (error) {
           // Clear timeout if it exists
           if (operationState.operationTimeouts.has(name)) {
@@ -2923,10 +2904,7 @@ async function processOperationQueue() {
           }
 
           // If max retries reached, remove operation and continue
-          // operationState.operationQueue.splice(nextOpIndex, 1); // <-- OLD
-          operationState.operationQueue = operationState.operationQueue.filter(
-            (op, index) => index !== nextOpIndex
-          ); // <-- NEW
+          operationState.operationQueue.splice(nextOpIndex, 1);
           operationState.completedOperations.delete(name); // Ensure failed op is not marked complete
 
           // If this operation had dependents, we need to clean them up
@@ -2949,31 +2927,28 @@ async function processOperationQueue() {
         }
       }
     } finally {
-      // Cleanup timeouts should happen regardless
+      // Cleanup
+      operationState.isProcessingQueue = false;
+      operationState.queueProcessingPromise = null;
+
+      // Clear all timeouts
       for (const [name, timeoutId] of operationState.operationTimeouts) {
         clearTimeout(timeoutId);
       }
       operationState.operationTimeouts.clear();
 
-      // Reset processing flag and promise *before* potentially re-queueing
-      operationState.isProcessingQueue = false;
-      operationState.queueProcessingPromise = null;
-
-      // Check if queue needs further processing or final cleanup
+      // Reset other operation states if queue is empty
       if (operationState.operationQueue.length === 0) {
-        // Queue is empty, perform final cleanup
         operationState.isImporting = false;
         operationState.isExporting = false;
         operationState.isPendingSync = false;
         operationState.lastError = null; // Clear error if queue is empty
-        checkSyncStatus(); // Force a sync status update
-      } else {
-        // Queue still has items, schedule next run
-        logToConsole("debug", "Queue not empty, scheduling next process run", {
-          // ADDED LOG
-          length: operationState.operationQueue.length,
-        });
-        setTimeout(processOperationQueue, 50); // Re-trigger slightly later
+
+        // Temporarily disable aggressive cleanup to see if it helps with dependency tracking
+        // operationState.completedOperations.clear();
+
+        // Force a sync status update
+        checkSyncStatus(); // <-- ADD THIS Call directly for immediate update
       }
     }
   })();
