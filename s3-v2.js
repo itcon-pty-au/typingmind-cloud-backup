@@ -487,7 +487,8 @@ async function initializeExtension() {
           "info",
           "Skipping explicit initial sync, relying on visibility change and interval."
         );
-        // Optional: Queue a regular sync check on startup if the tab is visible
+        // Optional: Queue a regular sync check on startup if the tab is visible. This is to ensure that the initial sync is done before daily sync is done.
+
         if (document.visibilityState === "visible") {
           queueOperation("startup-sync-check", syncFromCloud);
         }
@@ -503,7 +504,7 @@ async function initializeExtension() {
     // setupLocalStorageChangeListener(); // Already called
     monitorIndexedDBForDeletions();
     startPeriodicChangeCheck();
-    setupVisibilityChangeHandler(); // Already called, but ensures it's set up
+    setupVisibilityChangeHandler();
 
     // Clean up old metadata versions as the last initialization step
     try {
@@ -533,9 +534,6 @@ async function initializeExtension() {
         cloudTombstonesRemoved: cloudCleanupCount,
       });
     }
-
-    // Set up visibility change handler - moved earlier, but ensure it's present
-    setupVisibilityChangeHandler();
 
     logToConsole("success", "Initialization completed successfully");
   } catch (error) {
@@ -5824,19 +5822,16 @@ async function initializeSettingsMonitoring() {
     if (!shouldExcludeSetting(key)) {
       const value = await getIndexedDBValue(key);
       if (value !== undefined) {
-        // Use the consistent generateContentHash function
-        const hash = await generateContentHash(value);
+        const hash = await generateHash(value, "chat");
         // Only set lastModified if this is a new item or if the hash has changed
         if (
           !localMetadata.settings.items[key] ||
           localMetadata.settings.items[key].hash !== hash
         ) {
-          // Initialize or update metadata if hash differs
           localMetadata.settings.items[key] = {
             hash,
-            // Preserve existing synced timestamp if item exists
-            lastSynced: localMetadata.settings.items[key]?.lastSynced || 0,
-            lastModified: Date.now(), // Update modification time
+            lastModified: Date.now(),
+            lastSynced: 0,
             source: "indexeddb",
           };
         }
@@ -5849,19 +5844,16 @@ async function initializeSettingsMonitoring() {
     if (!shouldExcludeSetting(key)) {
       const value = localStorage.getItem(key);
       if (value !== null) {
-        // Use the consistent generateContentHash function
-        const hash = await generateContentHash(value);
+        const hash = await generateHash(value, "chat");
         // Only set lastModified if this is a new item or if the hash has changed
         if (
           !localMetadata.settings.items[key] ||
           localMetadata.settings.items[key].hash !== hash
         ) {
-          // Initialize or update metadata if hash differs
           localMetadata.settings.items[key] = {
             hash,
-            // Preserve existing synced timestamp if item exists
-            lastSynced: localMetadata.settings.items[key]?.lastSynced || 0,
-            lastModified: Date.now(), // Update modification time
+            lastModified: Date.now(),
+            lastSynced: 0,
             source: "localstorage",
           };
         }
@@ -6365,8 +6357,7 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
     // Update local metadata
     localMetadata.settings.syncedAt = now;
     localMetadata.settings.lastModified = now; // <<< ADD THIS LINE to align timestamps
-    pendingSettingsChanges = false; // Reset the flag after successful upload
-    await saveLocalMetadata();
+    saveLocalMetadata();
 
     // Update cloud metadata
     const cloudMetadata = await downloadCloudMetadata();
