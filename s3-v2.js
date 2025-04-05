@@ -5968,7 +5968,7 @@ async function handleSettingChange(key, value, source) {
     localMetadata.settings.items[key] = {
       hash: newHash,
       lastModified: Date.now(),
-      lastSynced: 0,
+      syncedAt: 0, // Changed from lastSynced to syncedAt to match uploadSettingsToCloud
       source: source,
     };
 
