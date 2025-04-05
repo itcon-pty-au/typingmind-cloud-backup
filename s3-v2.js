@@ -5824,16 +5824,19 @@ async function initializeSettingsMonitoring() {
     if (!shouldExcludeSetting(key)) {
       const value = await getIndexedDBValue(key);
       if (value !== undefined) {
-        const hash = await generateHash(value, "chat");
+        // Use the consistent generateContentHash function
+        const hash = await generateContentHash(value);
         // Only set lastModified if this is a new item or if the hash has changed
         if (
           !localMetadata.settings.items[key] ||
           localMetadata.settings.items[key].hash !== hash
         ) {
+          // Initialize or update metadata if hash differs
           localMetadata.settings.items[key] = {
             hash,
-            lastModified: Date.now(),
-            lastSynced: 0,
+            // Preserve existing synced timestamp if item exists
+            lastSynced: localMetadata.settings.items[key]?.lastSynced || 0,
+            lastModified: Date.now(), // Update modification time
             source: "indexeddb",
           };
         }
@@ -5846,16 +5849,19 @@ async function initializeSettingsMonitoring() {
     if (!shouldExcludeSetting(key)) {
       const value = localStorage.getItem(key);
       if (value !== null) {
-        const hash = await generateHash(value, "chat");
+        // Use the consistent generateContentHash function
+        const hash = await generateContentHash(value);
         // Only set lastModified if this is a new item or if the hash has changed
         if (
           !localMetadata.settings.items[key] ||
           localMetadata.settings.items[key].hash !== hash
         ) {
+          // Initialize or update metadata if hash differs
           localMetadata.settings.items[key] = {
             hash,
-            lastModified: Date.now(),
-            lastSynced: 0,
+            // Preserve existing synced timestamp if item exists
+            lastSynced: localMetadata.settings.items[key]?.lastSynced || 0,
+            lastModified: Date.now(), // Update modification time
             source: "localstorage",
           };
         }
