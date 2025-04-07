@@ -4469,25 +4469,25 @@ async function initializeSettingsMonitoring() {
 }
 async function generateContentHash(content) {
   const str = typeof content === "string" ? content : JSON.stringify(content);
-  logToConsole(
-    "debug",
-    `Generating content hash, input type: ${typeof content}, length: ${
-      str.length
-    }`,
-    {
-      contentPreview: str.length > 100 ? str.substring(0, 100) + "..." : str,
-    }
-  );
+  // logToConsole(
+  //   "debug",
+  //   `Generating content hash, input type: ${typeof content}, length: ${
+  //     str.length
+  //   }`,
+  //   {
+  //     contentPreview: str.length > 100 ? str.substring(0, 100) + "..." : str,
+  //   }
+  // );
   const msgBuffer = new TextEncoder().encode(str);
   const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const hash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-  logToConsole(
-    "debug",
-    `Content hash generated: ${hash.substring(0, 8)}...${hash.substring(
-      hash.length - 8
-    )}`
-  );
+  // logToConsole(
+  //   "debug",
+  //   `Content hash generated: ${hash.substring(0, 8)}...${hash.substring(
+  //     hash.length - 8
+  //   )}`
+  // );
   return hash;
 }
 async function checkIndexedDBChanges() {
