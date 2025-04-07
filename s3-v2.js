@@ -631,21 +631,21 @@ async function saveLocalMetadata() {
         : "unknown",
       metadataSize: metadataToSave.length,
     });
-    if (localMetadata.settings?.items) {
-      const sampleKeys = Object.keys(localMetadata.settings.items).slice(0, 3);
-      if (sampleKeys.length > 0) {
-        logToConsole(
-          "debug",
-          "Sample hashes being saved:",
-          sampleKeys.reduce((acc, key) => {
-            acc[key] = localMetadata.settings.items[key]?.hash
-              ? `${localMetadata.settings.items[key].hash.substring(0, 8)}...`
-              : "none";
-            return acc;
-          }, {})
-        );
-      }
-    }
+    // if (localMetadata.settings?.items) {
+    //   const sampleKeys = Object.keys(localMetadata.settings.items).slice(0, 3);
+    //   if (sampleKeys.length > 0) {
+    //     logToConsole(
+    //       "debug",
+    //       "Sample hashes being saved:",
+    //       sampleKeys.reduce((acc, key) => {
+    //         acc[key] = localMetadata.settings.items[key]?.hash
+    //           ? `${localMetadata.settings.items[key].hash.substring(0, 8)}...`
+    //           : "none";
+    //         return acc;
+    //       }, {})
+    //     );
+    //   }
+    // }
     const formatLogTimestamp = (ts) =>
       ts ? new Date(ts).toLocaleString() : ts === 0 ? "0 (Epoch)" : ts;
     await setIndexedDBKey("sync-metadata", metadataToSave);
@@ -664,21 +664,21 @@ async function saveLocalMetadata() {
         parsedVerify?.settings?.items?.[sampleKey]?.hash !==
           localMetadata.settings?.items?.[sampleKey]?.hash
       ) {
-        logToConsole("warning", "Metadata verification found hash mismatch", {
-          key: sampleKey,
-          expectedHash: localMetadata.settings?.items?.[sampleKey]?.hash
-            ? `${localMetadata.settings.items[sampleKey].hash.substring(
-                0,
-                8
-              )}...`
-            : "none",
-          savedHash: parsedVerify?.settings?.items?.[sampleKey]?.hash
-            ? `${parsedVerify.settings.items[sampleKey].hash.substring(
-                0,
-                8
-              )}...`
-            : "none",
-        });
+        // logToConsole("warning", "Metadata verification found hash mismatch", {
+        //   key: sampleKey,
+        //   expectedHash: localMetadata.settings?.items?.[sampleKey]?.hash
+        //     ? `${localMetadata.settings.items[sampleKey].hash.substring(
+        //         0,
+        //         8
+        //       )}...`
+        //     : "none",
+        //   savedHash: parsedVerify?.settings?.items?.[sampleKey]?.hash
+        //     ? `${parsedVerify.settings.items[sampleKey].hash.substring(
+        //         0,
+        //         8
+        //       )}...`
+        //     : "none",
+        // });
       } else {
         logToConsole(
           "success",
@@ -4544,34 +4544,34 @@ async function handleSettingChange(key, value, source) {
   if (shouldExcludeSetting(key)) return;
   const newHash = await generateContentHash(value);
   const metadata = localMetadata.settings.items[key];
-  logToConsole("debug", `Comparing setting hashes for ${key}`, {
-    existingHash: metadata?.hash
-      ? `${metadata.hash.substring(0, 8)}...${metadata.hash.substring(
-          metadata.hash.length - 8
-        )}`
-      : "none",
-    newHash: `${newHash.substring(0, 8)}...${newHash.substring(
-      newHash.length - 8
-    )}`,
-    source: source,
-    valueType: typeof value,
-    valueLength:
-      typeof value === "string" ? value.length : JSON.stringify(value).length,
-  });
+  // logToConsole("debug", `Comparing setting hashes for ${key}`, {
+  //   existingHash: metadata?.hash
+  //     ? `${metadata.hash.substring(0, 8)}...${metadata.hash.substring(
+  //         metadata.hash.length - 8
+  //       )}`
+  //     : "none",
+  //   newHash: `${newHash.substring(0, 8)}...${newHash.substring(
+  //     newHash.length - 8
+  //   )}`,
+  //   source: source,
+  //   valueType: typeof value,
+  //   valueLength:
+  //     typeof value === "string" ? value.length : JSON.stringify(value).length,
+  // });
   if (!metadata || metadata.hash !== newHash) {
     const timestamp = Date.now();
-    logToConsole("debug", `Updating local metadata for setting ${key}`, {
-      previousHash: metadata?.hash
-        ? `${metadata.hash.substring(0, 8)}...${metadata.hash.substring(
-            metadata.hash.length - 8
-          )}`
-        : "none",
-      newHash: `${newHash.substring(0, 8)}...${newHash.substring(
-        newHash.length - 8
-      )}`,
-      timestamp: new Date(timestamp).toISOString(),
-      source: source,
-    });
+    // logToConsole("debug", `Updating local metadata for setting ${key}`, {
+    //   previousHash: metadata?.hash
+    //     ? `${metadata.hash.substring(0, 8)}...${metadata.hash.substring(
+    //         metadata.hash.length - 8
+    //       )}`
+    //     : "none",
+    //   newHash: `${newHash.substring(0, 8)}...${newHash.substring(
+    //     newHash.length - 8
+    //   )}`,
+    //   timestamp: new Date(timestamp).toISOString(),
+    //   source: source,
+    // });
     localMetadata.settings.items[key] = {
       hash: newHash,
       lastModified: timestamp,
@@ -4582,20 +4582,20 @@ async function handleSettingChange(key, value, source) {
     localMetadata.settings.lastModified = timestamp;
     saveLocalMetadata();
     throttledCheckSyncStatus();
-    logToConsole(
-      "info",
-      `Setting change detected from ${source}: ${key} (hash changed: ${
-        metadata?.hash ? metadata.hash.substring(0, 8) : "none"
-      } → ${newHash.substring(0, 8)})`
-    );
+    // logToConsole(
+    //   "info",
+    //   `Setting change detected from ${source}: ${key} (hash changed: ${
+    //     metadata?.hash ? metadata.hash.substring(0, 8) : "none"
+    //   } → ${newHash.substring(0, 8)})`
+    // );
   } else {
-    logToConsole(
-      "info",
-      `Setting change ignored from ${source}: ${key} (hash unchanged: ${newHash.substring(
-        0,
-        8
-      )})`
-    );
+    // logToConsole(
+    //   "info",
+    //   `Setting change ignored from ${source}: ${key} (hash unchanged: ${newHash.substring(
+    //     0,
+    //     8
+    //   )})`
+    // );
   }
 }
 async function cleanupMetadataVersions() {
@@ -4897,10 +4897,10 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
       }
     }
     db.close();
-    logToConsole(
-      "debug",
-      "Preparing to update metadata hashes for cloud upload"
-    );
+    // logToConsole(
+    //   "debug",
+    //   "Preparing to update metadata hashes for cloud upload"
+    // );
     const hashUpdates = [];
     for (const [key, settingObj] of Object.entries(settingsData)) {
       const newHash = await generateContentHash(settingObj.data);
@@ -4912,12 +4912,12 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
         source: settingObj.source,
         changed: oldHash !== newHash,
       });
-      logToConsole("debug", `Setting ${key} hash for upload`, {
-        oldHash: oldHash ? `${oldHash.substring(0, 8)}...` : "none",
-        newHash: `${newHash.substring(0, 8)}...`,
-        source: settingObj.source,
-        changed: oldHash !== newHash,
-      });
+      // logToConsole("debug", `Setting ${key} hash for upload`, {
+      //   oldHash: oldHash ? `${oldHash.substring(0, 8)}...` : "none",
+      //   newHash: `${newHash.substring(0, 8)}...`,
+      //   source: settingObj.source,
+      //   changed: oldHash !== newHash,
+      // });
       if (!localMetadata.settings.items[key]) {
         localMetadata.settings.items[key] = {};
       }
@@ -4925,11 +4925,11 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
       localMetadata.settings.items[key].lastModified = now;
       localMetadata.settings.items[key].syncedAt = now;
     }
-    logToConsole("info", "Updated hash metadata for cloud upload", {
-      totalSettings: hashUpdates.length,
-      changedHashes: hashUpdates.filter((u) => u.changed).length,
-      timestamp: new Date(now).toISOString(),
-    });
+    // logToConsole("info", "Updated hash metadata for cloud upload", {
+    //   totalSettings: hashUpdates.length,
+    //   changedHashes: hashUpdates.filter((u) => u.changed).length,
+    //   timestamp: new Date(now).toISOString(),
+    // });
     if (Object.keys(settingsData).length === 0) {
       logToConsole("info", "No settings to upload, skipping sync");
       return true;
