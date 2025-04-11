@@ -2771,6 +2771,7 @@ async function syncFromCloud() {
     localStorage.setItem("last-cloud-sync", new Date().toLocaleString());
     logToConsole("success", "Sync completed successfully");
     operationState.lastSyncStatus = "success";
+    throttledCheckSyncStatus();
   } catch (error) {
     logToConsole("error", "Sync failed:", error);
     operationState.lastError = error;
@@ -2783,6 +2784,7 @@ async function syncFromCloud() {
       operationState.isPendingSync = false;
       queueOperation("pending-sync", syncFromCloud);
     }
+    throttledCheckSyncStatus();
   }
 }
 async function syncToCloud() {
@@ -2978,6 +2980,7 @@ async function syncToCloud() {
     throw error;
   } finally {
     operationState.isExporting = false;
+    throttledCheckSyncStatus();
   }
 }
 async function detectChanges(localChats, cloudChats) {
@@ -4984,6 +4987,7 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
     throw error;
   } finally {
     operationState.isExporting = false;
+    throttledCheckSyncStatus();
   }
 }
 async function downloadCloudMetadata() {
@@ -5258,6 +5262,7 @@ async function uploadChatToCloud(
     throw error;
   } finally {
     operationState.isExporting = false;
+    throttledCheckSyncStatus();
   }
 }
 async function checkSyncStatus() {
