@@ -80,7 +80,10 @@ WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXP
         "s3:ListBucketMultipartUploads",
         "s3:ListMultipartUploadParts",
         "s3:AbortMultipartUpload",
-        "s3:GetBucketLocation"
+        "s3:GetBucketLocation",
+        "s3:GetBucketVersioning",
+        "s3:ListBucketVersions",
+        "s3:DeleteObjectVersion"
       ],
       "Resource": [
         "arn:aws:s3:::<AWS bucket name>",
