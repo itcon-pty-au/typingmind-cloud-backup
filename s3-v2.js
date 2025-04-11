@@ -371,7 +371,7 @@ async function initializeExtension() {
           "Skipping explicit initial sync, relying on visibility change and interval."
         );
         if (document.visibilityState === "visible") {
-          queueOperation("startup-sync-check", syncFromCloud);
+          queueOperation("startup-sync-check", syncFromCloud, [], 300000);
         }
       }
     }
