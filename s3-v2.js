@@ -2964,6 +2964,7 @@ async function syncToCloud() {
         }
       );
       await saveLocalMetadata();
+      throttledCheckSyncStatus();
       logToConsole("success", "Sync to cloud completed with changes", {
         uploadedChats,
         deletedChats,
@@ -2974,11 +2975,10 @@ async function syncToCloud() {
       throttledCheckSyncStatus();
     }
     operationState.lastError = null;
-    updateSyncStatus();
   } catch (error) {
     logToConsole("error", "Sync to cloud failed:", error);
     operationState.lastError = error;
-    updateSyncStatus();
+    throttledCheckSyncStatus();
     throw error;
   } finally {
     operationState.isExporting = false;
