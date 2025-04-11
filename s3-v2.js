@@ -358,21 +358,46 @@ async function initializeExtension() {
     }
     await setupLocalStorageChangeListener();
     startSyncInterval();
+
+    // Check cloud state FIRST to determine initial action
     if (config.syncMode === "sync") {
-      if (!localMetadata || localMetadata.lastSyncTime === 0) {
+      const cloudMetadata = await downloadCloudMetadata(); // Get cloud state early
+      const cloudIsEmptyOrNew =
+        !cloudMetadata ||
+        !cloudMetadata.chats ||
+        Object.keys(cloudMetadata.chats).length === 0 ||
+        cloudMetadata.lastSyncTime === 0;
+      const localHasData =
+        localMetadata &&
+        localMetadata.chats &&
+        Object.keys(localMetadata.chats).length > 0;
+
+      if (cloudIsEmptyOrNew && localHasData) {
         logToConsole(
           "info",
-          "Performing initial sync due to missing or zero lastSyncTime."
+          "Cloud is empty/new but local data exists. Performing initial sync/upload."
         );
-        await queueOperation("initial-sync", performInitialSync, [], 300000);
-      } else {
+        // Use performInitialSync as it handles this scenario.
+        await queueOperation(
+          "initial-sync-upload",
+          performInitialSync,
+          [],
+          300000
+        );
+      } else if (!cloudIsEmptyOrNew) {
         logToConsole(
           "info",
-          "Skipping explicit initial sync, relying on visibility change and interval."
+          "Cloud data found. Performing standard startup sync check."
         );
         if (document.visibilityState === "visible") {
           queueOperation("startup-sync-check", syncFromCloud, [], 300000);
         }
+      } else {
+        logToConsole(
+          "info",
+          "Both cloud and local seem empty or new. No initial sync needed immediately."
+        );
+        // Normal interval/visibility checks will handle future changes.
       }
     }
     if (config.syncMode !== "disabled") {
