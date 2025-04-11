@@ -702,7 +702,7 @@ async function generateHash(content, type = "generic") {
   if (type === "chat" && content.id) {
     let messagesToProcess = content.messages || [];
     const stableChat = {
-      folderID: content.folderID || null,
+      title: content.title || content.chatTitle || "",
       messages: messagesToProcess
         .map((msg) => {
           if (!msg || typeof msg !== "object") return msg;
@@ -725,7 +725,6 @@ async function generateHash(content, type = "generic") {
             JSON.stringify(obj, Object.keys(obj || {}).sort());
           return stringifyStable(a).localeCompare(stringifyStable(b));
         }),
-      title: content.title || content.chatTitle || "",
     };
     str = JSON.stringify(stableChat, Object.keys(stableChat).sort());
   } else {
@@ -5417,37 +5416,6 @@ async function mergeChats(localChat, cloudChat) {
   logToConsole("success", "Chat merge completed", {
     messageCount: mergedChat.messages?.length || 0,
   });
-  if (
-    cloudChat.folderID !== undefined &&
-    (!localChat.folderID || cloudChat.updatedAt > localChat.updatedAt)
-  ) {
-    mergedChat.folderID = cloudChat.folderID;
-    logToConsole(
-      "debug",
-      `Merge selected cloud folderID (${cloudChat.folderID}) for chat ${localChat.id}`
-    );
-  } else if (
-    localChat.folderID !== undefined &&
-    (cloudChat.folderID === undefined ||
-      localChat.updatedAt >= cloudChat.updatedAt)
-  ) {
-    mergedChat.folderID = localChat.folderID;
-    logToConsole(
-      "debug",
-      `Merge selected local folderID (${localChat.folderID}) for chat ${localChat.id}`
-    );
-  } else if (
-    localChat.folderID === undefined &&
-    cloudChat.folderID === undefined
-  ) {
-    // If neither has folderID, ensure it's not present or is null
-    delete mergedChat.folderID; // Or mergedChat.folderID = null;
-    logToConsole(
-      "debug",
-      `Merge resulted in no folderID for chat ${localChat.id}`
-    );
-  }
-
   return mergedChat;
 }
 function cleanupOldTombstones() {
