@@ -1579,11 +1579,11 @@ async function decryptData(data) {
   const marker = "ENCRYPTED:";
   const dataString = new TextDecoder().decode(data.slice(0, marker.length));
   const bucketName = localStorage.getItem("aws-bucket");
-  logToConsole("tag", "Checking encryption marker:", {
-    expectedMarker: marker,
-    foundMarker: dataString,
-    isEncrypted: dataString === marker,
-  });
+  // logToConsole("tag", "Checking encryption marker:", {
+  //   expectedMarker: marker,
+  //   foundMarker: dataString,
+  //   isEncrypted: dataString === marker,
+  // });
   if (dataString !== marker) {
     logToConsole("info", "Data is not encrypted, returning as-is");
     return JSON.parse(new TextDecoder().decode(data));
@@ -1619,7 +1619,7 @@ async function decryptData(data) {
       encryptedData
     );
     const decryptedText = new TextDecoder().decode(decryptedContent);
-    logToConsole("success", "Decryption successful");
+    // logToConsole("success", "Decryption successful");
     return decryptedText;
   } catch (error) {
     logToConsole("error", "Decryption failed:", error);
@@ -2627,11 +2627,11 @@ async function syncFromCloud() {
           metadataNeedsSaving = true;
           try {
             const newHash = await generateHash(chatToSave, "chat");
-            logToConsole(
-              "debug",
-              `Hash calculated for immediate save in syncFromCloud for ${chatId}`,
-              { hash: newHash }
-            );
+            // logToConsole(
+            //   "debug",
+            //   `Hash calculated for immediate save in syncFromCloud for ${chatId}`,
+            //   { hash: newHash }
+            // );
             const metaString = await getIndexedDBKey("sync-metadata");
             let currentLocalMeta = JSON.parse(metaString || "{}");
             if (!currentLocalMeta.chats) currentLocalMeta.chats = {};
@@ -2647,10 +2647,10 @@ async function syncFromCloud() {
               "sync-metadata",
               JSON.stringify(currentLocalMeta)
             );
-            logToConsole(
-              "debug",
-              `Immediately saved metadata for ${chatId} after merge.`
-            );
+            // logToConsole(
+            //   "debug",
+            //   `Immediately saved metadata for ${chatId} after merge.`
+            // );
             metadataNeedsSaving = false;
           } catch (metaSaveError) {
             logToConsole(
@@ -2723,10 +2723,10 @@ async function syncFromCloud() {
       }
     }
     if (metadataNeedsSaving) {
-      logToConsole(
-        "info",
-        "Saving batched metadata changes from syncFromCloud"
-      );
+      // logToConsole(
+      //   "info",
+      //   "Saving batched metadata changes from syncFromCloud"
+      // );
       await saveLocalMetadata();
     }
     if (hasChanges) {
@@ -5062,7 +5062,7 @@ async function downloadCloudMetadata() {
   }
 }
 async function downloadChatFromCloud(chatId) {
-  logToConsole("download", `Downloading chat ${chatId} from cloud`);
+  // logToConsole("download", `Downloading chat ${chatId} from cloud`);
   try {
     const s3 = initializeS3Client();
     const params = {
@@ -5088,7 +5088,7 @@ async function downloadChatFromCloud(chatId) {
         );
         chatData.id = chatId;
       }
-      logToConsole("success", `Downloaded chat ${chatId} from cloud`);
+      // logToConsole("success", `Downloaded chat ${chatId} from cloud`);
       return chatData;
     } catch (error) {
       if (error.code === "NoSuchKey") {
@@ -5406,14 +5406,14 @@ async function mergeChats(localChat, cloudChat) {
     return 0;
   });
   mergedChat.messagesArray = mergedChat.messages;
-  logToConsole(
-    "debug",
-    `Ensured messagesArray consistency in mergeChats for ${mergedChat.id}`,
-    {
-      finalMessagesCount: mergedChat.messages?.length,
-      finalMessagesArrayCount: mergedChat.messagesArray?.length,
-    }
-  );
+  // logToConsole(
+  //   "debug",
+  //   `Ensured messagesArray consistency in mergeChats for ${mergedChat.id}`,
+  //   {
+  //     finalMessagesCount: mergedChat.messages?.length,
+  //     finalMessagesArrayCount: mergedChat.messagesArray?.length,
+  //   }
+  // );
   logToConsole("success", "Chat merge completed", {
     messageCount: mergedChat.messages?.length || 0,
   });
