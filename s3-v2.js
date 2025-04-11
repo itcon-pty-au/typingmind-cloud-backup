@@ -2623,6 +2623,7 @@ async function syncFromCloud() {
           await saveChatToIndexedDB(chatToSave, syncTimestamp);
           hasChanges = true;
           downloadedChats++;
+          metadataNeedsSaving = true;
           try {
             const newHash = await generateHash(chatToSave, "chat");
             logToConsole(
@@ -2970,6 +2971,7 @@ async function syncToCloud() {
       });
     } else {
       logToConsole("info", "No changes detected during sync to cloud");
+      throttledCheckSyncStatus();
     }
     operationState.lastError = null;
     updateSyncStatus();
