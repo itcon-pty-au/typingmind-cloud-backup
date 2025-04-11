@@ -703,6 +703,7 @@ async function generateHash(content, type = "generic") {
     let messagesToProcess = content.messages || [];
     const stableChat = {
       title: content.title || content.chatTitle || "",
+      folderId: content.folderId || null,
       messages: messagesToProcess
         .map((msg) => {
           if (!msg || typeof msg !== "object") return msg;
