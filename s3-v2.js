@@ -364,7 +364,7 @@ async function initializeExtension() {
           "info",
           "Performing initial sync due to missing or zero lastSyncTime."
         );
-        await queueOperation("initial-sync", performInitialSync);
+        await queueOperation("initial-sync", performInitialSync, [], 300000);
       } else {
         logToConsole(
           "info",
