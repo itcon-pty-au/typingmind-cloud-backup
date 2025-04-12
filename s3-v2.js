@@ -4911,17 +4911,18 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
   try {
     operationState.isExporting = true;
     const s3 = initializeS3Client();
-    const settingsData = {};
+    const settingsFromLocalStorage = {}; // Store localStorage settings here
     const now = syncTimestamp || Date.now();
     logToConsole(
       "debug",
       `Beginning settings upload, timestamp: ${new Date(now).toISOString()}`
     );
+    // Collect localStorage
     for (const key of Object.keys(localStorage)) {
       if (!shouldExcludeSetting(key)) {
         const value = localStorage.getItem(key);
         if (value !== null) {
-          settingsData[key] = {
+          settingsFromLocalStorage[key] = {
             data: value,
             source: "localStorage",
             lastModified: now,
@@ -4929,44 +4930,91 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
         }
       }
     }
-    const db = await openIndexedDB();
-    const transaction = db.transaction("keyval", "readonly");
-    const store = transaction.objectStore("keyval");
-    const keys = await new Promise((resolve, reject) => {
-      const request = store.getAllKeys();
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-    });
-    for (const key of keys) {
-      if (!shouldExcludeSetting(key)) {
-        try {
-          const value = await getIndexedDBKey(key);
-          if (value !== undefined) {
-            try {
-              settingsData[key] = {
-                data: typeof value === "string" ? value : JSON.stringify(value),
-                source: "indexeddb",
-                lastModified: now,
-              };
-            } catch (serializeError) {
-              logToConsole(
-                "error",
-                `Failed to serialize ${key}, storing as string`,
-                serializeError
-              );
-              settingsData[key] = {
-                data: String(value),
-                source: "indexeddb",
-                lastModified: now,
-              };
-            }
+    // Collect IndexedDB using a single transaction
+    const settingsFromDB = {};
+    let db = null;
+    try {
+      db = await openIndexedDB(); // Open connection once
+      const transaction = db.transaction("keyval", "readonly");
+      const store = transaction.objectStore("keyval");
+      const keys = await new Promise((resolve, reject) => {
+        // Get all keys
+        const request = store.getAllKeys();
+        request.onerror = (e) =>
+          reject(new Error(`Failed to get all keys: ${e.target.error}`));
+        request.onsuccess = (e) => resolve(e.target.result);
+      });
+      // Filter keys *before* creating read promises
+      const relevantKeys = keys.filter((key) => !shouldExcludeSetting(key));
+      // Create promises to read values for relevant keys within the same transaction
+      const readPromises = relevantKeys.map(
+        (key) =>
+          new Promise((resolve, reject) => {
+            const request = store.get(key);
+            // Attach error handlers directly to the request
+            request.onerror = (e) =>
+              reject(new Error(`Failed to read key ${key}: ${e.target.error}`));
+            request.onsuccess = (e) => resolve({ key, value: e.target.result });
+          })
+      );
+      // Wait for all read operations to complete
+      const results = await Promise.all(readPromises);
+      // Wait for the transaction itself to complete to ensure consistency
+      await new Promise((resolve, reject) => {
+        transaction.oncomplete = resolve;
+        transaction.onerror = (e) =>
+          reject(new Error(`Read transaction failed: ${e.target.error}`)); // Reject on transaction error
+        // Note: If any individual read request failed, Promise.all would have already rejected.
+      });
+      // Process results *after* the transaction has successfully completed
+      results.forEach(({ key, value }) => {
+        if (value !== undefined) {
+          try {
+            // Store data, ensuring non-strings are stringified
+            settingsFromDB[key] = {
+              data: typeof value === "string" ? value : JSON.stringify(value),
+              source: "indexeddb",
+              lastModified: now, // Use the overall sync timestamp
+            };
+          } catch (serializeError) {
+            logToConsole(
+              "error",
+              `Failed to serialize ${key}, storing as string`,
+              serializeError
+            );
+            settingsFromDB[key] = {
+              data: String(value),
+              source: "indexeddb",
+              lastModified: now,
+            };
           }
-        } catch (error) {
-          logToConsole("error", `Error reading IndexedDB key ${key}`, error);
+        }
+      });
+      logToConsole(
+        "debug",
+        `Successfully read ${
+          Object.keys(settingsFromDB).length
+        } settings from IndexedDB in single transaction.`
+      );
+    } catch (error) {
+      logToConsole("error", "Error reading settings from IndexedDB", error);
+      // If reading DB fails, we might still want to upload localStorage settings.
+      // Decide whether to throw or just continue.
+      // For now, let's continue but log the error clearly.
+      // To completely fail the upload, uncomment the next line:
+      // throw error;
+    } finally {
+      if (db) {
+        // Attempt to close the connection, though it might already be closed by transaction end/error
+        try {
+          db.close();
+        } catch (e) {
+          /* ignore */
         }
       }
     }
-    db.close();
+    // Merge localStorage and IndexedDB settings
+    const settingsData = { ...settingsFromLocalStorage, ...settingsFromDB };
     // logToConsole(
     //   "debug",
     //   "Preparing to update metadata hashes for cloud upload"
@@ -5002,11 +5050,14 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
     // });
     if (Object.keys(settingsData).length === 0) {
       logToConsole("info", "No settings to upload, skipping sync");
-      return true;
+      // Still need to update overall metadata if only chats changed?
+      // Check if chat changes happened earlier in syncToCloud
+      // This part might need refinement based on overall syncToCloud logic
+      return true; // Indicate success (no settings upload needed)
     }
     const encryptedData = await encryptData(settingsData);
     await uploadToS3("settings.json", encryptedData, {
-      ContentType: "application/json",
+      ContentType: "application/json", // Note: ContentType applies to the *uploaded* data, which is binary encrypted data
       ServerSideEncryption: "AES256",
     });
     logToConsole("success", "Uploaded settings to cloud", {
@@ -5016,16 +5067,19 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
         (Object.keys(settingsData).length > 10 ? "..." : ""),
       timestamp: new Date(now).toISOString(),
     });
+    // Update overall settings metadata locally *after* successful upload
     localMetadata.settings.syncedAt = now;
-    localMetadata.settings.lastModified = now;
-    saveLocalMetadata();
+    localMetadata.settings.lastModified = now; // Mark settings as modified up to this sync point
+    await saveLocalMetadata(); // Save the updated item hashes and overall timestamps
+    // Update cloud metadata (only settings part and lastSyncTime)
     const cloudMetadata = await downloadCloudMetadata();
+    if (!cloudMetadata.settings) cloudMetadata.settings = {}; // Ensure settings object exists
     cloudMetadata.settings = {
       lastModified: now,
-      syncedAt: now,
+      syncedAt: now, // Reflect that cloud settings match this sync point
     };
-    cloudMetadata.lastSyncTime = now;
-    logToConsole("debug", "Uploading settings metadata to cloud", {
+    cloudMetadata.lastSyncTime = Math.max(cloudMetadata.lastSyncTime || 0, now); // Update overall sync time
+    logToConsole("debug", "Uploading updated metadata after settings sync", {
       timestamp: new Date(now).toISOString(),
       settingsLastModified: new Date(
         cloudMetadata.settings.lastModified
@@ -5040,21 +5094,17 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
         ServerSideEncryption: "AES256",
       }
     );
-    logToConsole(
-      "success",
-      "Cloud metadata lastSyncTime updated after settings sync",
-      {
-        timestamp: new Date(now).toISOString(),
-        metadataSize: JSON.stringify(cloudMetadata).length,
-      }
-    );
+    logToConsole("success", "Cloud metadata updated after settings sync", {
+      timestamp: new Date(now).toISOString(),
+      metadataSize: JSON.stringify(cloudMetadata).length,
+    });
     return true;
   } catch (error) {
     logToConsole("error", "Error uploading settings", error);
     throw error;
   } finally {
     operationState.isExporting = false;
-    throttledCheckSyncStatus();
+    throttledCheckSyncStatus(); // Update status indicator
   }
 }
 async function downloadCloudMetadata() {
