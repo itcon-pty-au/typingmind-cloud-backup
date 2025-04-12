@@ -2512,60 +2512,43 @@ async function syncFromCloud() {
           ? new Date(localMetadata.settings.syncedAt).toLocaleString()
           : "never",
       });
-      const cloudSettings = await downloadSettingsFromCloud();
-      if (cloudSettings) {
-        let settingsProcessed = 0;
-        const totalSettings = Object.keys(cloudSettings).length;
-        const preserveKeys = [
-          "aws-bucket",
-          "aws-access-key",
-          "aws-secret-key",
-          "aws-region",
-          "aws-endpoint",
-          "encryption-key",
-          "chat-sync-metadata",
-        ];
-        for (const [key, settingData] of Object.entries(cloudSettings)) {
-          if (!preserveKeys.includes(key)) {
-            try {
-              if (key.startsWith("TM_use")) {
-                let valueToStore = settingData.data;
-                if (
-                  typeof valueToStore === "string" &&
-                  (valueToStore.startsWith("{") || valueToStore.startsWith("["))
-                ) {
-                  try {
-                    valueToStore = JSON.parse(valueToStore);
-                    logToConsole(
-                      "info",
-                      `Successfully parsed complex object for ${key}`
-                    );
-                  } catch (parseError) {
-                    logToConsole(
-                      "warning",
-                      `Failed to parse ${key} as JSON, using as-is`,
-                      parseError
-                    );
-                  }
-                }
-                await setIndexedDBKey(key, valueToStore);
-              } else {
-                let value = settingData.data;
-                localStorage.setItem(key, value);
-              }
-              settingsProcessed++;
-            } catch (error) {
-              logToConsole("error", `Error applying setting ${key}:`, error);
-            }
-          }
-        }
+      // Call the modified function, it now returns true/false if changes applied
+      const settingsWereApplied = await downloadSettingsFromCloud();
+      if (settingsWereApplied) {
+        // Only update the overall syncedAt timestamp if settings were actually applied
         localMetadata.settings.syncedAt = syncTimestamp;
-        metadataNeedsSaving = true;
-        hasChanges = true;
+        // Use the lastModified from the cloud metadata for consistency
+        if (cloudMetadata.settings && cloudMetadata.settings.lastModified) {
+          localMetadata.settings.lastModified =
+            cloudMetadata.settings.lastModified;
+        } else {
+          localMetadata.settings.lastModified = syncTimestamp; // Fallback
+        }
+        metadataNeedsSaving = true; // Ensure metadata gets saved later
+        hasChanges = true; // Signal overall sync had changes
         logToConsole(
           "success",
-          `Settings sync completed: ${settingsProcessed}/${totalSettings} settings processed`
+          `Settings sync completed. Local settings marked synced at ${new Date(
+            syncTimestamp
+          ).toISOString()}`
         );
+      } else {
+        // If downloadSettingsFromCloud returned false (no changes or error),
+        // We might still want to update syncedAt if the cloud lastModified is newer,
+        // to prevent re-downloading unchanged settings repeatedly.
+        if (
+          cloudMetadata.settings &&
+          cloudMetadata.settings.lastModified > localMetadata.settings.syncedAt
+        ) {
+          localMetadata.settings.syncedAt = cloudMetadata.settings.lastModified;
+          localMetadata.settings.lastModified =
+            cloudMetadata.settings.lastModified; // Keep consistent
+          metadataNeedsSaving = true;
+          logToConsole(
+            "info",
+            "Updated settings syncedAt timestamp even though no content changed."
+          );
+        }
       }
     }
     const currentLocalChats = await getAllChatsFromIndexedDB();
@@ -4746,6 +4729,8 @@ async function deleteChatFromCloud(chatId) {
 }
 async function downloadSettingsFromCloud() {
   logToConsole("download", "Downloading settings.json from cloud");
+  let settingsApplied = false;
+  let metadataNeedsSaving = false;
   try {
     const s3 = initializeS3Client();
     const params = {
@@ -4773,14 +4758,13 @@ async function downloadSettingsFromCloud() {
           "Failed to parse settings.json content after decryption. Content is not valid JSON. Settings update skipped.",
           { error: error.message, content: decryptedJsonString }
         );
-        return null;
+        return false;
       }
       if (
         settingsData &&
         typeof settingsData === "object" &&
         !Array.isArray(settingsData)
       ) {
-        let settingsApplied = false;
         const settingsCount = Object.keys(settingsData).length;
         logToConsole(
           "debug",
@@ -4793,50 +4777,85 @@ async function downloadSettingsFromCloud() {
         );
         const settingPromises = Object.entries(settingsData).map(
           async ([key, settingValue]) => {
-            if (settingValue && typeof settingValue === "object") {
-              const localValue = await getIndexedDBValue(key);
-              const localHash = localValue
-                ? await generateContentHash(localValue)
-                : "none";
-              const cloudHash = await generateContentHash(settingValue.data);
-
-              logToConsole("debug", `Comparing setting ${key}`, {
-                localHash:
-                  localHash !== "none"
-                    ? `${localHash.substring(0, 8)}...`
-                    : "none",
-                cloudHash: `${cloudHash.substring(0, 8)}...`,
-                source: settingValue.source,
-                lastModified: new Date(settingValue.lastModified).toISOString(),
-              });
-              if (
-                JSON.stringify(localValue) !== JSON.stringify(settingValue.data)
-              ) {
+            // Check if the key should be excluded or if the format is invalid
+            if (
+              shouldExcludeSetting(key) ||
+              !settingValue ||
+              typeof settingValue !== "object"
+            ) {
+              if (!shouldExcludeSetting(key)) {
+                // Only log warning if not intentionally excluded
                 logToConsole(
-                  "info",
-                  `Applying downloaded setting: ${key}`,
-                  settingValue.source
+                  "warn",
+                  `Invalid setting format or excluded key skipped: ${key}`,
+                  settingValue
                 );
-                await handleSettingChange(
-                  key,
-                  settingValue.data,
-                  settingValue.source
-                );
-                settingsApplied = true;
-              } else {
+              }
+              return; // Skip this setting
+            }
+            const newHash = await generateContentHash(settingValue.data);
+            const currentLocalMeta = localMetadata.settings.items[key];
+            // Apply if metadata doesn't exist locally or hash differs
+            if (!currentLocalMeta || currentLocalMeta.hash !== newHash) {
+              logToConsole(
+                "info",
+                `Applying downloaded setting: ${key} from ${settingValue.source}`
+              );
+              settingsApplied = true; // Flag that at least one change was applied
+              // Directly update storage based on source
+              try {
+                let valueToStore = settingValue.data;
+                if (settingValue.source === "indexeddb") {
+                  // Attempt to parse if looks like JSON, otherwise store as string
+                  if (
+                    typeof valueToStore === "string" &&
+                    (valueToStore.startsWith("{") ||
+                      valueToStore.startsWith("["))
+                  ) {
+                    try {
+                      valueToStore = JSON.parse(valueToStore);
+                    } catch (e) {
+                      logToConsole(
+                        "warning",
+                        `Could not parse IndexedDB value for ${key} as JSON, storing as string.`
+                      );
+                    }
+                  }
+                  await setIndexedDBKey(key, valueToStore);
+                } else {
+                  // Assume localStorage
+                  localStorage.setItem(key, valueToStore);
+                }
+                // Update local metadata for this specific setting to reflect sync
+                const itemTimestamp = settingValue.lastModified || Date.now(); // Use timestamp from cloud if available
+                if (!localMetadata.settings.items[key])
+                  localMetadata.settings.items[key] = {}; // Ensure object exists
+                localMetadata.settings.items[key].hash = newHash;
+                localMetadata.settings.items[key].lastModified = itemTimestamp; // Reflect modification time from cloud
+                localMetadata.settings.items[key].syncedAt = itemTimestamp; // Mark as synced *at* this time
+                localMetadata.settings.items[key].source = settingValue.source;
+                metadataNeedsSaving = true; // Flag that metadata needs saving later
+              } catch (error) {
                 logToConsole(
-                  "debug",
-                  `Skipping setting ${key}: Local version identical. Hash: ${localHash.substring(
-                    0,
-                    8
-                  )}`
+                  "error",
+                  `Error applying downloaded setting ${key}:`,
+                  error
                 );
               }
             } else {
+              // Hash matches. Optionally update timestamps if needed.
+              const cloudTimestamp = settingValue.lastModified || 0;
+              if (currentLocalMeta.syncedAt < cloudTimestamp) {
+                currentLocalMeta.syncedAt = cloudTimestamp; // Ensure syncedAt reflects cloud timestamp
+                metadataNeedsSaving = true;
+              }
+              if (currentLocalMeta.lastModified < cloudTimestamp) {
+                currentLocalMeta.lastModified = cloudTimestamp; // Optionally update lastModified too
+                metadataNeedsSaving = true;
+              }
               logToConsole(
-                "warn",
-                `Invalid setting format for ${key}`,
-                settingValue
+                "debug",
+                `Skipping setting ${key}: Local hash matches cloud.`
               );
             }
           }
@@ -4850,6 +4869,14 @@ async function downloadSettingsFromCloud() {
             "No applicable setting changes found in downloaded settings."
           );
         }
+        // Save local metadata if changes were made *within* this function
+        if (metadataNeedsSaving) {
+          await saveLocalMetadata();
+          logToConsole(
+            "debug",
+            "Saved local metadata changes after applying settings."
+          );
+        }
       } else if (settingsData) {
         logToConsole(
           "error",
@@ -4858,14 +4885,16 @@ async function downloadSettingsFromCloud() {
         );
       }
       logToConsole("success", "Settings download and processing complete.");
-      return settingsData;
+      return settingsApplied; // Return true if changes were applied
     } catch (error) {
       logToConsole("error", "Error downloading settings", error);
-      throw error;
+      // Ensure we return false on error so syncFromCloud doesn't incorrectly update syncedAt
+      return false;
     }
   } catch (error) {
     logToConsole("error", "Error downloading settings from cloud", error);
-    throw error;
+    // Ensure we return false on error
+    return false;
   }
 }
 async function uploadSettingsToCloud(syncTimestamp = null) {
