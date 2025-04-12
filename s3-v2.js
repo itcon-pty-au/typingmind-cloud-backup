@@ -4795,11 +4795,21 @@ async function downloadSettingsFromCloud() {
             }
             const newHash = await generateContentHash(settingValue.data);
             const currentLocalMeta = localMetadata.settings.items[key];
-            // Apply if metadata doesn't exist locally or hash differs
-            if (!currentLocalMeta || currentLocalMeta.hash !== newHash) {
+            const cloudTimestamp = settingValue.lastModified || 0; // Get timestamp from cloud data
+            // Apply if metadata doesn't exist locally OR hash differs OR cloud timestamp is newer than local item sync time
+            if (
+              !currentLocalMeta ||
+              currentLocalMeta.hash !== newHash ||
+              currentLocalMeta.syncedAt < cloudTimestamp
+            ) {
               logToConsole(
                 "info",
-                `Applying downloaded setting: ${key} from ${settingValue.source}`
+                `Applying downloaded setting: ${key} from ${settingValue.source}. Reason: ` +
+                  (!currentLocalMeta
+                    ? "New setting"
+                    : currentLocalMeta.hash !== newHash
+                    ? "Hash mismatch"
+                    : "Cloud newer")
               );
               settingsApplied = true; // Flag that at least one change was applied
               // Directly update storage based on source
@@ -4827,7 +4837,7 @@ async function downloadSettingsFromCloud() {
                   localStorage.setItem(key, valueToStore);
                 }
                 // Update local metadata for this specific setting to reflect sync
-                const itemTimestamp = settingValue.lastModified || Date.now(); // Use timestamp from cloud if available
+                const itemTimestamp = cloudTimestamp || Date.now(); // Use timestamp from cloud
                 if (!localMetadata.settings.items[key])
                   localMetadata.settings.items[key] = {}; // Ensure object exists
                 localMetadata.settings.items[key].hash = newHash;
@@ -4843,8 +4853,8 @@ async function downloadSettingsFromCloud() {
                 );
               }
             } else {
-              // Hash matches. Optionally update timestamps if needed.
-              const cloudTimestamp = settingValue.lastModified || 0;
+              // Hash matches and local item sync time is not older than cloud timestamp.
+              // Optionally update timestamps if needed, though less critical if hash matches.
               if (currentLocalMeta.syncedAt < cloudTimestamp) {
                 currentLocalMeta.syncedAt = cloudTimestamp; // Ensure syncedAt reflects cloud timestamp
                 metadataNeedsSaving = true;
@@ -4855,7 +4865,7 @@ async function downloadSettingsFromCloud() {
               }
               logToConsole(
                 "debug",
-                `Skipping setting ${key}: Local hash matches cloud.`
+                `Skipping setting ${key}: Local hash matches cloud and timestamp is not older.`
               );
             }
           }
