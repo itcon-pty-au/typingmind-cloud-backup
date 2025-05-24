@@ -5409,6 +5409,7 @@ async function checkSyncStatus() {
     const chatIds = Object.keys(localMetadata.chats || {});
     for (const chatId of chatIds) {
       const chatMeta = localMetadata.chats[chatId];
+      if (chatMeta.deleted) continue;
       if (chatMeta.lastModified > (chatMeta.syncedAt || 0)) {
         chatsOutOfSync = true;
         logToConsole("debug", "checkSyncStatus: Chat is out of sync", {
