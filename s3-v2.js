@@ -4778,11 +4778,7 @@ async function downloadSettingsFromCloud() {
         const settingPromises = Object.entries(settingsData).map(
           async ([key, settingValue]) => {
             // Check if the key should be excluded or if the format is invalid
-            if (
-              shouldExcludeSetting(key) ||
-              !settingValue ||
-              typeof settingValue !== "object"
-            ) {
+            if (shouldExcludeSetting(key) || !settingValue) {
               if (!shouldExcludeSetting(key)) {
                 // Only log warning if not intentionally excluded
                 logToConsole(
