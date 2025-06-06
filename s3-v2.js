@@ -258,7 +258,12 @@ async function performFullInitialization() {
       await queueOperation("initial-sync", performInitialSync);
     }
     if (config.syncMode !== "disabled") {
-      queueOperation("daily-backup-check", checkAndPerformDailyBackup);
+      queueOperation(
+        "daily-backup-check",
+        checkAndPerformDailyBackup,
+        [],
+        300000
+      );
     }
     setupLocalStorageChangeListener();
     monitorIndexedDBForDeletions();
@@ -401,7 +406,12 @@ async function initializeExtension() {
       }
     }
     if (config.syncMode !== "disabled") {
-      queueOperation("daily-backup-check", checkAndPerformDailyBackup);
+      queueOperation(
+        "daily-backup-check",
+        checkAndPerformDailyBackup,
+        [],
+        300000
+      );
     }
     monitorIndexedDBForDeletions();
     startPeriodicChangeCheck();
