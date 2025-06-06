@@ -3852,13 +3852,42 @@ function openSyncModal() {
     }
     updateSyncStatus();
   });
-  modal.querySelector("#create-snapshot").addEventListener("click", () => {
-    const name = prompt("Enter snapshot name:");
-    if (name) {
-      createSnapshot(name);
-      updateSyncStatus();
-    }
-  });
+  modal
+    .querySelector("#create-snapshot")
+    .addEventListener("click", async () => {
+      const snapshotButton = modal.querySelector("#create-snapshot");
+      const name = prompt("Enter snapshot name:");
+      if (name) {
+        snapshotButton.disabled = true;
+        const originalText = snapshotButton.textContent;
+        snapshotButton.textContent = "Working...";
+        try {
+          const success = await createSnapshot(name);
+          if (success) {
+            snapshotButton.textContent = "Completed!";
+            setTimeout(() => {
+              snapshotButton.textContent = originalText;
+            }, 2000);
+          } else {
+            snapshotButton.textContent = "Failed";
+            setTimeout(() => {
+              snapshotButton.textContent = originalText;
+            }, 2000);
+          }
+        } catch (error) {
+          logToConsole("error", "Snapshot button error:", error);
+          snapshotButton.textContent = "Failed";
+          setTimeout(() => {
+            snapshotButton.textContent = originalText;
+          }, 2000);
+        } finally {
+          setTimeout(() => {
+            snapshotButton.disabled = false;
+          }, 2000);
+          updateSyncStatus();
+        }
+      }
+    });
   const syncModeRadios = modal.querySelectorAll('input[name="sync-mode"]');
   syncModeRadios.forEach((radio) => {
     radio.addEventListener("change", function () {
