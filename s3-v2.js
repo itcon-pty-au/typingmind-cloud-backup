@@ -268,6 +268,7 @@ async function performFullInitialization() {
     setupLocalStorageChangeListener();
     monitorIndexedDBForDeletions();
     startPeriodicChangeCheck();
+    queueOperation("startup-settings-check", forceSettingsCheck, [], 10000);
     setupVisibilityChangeHandler();
     try {
       await cleanupMetadataVersions();
@@ -415,6 +416,7 @@ async function initializeExtension() {
     }
     monitorIndexedDBForDeletions();
     startPeriodicChangeCheck();
+    queueOperation("startup-settings-check", forceSettingsCheck, [], 10000);
     setupVisibilityChangeHandler();
     try {
       await cleanupMetadataVersions();
@@ -2333,9 +2335,18 @@ async function detectCloudChanges(cloudMetadata) {
   if (!cloudMetadata || !cloudMetadata.chats) return false;
   if (
     cloudMetadata.settings &&
-    (!localMetadata.settings.syncedAt ||
+    (!localMetadata.settings ||
+      !localMetadata.settings.syncedAt ||
       cloudMetadata.settings.lastModified > localMetadata.settings.syncedAt)
   ) {
+    logToConsole(
+      "debug",
+      `Cloud settings change detected: Cloud lastModified ${new Date(
+        cloudMetadata.settings.lastModified
+      ).toISOString()} > Local syncedAt ${new Date(
+        localMetadata.settings?.syncedAt || 0
+      ).toISOString()}`
+    );
     return true;
   }
   for (const [chatId, cloudChatMeta] of Object.entries(cloudMetadata.chats)) {
@@ -2400,6 +2411,7 @@ function startSyncInterval() {
     try {
       const hasLocalChanges =
         pendingSettingsChanges ||
+        localMetadata.settings.lastModified > localMetadata.settings.syncedAt ||
         Object.values(localMetadata.chats).some(
           (chat) =>
             !chat.deleted &&
@@ -2412,6 +2424,12 @@ function startSyncInterval() {
           hasCloudChanges,
           hasLocalChanges,
           pendingSettingsChanges,
+          settingsLastModified: localMetadata.settings?.lastModified
+            ? new Date(localMetadata.settings.lastModified).toISOString()
+            : "never",
+          settingsSyncedAt: localMetadata.settings?.syncedAt
+            ? new Date(localMetadata.settings.syncedAt).toISOString()
+            : "never",
         });
         const cloudChatCount = Object.keys(cloudMetadata?.chats || {}).length;
         const localChatCount = Object.keys(localMetadata.chats || {}).length;
@@ -2578,7 +2596,7 @@ async function syncFromCloud() {
           ? new Date(localMetadata.settings.syncedAt).toLocaleString()
           : "never",
       });
-      // Call the modified function, it now returns true/false if changes applied
+      await forceSettingsCheck();
       const settingsWereApplied = await downloadSettingsFromCloud();
       if (settingsWereApplied) {
         // Only update the overall syncedAt timestamp if settings were actually applied
@@ -2889,6 +2907,7 @@ async function syncToCloud() {
         localMetadata.settings.lastModified = syncTimestamp;
         await saveLocalMetadata();
         hasChanges = true;
+        logToConsole("success", "Settings successfully uploaded to cloud");
       } catch (error) {
         logToConsole("error", "Failed to upload settings:", error);
         throw error;
@@ -4980,7 +4999,6 @@ async function downloadSettingsFromCloud() {
             "No applicable setting changes found in downloaded settings."
           );
         }
-        // Save local metadata if changes were made *within* this function
         if (metadataNeedsSaving) {
           await saveLocalMetadata();
           logToConsole(
@@ -4996,15 +5014,13 @@ async function downloadSettingsFromCloud() {
         );
       }
       logToConsole("success", "Settings download and processing complete.");
-      return settingsApplied; // Return true if changes were applied
+      return settingsApplied;
     } catch (error) {
       logToConsole("error", "Error downloading settings", error);
-      // Ensure we return false on error so syncFromCloud doesn't incorrectly update syncedAt
       return false;
     }
   } catch (error) {
     logToConsole("error", "Error downloading settings from cloud", error);
-    // Ensure we return false on error
     return false;
   }
 }
@@ -5724,6 +5740,56 @@ async function cleanupCloudTombstones() {
     return 0;
   }
 }
+async function forceSettingsCheck() {
+  if (!localMetadata.settings) {
+    await initializeSettingsMonitoring();
+    return;
+  }
+  let hasChanges = false;
+  for (const key of Object.keys(localStorage)) {
+    if (!shouldExcludeSetting(key)) {
+      const value = localStorage.getItem(key);
+      if (value !== null) {
+        const hash = await generateContentHash(value);
+        const metadata = localMetadata.settings.items[key];
+        if (!metadata || metadata.hash !== hash) {
+          await handleSettingChange(key, value, "localstorage");
+          hasChanges = true;
+        }
+      }
+    }
+  }
+  try {
+    const db = await openIndexedDB();
+    const transaction = db.transaction("keyval", "readonly");
+    const store = transaction.objectStore("keyval");
+    const keys = await new Promise((resolve, reject) => {
+      const request = store.getAllKeys();
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+    for (const key of keys) {
+      if (!shouldExcludeSetting(key)) {
+        const value = await getIndexedDBValue(key);
+        if (value !== undefined) {
+          const hash = await generateContentHash(value);
+          const metadata = localMetadata.settings.items[key];
+          if (!metadata || metadata.hash !== hash) {
+            await handleSettingChange(key, value, "indexeddb");
+            hasChanges = true;
+          }
+        }
+      }
+    }
+  } catch (error) {
+    logToConsole("error", "Error during forced settings check:", error);
+  }
+  if (hasChanges) {
+    logToConsole("info", "Forced settings check detected changes");
+    await saveLocalMetadata();
+  }
+  return hasChanges;
+}
 function startPeriodicChangeCheck() {
   if (activeIntervals.changeCheck) {
     clearInterval(activeIntervals.changeCheck);
@@ -5764,15 +5830,21 @@ function startPeriodicChangeCheck() {
           }
         }
       }
+      const settingsChanged = await forceSettingsCheck();
+      if (settingsChanged) {
+        changesDetected = true;
+      }
       if (changesDetected) {
-        logToConsole(
-          "info",
-          "Detected changes in chats during periodic check",
-          {
-            changedChats: changedChatsLog,
-            count: changedChatsLog.length,
-          }
-        );
+        if (changedChatsLog.length > 0) {
+          logToConsole(
+            "info",
+            "Detected changes in chats during periodic check",
+            {
+              changedChats: changedChatsLog,
+              count: changedChatsLog.length,
+            }
+          );
+        }
         await saveLocalMetadata();
       }
     } catch (error) {
