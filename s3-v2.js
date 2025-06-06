@@ -3731,7 +3731,6 @@ function openSyncModal() {
         <div class="mt-4 bg-gray-100 dark:bg-zinc-800 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600">
           <div class="space-y-2">
             <div class="flex items-center space-x-4 mb-4">
-              <label class="text-sm font-medium text-gray-700 dark:text-gray-400">Mode:</label>
               <label class="inline-flex items-center">
                 <input type="radio" name="sync-mode" value="sync" class="form-radio text-blue-600" ${
                   config.syncMode === "sync" ? "checked" : ""
