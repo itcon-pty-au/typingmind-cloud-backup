@@ -4632,14 +4632,17 @@ async function checkIndexedDBChanges() {
       }
     }
     if (changedKeys.size > 0) {
-      const firstKey = Array.from(changedKeys)[0];
-      queueOperation("settings-sync", async () =>
-        handleSettingChange(
-          firstKey,
-          await getIndexedDBValue(firstKey),
-          "indexeddb"
-        )
+      logToConsole(
+        "info",
+        `Detected changes in ${changedKeys.size} IndexedDB items: ${Array.from(
+          changedKeys
+        ).join(", ")}`
       );
+      for (const key of changedKeys) {
+        queueOperation(`settings-sync-${key}`, async () =>
+          handleSettingChange(key, await getIndexedDBValue(key), "indexeddb")
+        );
+      }
     }
   } catch (error) {
     logToConsole("error", "Error checking IndexedDB changes:", error);
