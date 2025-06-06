@@ -1543,27 +1543,82 @@ async function cleanupIncompleteMultipartUploads() {
   }
 }
 async function deriveKey(password) {
-  const enc = new TextEncoder();
+  const encoder = new TextEncoder();
   const keyMaterial = await window.crypto.subtle.importKey(
     "raw",
-    enc.encode(password),
-    "PBKDF2",
+    encoder.encode(password),
+    { name: "PBKDF2" },
     false,
     ["deriveBits", "deriveKey"]
   );
-  const salt = enc.encode("typingmind-backup-salt");
-  return window.crypto.subtle.deriveKey(
+  const key = await window.crypto.subtle.deriveKey(
     {
       name: "PBKDF2",
-      salt: salt,
+      salt: encoder.encode("typingmind-backup-salt"),
       iterations: 100000,
       hash: "SHA-256",
     },
     keyMaterial,
     { name: "AES-GCM", length: 256 },
-    false,
+    true,
     ["encrypt", "decrypt"]
   );
+  return key;
+}
+async function safeStringify(data) {
+  try {
+    if (typeof data === "string") {
+      return data;
+    }
+    const chunkSize = 50000;
+    let result = "{";
+    const keys = Object.keys(data);
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      const value = data[key];
+      if (i > 0) result += ",";
+      result += `"${key}":`;
+      if (typeof value === "object" && value !== null) {
+        if (Array.isArray(value)) {
+          result += "[";
+          for (let j = 0; j < value.length; j++) {
+            if (j > 0) result += ",";
+            result += JSON.stringify(value[j]);
+            if (result.length > chunkSize) {
+              await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+          }
+          result += "]";
+        } else {
+          const objKeys = Object.keys(value);
+          result += "{";
+          for (let j = 0; j < objKeys.length; j++) {
+            const objKey = objKeys[j];
+            if (j > 0) result += ",";
+            result += `"${objKey}":${JSON.stringify(value[objKey])}`;
+            if (result.length > chunkSize) {
+              await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+          }
+          result += "}";
+        }
+      } else {
+        result += JSON.stringify(value);
+      }
+      if (result.length > chunkSize) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+    result += "}";
+    return result;
+  } catch (error) {
+    logToConsole(
+      "warning",
+      "Safe stringify failed, falling back to regular JSON.stringify",
+      error
+    );
+    return JSON.stringify(data);
+  }
 }
 async function encryptData(data) {
   const encryptionKey = localStorage.getItem("encryption-key");
@@ -1575,7 +1630,8 @@ async function encryptData(data) {
     const key = await deriveKey(encryptionKey);
     const enc = new TextEncoder();
     const iv = window.crypto.getRandomValues(new Uint8Array(12));
-    const encodedData = enc.encode(JSON.stringify(data));
+    const jsonString = await safeStringify(data);
+    const encodedData = enc.encode(jsonString);
     const encryptedContent = await window.crypto.subtle.encrypt(
       {
         name: "AES-GCM",
@@ -1774,10 +1830,10 @@ async function createDailyBackup(key, data) {
       );
       return false;
     }
-    const rawSize = new Blob([JSON.stringify(data)]).size;
-    logToConsole("info", `Raw data size: ${formatFileSize(rawSize)}`);
     logToConsole("info", "Encrypting backup data...");
     const encryptedData = await encryptData(data);
+    const rawSize = Math.round(encryptedData.length * 0.8);
+    logToConsole("info", `Estimated raw data size: ${formatFileSize(rawSize)}`);
     const zip = new JSZip();
     const jsonFileName = key.replace(".zip", ".json");
     zip.file(jsonFileName, encryptedData, {
@@ -1838,10 +1894,10 @@ async function createSnapshot(name) {
       );
       return false;
     }
-    const rawSize = new Blob([JSON.stringify(data)]).size;
-    logToConsole("info", `Raw data size: ${formatFileSize(rawSize)}`);
     logToConsole("info", "Encrypting snapshot data...");
     const encryptedData = await encryptData(data);
+    const rawSize = Math.round(encryptedData.length * 0.8);
+    logToConsole("info", `Estimated raw data size: ${formatFileSize(rawSize)}`);
     const zip = new JSZip();
     const jsonFileName = key.replace(".zip", ".json");
     zip.file(jsonFileName, encryptedData, {
