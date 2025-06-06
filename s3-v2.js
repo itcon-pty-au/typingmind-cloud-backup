@@ -268,7 +268,6 @@ async function performFullInitialization() {
     setupLocalStorageChangeListener();
     monitorIndexedDBForDeletions();
     startPeriodicChangeCheck();
-    queueOperation("startup-settings-check", forceSettingsCheck, [], 10000);
     setupVisibilityChangeHandler();
     try {
       await cleanupMetadataVersions();
@@ -416,7 +415,6 @@ async function initializeExtension() {
     }
     monitorIndexedDBForDeletions();
     startPeriodicChangeCheck();
-    queueOperation("startup-settings-check", forceSettingsCheck, [], 10000);
     setupVisibilityChangeHandler();
     try {
       await cleanupMetadataVersions();
@@ -4682,34 +4680,8 @@ async function handleSettingChange(key, value, source) {
   if (shouldExcludeSetting(key)) return;
   const newHash = await generateContentHash(value);
   const metadata = localMetadata.settings.items[key];
-  // logToConsole("debug", `Comparing setting hashes for ${key}`, {
-  //   existingHash: metadata?.hash
-  //     ? `${metadata.hash.substring(0, 8)}...${metadata.hash.substring(
-  //         metadata.hash.length - 8
-  //       )}`
-  //     : "none",
-  //   newHash: `${newHash.substring(0, 8)}...${newHash.substring(
-  //     newHash.length - 8
-  //   )}`,
-  //   source: source,
-  //   valueType: typeof value,
-  //   valueLength:
-  //     typeof value === "string" ? value.length : JSON.stringify(value).length,
-  // });
   if (!metadata || metadata.hash !== newHash) {
     const timestamp = Date.now();
-    // logToConsole("debug", `Updating local metadata for setting ${key}`, {
-    //   previousHash: metadata?.hash
-    //     ? `${metadata.hash.substring(0, 8)}...${metadata.hash.substring(
-    //         metadata.hash.length - 8
-    //       )}`
-    //     : "none",
-    //   newHash: `${newHash.substring(0, 8)}...${newHash.substring(
-    //     newHash.length - 8
-    //   )}`,
-    //   timestamp: new Date(timestamp).toISOString(),
-    //   source: source,
-    // });
     localMetadata.settings.items[key] = {
       hash: newHash,
       lastModified: timestamp,
@@ -4720,21 +4692,13 @@ async function handleSettingChange(key, value, source) {
     localMetadata.settings.lastModified = timestamp;
     saveLocalMetadata();
     throttledCheckSyncStatus();
-    // logToConsole(
-    //   "info",
-    //   `Setting change detected from ${source}: ${key} (hash changed: ${
-    //     metadata?.hash ? metadata.hash.substring(0, 8) : "none"
-    //   } → ${newHash.substring(0, 8)})`
-    // );
-  } else {
-    // logToConsole(
-    //   "info",
-    //   `Setting change ignored from ${source}: ${key} (hash unchanged: ${newHash.substring(
-    //     0,
-    //     8
-    //   )})`
-    // );
+    logToConsole(
+      "info",
+      `Setting change detected from ${source}: ${key} (hash changed)`
+    );
+    return true;
   }
+  return false;
 }
 async function cleanupMetadataVersions() {
   try {
@@ -5743,17 +5707,15 @@ async function cleanupCloudTombstones() {
 async function forceSettingsCheck() {
   if (!localMetadata.settings) {
     await initializeSettingsMonitoring();
-    return;
+    return false;
   }
   let hasChanges = false;
   for (const key of Object.keys(localStorage)) {
     if (!shouldExcludeSetting(key)) {
       const value = localStorage.getItem(key);
       if (value !== null) {
-        const hash = await generateContentHash(value);
-        const metadata = localMetadata.settings.items[key];
-        if (!metadata || metadata.hash !== hash) {
-          await handleSettingChange(key, value, "localstorage");
+        const changed = await handleSettingChange(key, value, "localstorage");
+        if (changed) {
           hasChanges = true;
         }
       }
@@ -5772,10 +5734,8 @@ async function forceSettingsCheck() {
       if (!shouldExcludeSetting(key)) {
         const value = await getIndexedDBValue(key);
         if (value !== undefined) {
-          const hash = await generateContentHash(value);
-          const metadata = localMetadata.settings.items[key];
-          if (!metadata || metadata.hash !== hash) {
-            await handleSettingChange(key, value, "indexeddb");
+          const changed = await handleSettingChange(key, value, "indexeddb");
+          if (changed) {
             hasChanges = true;
           }
         }
@@ -5785,7 +5745,7 @@ async function forceSettingsCheck() {
     logToConsole("error", "Error during forced settings check:", error);
   }
   if (hasChanges) {
-    logToConsole("info", "Forced settings check detected changes");
+    logToConsole("info", "Forced settings check detected real changes");
     await saveLocalMetadata();
   }
   return hasChanges;
@@ -5795,6 +5755,7 @@ function startPeriodicChangeCheck() {
     clearInterval(activeIntervals.changeCheck);
     activeIntervals.changeCheck = null;
   }
+  let settingsCheckCounter = 0;
   activeIntervals.changeCheck = setInterval(async () => {
     if (document.hidden) return;
     let changesDetected = false;
@@ -5830,9 +5791,13 @@ function startPeriodicChangeCheck() {
           }
         }
       }
-      const settingsChanged = await forceSettingsCheck();
-      if (settingsChanged) {
-        changesDetected = true;
+      settingsCheckCounter++;
+      if (settingsCheckCounter >= 12) {
+        settingsCheckCounter = 0;
+        const settingsChanged = await forceSettingsCheck();
+        if (settingsChanged) {
+          changesDetected = true;
+        }
       }
       if (changesDetected) {
         if (changedChatsLog.length > 0) {
