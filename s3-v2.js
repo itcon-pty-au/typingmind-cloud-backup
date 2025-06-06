@@ -3845,12 +3845,20 @@ function openSyncModal() {
   overlay.addEventListener("click", closeModal);
   modal.querySelector("#save-settings").addEventListener("click", saveSettings);
   modal.querySelector("#sync-now").addEventListener("click", () => {
+    const syncNowButton = modal.querySelector("#sync-now");
+    const originalText = syncNowButton.textContent;
+    syncNowButton.disabled = true;
+    syncNowButton.textContent = "Done!";
     if (config.syncMode === "sync") {
       queueOperation("manual-sync", syncFromCloud);
     } else {
       queueOperation("manual-backup", syncToCloud);
     }
     updateSyncStatus();
+    setTimeout(() => {
+      syncNowButton.textContent = originalText;
+      syncNowButton.disabled = false;
+    }, 2000);
   });
   modal
     .querySelector("#create-snapshot")
