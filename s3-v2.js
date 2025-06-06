@@ -5632,6 +5632,9 @@ function startPeriodicChangeCheck() {
       const chats = await getAllChatsFromIndexedDB();
       for (const chat of chats) {
         if (!chat.id) continue;
+        if (localMetadata.chats[chat.id]?.deleted === true) {
+          continue;
+        }
         const currentHash = await generateHash(chat, "chat");
         const lastSeen = lastSeenUpdates[chat.id];
         if (
