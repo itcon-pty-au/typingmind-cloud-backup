@@ -4103,16 +4103,16 @@ function openSyncModal() {
                 }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
               </div>
             </div>
+            <div>
+              <label for="sync-exclusions" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
+                Exclusions (Comma separated)
+                <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="Additional settings to exclude from sync. Enter comma-separated setting names that you want to prevent from syncing between devices.">ⓘ</button>
+              </label>
+              <input id="sync-exclusions" name="sync-exclusions" type="text" value="${
+                localStorage.getItem("sync-exclusions") || ""
+              }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" placeholder="e.g., my-setting, another-setting" autocomplete="off">
+            </div>
           </div>
-        </div>
-        <div class="bg-gray-100 dark:bg-zinc-800 p-3 rounded-lg">
-          <label for="sync-exclusions" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
-            Exclusions (Comma separated)
-            <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="Additional settings to exclude from sync. Enter comma-separated setting names that you want to prevent from syncing between devices.">ⓘ</button>
-          </label>
-          <input id="sync-exclusions" name="sync-exclusions" type="text" value="${
-            localStorage.getItem("sync-exclusions") || ""
-          }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" placeholder="e.g., my-setting, another-setting" autocomplete="off">
         </div>
         <div class="flex items-center justify-end mb-4 space-x-2">
           <span class="text-sm text-gray-600 dark:text-gray-400">
