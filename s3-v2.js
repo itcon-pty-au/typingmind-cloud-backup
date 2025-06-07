@@ -189,11 +189,43 @@ function logToConsole(type, message, data = null) {
         dataEntry.textContent = JSON.stringify(data, null, 2);
         logEntry.appendChild(dataEntry);
       }
-      const isReversed = container.getAttribute("data-log-reversed") === "true";
-      if (isReversed) {
-        logsContent.insertBefore(logEntry, logsContent.firstChild);
+      const searchContainer = container.querySelector(
+        ".flex.items-center.gap-2"
+      );
+      const searchInput = searchContainer
+        ? searchContainer.querySelector("input")
+        : null;
+      const isSearchActive =
+        searchInput && !searchInput.classList.contains("hidden");
+      if (isSearchActive) {
+        const isReversed =
+          container.getAttribute("data-log-reversed") === "true";
+        if (isReversed) {
+          container.originalLogEntries.unshift(logEntry);
+        } else {
+          container.originalLogEntries.push(logEntry);
+        }
+        const query = searchInput.value.trim();
+        if (query && logMessage.toLowerCase().includes(query.toLowerCase())) {
+          const isReversed =
+            container.getAttribute("data-log-reversed") === "true";
+          if (isReversed) {
+            logsContent.insertBefore(
+              logEntry.cloneNode(true),
+              logsContent.firstChild
+            );
+          } else {
+            logsContent.appendChild(logEntry.cloneNode(true));
+          }
+        }
       } else {
-        logsContent.appendChild(logEntry);
+        const isReversed =
+          container.getAttribute("data-log-reversed") === "true";
+        if (isReversed) {
+          logsContent.insertBefore(logEntry, logsContent.firstChild);
+        } else {
+          logsContent.appendChild(logEntry);
+        }
       }
     }
   }
@@ -312,9 +344,84 @@ function createMobileLogContainer() {
   const header = document.createElement("div");
   header.className =
     "sticky top-0 left-0 right-0 bg-gray-800 p-2 flex justify-between items-center border-b border-gray-700";
-  const title = document.createElement("span");
-  title.textContent = "Debug Logs";
-  title.className = "text-sm font-medium";
+  const searchContainer = document.createElement("div");
+  searchContainer.className = "flex items-center gap-2 flex-1 max-w-xs";
+  const searchIcon = document.createElement("div");
+  searchIcon.className = "text-white text-lg cursor-pointer flex-shrink-0";
+  searchIcon.innerHTML = "🔍";
+  searchIcon.title = "Search logs";
+  const searchInput = document.createElement("input");
+  searchInput.type = "text";
+  searchInput.placeholder = "Search logs...";
+  searchInput.className =
+    "hidden bg-gray-700 text-white px-2 py-1 rounded text-sm flex-1 focus:outline-none focus:ring-1 focus:ring-blue-500";
+  let isSearchActive = false;
+  container.originalLogEntries = [];
+  function toggleSearch() {
+    if (!isSearchActive) {
+      searchInput.classList.remove("hidden");
+      searchIcon.innerHTML = "✕";
+      searchIcon.title = "Clear search";
+      searchInput.focus();
+      isSearchActive = true;
+      const logsContainer = container.querySelector("#logs-content");
+      if (logsContainer) {
+        container.originalLogEntries = Array.from(logsContainer.children);
+      }
+    } else {
+      searchInput.classList.add("hidden");
+      searchIcon.innerHTML = "🔍";
+      searchIcon.title = "Search logs";
+      searchInput.value = "";
+      isSearchActive = false;
+      restoreOriginalLogs();
+    }
+  }
+  function restoreOriginalLogs() {
+    const logsContainer = container.querySelector("#logs-content");
+    if (logsContainer && container.originalLogEntries.length > 0) {
+      logsContainer.innerHTML = "";
+      container.originalLogEntries.forEach((entry) =>
+        logsContainer.appendChild(entry)
+      );
+    }
+  }
+  function performSearch(query) {
+    const logsContainer = container.querySelector("#logs-content");
+    if (!logsContainer || !container.originalLogEntries.length) return;
+    const filteredEntries = container.originalLogEntries.filter((entry) => {
+      const text = entry.textContent || "";
+      return text.toLowerCase().includes(query.toLowerCase());
+    });
+    logsContainer.innerHTML = "";
+    if (filteredEntries.length === 0) {
+      const noResults = document.createElement("div");
+      noResults.className = "text-gray-400 text-sm italic p-2";
+      noResults.textContent = "No matching logs found";
+      logsContainer.appendChild(noResults);
+    } else {
+      filteredEntries.forEach((entry) => {
+        const clonedEntry = entry.cloneNode(true);
+        logsContainer.appendChild(clonedEntry);
+      });
+    }
+  }
+  searchIcon.addEventListener("click", toggleSearch);
+  searchInput.addEventListener("input", (e) => {
+    const query = e.target.value.trim();
+    if (query === "") {
+      restoreOriginalLogs();
+    } else {
+      performSearch(query);
+    }
+  });
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      toggleSearch();
+    }
+  });
+  searchContainer.appendChild(searchIcon);
+  searchContainer.appendChild(searchInput);
   const controls = document.createElement("div");
   controls.className = "flex items-center gap-3";
   const clearBtn = document.createElement("button");
@@ -322,7 +429,10 @@ function createMobileLogContainer() {
   clearBtn.textContent = "Clear";
   clearBtn.onclick = () => {
     const logsContainer = container.querySelector("#logs-content");
-    if (logsContainer) logsContainer.innerHTML = "";
+    if (logsContainer) {
+      logsContainer.innerHTML = "";
+      container.originalLogEntries = [];
+    }
   };
   const exportBtn = document.createElement("button");
   exportBtn.className = "text-white p-2 hover:bg-gray-700 rounded text-sm";
@@ -440,7 +550,7 @@ function createMobileLogContainer() {
   logsContent.id = "logs-content";
   logsContent.className = "p-2 overflow-y-auto";
   logsContent.style.height = "calc(100% - 36px)";
-  header.appendChild(title);
+  header.appendChild(searchContainer);
   header.appendChild(controls);
   container.appendChild(dragHandle);
   container.appendChild(header);
