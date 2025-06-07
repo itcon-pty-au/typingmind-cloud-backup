@@ -465,7 +465,6 @@ function initializeLoggingState() {
       "info",
       `TypingMind Cloud Sync & Backup v${EXTENSION_VERSION} initializing...`
     );
-    createMobileLogContainer();
   }
 }
 async function performFullInitialization() {
