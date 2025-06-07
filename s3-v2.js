@@ -323,6 +323,24 @@ async function initializeExtension() {
     initialMetadataSaveNeeded = await loadLocalMetadata();
     await initializeLastSeenUpdates();
     settingsMetadataSaveNeeded = await initializeSettingsMonitoring();
+    try {
+      const duplicatesFound = await detectIndexedDBDuplicates();
+      if (duplicatesFound) {
+        await cleanupIndexedDBDuplicates();
+        logToConsole(
+          "success",
+          "IndexedDB duplicate cleanup completed during extension initialization"
+        );
+      } else {
+        logToConsole("info", "No duplicates found - skipping cleanup");
+      }
+    } catch (cleanupError) {
+      logToConsole(
+        "warning",
+        "Non-critical: IndexedDB duplicate cleanup failed during extension initialization",
+        cleanupError
+      );
+    }
     let hashesRecalculated = false;
     const allLocalChatsForHash = await getAllChatsFromIndexedDB();
     const localChatsMapForHash = new Map(
@@ -4648,8 +4666,9 @@ async function checkIndexedDBChanges() {
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve(request.result);
     });
+    const localStorageKeys = Object.keys(localStorage);
     for (const key of keys) {
-      if (!shouldExcludeSetting(key)) {
+      if (!shouldExcludeSetting(key) && !localStorageKeys.includes(key)) {
         try {
           const value = await new Promise((resolve, reject) => {
             const transaction = db.transaction("keyval", "readonly");
@@ -5867,4 +5886,123 @@ function standardizeChatMessages(chat) {
     chat.messagesArray = [];
   }
   return chat;
+}
+async function cleanupIndexedDBDuplicates() {
+  const duplicateFlag = localStorage.getItem("sync_duplicateDetected");
+  if (duplicateFlag !== "true") {
+    logToConsole("info", "No duplicate cleanup needed - flag not set");
+    return { cleaned: [], errors: [] };
+  }
+  logToConsole("cleanup", "Starting IndexedDB duplicate cleanup...");
+  let cleanedKeys = [];
+  let errorKeys = [];
+  try {
+    const db = await getPersistentDB();
+    const transaction = db.transaction("keyval", "readwrite");
+    const store = transaction.objectStore("keyval");
+    const indexedDBKeys = await new Promise((resolve, reject) => {
+      const request = store.getAllKeys();
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+    const localStorageKeys = Object.keys(localStorage);
+    for (const key of indexedDBKeys) {
+      if (localStorageKeys.includes(key)) {
+        try {
+          const deleteTransaction = db.transaction("keyval", "readwrite");
+          const deleteStore = deleteTransaction.objectStore("keyval");
+          await new Promise((resolve, reject) => {
+            const deleteRequest = deleteStore.delete(key);
+            deleteRequest.onerror = () => reject(deleteRequest.error);
+            deleteRequest.onsuccess = () => resolve();
+          });
+          cleanedKeys.push(key);
+          logToConsole(
+            "cleanup",
+            `Removed duplicate key from IndexedDB: ${key}`
+          );
+        } catch (error) {
+          errorKeys.push(key);
+          logToConsole(
+            "error",
+            `Failed to remove duplicate key ${key} from IndexedDB:`,
+            error
+          );
+        }
+      }
+    }
+    if (cleanedKeys.length > 0) {
+      logToConsole(
+        "success",
+        `IndexedDB cleanup completed. Removed ${cleanedKeys.length} duplicate keys:`,
+        cleanedKeys
+      );
+      if (localMetadata.settings && localMetadata.settings.items) {
+        for (const key of cleanedKeys) {
+          if (localMetadata.settings.items[key]) {
+            delete localMetadata.settings.items[key];
+            logToConsole(
+              "cleanup",
+              `Removed ${key} from sync metadata tracking`
+            );
+          }
+        }
+        await saveLocalMetadata();
+      }
+      localStorage.removeItem("sync_duplicateDetected");
+      logToConsole(
+        "success",
+        "Duplicate detection flag cleared - cleanup complete"
+      );
+    } else {
+      logToConsole("info", "No duplicate keys found in IndexedDB");
+      localStorage.removeItem("sync_duplicateDetected");
+    }
+    if (errorKeys.length > 0) {
+      logToConsole(
+        "warning",
+        `Failed to clean ${errorKeys.length} keys:`,
+        errorKeys
+      );
+    }
+  } catch (error) {
+    logToConsole("error", "Error during IndexedDB duplicate cleanup:", error);
+    throw error;
+  }
+  return { cleaned: cleanedKeys, errors: errorKeys };
+}
+async function detectIndexedDBDuplicates() {
+  try {
+    const db = await getPersistentDB();
+    const transaction = db.transaction("keyval", "readonly");
+    const store = transaction.objectStore("keyval");
+    const indexedDBKeys = await new Promise((resolve, reject) => {
+      const request = store.getAllKeys();
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+    const localStorageKeys = Object.keys(localStorage);
+    const duplicates = indexedDBKeys.filter((key) =>
+      localStorageKeys.includes(key)
+    );
+    if (duplicates.length > 0) {
+      localStorage.setItem("sync_duplicateDetected", "true");
+      logToConsole(
+        "info",
+        `Detected ${duplicates.length} duplicate keys between IndexedDB and localStorage`,
+        duplicates
+      );
+      return true;
+    } else {
+      localStorage.removeItem("sync_duplicateDetected");
+      logToConsole(
+        "info",
+        "No duplicates detected between IndexedDB and localStorage"
+      );
+      return false;
+    }
+  } catch (error) {
+    logToConsole("error", "Error detecting IndexedDB duplicates:", error);
+    return false;
+  }
 }
