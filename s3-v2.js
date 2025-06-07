@@ -190,7 +190,7 @@ function createMobileLogContainer() {
   const container = document.createElement("div");
   container.id = "mobile-log-container";
   container.className =
-    "fixed bottom-0 left-0 right-0 bg-black bg-opacity-75 text-white z-[9999]";
+    "fixed bottom-0 left-0 right-0 bg-black text-white z-[9999]";
   container.style.cssText = `
         height: 200px;
         max-height: 50vh;
@@ -201,11 +201,84 @@ function createMobileLogContainer() {
   const minimizedTag = document.createElement("div");
   minimizedTag.id = "minimized-log-tag";
   minimizedTag.className =
-    "fixed bottom-0 right-0 bg-black bg-opacity-75 text-white px-3 py-1 m-2 rounded cursor-pointer z-[9999] hidden";
+    "fixed bottom-0 right-0 bg-black text-white px-3 py-1 m-2 rounded cursor-pointer z-[9999] hidden";
   minimizedTag.innerHTML = "📋 Show Logs";
-  minimizedTag.onclick = () => {
-    container.style.display = "block";
-    minimizedTag.style.display = "none";
+  let longPressTimer = null;
+  let isDraggingTag = false;
+  let tagStartX = 0;
+  let tagStartY = 0;
+  let tagOffsetX = 0;
+  let tagOffsetY = 0;
+  const savedPosition = localStorage.getItem("mobile-log-tag-position");
+  if (savedPosition) {
+    const pos = JSON.parse(savedPosition);
+    minimizedTag.style.right = "auto";
+    minimizedTag.style.bottom = "auto";
+    minimizedTag.style.left = pos.x + "px";
+    minimizedTag.style.top = pos.y + "px";
+  }
+  function startLongPress(e) {
+    e.preventDefault();
+    longPressTimer = setTimeout(() => {
+      isDraggingTag = true;
+      minimizedTag.style.opacity = "0.7";
+      const rect = minimizedTag.getBoundingClientRect();
+      const clientX =
+        e.type === "touchstart" ? e.touches[0].clientX : e.clientX;
+      const clientY =
+        e.type === "touchstart" ? e.touches[0].clientY : e.clientY;
+      tagOffsetX = clientX - rect.left;
+      tagOffsetY = clientY - rect.top;
+    }, 500);
+  }
+  function stopLongPress() {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  }
+  function dragTag(e) {
+    if (!isDraggingTag) return;
+    e.preventDefault();
+    const clientX = e.type === "touchmove" ? e.touches[0].clientX : e.clientX;
+    const clientY = e.type === "touchmove" ? e.touches[0].clientY : e.clientY;
+    const newX = clientX - tagOffsetX;
+    const newY = clientY - tagOffsetY;
+    const maxX = window.innerWidth - minimizedTag.offsetWidth;
+    const maxY = window.innerHeight - minimizedTag.offsetHeight;
+    const constrainedX = Math.max(0, Math.min(newX, maxX));
+    const constrainedY = Math.max(0, Math.min(newY, maxY));
+    minimizedTag.style.right = "auto";
+    minimizedTag.style.bottom = "auto";
+    minimizedTag.style.left = constrainedX + "px";
+    minimizedTag.style.top = constrainedY + "px";
+  }
+  function endDragTag() {
+    if (isDraggingTag) {
+      isDraggingTag = false;
+      minimizedTag.style.opacity = "1";
+      const rect = minimizedTag.getBoundingClientRect();
+      localStorage.setItem(
+        "mobile-log-tag-position",
+        JSON.stringify({
+          x: rect.left,
+          y: rect.top,
+        })
+      );
+    }
+    stopLongPress();
+  }
+  minimizedTag.addEventListener("touchstart", startLongPress);
+  minimizedTag.addEventListener("mousedown", startLongPress);
+  document.addEventListener("touchmove", dragTag);
+  document.addEventListener("mousemove", dragTag);
+  document.addEventListener("touchend", endDragTag);
+  document.addEventListener("mouseup", endDragTag);
+  minimizedTag.onclick = (e) => {
+    if (!isDraggingTag) {
+      container.style.display = "block";
+      minimizedTag.style.display = "none";
+    }
   };
   document.body.appendChild(minimizedTag);
   const header = document.createElement("div");
@@ -215,34 +288,24 @@ function createMobileLogContainer() {
   title.textContent = "Debug Logs";
   title.className = "text-sm font-medium";
   const controls = document.createElement("div");
-  controls.className = "flex items-center gap-2";
-  const minimizeBtn = document.createElement("button");
-  minimizeBtn.className = "text-white p-1 hover:bg-gray-700 rounded text-sm";
-  minimizeBtn.textContent = "—";
-  minimizeBtn.onclick = () => {
-    container.style.display = "none";
-    minimizedTag.style.display = "block";
-  };
+  controls.className = "flex items-center gap-3";
   const clearBtn = document.createElement("button");
-  clearBtn.className = "text-white p-1 hover:bg-gray-700 rounded text-sm";
+  clearBtn.className = "text-white p-2 hover:bg-gray-700 rounded text-sm";
   clearBtn.textContent = "Clear";
   clearBtn.onclick = () => {
     const logsContainer = container.querySelector("#logs-content");
     if (logsContainer) logsContainer.innerHTML = "";
   };
   const exportBtn = document.createElement("button");
-  exportBtn.className = "text-white p-1 hover:bg-gray-700 rounded text-sm";
+  exportBtn.className = "text-white p-2 hover:bg-gray-700 rounded text-sm";
   exportBtn.textContent = "Export";
   exportBtn.onclick = () => {
     const logsContainer = container.querySelector("#logs-content");
-    if (logsContainer) {
+    if (logsContainer && logsContainer.children.length > 0) {
       const logs = Array.from(logsContainer.children)
         .map((log) => {
-          const mainText = log.childNodes[0]?.textContent || "";
-          const dataNode = log.querySelector(".text-xs");
-          return dataNode
-            ? `${mainText}\n${dataNode.textContent}\n`
-            : `${mainText}\n`;
+          const mainText = log.textContent || "";
+          return mainText;
         })
         .join("\n");
       const blob = new Blob([logs], { type: "text/plain" });
@@ -262,8 +325,31 @@ function createMobileLogContainer() {
       }, 100);
     }
   };
+  let isReversed = false;
+  const reverseBtn = document.createElement("button");
+  reverseBtn.className = "text-white p-2 hover:bg-gray-700 rounded text-sm";
+  reverseBtn.innerHTML = "↕️";
+  reverseBtn.title = "Reverse order";
+  reverseBtn.onclick = () => {
+    const logsContainer = container.querySelector("#logs-content");
+    if (logsContainer && logsContainer.children.length > 0) {
+      const logEntries = Array.from(logsContainer.children);
+      logEntries.reverse();
+      logsContainer.innerHTML = "";
+      logEntries.forEach((entry) => logsContainer.appendChild(entry));
+      isReversed = !isReversed;
+      reverseBtn.innerHTML = isReversed ? "↕️" : "↕️";
+    }
+  };
+  const minimizeBtn = document.createElement("button");
+  minimizeBtn.className = "text-white p-2 hover:bg-gray-700 rounded text-sm";
+  minimizeBtn.textContent = "—";
+  minimizeBtn.onclick = () => {
+    container.style.display = "none";
+    minimizedTag.style.display = "block";
+  };
   const toggleSize = document.createElement("button");
-  toggleSize.className = "text-white p-1 hover:bg-gray-700 rounded";
+  toggleSize.className = "text-white p-2 hover:bg-gray-700 rounded";
   toggleSize.innerHTML = "□";
   toggleSize.onclick = () => {
     if (container.style.height === "200px") {
@@ -290,7 +376,7 @@ function createMobileLogContainer() {
     }
   };
   const closeBtn = document.createElement("button");
-  closeBtn.className = "text-white p-1 hover:bg-gray-700 rounded";
+  closeBtn.className = "text-white p-2 hover:bg-gray-700 rounded";
   closeBtn.innerHTML = "✕";
   closeBtn.onclick = () => {
     container.style.display = "none";
@@ -301,6 +387,7 @@ function createMobileLogContainer() {
   };
   controls.appendChild(clearBtn);
   controls.appendChild(exportBtn);
+  controls.appendChild(reverseBtn);
   controls.appendChild(minimizeBtn);
   controls.appendChild(toggleSize);
   controls.appendChild(closeBtn);
