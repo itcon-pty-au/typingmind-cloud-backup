@@ -241,7 +241,6 @@ function createMobileLogContainer() {
     minimizedTag.style.top = pos.y + "px";
   }
   function startLongPress(e) {
-    e.preventDefault();
     longPressTimer = setTimeout(() => {
       isDraggingTag = true;
       minimizedTag.style.opacity = "0.7";
@@ -301,6 +300,8 @@ function createMobileLogContainer() {
   }
   minimizedTag.addEventListener("touchstart", startLongPress);
   minimizedTag.addEventListener("mousedown", startLongPress);
+  minimizedTag.addEventListener("touchend", stopLongPress);
+  minimizedTag.addEventListener("mouseup", stopLongPress);
   minimizedTag.onclick = (e) => {
     if (!isDraggingTag) {
       container.style.display = "block";
