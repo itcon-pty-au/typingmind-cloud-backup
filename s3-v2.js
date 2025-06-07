@@ -115,33 +115,64 @@ const LOG_ICONS = {
   snapshot: "📸",
   encrypt: "🔐",
   decrypt: "🔓",
+  progress: "📊",
   time: "⏰",
-  skip: "⏩",
+  wait: "⏳",
+  pause: "⏸️",
+  resume: "▶️",
   visibility: "👁️",
   active: "📱",
-  backup: "💾",
-  restore: "📥",
-  sync: "🔄",
+  calendar: "📅",
+  tag: "🏷️",
+  stop: "🛑",
+  skip: "⏩",
 };
 function logToConsole(type, message, data = null) {
   if (!isConsoleLoggingEnabled) return;
-  const timestamp = new Date().toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-  const icon = LOG_ICONS[type] || "ℹ️";
-  const logMessage = `${icon} ${timestamp} ${message}`;
-  const mobileLog = document.getElementById("mobile-log-container");
-  if (mobileLog) {
-    const logContent = mobileLog.querySelector(".log-content") || mobileLog;
-    const logEntry = document.createElement("div");
-    logEntry.className = `log-entry log-${type}`;
-    logEntry.textContent = `${timestamp}: ${message}`;
-    logContent.appendChild(logEntry);
-    while (logContent.children.length > 100) {
-      logContent.removeChild(logContent.firstChild);
+  const timestamp = new Date().toISOString();
+  const icons = {
+    info: "ℹ️",
+    success: "✅",
+    warning: "⚠️",
+    error: "❌",
+    start: "🔄",
+    end: "🏁",
+    upload: "⬆️",
+    download: "⬇️",
+    cleanup: "🧹",
+    snapshot: "📸",
+    encrypt: "🔐",
+    decrypt: "🔓",
+    progress: "📊",
+    time: "⏰",
+    wait: "⏳",
+    pause: "⏸️",
+    resume: "▶️",
+    visibility: "👁️",
+    active: "📱",
+    calendar: "📅",
+    tag: "🏷️",
+    stop: "🛑",
+    skip: "⏩",
+  };
+  const icon = icons[type] || "ℹ️";
+  const logMessage = `${icon} [${timestamp}] ${message}`;
+  if (/Mobi|Android/i.test(navigator.userAgent)) {
+    const container =
+      document.getElementById("mobile-log-container") ||
+      createMobileLogContainer();
+    const logsContent = container.querySelector("#logs-content");
+    if (logsContent) {
+      const logEntry = document.createElement("div");
+      logEntry.className = "text-sm mb-1 break-words";
+      logEntry.textContent = logMessage;
+      if (data) {
+        const dataEntry = document.createElement("div");
+        dataEntry.className = "text-xs text-gray-500 ml-4 mb-2";
+        dataEntry.textContent = JSON.stringify(data, null, 2);
+        logEntry.appendChild(dataEntry);
+      }
+      logsContent.appendChild(logEntry);
     }
   }
   switch (type) {
@@ -156,87 +187,168 @@ function logToConsole(type, message, data = null) {
   }
 }
 function createMobileLogContainer() {
-  if (document.getElementById("mobile-log-container")) return;
   const container = document.createElement("div");
   container.id = "mobile-log-container";
+  container.className =
+    "fixed bottom-0 left-0 right-0 bg-black bg-opacity-75 text-white z-[9999]";
   container.style.cssText = `
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    max-height: 200px;
-    background: rgba(0, 0, 0, 0.8);
-    color: white;
-    font-family: monospace;
-    font-size: 12px;
-    z-index: 9999;
-    display: none;
-  `;
+        height: 200px;
+        max-height: 50vh;
+        display: ${isConsoleLoggingEnabled ? "block" : "none"};
+        resize: vertical;
+        overflow-y: auto;
+    `;
+  const minimizedTag = document.createElement("div");
+  minimizedTag.id = "minimized-log-tag";
+  minimizedTag.className =
+    "fixed bottom-0 right-0 bg-black bg-opacity-75 text-white px-3 py-1 m-2 rounded cursor-pointer z-[9999] hidden";
+  minimizedTag.innerHTML = "📋 Show Logs";
+  minimizedTag.onclick = () => {
+    container.style.display = "block";
+    minimizedTag.style.display = "none";
+  };
+  document.body.appendChild(minimizedTag);
+  const header = document.createElement("div");
+  header.className =
+    "sticky top-0 left-0 right-0 bg-gray-800 p-2 flex justify-between items-center border-b border-gray-700";
+  const title = document.createElement("span");
+  title.textContent = "Debug Logs";
+  title.className = "text-sm font-medium";
+  const controls = document.createElement("div");
+  controls.className = "flex items-center gap-2";
+  const minimizeBtn = document.createElement("button");
+  minimizeBtn.className = "text-white p-1 hover:bg-gray-700 rounded text-sm";
+  minimizeBtn.textContent = "—";
+  minimizeBtn.onclick = () => {
+    container.style.display = "none";
+    minimizedTag.style.display = "block";
+  };
+  const clearBtn = document.createElement("button");
+  clearBtn.className = "text-white p-1 hover:bg-gray-700 rounded text-sm";
+  clearBtn.textContent = "Clear";
+  clearBtn.onclick = () => {
+    const logsContainer = container.querySelector("#logs-content");
+    if (logsContainer) logsContainer.innerHTML = "";
+  };
+  const exportBtn = document.createElement("button");
+  exportBtn.className = "text-white p-1 hover:bg-gray-700 rounded text-sm";
+  exportBtn.textContent = "Export";
+  exportBtn.onclick = () => {
+    const logsContainer = container.querySelector("#logs-content");
+    if (logsContainer) {
+      const logs = Array.from(logsContainer.children)
+        .map((log) => {
+          const mainText = log.childNodes[0]?.textContent || "";
+          const dataNode = log.querySelector(".text-xs");
+          return dataNode
+            ? `${mainText}\n${dataNode.textContent}\n`
+            : `${mainText}\n`;
+        })
+        .join("\n");
+      const blob = new Blob([logs], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `typingmind-logs-${new Date()
+        .toISOString()
+        .slice(0, 19)
+        .replace(/:/g, "-")}.txt`;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
+    }
+  };
+  const toggleSize = document.createElement("button");
+  toggleSize.className = "text-white p-1 hover:bg-gray-700 rounded";
+  toggleSize.innerHTML = "□";
+  toggleSize.onclick = () => {
+    if (container.style.height === "200px") {
+      container.style.position = "fixed";
+      container.style.top = "0";
+      container.style.left = "0";
+      container.style.right = "0";
+      container.style.bottom = "0";
+      container.style.height = "100vh";
+      container.style.maxHeight = "100vh";
+      container.style.zIndex = "99999";
+      logsContent.style.height = "calc(100vh - 36px)";
+      toggleSize.innerHTML = "▢";
+    } else {
+      container.style.position = "fixed";
+      container.style.top = "auto";
+      container.style.left = "0";
+      container.style.right = "0";
+      container.style.bottom = "0";
+      container.style.height = "200px";
+      container.style.maxHeight = "50vh";
+      logsContent.style.height = "calc(100% - 36px)";
+      toggleSize.innerHTML = "□";
+    }
+  };
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "text-white p-1 hover:bg-gray-700 rounded";
+  closeBtn.innerHTML = "✕";
+  closeBtn.onclick = () => {
+    container.style.display = "none";
+    minimizedTag.style.display = "none";
+    const toggle = document.getElementById("console-logging-toggle");
+    if (toggle) toggle.checked = false;
+    isConsoleLoggingEnabled = false;
+  };
+  controls.appendChild(clearBtn);
+  controls.appendChild(exportBtn);
+  controls.appendChild(minimizeBtn);
+  controls.appendChild(toggleSize);
+  controls.appendChild(closeBtn);
   const dragHandle = document.createElement("div");
-  dragHandle.style.cssText = `
-    height: 20px;
-    background: rgba(255, 255, 255, 0.1);
-    cursor: ns-resize;
-    text-align: center;
-    line-height: 20px;
-    flex-shrink: 0;
-  `;
-  dragHandle.textContent = "⋮";
-  const logContent = document.createElement("div");
-  logContent.className = "log-content";
-  logContent.style.cssText = `
-    flex: 1;
-    overflow-y: auto;
-    padding: 10px;
-  `;
-  container.style.display = "flex";
-  container.style.flexDirection = "column";
+  dragHandle.className =
+    "absolute -top-1 left-0 right-0 h-1 bg-gray-600 cursor-row-resize";
+  dragHandle.style.cursor = "row-resize";
+  const logsContent = document.createElement("div");
+  logsContent.id = "logs-content";
+  logsContent.className = "p-2 overflow-y-auto";
+  logsContent.style.height = "calc(100% - 36px)";
+  header.appendChild(title);
+  header.appendChild(controls);
   container.appendChild(dragHandle);
-  container.appendChild(logContent);
-  let isDragging = false;
+  container.appendChild(header);
+  container.appendChild(logsContent);
   let startY = 0;
   let startHeight = 0;
   function initDrag(e) {
-    isDragging = true;
-    startY = e.clientY || e.touches[0].clientY;
-    startHeight = container.offsetHeight;
-    document.addEventListener("mousemove", doDrag);
-    document.addEventListener("touchmove", doDrag);
-    document.addEventListener("mouseup", stopDrag);
-    document.addEventListener("touchend", stopDrag);
+    startY = e.type === "mousedown" ? e.clientY : e.touches[0].clientY;
+    startHeight = parseInt(
+      document.defaultView.getComputedStyle(container).height,
+      10
+    );
+    document.documentElement.addEventListener("mousemove", doDrag);
+    document.documentElement.addEventListener("mouseup", stopDrag);
+    document.documentElement.addEventListener("touchmove", doDrag);
+    document.documentElement.addEventListener("touchend", stopDrag);
   }
   function doDrag(e) {
-    if (!isDragging) return;
-    const y = e.clientY || e.touches[0].clientY;
-    const newHeight = startHeight - (y - startY);
-    container.style.maxHeight = Math.max(100, Math.min(600, newHeight)) + "px";
+    const currentY = e.type === "mousemove" ? e.clientY : e.touches[0].clientY;
+    const newHeight = startHeight - (currentY - startY);
+    const minHeight = 100;
+    const maxHeight = window.innerHeight * 0.8;
+    if (newHeight > minHeight && newHeight < maxHeight) {
+      container.style.height = `${newHeight}px`;
+    }
   }
   function stopDrag() {
-    isDragging = false;
-    document.removeEventListener("mousemove", doDrag);
-    document.removeEventListener("touchmove", doDrag);
-    document.removeEventListener("mouseup", stopDrag);
-    document.removeEventListener("touchend", stopDrag);
+    document.documentElement.removeEventListener("mousemove", doDrag);
+    document.documentElement.removeEventListener("mouseup", stopDrag);
+    document.documentElement.removeEventListener("touchmove", doDrag);
+    document.documentElement.removeEventListener("touchend", stopDrag);
   }
   dragHandle.addEventListener("mousedown", initDrag);
   dragHandle.addEventListener("touchstart", initDrag);
   document.body.appendChild(container);
-  setupDoubleTapListener(document.body, () => {
-    container.style.display =
-      container.style.display === "none" ? "block" : "none";
-  });
-}
-function setupDoubleTapListener(element, callback) {
-  let lastTap = 0;
-  element.addEventListener("touchend", (e) => {
-    const currentTime = new Date().getTime();
-    const tapLength = currentTime - lastTap;
-    if (tapLength < 500 && tapLength > 0) {
-      callback();
-      e.preventDefault();
-    }
-    lastTap = currentTime;
-  });
+  return container;
 }
 function initializeLoggingState() {
   const urlParams = new URLSearchParams(window.location.search);
