@@ -125,7 +125,6 @@ const LOG_ICONS = {
 };
 function logToConsole(type, message, data = null) {
   if (!isConsoleLoggingEnabled) return;
-  if (!isConsoleLoggingEnabled) return;
   const timestamp = new Date().toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
@@ -136,12 +135,13 @@ function logToConsole(type, message, data = null) {
   const logMessage = `${icon} ${timestamp} ${message}`;
   const mobileLog = document.getElementById("mobile-log-container");
   if (mobileLog) {
+    const logContent = mobileLog.querySelector(".log-content") || mobileLog;
     const logEntry = document.createElement("div");
     logEntry.className = `log-entry log-${type}`;
     logEntry.textContent = `${timestamp}: ${message}`;
-    mobileLog.appendChild(logEntry);
-    while (mobileLog.children.length > 100) {
-      mobileLog.removeChild(mobileLog.firstChild);
+    logContent.appendChild(logEntry);
+    while (logContent.children.length > 100) {
+      logContent.removeChild(logContent.firstChild);
     }
   }
   switch (type) {
@@ -165,29 +165,34 @@ function createMobileLogContainer() {
     left: 0;
     right: 0;
     max-height: 200px;
-    overflow-y: auto;
     background: rgba(0, 0, 0, 0.8);
     color: white;
     font-family: monospace;
     font-size: 12px;
-    padding: 10px;
     z-index: 9999;
     display: none;
   `;
   const dragHandle = document.createElement("div");
   dragHandle.style.cssText = `
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
     height: 20px;
     background: rgba(255, 255, 255, 0.1);
     cursor: ns-resize;
     text-align: center;
     line-height: 20px;
+    flex-shrink: 0;
   `;
   dragHandle.textContent = "⋮";
+  const logContent = document.createElement("div");
+  logContent.className = "log-content";
+  logContent.style.cssText = `
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+  `;
+  container.style.display = "flex";
+  container.style.flexDirection = "column";
   container.appendChild(dragHandle);
+  container.appendChild(logContent);
   let isDragging = false;
   let startY = 0;
   let startHeight = 0;
