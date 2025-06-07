@@ -252,6 +252,10 @@ function createMobileLogContainer() {
         e.type === "touchstart" ? e.touches[0].clientY : e.clientY;
       tagOffsetX = clientX - rect.left;
       tagOffsetY = clientY - rect.top;
+      document.addEventListener("touchmove", dragTag, { passive: false });
+      document.addEventListener("mousemove", dragTag);
+      document.addEventListener("touchend", endDragTag);
+      document.addEventListener("mouseup", endDragTag);
     }, 500);
   }
   function stopLongPress() {
@@ -277,6 +281,10 @@ function createMobileLogContainer() {
     minimizedTag.style.top = constrainedY + "px";
   }
   function endDragTag() {
+    document.removeEventListener("touchmove", dragTag);
+    document.removeEventListener("mousemove", dragTag);
+    document.removeEventListener("touchend", endDragTag);
+    document.removeEventListener("mouseup", endDragTag);
     if (isDraggingTag) {
       isDraggingTag = false;
       minimizedTag.style.opacity = "1";
@@ -293,10 +301,6 @@ function createMobileLogContainer() {
   }
   minimizedTag.addEventListener("touchstart", startLongPress);
   minimizedTag.addEventListener("mousedown", startLongPress);
-  document.addEventListener("touchmove", dragTag);
-  document.addEventListener("mousemove", dragTag);
-  document.addEventListener("touchend", endDragTag);
-  document.addEventListener("mouseup", endDragTag);
   minimizedTag.onclick = (e) => {
     if (!isDraggingTag) {
       container.style.display = "block";
