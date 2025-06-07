@@ -20,14 +20,31 @@ const EXCLUDED_SETTINGS = [
   "TM_useLastOpenedChatID",
   "INSTANCE_ID",
 ];
+function getUserDefinedExclusions() {
+  const exclusions = localStorage.getItem("sync-exclusions");
+  return exclusions
+    ? exclusions
+        .split(",")
+        .map((item) => item.trim())
+        .filter((item) => item)
+    : [];
+}
 function shouldExcludeSetting(key) {
-  return (
+  const userExclusions = getUserDefinedExclusions();
+  const isExcluded =
     EXCLUDED_SETTINGS.includes(key) ||
+    userExclusions.includes(key) ||
     key.startsWith("CHAT_") ||
     key.startsWith("last-seen-") ||
     key.startsWith("sync-") ||
-    !isNaN(key)
-  );
+    !isNaN(key);
+  if (isExcluded && userExclusions.includes(key)) {
+    logToConsole(
+      "debug",
+      `Setting excluded by user-defined exclusions: ${key}`
+    );
+  }
+  return isExcluded;
 }
 let config = {
   syncMode: "disabled",
@@ -4088,6 +4105,15 @@ function openSyncModal() {
             </div>
           </div>
         </div>
+        <div class="bg-gray-100 dark:bg-zinc-800 p-3 rounded-lg">
+          <label for="sync-exclusions" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
+            Exclusions (Comma separated)
+            <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="Additional settings to exclude from sync. Enter comma-separated setting names that you want to prevent from syncing between devices.">ⓘ</button>
+          </label>
+          <input id="sync-exclusions" name="sync-exclusions" type="text" value="${
+            localStorage.getItem("sync-exclusions") || ""
+          }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" placeholder="e.g., my-setting, another-setting" autocomplete="off">
+        </div>
         <div class="flex items-center justify-end mb-4 space-x-2">
           <span class="text-sm text-gray-600 dark:text-gray-400">
             Console Logging
@@ -4232,6 +4258,19 @@ async function saveSettings() {
     syncInterval: parseInt(document.getElementById("sync-interval").value),
     encryptionKey: document.getElementById("encryption-key").value,
   };
+  const exclusions = document.getElementById("sync-exclusions").value;
+  localStorage.setItem("sync-exclusions", exclusions);
+  if (exclusions.trim()) {
+    const exclusionList = exclusions
+      .split(",")
+      .map((item) => item.trim())
+      .filter((item) => item);
+    logToConsole("info", "Sync exclusions updated", {
+      exclusions: exclusionList,
+    });
+  } else {
+    logToConsole("info", "Sync exclusions cleared");
+  }
   if (
     !newConfig.bucketName ||
     !newConfig.region ||
