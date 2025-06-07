@@ -330,6 +330,13 @@ function createMobileLogContainer() {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
       }, 100);
+      const originalText = exportBtn.textContent;
+      exportBtn.textContent = "Done";
+      exportBtn.style.backgroundColor = "#10b981";
+      setTimeout(() => {
+        exportBtn.textContent = originalText;
+        exportBtn.style.backgroundColor = "";
+      }, 2000);
     }
   });
   let isReversed = false;
