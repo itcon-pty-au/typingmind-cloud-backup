@@ -1585,7 +1585,10 @@ async function safeStringify(data) {
     const keys = Object.keys(data);
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
-      const value = data[key];
+      let value = data[key];
+      if (value === undefined) {
+        value = null;
+      }
       if (i > 0) result += ",";
       result += `"${key}":`;
       if (typeof value === "object" && value !== null) {
@@ -1593,7 +1596,11 @@ async function safeStringify(data) {
           result += "[";
           for (let j = 0; j < value.length; j++) {
             if (j > 0) result += ",";
-            result += JSON.stringify(value[j]);
+            let arrayValue = value[j];
+            if (arrayValue === undefined) {
+              arrayValue = null;
+            }
+            result += JSON.stringify(arrayValue);
             if (result.length > chunkSize) {
               await new Promise((resolve) => setTimeout(resolve, 0));
             }
@@ -1605,7 +1612,11 @@ async function safeStringify(data) {
           for (let j = 0; j < objKeys.length; j++) {
             const objKey = objKeys[j];
             if (j > 0) result += ",";
-            result += `"${objKey}":${JSON.stringify(value[objKey])}`;
+            let objValue = value[objKey];
+            if (objValue === undefined) {
+              objValue = null;
+            }
+            result += `"${objKey}":${JSON.stringify(objValue)}`;
             if (result.length > chunkSize) {
               await new Promise((resolve) => setTimeout(resolve, 0));
             }
@@ -1627,7 +1638,9 @@ async function safeStringify(data) {
       "Safe stringify failed, falling back to regular JSON.stringify",
       error
     );
-    return JSON.stringify(data);
+    return JSON.stringify(data, (key, value) =>
+      value === undefined ? null : value
+    );
   }
 }
 async function encryptData(data) {
@@ -5268,7 +5281,13 @@ async function downloadChatFromCloud(chatId) {
       const data = await s3.getObject(params).promise();
       const encryptedContent = new Uint8Array(data.Body);
       const decryptedText = await decryptData(encryptedContent);
-      let chatData = JSON.parse(decryptedText);
+      const sanitizedText = decryptedText
+        .replace(/:\s*undefined\b/g, ": null")
+        .replace(/,\s*undefined\b/g, ", null")
+        .replace(/\[\s*undefined\b/g, "[null")
+        .replace(/undefined\s*,/g, "null,")
+        .replace(/undefined\s*\]/g, "null]");
+      let chatData = JSON.parse(sanitizedText);
       logToConsole("debug", `Chat parsed from cloud download: ${chatId}`, {
         hasChat: !!chatData,
         hasMessages: !!chatData?.messages,
