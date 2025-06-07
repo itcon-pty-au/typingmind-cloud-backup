@@ -4961,7 +4961,7 @@ async function initializeSettingsMonitoring() {
     if (!shouldExcludeSetting(key)) {
       const value = await getIndexedDBValue(key);
       if (value !== undefined) {
-        const hash = await generateHash(value, "chat");
+        const hash = await generateContentHash(value);
         if (
           !localMetadata.settings.items[key] ||
           localMetadata.settings.items[key].hash !== hash
@@ -4980,7 +4980,7 @@ async function initializeSettingsMonitoring() {
     if (!shouldExcludeSetting(key)) {
       const value = localStorage.getItem(key);
       if (value !== null) {
-        const hash = await generateHash(value, "chat");
+        const hash = await generateContentHash(value);
         if (
           !localMetadata.settings.items[key] ||
           localMetadata.settings.items[key].hash !== hash
