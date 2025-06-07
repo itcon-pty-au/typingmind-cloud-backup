@@ -146,7 +146,7 @@ const LOG_ICONS = {
 };
 function logToConsole(type, message, data = null) {
   if (!isConsoleLoggingEnabled) return;
-  const timestamp = new Date().toISOString();
+  const timestamp = new Date().toLocaleString();
   const icons = {
     info: "ℹ️",
     success: "✅",
