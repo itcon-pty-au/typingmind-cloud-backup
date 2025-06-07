@@ -172,7 +172,12 @@ function logToConsole(type, message, data = null) {
         dataEntry.textContent = JSON.stringify(data, null, 2);
         logEntry.appendChild(dataEntry);
       }
-      logsContent.appendChild(logEntry);
+      const isReversed = container.getAttribute("data-log-reversed") === "true";
+      if (isReversed) {
+        logsContent.insertBefore(logEntry, logsContent.firstChild);
+      } else {
+        logsContent.appendChild(logEntry);
+      }
     }
   }
   switch (type) {
@@ -191,6 +196,7 @@ function createMobileLogContainer() {
   container.id = "mobile-log-container";
   container.className =
     "fixed bottom-0 left-0 right-0 bg-black text-white z-[9999]";
+  container.setAttribute("data-log-reversed", "false");
   container.style.cssText = `
         height: 200px;
         max-height: 50vh;
@@ -299,7 +305,8 @@ function createMobileLogContainer() {
   const exportBtn = document.createElement("button");
   exportBtn.className = "text-white p-2 hover:bg-gray-700 rounded text-sm";
   exportBtn.textContent = "Export";
-  exportBtn.onclick = () => {
+  exportBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
     const logsContainer = container.querySelector("#logs-content");
     if (logsContainer && logsContainer.children.length > 0) {
       const logs = Array.from(logsContainer.children)
@@ -324,13 +331,14 @@ function createMobileLogContainer() {
         URL.revokeObjectURL(url);
       }, 100);
     }
-  };
+  });
   let isReversed = false;
   const reverseBtn = document.createElement("button");
   reverseBtn.className = "text-white p-2 hover:bg-gray-700 rounded text-sm";
   reverseBtn.innerHTML = "↕️";
   reverseBtn.title = "Reverse order";
-  reverseBtn.onclick = () => {
+  reverseBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
     const logsContainer = container.querySelector("#logs-content");
     if (logsContainer && logsContainer.children.length > 0) {
       const logEntries = Array.from(logsContainer.children);
@@ -338,9 +346,13 @@ function createMobileLogContainer() {
       logsContainer.innerHTML = "";
       logEntries.forEach((entry) => logsContainer.appendChild(entry));
       isReversed = !isReversed;
-      reverseBtn.innerHTML = isReversed ? "↕️" : "↕️";
+      container.setAttribute("data-log-reversed", isReversed.toString());
+      reverseBtn.innerHTML = isReversed ? "🔽" : "🔼";
+      reverseBtn.title = isReversed
+        ? "Latest first (click to reverse)"
+        : "Latest last (click to reverse)";
     }
-  };
+  });
   const minimizeBtn = document.createElement("button");
   minimizeBtn.className = "text-white p-2 hover:bg-gray-700 rounded text-sm";
   minimizeBtn.textContent = "—";
