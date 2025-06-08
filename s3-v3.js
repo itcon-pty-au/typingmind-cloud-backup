@@ -6328,7 +6328,38 @@ async function downloadSettingFromCloud(settingKey) {
       return settingData;
     } catch (error) {
       if (error.code === "NoSuchKey") {
-        logToConsole("info", `Setting ${settingKey} not found in cloud`);
+        logToConsole(
+          "warning",
+          `Setting ${settingKey} file not found in cloud`
+        );
+        const cloudMetadata = await downloadCloudMetadata();
+        if (
+          cloudMetadata.settings?.items?.[settingKey] &&
+          !cloudMetadata.settings.items[settingKey].deleted
+        ) {
+          cloudMetadata.settings.items[settingKey] = {
+            deleted: true,
+            deletedAt: Date.now(),
+            lastModified: Date.now(),
+            syncedAt: Date.now(),
+            tombstoneVersion:
+              (cloudMetadata.settings.items[settingKey]?.tombstoneVersion ||
+                0) + 1,
+            deletionSource: "file-missing",
+          };
+          await uploadToS3(
+            "metadata.json",
+            new TextEncoder().encode(JSON.stringify(cloudMetadata)),
+            {
+              ContentType: "application/json",
+              ServerSideEncryption: "AES256",
+            }
+          );
+          logToConsole(
+            "info",
+            `Created tombstone for missing setting ${settingKey} in cloud metadata`
+          );
+        }
         return null;
       }
       throw error;
@@ -6404,6 +6435,35 @@ async function syncSettingsToCloud() {
         "Detected empty cloud settings - performing initial upload of all local settings"
       );
     }
+
+    let orphanedMetadataCount = 0;
+    if (!isInitialSync && cloudMetadata.settings?.items) {
+      for (const [settingKey, settingMeta] of Object.entries(
+        cloudMetadata.settings.items
+      )) {
+        if (!settingMeta.deleted) {
+          try {
+            const settingData = await downloadSettingFromCloud(settingKey);
+            if (!settingData) {
+              orphanedMetadataCount++;
+            }
+          } catch (error) {
+            logToConsole(
+              "warning",
+              `Error checking setting file ${settingKey}`,
+              error
+            );
+          }
+        }
+      }
+      if (orphanedMetadataCount > 0) {
+        logToConsole(
+          "info",
+          `Detected ${orphanedMetadataCount} orphaned metadata entries - files missing but metadata exists`
+        );
+      }
+    }
+
     const processedKeys = new Set();
     for (const key of Object.keys(localStorage)) {
       if (shouldExcludeSetting(key) || processedKeys.has(key)) {
