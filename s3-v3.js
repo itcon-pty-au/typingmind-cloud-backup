@@ -6250,6 +6250,7 @@ async function syncSettingsToCloud() {
     let uploadedCount = 0;
     let skippedCount = 0;
     let errorCount = 0;
+    const uploadedSettings = new Map();
     const cloudMetadata = await downloadCloudMetadata();
     const isInitialSync =
       !cloudMetadata.settings?.items ||
@@ -6270,10 +6271,10 @@ async function syncSettingsToCloud() {
       const localMeta = localMetadata.settings.items[key];
       const settingValue = localStorage.getItem(key);
       if (settingValue === null) continue;
-      const currentHash = await generateContentHash(settingValue);
       const cloudSettingMeta = cloudMetadata.settings?.items?.[key];
       const settingExistsInCloud =
         cloudSettingMeta && !cloudSettingMeta.deleted;
+      const currentHash = await generateContentHash(settingValue);
       const needsUpload =
         isInitialSync ||
         !localMeta ||
@@ -6286,6 +6287,13 @@ async function syncSettingsToCloud() {
         try {
           await uploadSettingToCloud(key, syncTimestamp);
           uploadedCount++;
+          uploadedSettings.set(key, {
+            hash: currentHash,
+            lastModified: localMeta?.lastModified || syncTimestamp,
+            syncedAt: syncTimestamp,
+            source: "localStorage",
+            deleted: false,
+          });
           logToConsole("debug", `Uploaded setting ${key}`, {
             reason: isInitialSync
               ? "initial sync"
@@ -6356,6 +6364,13 @@ async function syncSettingsToCloud() {
           try {
             await uploadSettingToCloud(key, syncTimestamp);
             uploadedCount++;
+            uploadedSettings.set(key, {
+              hash: currentHash,
+              lastModified: localMeta?.lastModified || syncTimestamp,
+              syncedAt: syncTimestamp,
+              source: "indexeddb",
+              deleted: false,
+            });
             logToConsole("debug", `Uploaded IndexedDB setting ${key}`, {
               reason: isInitialSync
                 ? "initial sync"
@@ -6403,6 +6418,11 @@ async function syncSettingsToCloud() {
       const updatedCloudMetadata = await downloadCloudMetadata();
       if (!updatedCloudMetadata.settings)
         updatedCloudMetadata.settings = { items: {} };
+      if (!updatedCloudMetadata.settings.items)
+        updatedCloudMetadata.settings.items = {};
+      for (const [settingKey, settingMeta] of uploadedSettings) {
+        updatedCloudMetadata.settings.items[settingKey] = settingMeta;
+      }
       updatedCloudMetadata.settings.lastModified = syncTimestamp;
       updatedCloudMetadata.settings.syncedAt = syncTimestamp;
       updatedCloudMetadata.lastSyncTime = Math.max(
@@ -6417,7 +6437,11 @@ async function syncSettingsToCloud() {
           ServerSideEncryption: "AES256",
         }
       );
-      logToConsole("success", "Updated cloud metadata after settings sync");
+      logToConsole("success", "Updated cloud metadata after settings sync", {
+        settingsAdded: uploadedSettings.size,
+        totalCloudSettings: Object.keys(updatedCloudMetadata.settings.items)
+          .length,
+      });
     }
     logToConsole("success", "Individual settings sync to cloud completed", {
       uploaded: uploadedCount,
