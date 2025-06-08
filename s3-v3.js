@@ -2819,19 +2819,44 @@ async function detectCloudChanges(cloudMetadata) {
       .sort((a, b) => b[1].lastModified - a[1].lastModified)
       .slice(0, 5);
 
+    const allModificationTimes = Object.entries(cloudMetadata.settings.items)
+      .filter(([key, meta]) => !meta.deleted)
+      .map(([key, meta]) => ({
+        key,
+        lastModified: meta.lastModified,
+        ageMinutes: Math.round((Date.now() - meta.lastModified) / 60000),
+        timeString: new Date(meta.lastModified).toISOString(),
+      }))
+      .sort((a, b) => b.lastModified - a.lastModified)
+      .slice(0, 5);
+
+    logToConsole(
+      "debug",
+      "Most recently modified settings (regardless of age)",
+      {
+        currentTime: new Date().toISOString(),
+        settings: allModificationTimes,
+      }
+    );
+
     if (recentlyModified.length > 0) {
-      logToConsole("debug", "Recently modified settings in cloud", {
-        count: recentlyModified.length,
-        settings: recentlyModified.map(([key, meta]) => ({
-          key,
-          lastModified: new Date(meta.lastModified).toISOString(),
-          hash: meta.hash?.substring(0, 8) + "...",
-          ageMinutes: Math.round((Date.now() - meta.lastModified) / 60000),
-        })),
-      });
+      logToConsole(
+        "debug",
+        "Recently modified settings in cloud (last 5 minutes)",
+        {
+          count: recentlyModified.length,
+          settings: recentlyModified.map(([key, meta]) => ({
+            key,
+            lastModified: new Date(meta.lastModified).toISOString(),
+            hash: meta.hash?.substring(0, 8) + "...",
+            ageMinutes: Math.round((Date.now() - meta.lastModified) / 60000),
+          })),
+        }
+      );
+    } else {
+      logToConsole("debug", "No settings found modified in the last 5 minutes");
     }
 
-    const settingsEntries = Object.entries(cloudMetadata.settings.items);
     logToConsole(
       "debug",
       `Starting to check ${settingsEntries.length} cloud settings individually`
@@ -2954,6 +2979,37 @@ async function detectCloudChanges(cloudMetadata) {
 
     if (sampleSettings.length > 0) {
       logToConsole("debug", "Sample settings checked", { sampleSettings });
+    }
+
+    const timestampMismatches = [];
+    for (const [settingKey, cloudSettingMeta] of settingsEntries.slice(0, 10)) {
+      const localSettingMeta = localMetadata.settings?.items?.[settingKey];
+      if (
+        localSettingMeta &&
+        cloudSettingMeta.lastModified &&
+        localSettingMeta.syncedAt
+      ) {
+        const timeDiff =
+          cloudSettingMeta.lastModified - localSettingMeta.syncedAt;
+        if (Math.abs(timeDiff) > 1000) {
+          timestampMismatches.push({
+            key: settingKey,
+            cloudModified: new Date(
+              cloudSettingMeta.lastModified
+            ).toISOString(),
+            localSynced: new Date(localSettingMeta.syncedAt).toISOString(),
+            timeDiff: timeDiff,
+            cloudNewer: timeDiff > 0,
+            hashMatch: cloudSettingMeta.hash === localSettingMeta.hash,
+          });
+        }
+      }
+    }
+
+    if (timestampMismatches.length > 0) {
+      logToConsole("debug", "Found timestamp mismatches in sample", {
+        timestampMismatches,
+      });
     }
 
     logToConsole("debug", "❌ No individual settings changes detected");
