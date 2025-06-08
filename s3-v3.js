@@ -2791,7 +2791,8 @@ function detectSuspiciousCloudChange(currentCount) {
 }
 
 async function detectCloudChanges(cloudMetadata) {
-  if (!cloudMetadata || !cloudMetadata.chats) return false;
+  if (!cloudMetadata || !cloudMetadata.chats)
+    return { hasChanges: false, metadata: cloudMetadata };
 
   const cloudSettingsCount = cloudMetadata.settings?.items
     ? Object.keys(cloudMetadata.settings.items).length
@@ -2844,7 +2845,7 @@ async function detectCloudChanges(cloudMetadata) {
             "debug",
             `✅ Cloud settings change detected: Newer tombstone for ${settingKey}`
           );
-          return true;
+          return { hasChanges: true, metadata: cloudMetadata };
         }
         continue;
       }
@@ -2917,7 +2918,7 @@ async function detectCloudChanges(cloudMetadata) {
             localHash: localSettingMeta?.hash,
           }
         );
-        return true;
+        return { hasChanges: true, metadata: cloudMetadata };
       }
     }
 
@@ -2983,7 +2984,7 @@ async function detectCloudChanges(cloudMetadata) {
         "debug",
         `✅ Cloud settings change detected: Cloud has no settings but local has ${localSettingsCount}`
       );
-      return true;
+      return { hasChanges: true, metadata: cloudMetadata };
     }
   }
 
@@ -2998,7 +2999,7 @@ async function detectCloudChanges(cloudMetadata) {
           "debug",
           `Cloud change detected: Newer tombstone for ${chatId}`
         );
-        return true;
+        return { hasChanges: true, metadata: cloudMetadata };
       }
       continue;
     }
@@ -3015,7 +3016,7 @@ async function detectCloudChanges(cloudMetadata) {
         "debug",
         `Cloud change detected: Hash/existence difference for ${chatId}`
       );
-      return true;
+      return { hasChanges: true, metadata: cloudMetadata };
     }
   }
   for (const chatId in localMetadata.chats) {
@@ -3028,7 +3029,7 @@ async function detectCloudChanges(cloudMetadata) {
   }
 
   logToConsole("debug", "❌ No cloud changes detected");
-  return false;
+  return { hasChanges: false, metadata: cloudMetadata };
 }
 
 async function detectLocalOnlySettings(cloudMetadata) {
@@ -3089,8 +3090,12 @@ function startSyncInterval() {
             (chat.lastModified > (chat.syncedAt || 0) || !chat.syncedAt)
         );
       if (config.syncMode === "sync") {
-        const cloudMetadata = await downloadCloudMetadata();
-        const hasCloudChanges = await detectCloudChanges(cloudMetadata);
+        const initialCloudMetadata = await downloadCloudMetadata();
+        const cloudChangesResult = await detectCloudChanges(
+          initialCloudMetadata
+        );
+        const hasCloudChanges = cloudChangesResult.hasChanges;
+        const cloudMetadata = cloudChangesResult.metadata;
         const hasLocalOnlySettings = await detectLocalOnlySettings(
           cloudMetadata
         );
