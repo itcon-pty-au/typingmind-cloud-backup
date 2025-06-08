@@ -3407,6 +3407,11 @@ async function syncToCloud() {
       logToConsole("info", "No settings changes to upload");
     }
 
+    // Refresh cloud metadata after settings sync to avoid overwriting with stale data
+    const refreshedCloudMetadata = settingsChanged
+      ? await downloadCloudMetadata()
+      : cloudMetadata;
+
     const chats = await getAllChatsFromIndexedDB();
     const chatsToUpload = [];
     for (const chat of chats) {
@@ -3421,7 +3426,7 @@ async function syncToCloud() {
         }
       );
       const localChatMeta = currentLocalMeta;
-      const cloudChatMeta = cloudMetadata.chats[chat.id];
+      const cloudChatMeta = refreshedCloudMetadata.chats[chat.id];
       if (
         cloudChatMeta?.deleted === true &&
         (!localChatMeta ||
@@ -3472,8 +3477,8 @@ async function syncToCloud() {
             syncedAt: syncTimestamp,
             hash: newHash,
           };
-          if (!cloudMetadata.chats) cloudMetadata.chats = {};
-          cloudMetadata.chats[chatId] = {
+          if (!refreshedCloudMetadata.chats) refreshedCloudMetadata.chats = {};
+          refreshedCloudMetadata.chats[chatId] = {
             lastModified: chatData.updatedAt || syncTimestamp,
             syncedAt: syncTimestamp,
             hash: newHash,
@@ -3503,31 +3508,32 @@ async function syncToCloud() {
     for (const [chatId, localChatMeta] of Object.entries(localMetadata.chats)) {
       if (
         localChatMeta.deleted === true &&
-        (!cloudMetadata.chats[chatId]?.deleted ||
-          (cloudMetadata.chats[chatId]?.deleted === true &&
+        (!refreshedCloudMetadata.chats[chatId]?.deleted ||
+          (refreshedCloudMetadata.chats[chatId]?.deleted === true &&
             localChatMeta.tombstoneVersion >
-              (cloudMetadata.chats[chatId]?.tombstoneVersion || 0))) &&
+              (refreshedCloudMetadata.chats[chatId]?.tombstoneVersion || 0))) &&
         (localChatMeta.syncedAt === 0 ||
-          (cloudMetadata.chats[chatId]?.tombstoneVersion || 0) <
+          (refreshedCloudMetadata.chats[chatId]?.tombstoneVersion || 0) <
             localChatMeta.tombstoneVersion)
       ) {
         try {
           await deleteFromS3(`chats/${chatId}.json`);
           deletedChats++;
-          cloudMetadata.chats[chatId] = {
+          refreshedCloudMetadata.chats[chatId] = {
             deleted: true,
             deletedAt: syncTimestamp,
             lastModified: syncTimestamp,
             syncedAt: syncTimestamp,
             tombstoneVersion: Math.max(
               localChatMeta.tombstoneVersion || 1,
-              (cloudMetadata.chats[chatId]?.tombstoneVersion || 0) + 1
+              (refreshedCloudMetadata.chats[chatId]?.tombstoneVersion || 0) + 1
             ),
           };
           localMetadata.chats[chatId] = {
             ...localMetadata.chats[chatId],
             syncedAt: syncTimestamp,
-            tombstoneVersion: cloudMetadata.chats[chatId].tombstoneVersion,
+            tombstoneVersion:
+              refreshedCloudMetadata.chats[chatId].tombstoneVersion,
           };
           hasChanges = true;
           await saveLocalMetadata();
@@ -3542,10 +3548,10 @@ async function syncToCloud() {
     }
     if (hasChanges) {
       localMetadata.lastSyncTime = syncTimestamp;
-      cloudMetadata.lastSyncTime = syncTimestamp;
+      refreshedCloudMetadata.lastSyncTime = syncTimestamp;
       await uploadToS3(
         "metadata.json",
-        new TextEncoder().encode(JSON.stringify(cloudMetadata)),
+        new TextEncoder().encode(JSON.stringify(refreshedCloudMetadata)),
         {
           ContentType: "application/json",
           ServerSideEncryption: "AES256",
