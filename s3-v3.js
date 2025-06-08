@@ -5142,6 +5142,16 @@ async function initializeSettingsMonitoring() {
   const existingSettings = new Set();
   let orphanedMetadataCount = 0;
 
+  logToConsole("debug", "Settings monitoring initialization stats", {
+    totalMetadataEntries: Object.keys(localMetadata.settings.items).length,
+    deletedEntries: Object.values(localMetadata.settings.items).filter(
+      (entry) => entry.deleted
+    ).length,
+    activeEntries: Object.values(localMetadata.settings.items).filter(
+      (entry) => !entry.deleted
+    ).length,
+  });
+
   const db = await openIndexedDB();
   const transaction = db.transaction("keyval", "readonly");
   const store = transaction.objectStore("keyval");
@@ -5224,6 +5234,25 @@ async function initializeSettingsMonitoring() {
       );
       delete localMetadata.settings.items[metadataKey];
       removedDeletedCount++;
+    } else if (metadataEntry.deleted) {
+      logToConsole(
+        "debug",
+        `Found deleted metadata but not removing: ${metadataKey}`,
+        {
+          hasDeletedAt: !!metadataEntry.deletedAt,
+          hasSyncedAt: !!metadataEntry.syncedAt,
+          deletedAt: metadataEntry.deletedAt
+            ? new Date(metadataEntry.deletedAt).toISOString()
+            : "NONE",
+          syncedAt: metadataEntry.syncedAt
+            ? new Date(metadataEntry.syncedAt).toISOString()
+            : "NONE",
+          syncedAfterDeleted:
+            metadataEntry.syncedAt &&
+            metadataEntry.deletedAt &&
+            metadataEntry.syncedAt > metadataEntry.deletedAt,
+        }
+      );
     }
   }
 
