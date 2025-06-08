@@ -6839,6 +6839,18 @@ async function syncSettingsFromCloud() {
         // Skip if local setting is deleted
         if (localSettingMeta?.deleted === true) {
           await deleteSettingFromCloud(settingKey);
+
+          localMetadata.settings.items[settingKey] = {
+            ...localSettingMeta,
+            syncedAt: syncTimestamp,
+            lastModified: Date.now(),
+          };
+
+          appliedCount++;
+          logToConsole(
+            "success",
+            `Deleted setting ${settingKey} from cloud and updated local metadata`
+          );
           continue;
         }
 
