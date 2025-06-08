@@ -5276,10 +5276,18 @@ async function deleteChatFromCloud(chatId) {
 async function downloadCloudMetadata() {
   try {
     const s3 = initializeS3Client();
+    const timestamp = Date.now();
     const params = {
       Bucket: config.bucketName,
       Key: "metadata.json",
+      ResponseCacheControl: "no-cache, no-store, must-revalidate",
     };
+
+    logToConsole("debug", "Downloading cloud metadata", {
+      timestamp: new Date(timestamp).toISOString(),
+      cacheBusting: true,
+    });
+
     try {
       const data = await s3.getObject(params).promise();
       const content = data.Body;
@@ -5288,9 +5296,22 @@ async function downloadCloudMetadata() {
           ? content
           : new TextDecoder().decode(content)
       );
+
+      logToConsole("debug", "Successfully downloaded cloud metadata", {
+        settingsItemsCount: metadata.settings?.items
+          ? Object.keys(metadata.settings.items).length
+          : 0,
+        lastModified: metadata.settings?.lastModified
+          ? new Date(metadata.settings.lastModified).toISOString()
+          : "none",
+        lastSyncTime: metadata.lastSyncTime
+          ? new Date(metadata.lastSyncTime).toISOString()
+          : "none",
+      });
+
       return metadata;
     } catch (error) {
-      if (error.code === "NoSuchKey" || error.name === "NoSuchKey") {
+      if (error.code === "NoSuchKey") {
         logToConsole(
           "info",
           "No cloud metadata found, creating initial metadata"
