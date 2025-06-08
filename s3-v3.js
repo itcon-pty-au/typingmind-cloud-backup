@@ -1200,14 +1200,22 @@ async function setupLocalStorageChangeListener() {
     throttledCheckSyncStatus();
   });
   const originalSetItem = localStorage.setItem;
-  localStorage.setItem = function (key, value) {
-    const oldValue = localStorage.getItem(key);
-    originalSetItem.apply(this, arguments);
-    if (!shouldExcludeSetting(key) && oldValue !== value) {
-      logToConsole("info", `LocalStorage programmatic change detected: ${key}`);
-      throttledCheckSyncStatus();
-    }
-  };
+  Object.defineProperty(localStorage, "setItem", {
+    value: function (key, value) {
+      const oldValue = localStorage.getItem(key);
+      originalSetItem.apply(this, arguments);
+      if (!shouldExcludeSetting(key) && oldValue !== value) {
+        logToConsole(
+          "info",
+          `LocalStorage programmatic change detected: ${key}`
+        );
+        throttledCheckSyncStatus();
+      }
+    },
+    writable: true,
+    configurable: true,
+    enumerable: false,
+  });
 }
 async function getPersistentDB() {
   if (persistentDB) {
