@@ -5221,39 +5221,39 @@ async function initializeSettingsMonitoring() {
   }
 
   let removedDeletedCount = 0;
-  for (const metadataKey of Object.keys(localMetadata.settings.items)) {
-    const metadataEntry = localMetadata.settings.items[metadataKey];
-    if (
-      metadataEntry.deleted &&
-      metadataEntry.syncedAt &&
-      metadataEntry.syncedAt > metadataEntry.deletedAt
-    ) {
-      logToConsole(
-        "cleanup",
-        `Removing synced deleted setting metadata: ${metadataKey}`
-      );
-      delete localMetadata.settings.items[metadataKey];
-      removedDeletedCount++;
-    } else if (metadataEntry.deleted) {
-      logToConsole(
-        "debug",
-        `Found deleted metadata but not removing: ${metadataKey}`,
-        {
-          hasDeletedAt: !!metadataEntry.deletedAt,
-          hasSyncedAt: !!metadataEntry.syncedAt,
-          deletedAt: metadataEntry.deletedAt
-            ? new Date(metadataEntry.deletedAt).toISOString()
-            : "NONE",
-          syncedAt: metadataEntry.syncedAt
-            ? new Date(metadataEntry.syncedAt).toISOString()
-            : "NONE",
-          syncedAfterDeleted:
-            metadataEntry.syncedAt &&
-            metadataEntry.deletedAt &&
-            metadataEntry.syncedAt > metadataEntry.deletedAt,
+  try {
+    const cloudMetadata = await downloadCloudMetadata();
+    for (const metadataKey of Object.keys(localMetadata.settings.items)) {
+      const metadataEntry = localMetadata.settings.items[metadataKey];
+      if (metadataEntry.deleted) {
+        const cloudSettingMeta = cloudMetadata.settings?.items?.[metadataKey];
+        const cloudHasTombstone =
+          cloudSettingMeta && cloudSettingMeta.deleted === true;
+        const cloudDoesntHaveSetting = !cloudSettingMeta;
+
+        if (cloudHasTombstone || cloudDoesntHaveSetting) {
+          logToConsole(
+            "cleanup",
+            `Removing deleted setting metadata (${
+              cloudHasTombstone ? "cloud has tombstone" : "not in cloud"
+            }): ${metadataKey}`
+          );
+          delete localMetadata.settings.items[metadataKey];
+          removedDeletedCount++;
+        } else {
+          logToConsole(
+            "debug",
+            `Keeping deleted metadata (still exists in cloud): ${metadataKey}`
+          );
         }
-      );
+      }
     }
+  } catch (error) {
+    logToConsole(
+      "warning",
+      "Could not download cloud metadata for cleanup, skipping deleted metadata cleanup",
+      error
+    );
   }
 
   if (orphanedMetadataCount > 0 || removedDeletedCount > 0) {
