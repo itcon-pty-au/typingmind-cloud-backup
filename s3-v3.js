@@ -5210,10 +5210,27 @@ async function initializeSettingsMonitoring() {
     }
   }
 
-  if (orphanedMetadataCount > 0) {
+  let removedDeletedCount = 0;
+  for (const metadataKey of Object.keys(localMetadata.settings.items)) {
+    const metadataEntry = localMetadata.settings.items[metadataKey];
+    if (
+      metadataEntry.deleted &&
+      metadataEntry.syncedAt &&
+      metadataEntry.syncedAt > metadataEntry.deletedAt
+    ) {
+      logToConsole(
+        "cleanup",
+        `Removing synced deleted setting metadata: ${metadataKey}`
+      );
+      delete localMetadata.settings.items[metadataKey];
+      removedDeletedCount++;
+    }
+  }
+
+  if (orphanedMetadataCount > 0 || removedDeletedCount > 0) {
     logToConsole(
       "success",
-      `Cleaned up ${orphanedMetadataCount} orphaned setting metadata entries during initialization`
+      `Cleaned up ${orphanedMetadataCount} orphaned and ${removedDeletedCount} synced deleted setting metadata entries during initialization`
     );
     localMetadata.settings.lastModified = Date.now();
   }
@@ -6932,6 +6949,28 @@ async function syncSettingsFromCloud() {
         "success",
         "Saved updated local metadata after settings sync"
       );
+    }
+
+    let cleanedDeletedCount = 0;
+    for (const metadataKey of Object.keys(localMetadata.settings.items)) {
+      const metadataEntry = localMetadata.settings.items[metadataKey];
+      if (
+        metadataEntry.deleted &&
+        metadataEntry.syncedAt &&
+        metadataEntry.syncedAt > metadataEntry.deletedAt
+      ) {
+        delete localMetadata.settings.items[metadataKey];
+        cleanedDeletedCount++;
+      }
+    }
+
+    if (cleanedDeletedCount > 0) {
+      logToConsole(
+        "cleanup",
+        `Removed ${cleanedDeletedCount} synced deleted metadata entries after cloud sync`
+      );
+      localMetadata.settings.lastModified = Date.now();
+      await saveLocalMetadata();
     }
 
     logToConsole("success", "Individual settings sync from cloud completed", {
