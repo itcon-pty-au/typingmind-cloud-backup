@@ -2716,22 +2716,56 @@ async function processOperationQueue() {
 }
 async function detectCloudChanges(cloudMetadata) {
   if (!cloudMetadata || !cloudMetadata.chats) return false;
-  if (
-    cloudMetadata.settings &&
-    (!localMetadata.settings ||
+
+  logToConsole("debug", "🔍 Checking for cloud changes", {
+    hasCloudSettings: !!cloudMetadata.settings,
+    hasLocalSettings: !!localMetadata.settings,
+    cloudSettingsLastModified: cloudMetadata.settings?.lastModified || "NONE",
+    localSettingsSyncedAt: localMetadata.settings?.syncedAt || "NONE",
+  });
+
+  if (cloudMetadata.settings) {
+    const cloudLastModified = cloudMetadata.settings.lastModified;
+    const localSyncedAt = localMetadata.settings?.syncedAt || 0;
+
+    logToConsole("debug", "📊 Settings timestamp comparison", {
+      cloudLastModified: cloudLastModified
+        ? new Date(cloudLastModified).toISOString()
+        : "NONE",
+      localSyncedAt: localSyncedAt
+        ? new Date(localSyncedAt).toISOString()
+        : "NONE",
+      timeDifference: cloudLastModified - localSyncedAt,
+      shouldSyncSettings: cloudLastModified > localSyncedAt,
+      hasLocalSyncedAt: !!localMetadata.settings?.syncedAt,
+    });
+
+    if (
+      !localMetadata.settings ||
       !localMetadata.settings.syncedAt ||
-      cloudMetadata.settings.lastModified > localMetadata.settings.syncedAt)
-  ) {
-    logToConsole(
-      "debug",
-      `Cloud settings change detected: Cloud lastModified ${new Date(
-        cloudMetadata.settings.lastModified
-      ).toISOString()} > Local syncedAt ${new Date(
-        localMetadata.settings?.syncedAt || 0
-      ).toISOString()}`
-    );
-    return true;
+      cloudLastModified > localSyncedAt
+    ) {
+      logToConsole(
+        "debug",
+        `✅ Cloud settings change detected: Cloud lastModified ${new Date(
+          cloudLastModified
+        ).toISOString()} > Local syncedAt ${new Date(
+          localSyncedAt
+        ).toISOString()}`
+      );
+      return true;
+    } else {
+      logToConsole(
+        "debug",
+        `❌ No settings changes: Cloud lastModified ${new Date(
+          cloudLastModified
+        ).toISOString()} <= Local syncedAt ${new Date(
+          localSyncedAt
+        ).toISOString()}`
+      );
+    }
   }
+
   for (const [chatId, cloudChatMeta] of Object.entries(cloudMetadata.chats)) {
     const localChatMeta = localMetadata.chats[chatId];
     if (cloudChatMeta.deleted === true) {
@@ -2771,6 +2805,8 @@ async function detectCloudChanges(cloudMetadata) {
       );
     }
   }
+
+  logToConsole("debug", "❌ No cloud changes detected");
   return false;
 }
 function startSyncInterval() {
@@ -2803,7 +2839,7 @@ function startSyncInterval() {
       if (config.syncMode === "sync") {
         const cloudMetadata = await downloadCloudMetadata();
         const hasCloudChanges = await detectCloudChanges(cloudMetadata);
-        logToConsole("debug", "Sync interval flags:", {
+        logToConsole("debug", "🔄 Sync interval decision", {
           hasCloudChanges,
           hasLocalChanges,
           pendingSettingsChanges,
@@ -2813,6 +2849,17 @@ function startSyncInterval() {
           settingsSyncedAt: localMetadata.settings?.syncedAt
             ? new Date(localMetadata.settings.syncedAt).toISOString()
             : "never",
+          cloudSettingsLastModified: cloudMetadata.settings?.lastModified
+            ? new Date(cloudMetadata.settings.lastModified).toISOString()
+            : "never",
+          decision:
+            hasCloudChanges && hasLocalChanges
+              ? "BIDIRECTIONAL"
+              : hasCloudChanges
+              ? "CLOUD_TO_LOCAL"
+              : hasLocalChanges
+              ? "LOCAL_TO_CLOUD"
+              : "NO_SYNC",
         });
         const cloudChatCount = Object.keys(cloudMetadata?.chats || {}).length;
         const localChatCount = Object.keys(localMetadata.chats || {}).length;
