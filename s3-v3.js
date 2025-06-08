@@ -2968,9 +2968,13 @@ async function performInitialSync() {
     const metadata = await downloadCloudMetadata();
     const chatCount = Object.keys(metadata.chats || {}).length;
     const localChatCount = Object.keys(localMetadata.chats || {}).length;
+    const settingsItemsCount = Object.keys(
+      metadata.settings?.items || {}
+    ).length;
     logToConsole("info", "Initial sync status", {
       cloudChats: chatCount,
       localChats: localChatCount,
+      cloudSettingsItems: settingsItemsCount,
     });
     if (
       (chatCount === 0 && localChatCount > 0) ||
@@ -2983,6 +2987,13 @@ async function performInitialSync() {
       if (!metadata.chats) {
         metadata.chats = {};
       }
+      if (!metadata.settings) {
+        metadata.settings = { items: {} };
+      }
+      if (!metadata.settings.items) {
+        metadata.settings.items = {};
+      }
+
       const chats = await getAllChatsFromIndexedDB();
       let uploadedCount = 0;
       for (const chat of chats) {
@@ -3008,6 +3019,35 @@ async function performInitialSync() {
           logToConsole("error", `Failed to upload chat ${chat.id}:`, error);
         }
       }
+
+      // Handle initial settings upload when cloud settings are empty
+      if (settingsItemsCount === 0) {
+        logToConsole(
+          "info",
+          "Cloud settings are empty - performing initial upload of all local settings"
+        );
+        try {
+          const settingsUploaded = await syncSettingsToCloud();
+          if (settingsUploaded) {
+            logToConsole(
+              "success",
+              "Successfully uploaded local settings to cloud during initial sync"
+            );
+          } else {
+            logToConsole(
+              "info",
+              "No local settings to upload during initial sync"
+            );
+          }
+        } catch (error) {
+          logToConsole(
+            "error",
+            "Failed to upload settings during initial sync:",
+            error
+          );
+        }
+      }
+
       metadata.lastSyncTime = Date.now();
       await uploadToS3(
         "metadata.json",
@@ -3025,6 +3065,35 @@ async function performInitialSync() {
       });
       return;
     }
+
+    // Handle case where cloud has chats but settings are empty
+    if (settingsItemsCount === 0 && chatCount > 0) {
+      logToConsole(
+        "info",
+        "Cloud has chats but settings are empty - performing initial settings upload"
+      );
+      try {
+        const settingsUploaded = await syncSettingsToCloud();
+        if (settingsUploaded) {
+          logToConsole(
+            "success",
+            "Successfully uploaded local settings to cloud (cloud had chats but no settings)"
+          );
+        } else {
+          logToConsole(
+            "info",
+            "No local settings to upload (cloud had chats but no settings)"
+          );
+        }
+      } catch (error) {
+        logToConsole(
+          "error",
+          "Failed to upload settings when cloud had chats but no settings:",
+          error
+        );
+      }
+    }
+
     logToConsole(
       "info",
       "Cloud data found and validated - performing normal sync"
@@ -5281,8 +5350,6 @@ async function downloadCloudMetadata() {
       Bucket: config.bucketName,
       Key: "metadata.json",
       ResponseCacheControl: "no-cache, no-store, must-revalidate",
-      ResponseExpires: new Date(Date.now() - 86400000).toISOString(),
-      IfModifiedSince: new Date(0).toISOString(),
     };
 
     logToConsole("debug", "Downloading cloud metadata", {
@@ -5303,11 +5370,6 @@ async function downloadCloudMetadata() {
         settingsItemsCount: metadata.settings?.items
           ? Object.keys(metadata.settings.items).length
           : 0,
-        settingsStructureExists: !!(
-          metadata.settings && metadata.settings.items
-        ),
-        metadataKeys: Object.keys(metadata),
-        settingsKeys: metadata.settings ? Object.keys(metadata.settings) : [],
         lastModified: metadata.settings?.lastModified
           ? new Date(metadata.settings.lastModified).toISOString()
           : "none",
@@ -6550,47 +6612,8 @@ async function syncSettingsFromCloud() {
 
     const cloudMetadata = await downloadCloudMetadata();
 
-    logToConsole("debug", "Downloaded cloud metadata for settings sync", {
-      hasSettings: !!cloudMetadata.settings,
-      hasSettingsItems: !!(
-        cloudMetadata.settings && cloudMetadata.settings.items
-      ),
-      settingsItemsType: cloudMetadata.settings?.items
-        ? typeof cloudMetadata.settings.items
-        : "undefined",
-      settingsItemsCount: cloudMetadata.settings?.items
-        ? Object.keys(cloudMetadata.settings.items).length
-        : 0,
-      metadataStructure: {
-        hasVersion: !!cloudMetadata.version,
-        hasLastSyncTime: !!cloudMetadata.lastSyncTime,
-        hasChats: !!cloudMetadata.chats,
-        hasSettings: !!cloudMetadata.settings,
-      },
-    });
-
-    if (
-      !cloudMetadata.settings?.items ||
-      Object.keys(cloudMetadata.settings.items).length === 0
-    ) {
-      logToConsole("info", "No individual settings found in cloud metadata", {
-        settingsExists: !!cloudMetadata.settings,
-        itemsExists: !!(cloudMetadata.settings && cloudMetadata.settings.items),
-        itemsIsEmpty: cloudMetadata.settings?.items
-          ? Object.keys(cloudMetadata.settings.items).length === 0
-          : true,
-        fullStructure: {
-          settings: cloudMetadata.settings
-            ? {
-                lastModified: cloudMetadata.settings.lastModified,
-                syncedAt: cloudMetadata.settings.syncedAt,
-                itemsKeys: cloudMetadata.settings.items
-                  ? Object.keys(cloudMetadata.settings.items)
-                  : "no items property",
-              }
-            : "no settings property",
-        },
-      });
+    if (!cloudMetadata.settings?.items) {
+      logToConsole("info", "No individual settings found in cloud metadata");
       return false;
     }
 
