@@ -626,10 +626,10 @@ async function performFullInitialization() {
     setupVisibilityChangeHandler();
     try {
       await cleanupMetadataVersions();
-      logToConsole(
-        "success",
-        "Metadata cleanup completed during initialization"
-      );
+      // logToConsole(
+      //   "success",
+      //   "Metadata cleanup completed during initialization"
+      // );
     } catch (cleanupError) {
       logToConsole(
         "warning",
@@ -791,10 +791,10 @@ async function initializeExtension() {
     setupVisibilityChangeHandler();
     try {
       await cleanupMetadataVersions();
-      logToConsole(
-        "success",
-        "Metadata cleanup completed during initialization"
-      );
+      // logToConsole(
+      //   "success",
+      //   "Metadata cleanup completed during initialization"
+      // );
     } catch (cleanupError) {
       logToConsole(
         "warning",
@@ -942,28 +942,28 @@ async function loadLocalMetadata() {
             }, {});
           }
         }
-        logToConsole("debug", "Parsed localMetadata:", {
-          lastSyncTime: formatLogTimestamp(localMetadata.lastSyncTime),
-          hasChats: !!localMetadata.chats,
-          chatCount: localMetadata.chats
-            ? Object.keys(localMetadata.chats).length
-            : 0,
-          firstChatSyncedAt:
-            localMetadata.chats && Object.keys(localMetadata.chats).length > 0
-              ? formatLogTimestamp(
-                  localMetadata.chats[Object.keys(localMetadata.chats)[0]]
-                    ?.syncedAt
-                )
-              : undefined,
-          hasSettings: !!localMetadata.settings,
-          settingsCount: localMetadata.settings?.items
-            ? Object.keys(localMetadata.settings.items).length
-            : 0,
-          settingsSyncedAt: formatLogTimestamp(
-            localMetadata.settings?.syncedAt
-          ),
-          settingsSamples: settingsHashSamples,
-        });
+        // logToConsole("debug", "Parsed localMetadata:", {
+        //   lastSyncTime: formatLogTimestamp(localMetadata.lastSyncTime),
+        //   hasChats: !!localMetadata.chats,
+        //   chatCount: localMetadata.chats
+        //     ? Object.keys(localMetadata.chats).length
+        //     : 0,
+        //   firstChatSyncedAt:
+        //     localMetadata.chats && Object.keys(localMetadata.chats).length > 0
+        //       ? formatLogTimestamp(
+        //           localMetadata.chats[Object.keys(localMetadata.chats)[0]]
+        //             ?.syncedAt
+        //         )
+        //       : undefined,
+        //   hasSettings: !!localMetadata.settings,
+        //   settingsCount: localMetadata.settings?.items
+        //     ? Object.keys(localMetadata.settings.items).length
+        //     : 0,
+        //   settingsSyncedAt: formatLogTimestamp(
+        //     localMetadata.settings?.syncedAt
+        //   ),
+        //   settingsSamples: settingsHashSamples,
+        // });
       } catch (parseError) {
         logToConsole(
           "error",
@@ -5138,6 +5138,10 @@ async function initializeSettingsMonitoring() {
   if (!localMetadata.settings.items) {
     localMetadata.settings.items = {};
   }
+
+  const existingSettings = new Set();
+  let orphanedMetadataCount = 0;
+
   const db = await openIndexedDB();
   const transaction = db.transaction("keyval", "readonly");
   const store = transaction.objectStore("keyval");
@@ -5148,6 +5152,7 @@ async function initializeSettingsMonitoring() {
   });
   for (const key of keys) {
     if (!shouldExcludeSetting(key)) {
+      existingSettings.add(key);
       const value = await getIndexedDBValue(key);
       if (value !== undefined) {
         const hash = await generateContentHash(value);
@@ -5167,6 +5172,7 @@ async function initializeSettingsMonitoring() {
   }
   for (const key of Object.keys(localStorage)) {
     if (!shouldExcludeSetting(key)) {
+      existingSettings.add(key);
       const value = localStorage.getItem(key);
       if (value !== null) {
         const hash = await generateContentHash(value);
@@ -5184,6 +5190,34 @@ async function initializeSettingsMonitoring() {
       }
     }
   }
+
+  for (const metadataKey of Object.keys(localMetadata.settings.items)) {
+    if (
+      !existingSettings.has(metadataKey) &&
+      !localMetadata.settings.items[metadataKey].deleted
+    ) {
+      logToConsole(
+        "cleanup",
+        `Marking orphaned setting metadata as deleted: ${metadataKey}`
+      );
+      localMetadata.settings.items[metadataKey] = {
+        ...localMetadata.settings.items[metadataKey],
+        deleted: true,
+        deletedAt: Date.now(),
+        lastModified: Date.now(),
+      };
+      orphanedMetadataCount++;
+    }
+  }
+
+  if (orphanedMetadataCount > 0) {
+    logToConsole(
+      "success",
+      `Cleaned up ${orphanedMetadataCount} orphaned setting metadata entries during initialization`
+    );
+    localMetadata.settings.lastModified = Date.now();
+  }
+
   window.addEventListener("storage", (e) => {
     if (!e.key || shouldExcludeSetting(e.key)) {
       return;
@@ -5194,7 +5228,7 @@ async function initializeSettingsMonitoring() {
   });
   setInterval(checkIndexedDBChanges, 5000);
   await saveLocalMetadata();
-  return true;
+  return orphanedMetadataCount > 0;
 }
 async function generateContentHash(content) {
   const str = typeof content === "string" ? content : JSON.stringify(content);
@@ -5276,15 +5310,34 @@ async function checkIndexedDBChanges() {
 async function handleSettingChange(key, value, source) {
   if (shouldExcludeSetting(key)) return;
   try {
-    const newHash = await generateContentHash(value);
     const existingMetadata = localMetadata.settings.items[key];
     const timestamp = Date.now();
+
+    if (value === null || value === undefined) {
+      if (existingMetadata && !existingMetadata.deleted) {
+        logToConsole("info", `Setting deleted from ${source}: ${key}`);
+        localMetadata.settings.items[key] = {
+          ...existingMetadata,
+          deleted: true,
+          deletedAt: timestamp,
+          lastModified: timestamp,
+        };
+        localMetadata.settings.lastModified = timestamp;
+        await saveLocalMetadata();
+        throttledCheckSyncStatus();
+        return true;
+      }
+      return false;
+    }
+
+    const newHash = await generateContentHash(value);
     if (!existingMetadata || existingMetadata.hash !== newHash) {
       localMetadata.settings.items[key] = {
         hash: newHash,
         lastModified: timestamp,
         syncedAt: 0,
         source: source,
+        deleted: false,
       };
       localMetadata.settings.lastModified = timestamp;
       await saveLocalMetadata();
