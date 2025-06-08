@@ -6415,20 +6415,56 @@ async function syncSettingsToCloud() {
       logToConsole("error", "Error reading IndexedDB for settings sync", error);
     }
     if (uploadedCount > 0) {
+      logToConsole("debug", "Updating cloud metadata after settings upload", {
+        uploadedCount,
+        uploadedSettingsSize: uploadedSettings.size,
+        uploadedSettingsKeys: Array.from(uploadedSettings.keys()).slice(0, 5),
+      });
+
       const updatedCloudMetadata = await downloadCloudMetadata();
+      logToConsole("debug", "Downloaded cloud metadata for update", {
+        hasSettings: !!updatedCloudMetadata.settings,
+        hasSettingsItems: !!updatedCloudMetadata.settings?.items,
+        currentSettingsItemsCount: updatedCloudMetadata.settings?.items
+          ? Object.keys(updatedCloudMetadata.settings.items).length
+          : 0,
+      });
+
       if (!updatedCloudMetadata.settings)
         updatedCloudMetadata.settings = { items: {} };
       if (!updatedCloudMetadata.settings.items)
         updatedCloudMetadata.settings.items = {};
+
+      const beforeCount = Object.keys(
+        updatedCloudMetadata.settings.items
+      ).length;
+
       for (const [settingKey, settingMeta] of uploadedSettings) {
         updatedCloudMetadata.settings.items[settingKey] = settingMeta;
+        logToConsole("debug", `Added setting ${settingKey} to cloud metadata`, {
+          hash: settingMeta.hash?.substring(0, 8) + "...",
+          source: settingMeta.source,
+        });
       }
+
+      const afterCount = Object.keys(
+        updatedCloudMetadata.settings.items
+      ).length;
+
       updatedCloudMetadata.settings.lastModified = syncTimestamp;
       updatedCloudMetadata.settings.syncedAt = syncTimestamp;
       updatedCloudMetadata.lastSyncTime = Math.max(
         updatedCloudMetadata.lastSyncTime || 0,
         syncTimestamp
       );
+
+      logToConsole("debug", "About to upload updated metadata", {
+        beforeCount,
+        afterCount,
+        settingsAdded: uploadedSettings.size,
+        metadataSize: JSON.stringify(updatedCloudMetadata).length,
+      });
+
       await uploadToS3(
         "metadata.json",
         new TextEncoder().encode(JSON.stringify(updatedCloudMetadata)),
@@ -6437,6 +6473,22 @@ async function syncSettingsToCloud() {
           ServerSideEncryption: "AES256",
         }
       );
+
+      // Verify the metadata was saved correctly
+      try {
+        const verifyMetadata = await downloadCloudMetadata();
+        const verifySettingsCount = verifyMetadata.settings?.items
+          ? Object.keys(verifyMetadata.settings.items).length
+          : 0;
+        logToConsole("debug", "Verified cloud metadata after upload", {
+          verifySettingsCount,
+          expectedCount: afterCount,
+          verificationMatch: verifySettingsCount === afterCount,
+        });
+      } catch (verifyError) {
+        logToConsole("error", "Failed to verify metadata upload", verifyError);
+      }
+
       logToConsole("success", "Updated cloud metadata after settings sync", {
         settingsAdded: uploadedSettings.size,
         totalCloudSettings: Object.keys(updatedCloudMetadata.settings.items)
