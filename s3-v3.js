@@ -2770,15 +2770,38 @@ async function processOperationQueue() {
   })();
   return operationState.queueProcessingPromise;
 }
+let recentCloudObservations = [];
+
+function trackCloudObservation(settingsCount) {
+  const now = Date.now();
+  recentCloudObservations.push({ timestamp: now, settingsCount });
+  recentCloudObservations = recentCloudObservations.filter(
+    (obs) => now - obs.timestamp < 300000
+  );
+}
+
+function detectSuspiciousCloudChange(currentCount) {
+  if (recentCloudObservations.length === 0) return false;
+  const recentObs = recentCloudObservations.filter(
+    (obs) => Date.now() - obs.timestamp < 120000
+  );
+  if (recentObs.length === 0) return false;
+  const maxRecentCount = Math.max(...recentObs.map((obs) => obs.settingsCount));
+  return currentCount === 0 && maxRecentCount > 50;
+}
+
 async function detectCloudChanges(cloudMetadata) {
   if (!cloudMetadata || !cloudMetadata.chats) return false;
+
+  const cloudSettingsCount = cloudMetadata.settings?.items
+    ? Object.keys(cloudMetadata.settings.items).length
+    : 0;
+  trackCloudObservation(cloudSettingsCount);
 
   logToConsole("debug", "🔍 Checking for cloud changes", {
     hasCloudSettings: !!cloudMetadata.settings,
     hasLocalSettings: !!localMetadata.settings,
-    cloudSettingsItems: cloudMetadata.settings?.items
-      ? Object.keys(cloudMetadata.settings.items).length
-      : 0,
+    cloudSettingsItems: cloudSettingsCount,
     localSettingsItems: localMetadata.settings?.items
       ? Object.keys(localMetadata.settings.items).length
       : 0,
@@ -2857,18 +2880,25 @@ async function detectCloudChanges(cloudMetadata) {
         localMetadata.settings.items
       ).length;
 
+      const suspiciousChange = detectSuspiciousCloudChange(cloudSettingsCount);
       const timeSinceLastSync = Date.now() - (localMetadata.lastSyncTime || 0);
       const recentSync = timeSinceLastSync < 60000;
 
-      if (recentSync && localSettingsCount > 10) {
+      if ((recentSync && localSettingsCount > 10) || suspiciousChange) {
+        const reason = suspiciousChange
+          ? `recently observed cloud with ${Math.max(
+              ...recentCloudObservations.map((obs) => obs.settingsCount)
+            )} settings`
+          : `last sync was recent (${Math.round(
+              timeSinceLastSync / 1000
+            )}s ago)`;
+
         logToConsole(
           "warning",
-          `Cloud has no settings but local has ${localSettingsCount} and last sync was recent (${Math.round(
-            timeSinceLastSync / 1000
-          )}s ago). This may be a race condition - waiting 3 seconds before proceeding.`
+          `Cloud has no settings but local has ${localSettingsCount} and ${reason}. This may be a race condition - waiting 5 seconds before proceeding.`
         );
 
-        await new Promise((resolve) => setTimeout(resolve, 3000));
+        await new Promise((resolve) => setTimeout(resolve, 5000));
 
         try {
           const retryMetadata = await downloadCloudMetadata();
@@ -2882,6 +2912,11 @@ async function detectCloudChanges(cloudMetadata) {
               `Race condition avoided - cloud now has ${retryCloudCount} settings after retry`
             );
             return await detectCloudChanges(retryMetadata);
+          } else {
+            logToConsole(
+              "warning",
+              `Retry still shows 0 cloud settings. Proceeding with caution - this might be a genuine cloud reset.`
+            );
           }
         } catch (retryError) {
           logToConsole("warning", "Retry metadata download failed", retryError);
