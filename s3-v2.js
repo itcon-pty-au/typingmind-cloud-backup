@@ -5603,25 +5603,47 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
         (Object.keys(settingsData).length > 10 ? "..." : ""),
       timestamp: new Date(now).toISOString(),
     });
-    // Update overall settings metadata locally *after* successful upload
     localMetadata.settings.syncedAt = now;
-    localMetadata.settings.lastModified = now; // Mark settings as modified up to this sync point
-    await saveLocalMetadata(); // Save the updated item hashes and overall timestamps
-    // Update cloud metadata (only settings part and lastSyncTime)
+    localMetadata.settings.lastModified = now;
+    await saveLocalMetadata();
+
+    logToConsole("debug", "🔄 Updating cloud metadata after settings upload", {
+      uploadTimestamp: new Date(now).toISOString(),
+      aboutToSetCloudLastModified: new Date(now).toISOString(),
+    });
+
     const cloudMetadata = await downloadCloudMetadata();
-    if (!cloudMetadata.settings) cloudMetadata.settings = {}; // Ensure settings object exists
+
+    logToConsole("debug", "📥 Current cloud metadata before update", {
+      currentCloudSettingsLastModified: cloudMetadata.settings?.lastModified
+        ? new Date(cloudMetadata.settings.lastModified).toISOString()
+        : "NONE",
+      currentCloudSettingsSyncedAt: cloudMetadata.settings?.syncedAt
+        ? new Date(cloudMetadata.settings.syncedAt).toISOString()
+        : "NONE",
+      currentCloudLastSyncTime: cloudMetadata.lastSyncTime
+        ? new Date(cloudMetadata.lastSyncTime).toISOString()
+        : "NONE",
+    });
+
+    if (!cloudMetadata.settings) cloudMetadata.settings = {};
     cloudMetadata.settings = {
       lastModified: now,
-      syncedAt: now, // Reflect that cloud settings match this sync point
+      syncedAt: now,
     };
-    cloudMetadata.lastSyncTime = Math.max(cloudMetadata.lastSyncTime || 0, now); // Update overall sync time
-    logToConsole("debug", "Uploading updated metadata after settings sync", {
-      timestamp: new Date(now).toISOString(),
-      settingsLastModified: new Date(
+    cloudMetadata.lastSyncTime = Math.max(cloudMetadata.lastSyncTime || 0, now);
+
+    logToConsole("debug", "📤 About to upload updated cloud metadata", {
+      newCloudSettingsLastModified: new Date(
         cloudMetadata.settings.lastModified
       ).toISOString(),
-      settingsSyncedAt: new Date(cloudMetadata.settings.syncedAt).toISOString(),
+      newCloudSettingsSyncedAt: new Date(
+        cloudMetadata.settings.syncedAt
+      ).toISOString(),
+      newCloudLastSyncTime: new Date(cloudMetadata.lastSyncTime).toISOString(),
+      metadataSize: JSON.stringify(cloudMetadata).length,
     });
+
     await uploadToS3(
       "metadata.json",
       new TextEncoder().encode(JSON.stringify(cloudMetadata)),
@@ -5630,8 +5652,11 @@ async function uploadSettingsToCloud(syncTimestamp = null) {
         ServerSideEncryption: "AES256",
       }
     );
-    logToConsole("success", "Cloud metadata updated after settings sync", {
+    logToConsole("success", "✅ Cloud metadata updated after settings sync", {
       timestamp: new Date(now).toISOString(),
+      settingsLastModified: new Date(
+        cloudMetadata.settings.lastModified
+      ).toISOString(),
       metadataSize: JSON.stringify(cloudMetadata).length,
     });
     return true;
