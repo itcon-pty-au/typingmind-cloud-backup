@@ -2831,10 +2831,34 @@ async function detectCloudChanges(cloudMetadata) {
       });
     }
 
-    for (const [settingKey, cloudSettingMeta] of Object.entries(
-      cloudMetadata.settings.items
-    )) {
+    const settingsEntries = Object.entries(cloudMetadata.settings.items);
+    logToConsole(
+      "debug",
+      `Starting to check ${settingsEntries.length} cloud settings individually`
+    );
+
+    let checkedCount = 0;
+    let changesFound = 0;
+    let sampleSettings = [];
+
+    for (const [settingKey, cloudSettingMeta] of settingsEntries) {
+      checkedCount++;
       const localSettingMeta = localMetadata.settings?.items?.[settingKey];
+
+      if (checkedCount <= 3) {
+        sampleSettings.push({
+          key: settingKey,
+          cloudHash: cloudSettingMeta.hash?.substring(0, 12) + "...",
+          localHash: localSettingMeta?.hash?.substring(0, 12) + "...",
+          hashMatch: cloudSettingMeta.hash === localSettingMeta?.hash,
+          cloudModified: cloudSettingMeta.lastModified
+            ? new Date(cloudSettingMeta.lastModified).toISOString()
+            : "NONE",
+          localSynced: localSettingMeta?.syncedAt
+            ? new Date(localSettingMeta.syncedAt).toISOString()
+            : "NONE",
+        });
+      }
 
       if (cloudSettingMeta.deleted === true) {
         if (
@@ -2865,7 +2889,8 @@ async function detectCloudChanges(cloudMetadata) {
         cloudNewer;
 
       if (mightHaveChange) {
-        logToConsole("debug", `Checking setting ${settingKey}`, {
+        changesFound++;
+        logToConsole("info", `🔍 POTENTIAL CHANGE DETECTED for ${settingKey}`, {
           hasLocalMeta,
           hasLocalHash,
           hasLocalSyncedAt,
@@ -2877,8 +2902,8 @@ async function detectCloudChanges(cloudMetadata) {
           localSyncedAt: localSettingMeta?.syncedAt
             ? new Date(localSettingMeta.syncedAt).toISOString()
             : "NONE",
-          cloudHash: cloudSettingMeta.hash?.substring(0, 8) + "...",
-          localHash: localSettingMeta?.hash?.substring(0, 8) + "...",
+          cloudHash: cloudSettingMeta.hash?.substring(0, 12) + "...",
+          localHash: localSettingMeta?.hash?.substring(0, 12) + "...",
           timeDiff:
             cloudSettingMeta.lastModified && localSettingMeta?.syncedAt
               ? cloudSettingMeta.lastModified - localSettingMeta.syncedAt
@@ -2905,8 +2930,8 @@ async function detectCloudChanges(cloudMetadata) {
           : "cloud newer";
 
         logToConsole(
-          "debug",
-          `✅ Cloud settings change detected: ${settingKey} (${reason})`,
+          "info",
+          `✅ CONFIRMED Cloud settings change detected: ${settingKey} (${reason})`,
           {
             cloudLastModified: cloudSettingMeta.lastModified
               ? new Date(cloudSettingMeta.lastModified).toISOString()
@@ -2920,6 +2945,15 @@ async function detectCloudChanges(cloudMetadata) {
         );
         return { hasChanges: true, metadata: cloudMetadata };
       }
+    }
+
+    logToConsole(
+      "debug",
+      `Finished checking individual settings: ${checkedCount} checked, ${changesFound} potential changes found, 0 confirmed changes`
+    );
+
+    if (sampleSettings.length > 0) {
+      logToConsole("debug", "Sample settings checked", { sampleSettings });
     }
 
     logToConsole("debug", "❌ No individual settings changes detected");
