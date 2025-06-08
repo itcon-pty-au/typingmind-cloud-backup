@@ -1020,7 +1020,56 @@ async function initializeMetadataFromExistingData() {
       isDeleted: false,
     };
   }
-  logToConsole("success", "Metadata initialized from existing data");
+  for (const key of Object.keys(localStorage)) {
+    if (shouldExcludeSetting(key)) continue;
+    const value = localStorage.getItem(key);
+    if (value !== null) {
+      const hash = await generateContentHash(value);
+      localMetadata.settings.items[key] = {
+        hash: hash,
+        lastModified: Date.now(),
+        syncedAt: 0,
+        source: "localStorage",
+        deleted: false,
+      };
+    }
+  }
+  try {
+    const db = await openIndexedDB();
+    const transaction = db.transaction("keyval", "readonly");
+    const store = transaction.objectStore("keyval");
+    const keys = await new Promise((resolve, reject) => {
+      const request = store.getAllKeys();
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+    for (const key of keys) {
+      if (shouldExcludeSetting(key)) continue;
+      const value = await getIndexedDBValue(key);
+      if (value !== undefined) {
+        const valueToHash =
+          typeof value === "object" ? JSON.stringify(value) : value;
+        const hash = await generateContentHash(valueToHash);
+        localMetadata.settings.items[key] = {
+          hash: hash,
+          lastModified: Date.now(),
+          syncedAt: 0,
+          source: "indexeddb",
+          deleted: false,
+        };
+      }
+    }
+  } catch (error) {
+    logToConsole(
+      "warning",
+      "Could not initialize IndexedDB settings metadata",
+      error
+    );
+  }
+  logToConsole("success", "Metadata initialized from existing data", {
+    chatsInitialized: Object.keys(localMetadata.chats).length,
+    settingsInitialized: Object.keys(localMetadata.settings.items).length,
+  });
   return true;
 }
 async function saveLocalMetadata() {
@@ -5638,11 +5687,8 @@ async function uploadChatToCloud(
   } catch (error) {
     logToConsole("error", `Error uploading chat ${chatId}`, error);
     if (localMetadata.chats[chatId]) {
-      localMetadata.chats[chatId].uploadError = error.message;
-      localMetadata.chats[chatId].uploadErrorTime = Date.now();
-      localMetadata.chats[chatId].uploadRetryCount =
-        (localMetadata.chats[chatId].uploadRetryCount || 0) + 1;
-      saveLocalMetadata();
+      localMetadata.chats[chatId].syncedAt = 0;
+      await saveLocalMetadata();
     }
     logToConsole("error", `Error uploading chat ${chatId}:`, error);
     throw error;
