@@ -5127,26 +5127,36 @@ async function checkIndexedDBChanges() {
 }
 async function handleSettingChange(key, value, source) {
   if (shouldExcludeSetting(key)) return;
-  const newHash = await generateContentHash(value);
-  const metadata = localMetadata.settings.items[key];
-  if (!metadata || metadata.hash !== newHash) {
+  try {
+    const newHash = await generateContentHash(value);
+    const existingMetadata = localMetadata.settings.items[key];
     const timestamp = Date.now();
-    localMetadata.settings.items[key] = {
-      hash: newHash,
-      lastModified: timestamp,
-      syncedAt: 0,
-      source: source,
-    };
-    localMetadata.settings.lastModified = timestamp;
-    saveLocalMetadata();
-    throttledCheckSyncStatus();
-    logToConsole(
-      "info",
-      `Setting change detected from ${source}: ${key} (hash changed)`
-    );
-    return true;
+    if (!existingMetadata || existingMetadata.hash !== newHash) {
+      localMetadata.settings.items[key] = {
+        hash: newHash,
+        lastModified: timestamp,
+        syncedAt: 0,
+        source: source,
+      };
+      localMetadata.settings.lastModified = timestamp;
+      await saveLocalMetadata();
+      throttledCheckSyncStatus();
+      logToConsole(
+        "info",
+        `Setting change detected from ${source}: ${key} (hash changed)`,
+        {
+          oldHash: existingMetadata?.hash?.substring(0, 8) + "..." || "none",
+          newHash: newHash.substring(0, 8) + "...",
+          timestamp: new Date(timestamp).toISOString(),
+        }
+      );
+      return true;
+    }
+    return false;
+  } catch (error) {
+    logToConsole("error", `Error handling setting change for ${key}`, error);
+    return false;
   }
-  return false;
 }
 async function cleanupMetadataVersions() {
   try {
@@ -5292,6 +5302,7 @@ async function downloadCloudMetadata() {
           settings: {
             lastModified: 0,
             syncedAt: 0,
+            items: {},
           },
         };
         try {
@@ -6041,35 +6052,43 @@ async function uploadSettingToCloud(settingKey, syncTimestamp = null) {
   try {
     const now = syncTimestamp || Date.now();
     const s3 = initializeS3Client();
-
-    // Get the setting value based on source
     let settingValue;
     let source = "localStorage";
-
-    // First check localStorage
-    settingValue = localStorage.getItem(settingKey);
-
-    // If not in localStorage, check IndexedDB
-    if (settingValue === null) {
-      try {
-        settingValue = await getIndexedDBValue(settingKey);
-        if (settingValue !== undefined) {
-          source = "indexeddb";
-          // Serialize complex objects for storage
-          if (typeof settingValue === "object") {
-            settingValue = JSON.stringify(settingValue);
-          }
-        }
-      } catch (error) {
-        logToConsole(
-          "warning",
-          `Could not read ${settingKey} from IndexedDB`,
-          error
-        );
-      }
+    let localStorageValue = localStorage.getItem(settingKey);
+    let indexedDBValue;
+    try {
+      indexedDBValue = await getIndexedDBValue(settingKey);
+    } catch (error) {
+      logToConsole(
+        "warning",
+        `Could not read ${settingKey} from IndexedDB`,
+        error
+      );
     }
-
-    if (settingValue === null || settingValue === undefined) {
+    const metadata = localMetadata.settings.items[settingKey];
+    if (localStorageValue !== null && indexedDBValue !== undefined) {
+      if (metadata?.source) {
+        source = metadata.source;
+        settingValue =
+          source === "localStorage"
+            ? localStorageValue
+            : typeof indexedDBValue === "object"
+            ? JSON.stringify(indexedDBValue)
+            : indexedDBValue;
+      } else {
+        source = "localStorage";
+        settingValue = localStorageValue;
+      }
+    } else if (localStorageValue !== null) {
+      source = "localStorage";
+      settingValue = localStorageValue;
+    } else if (indexedDBValue !== undefined) {
+      source = "indexeddb";
+      settingValue =
+        typeof indexedDBValue === "object"
+          ? JSON.stringify(indexedDBValue)
+          : indexedDBValue;
+    } else {
       logToConsole(
         "warning",
         `Setting ${settingKey} not found in localStorage or IndexedDB`
@@ -6226,39 +6245,80 @@ async function deleteSettingFromCloud(settingKey) {
 
 async function syncSettingsToCloud() {
   logToConsole("start", "Starting individual settings sync to cloud...");
-
   try {
     const syncTimestamp = Date.now();
     let uploadedCount = 0;
     let skippedCount = 0;
     let errorCount = 0;
+    const cloudMetadata = await downloadCloudMetadata();
+    const isInitialSync =
+      !cloudMetadata.settings?.items ||
+      Object.keys(cloudMetadata.settings.items).length === 0;
 
-    // Check all localStorage settings
+    if (isInitialSync) {
+      logToConsole(
+        "info",
+        "Detected empty cloud settings - performing initial upload of all local settings"
+      );
+    }
+    const processedKeys = new Set();
     for (const key of Object.keys(localStorage)) {
-      if (shouldExcludeSetting(key)) {
+      if (shouldExcludeSetting(key) || processedKeys.has(key)) {
         continue;
       }
-
+      processedKeys.add(key);
       const localMeta = localMetadata.settings.items[key];
+      const settingValue = localStorage.getItem(key);
+      if (settingValue === null) continue;
+      const currentHash = await generateContentHash(settingValue);
+      const cloudSettingMeta = cloudMetadata.settings?.items?.[key];
+      const settingExistsInCloud =
+        cloudSettingMeta && !cloudSettingMeta.deleted;
       const needsUpload =
+        isInitialSync ||
         !localMeta ||
         !localMeta.syncedAt ||
-        localMeta.lastModified > localMeta.syncedAt;
-
+        !settingExistsInCloud ||
+        localMeta.lastModified > localMeta.syncedAt ||
+        localMeta.hash !== currentHash ||
+        (cloudSettingMeta?.hash && cloudSettingMeta.hash !== currentHash);
       if (needsUpload) {
         try {
           await uploadSettingToCloud(key, syncTimestamp);
           uploadedCount++;
+          logToConsole("debug", `Uploaded setting ${key}`, {
+            reason: isInitialSync
+              ? "initial sync"
+              : !localMeta
+              ? "no local metadata"
+              : !settingExistsInCloud
+              ? "not in cloud"
+              : localMeta.lastModified > localMeta.syncedAt
+              ? "locally modified"
+              : localMeta.hash !== currentHash
+              ? "content changed"
+              : "hash mismatch with cloud",
+            source: "localStorage",
+            cloudExists: !!cloudSettingMeta,
+          });
         } catch (error) {
           logToConsole("error", `Failed to upload setting ${key}`, error);
           errorCount++;
         }
       } else {
         skippedCount++;
+        logToConsole("debug", `Skipped setting ${key}: already in sync`, {
+          lastModified: localMeta.lastModified
+            ? new Date(localMeta.lastModified).toISOString()
+            : "never",
+          syncedAt: localMeta.syncedAt
+            ? new Date(localMeta.syncedAt).toISOString()
+            : "never",
+          hashMatch: localMeta.hash === currentHash,
+          existsInCloud: settingExistsInCloud,
+        });
       }
     }
-
-    // Check all IndexedDB settings
     try {
       const db = await openIndexedDB();
       const transaction = db.transaction("keyval", "readonly");
@@ -6268,22 +6328,48 @@ async function syncSettingsToCloud() {
         request.onerror = () => reject(request.error);
         request.onsuccess = () => resolve(request.result);
       });
-
       for (const key of keys) {
-        if (shouldExcludeSetting(key)) {
+        if (shouldExcludeSetting(key) || processedKeys.has(key)) {
           continue;
         }
-
+        processedKeys.add(key);
         const localMeta = localMetadata.settings.items[key];
+        const settingValue = await getIndexedDBValue(key);
+        if (settingValue === undefined) continue;
+        const valueToHash =
+          typeof settingValue === "object"
+            ? JSON.stringify(settingValue)
+            : settingValue;
+        const currentHash = await generateContentHash(valueToHash);
+        const cloudSettingMeta = cloudMetadata.settings?.items?.[key];
+        const settingExistsInCloud =
+          cloudSettingMeta && !cloudSettingMeta.deleted;
         const needsUpload =
+          isInitialSync ||
           !localMeta ||
           !localMeta.syncedAt ||
-          localMeta.lastModified > localMeta.syncedAt;
-
+          !settingExistsInCloud ||
+          localMeta.lastModified > localMeta.syncedAt ||
+          localMeta.hash !== currentHash ||
+          (cloudSettingMeta?.hash && cloudSettingMeta.hash !== currentHash);
         if (needsUpload) {
           try {
             await uploadSettingToCloud(key, syncTimestamp);
             uploadedCount++;
+            logToConsole("debug", `Uploaded IndexedDB setting ${key}`, {
+              reason: isInitialSync
+                ? "initial sync"
+                : !localMeta
+                ? "no local metadata"
+                : !settingExistsInCloud
+                ? "not in cloud"
+                : localMeta.lastModified > localMeta.syncedAt
+                ? "locally modified"
+                : localMeta.hash !== currentHash
+                ? "content changed"
+                : "hash mismatch with cloud",
+              source: "indexeddb",
+            });
           } catch (error) {
             logToConsole(
               "error",
@@ -6294,43 +6380,53 @@ async function syncSettingsToCloud() {
           }
         } else {
           skippedCount++;
+          logToConsole(
+            "debug",
+            `Skipped IndexedDB setting ${key}: already in sync`,
+            {
+              lastModified: localMeta.lastModified
+                ? new Date(localMeta.lastModified).toISOString()
+                : "never",
+              syncedAt: localMeta.syncedAt
+                ? new Date(localMeta.syncedAt).toISOString()
+                : "never",
+              hashMatch: localMeta.hash === currentHash,
+              existsInCloud: settingExistsInCloud,
+            }
+          );
         }
       }
     } catch (error) {
       logToConsole("error", "Error reading IndexedDB for settings sync", error);
     }
-
-    // Update overall settings metadata in cloud
     if (uploadedCount > 0) {
-      const cloudMetadata = await downloadCloudMetadata();
-      if (!cloudMetadata.settings) cloudMetadata.settings = { items: {} };
-
-      cloudMetadata.settings.lastModified = syncTimestamp;
-      cloudMetadata.settings.syncedAt = syncTimestamp;
-      cloudMetadata.lastSyncTime = Math.max(
-        cloudMetadata.lastSyncTime || 0,
+      const updatedCloudMetadata = await downloadCloudMetadata();
+      if (!updatedCloudMetadata.settings)
+        updatedCloudMetadata.settings = { items: {} };
+      updatedCloudMetadata.settings.lastModified = syncTimestamp;
+      updatedCloudMetadata.settings.syncedAt = syncTimestamp;
+      updatedCloudMetadata.lastSyncTime = Math.max(
+        updatedCloudMetadata.lastSyncTime || 0,
         syncTimestamp
       );
-
       await uploadToS3(
         "metadata.json",
-        new TextEncoder().encode(JSON.stringify(cloudMetadata)),
+        new TextEncoder().encode(JSON.stringify(updatedCloudMetadata)),
         {
           ContentType: "application/json",
           ServerSideEncryption: "AES256",
         }
       );
-
       logToConsole("success", "Updated cloud metadata after settings sync");
     }
-
     logToConsole("success", "Individual settings sync to cloud completed", {
       uploaded: uploadedCount,
       skipped: skippedCount,
       errors: errorCount,
+      totalProcessed: processedKeys.size,
+      isInitialSync: isInitialSync,
       timestamp: new Date(syncTimestamp).toISOString(),
     });
-
     return uploadedCount > 0;
   } catch (error) {
     logToConsole("error", "Error during settings sync to cloud", error);
