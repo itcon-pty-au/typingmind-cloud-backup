@@ -2856,6 +2856,38 @@ async function detectCloudChanges(cloudMetadata) {
       const localSettingsCount = Object.keys(
         localMetadata.settings.items
       ).length;
+
+      const timeSinceLastSync = Date.now() - (localMetadata.lastSyncTime || 0);
+      const recentSync = timeSinceLastSync < 60000;
+
+      if (recentSync && localSettingsCount > 10) {
+        logToConsole(
+          "warning",
+          `Cloud has no settings but local has ${localSettingsCount} and last sync was recent (${Math.round(
+            timeSinceLastSync / 1000
+          )}s ago). This may be a race condition - waiting 3 seconds before proceeding.`
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+
+        try {
+          const retryMetadata = await downloadCloudMetadata();
+          const retryCloudCount = retryMetadata.settings?.items
+            ? Object.keys(retryMetadata.settings.items).length
+            : 0;
+
+          if (retryCloudCount > 0) {
+            logToConsole(
+              "info",
+              `Race condition avoided - cloud now has ${retryCloudCount} settings after retry`
+            );
+            return await detectCloudChanges(retryMetadata);
+          }
+        } catch (retryError) {
+          logToConsole("warning", "Retry metadata download failed", retryError);
+        }
+      }
+
       logToConsole(
         "debug",
         `✅ Cloud settings change detected: Cloud has no settings but local has ${localSettingsCount}`
@@ -6531,9 +6563,10 @@ async function syncSettingsToCloud() {
     let orphanedMetadataCount = 0;
     if (!isInitialSync && cloudMetadata.settings?.items) {
       const s3 = initializeS3Client();
-      for (const [settingKey, settingMeta] of Object.entries(
-        cloudMetadata.settings.items
-      )) {
+      const settingsToCheck = Object.entries(cloudMetadata.settings.items);
+      const orphanedSettings = [];
+
+      for (const [settingKey, settingMeta] of settingsToCheck) {
         if (!settingMeta.deleted) {
           try {
             const params = {
@@ -6543,11 +6576,10 @@ async function syncSettingsToCloud() {
             await s3.headObject(params).promise();
           } catch (error) {
             if (error.code === "NoSuchKey" || error.code === "NotFound") {
-              orphanedMetadataCount++;
-              delete cloudMetadata.settings.items[settingKey];
+              orphanedSettings.push(settingKey);
               logToConsole(
                 "info",
-                `Removed orphaned metadata for missing setting ${settingKey}`
+                `Found orphaned metadata for missing setting ${settingKey}`
               );
             } else {
               logToConsole(
@@ -6559,19 +6591,40 @@ async function syncSettingsToCloud() {
           }
         }
       }
-      if (orphanedMetadataCount > 0) {
-        logToConsole(
-          "info",
-          `Cleaned up ${orphanedMetadataCount} orphaned metadata entries - triggering re-upload`
-        );
-        await uploadToS3(
-          "metadata.json",
-          new TextEncoder().encode(JSON.stringify(cloudMetadata)),
-          {
-            ContentType: "application/json",
-            ServerSideEncryption: "AES256",
+
+      if (orphanedSettings.length > 0) {
+        const totalSettings = settingsToCheck.length;
+        const orphanedPercentage =
+          (orphanedSettings.length / totalSettings) * 100;
+
+        if (orphanedPercentage > 50) {
+          logToConsole(
+            "warning",
+            `Detected ${
+              orphanedSettings.length
+            }/${totalSettings} (${orphanedPercentage.toFixed(
+              1
+            )}%) orphaned settings - this may indicate a sync race condition. Skipping cleanup to prevent data loss.`
+          );
+        } else {
+          for (const settingKey of orphanedSettings) {
+            delete cloudMetadata.settings.items[settingKey];
+            orphanedMetadataCount++;
           }
-        );
+
+          logToConsole(
+            "info",
+            `Cleaned up ${orphanedMetadataCount} orphaned metadata entries - triggering re-upload`
+          );
+          await uploadToS3(
+            "metadata.json",
+            new TextEncoder().encode(JSON.stringify(cloudMetadata)),
+            {
+              ContentType: "application/json",
+              ServerSideEncryption: "AES256",
+            }
+          );
+        }
       }
     }
 
