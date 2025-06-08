@@ -2810,6 +2810,26 @@ async function detectCloudChanges(cloudMetadata) {
   if (cloudMetadata.settings?.items) {
     logToConsole("debug", "📊 Checking individual settings changes");
 
+    const recentlyModified = Object.entries(cloudMetadata.settings.items)
+      .filter(
+        ([key, meta]) =>
+          !meta.deleted && Date.now() - meta.lastModified < 300000
+      )
+      .sort((a, b) => b[1].lastModified - a[1].lastModified)
+      .slice(0, 5);
+
+    if (recentlyModified.length > 0) {
+      logToConsole("debug", "Recently modified settings in cloud", {
+        count: recentlyModified.length,
+        settings: recentlyModified.map(([key, meta]) => ({
+          key,
+          lastModified: new Date(meta.lastModified).toISOString(),
+          hash: meta.hash?.substring(0, 8) + "...",
+          ageMinutes: Math.round((Date.now() - meta.lastModified) / 60000),
+        })),
+      });
+    }
+
     for (const [settingKey, cloudSettingMeta] of Object.entries(
       cloudMetadata.settings.items
     )) {
@@ -2827,6 +2847,42 @@ async function detectCloudChanges(cloudMetadata) {
           return true;
         }
         continue;
+      }
+
+      const hasLocalMeta = !!localSettingMeta;
+      const hasLocalHash = !!localSettingMeta?.hash;
+      const hasLocalSyncedAt = !!localSettingMeta?.syncedAt;
+      const hashMatch = cloudSettingMeta.hash === localSettingMeta?.hash;
+      const cloudNewer =
+        cloudSettingMeta.lastModified > (localSettingMeta?.syncedAt || 0);
+
+      const mightHaveChange =
+        !hasLocalMeta ||
+        !hasLocalHash ||
+        !hasLocalSyncedAt ||
+        !hashMatch ||
+        cloudNewer;
+
+      if (mightHaveChange) {
+        logToConsole("debug", `Checking setting ${settingKey}`, {
+          hasLocalMeta,
+          hasLocalHash,
+          hasLocalSyncedAt,
+          hashMatch,
+          cloudNewer,
+          cloudLastModified: cloudSettingMeta.lastModified
+            ? new Date(cloudSettingMeta.lastModified).toISOString()
+            : "NONE",
+          localSyncedAt: localSettingMeta?.syncedAt
+            ? new Date(localSettingMeta.syncedAt).toISOString()
+            : "NONE",
+          cloudHash: cloudSettingMeta.hash?.substring(0, 8) + "...",
+          localHash: localSettingMeta?.hash?.substring(0, 8) + "...",
+          timeDiff:
+            cloudSettingMeta.lastModified && localSettingMeta?.syncedAt
+              ? cloudSettingMeta.lastModified - localSettingMeta.syncedAt
+              : "N/A",
+        });
       }
 
       if (
@@ -5459,7 +5515,7 @@ async function handleSettingChange(key, value, source) {
         "info",
         `Setting change detected from ${source}: ${key} (hash changed)`,
         {
-          oldHash: existingMetadata?.hash?.substring(0, 8) + "..." || "none",
+          oldHash: existingMetadata?.hash?.substring(0, 8) + "...",
           newHash: newHash.substring(0, 8) + "...",
           timestamp: new Date(timestamp).toISOString(),
         }
