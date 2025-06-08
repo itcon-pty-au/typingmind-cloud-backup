@@ -5281,6 +5281,8 @@ async function downloadCloudMetadata() {
       Bucket: config.bucketName,
       Key: "metadata.json",
       ResponseCacheControl: "no-cache, no-store, must-revalidate",
+      ResponseExpires: new Date(Date.now() - 86400000).toISOString(),
+      IfModifiedSince: new Date(0).toISOString(),
     };
 
     logToConsole("debug", "Downloading cloud metadata", {
@@ -5301,6 +5303,11 @@ async function downloadCloudMetadata() {
         settingsItemsCount: metadata.settings?.items
           ? Object.keys(metadata.settings.items).length
           : 0,
+        settingsStructureExists: !!(
+          metadata.settings && metadata.settings.items
+        ),
+        metadataKeys: Object.keys(metadata),
+        settingsKeys: metadata.settings ? Object.keys(metadata.settings) : [],
         lastModified: metadata.settings?.lastModified
           ? new Date(metadata.settings.lastModified).toISOString()
           : "none",
@@ -6543,8 +6550,47 @@ async function syncSettingsFromCloud() {
 
     const cloudMetadata = await downloadCloudMetadata();
 
-    if (!cloudMetadata.settings?.items) {
-      logToConsole("info", "No individual settings found in cloud metadata");
+    logToConsole("debug", "Downloaded cloud metadata for settings sync", {
+      hasSettings: !!cloudMetadata.settings,
+      hasSettingsItems: !!(
+        cloudMetadata.settings && cloudMetadata.settings.items
+      ),
+      settingsItemsType: cloudMetadata.settings?.items
+        ? typeof cloudMetadata.settings.items
+        : "undefined",
+      settingsItemsCount: cloudMetadata.settings?.items
+        ? Object.keys(cloudMetadata.settings.items).length
+        : 0,
+      metadataStructure: {
+        hasVersion: !!cloudMetadata.version,
+        hasLastSyncTime: !!cloudMetadata.lastSyncTime,
+        hasChats: !!cloudMetadata.chats,
+        hasSettings: !!cloudMetadata.settings,
+      },
+    });
+
+    if (
+      !cloudMetadata.settings?.items ||
+      Object.keys(cloudMetadata.settings.items).length === 0
+    ) {
+      logToConsole("info", "No individual settings found in cloud metadata", {
+        settingsExists: !!cloudMetadata.settings,
+        itemsExists: !!(cloudMetadata.settings && cloudMetadata.settings.items),
+        itemsIsEmpty: cloudMetadata.settings?.items
+          ? Object.keys(cloudMetadata.settings.items).length === 0
+          : true,
+        fullStructure: {
+          settings: cloudMetadata.settings
+            ? {
+                lastModified: cloudMetadata.settings.lastModified,
+                syncedAt: cloudMetadata.settings.syncedAt,
+                itemsKeys: cloudMetadata.settings.items
+                  ? Object.keys(cloudMetadata.settings.items)
+                  : "no items property",
+              }
+            : "no settings property",
+        },
+      });
       return false;
     }
 
