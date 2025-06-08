@@ -19,6 +19,8 @@ const EXCLUDED_SETTINGS = [
   "TM_crossTabLastSynced",
   "TM_useLastOpenedChatID",
   "INSTANCE_ID",
+  "referrer",
+  "setItem",
 ];
 function getUserDefinedExclusions() {
   const exclusions = localStorage.getItem("sync-exclusions");
@@ -2782,7 +2784,6 @@ async function detectCloudChanges(cloudMetadata) {
       : 0,
   });
 
-  // Check individual settings changes
   if (cloudMetadata.settings?.items) {
     logToConsole("debug", "📊 Checking individual settings changes");
 
@@ -2791,7 +2792,6 @@ async function detectCloudChanges(cloudMetadata) {
     )) {
       const localSettingMeta = localMetadata.settings?.items?.[settingKey];
 
-      // Handle deleted settings
       if (cloudSettingMeta.deleted === true) {
         if (
           !localSettingMeta?.deleted ||
@@ -2806,7 +2806,6 @@ async function detectCloudChanges(cloudMetadata) {
         continue;
       }
 
-      // Check for missing local metadata or hash differences
       if (
         !localSettingMeta ||
         !localSettingMeta.hash ||
@@ -2843,23 +2842,6 @@ async function detectCloudChanges(cloudMetadata) {
       }
     }
 
-    // Check for local-only settings that don't exist in cloud
-    if (localMetadata.settings?.items) {
-      for (const settingKey of Object.keys(localMetadata.settings.items)) {
-        const localSettingMeta = localMetadata.settings.items[settingKey];
-        if (
-          !localSettingMeta.deleted &&
-          !cloudMetadata.settings.items[settingKey]
-        ) {
-          logToConsole(
-            "debug",
-            `✅ Cloud settings change detected: Setting ${settingKey} exists locally but not in cloud`
-          );
-          return true;
-        }
-      }
-    }
-
     logToConsole("debug", "❌ No individual settings changes detected");
   } else {
     logToConsole(
@@ -2867,7 +2849,6 @@ async function detectCloudChanges(cloudMetadata) {
       "ℹ️ No cloud settings items found, checking if we have local settings to upload"
     );
 
-    // If cloud has no individual settings but we have local settings, that's a change
     if (
       localMetadata.settings?.items &&
       Object.keys(localMetadata.settings.items).length > 0
@@ -2883,7 +2864,6 @@ async function detectCloudChanges(cloudMetadata) {
     }
   }
 
-  // Check chat changes
   for (const [chatId, cloudChatMeta] of Object.entries(cloudMetadata.chats)) {
     const localChatMeta = localMetadata.chats[chatId];
     if (cloudChatMeta.deleted === true) {
@@ -2927,6 +2907,38 @@ async function detectCloudChanges(cloudMetadata) {
   logToConsole("debug", "❌ No cloud changes detected");
   return false;
 }
+
+async function detectLocalOnlySettings(cloudMetadata) {
+  if (!localMetadata.settings?.items) {
+    return false;
+  }
+
+  if (!cloudMetadata.settings?.items) {
+    logToConsole(
+      "debug",
+      "✅ Local-only settings detected: Cloud has no settings but local has settings"
+    );
+    return true;
+  }
+
+  for (const settingKey of Object.keys(localMetadata.settings.items)) {
+    const localSettingMeta = localMetadata.settings.items[settingKey];
+    if (
+      !localSettingMeta.deleted &&
+      !cloudMetadata.settings.items[settingKey]
+    ) {
+      logToConsole(
+        "debug",
+        `✅ Local-only settings detected: Setting ${settingKey} exists locally but not in cloud`
+      );
+      return true;
+    }
+  }
+
+  logToConsole("debug", "❌ No local-only settings detected");
+  return false;
+}
+
 function startSyncInterval() {
   if (activeIntervals.sync) {
     clearInterval(activeIntervals.sync);
@@ -2956,9 +2968,13 @@ function startSyncInterval() {
       if (config.syncMode === "sync") {
         const cloudMetadata = await downloadCloudMetadata();
         const hasCloudChanges = await detectCloudChanges(cloudMetadata);
+        const hasLocalOnlySettings = await detectLocalOnlySettings(
+          cloudMetadata
+        );
         logToConsole("debug", "🔄 Sync interval decision", {
           hasCloudChanges,
           hasLocalChanges,
+          hasLocalOnlySettings,
           localSettingsChanges: await checkLocalSettingsChanges(),
           cloudSettingsItems: cloudMetadata.settings?.items
             ? Object.keys(cloudMetadata.settings.items).length
@@ -2967,11 +2983,11 @@ function startSyncInterval() {
             ? Object.keys(localMetadata.settings.items).length
             : 0,
           decision:
-            hasCloudChanges && hasLocalChanges
+            hasCloudChanges && (hasLocalChanges || hasLocalOnlySettings)
               ? "BIDIRECTIONAL"
               : hasCloudChanges
               ? "CLOUD_TO_LOCAL"
-              : hasLocalChanges
+              : hasLocalChanges || hasLocalOnlySettings
               ? "LOCAL_TO_CLOUD"
               : "NO_SYNC",
         });
@@ -2988,7 +3004,7 @@ function startSyncInterval() {
           queueOperation("cloud-empty-sync", syncToCloud);
           return;
         }
-        if (hasCloudChanges && hasLocalChanges) {
+        if (hasCloudChanges && (hasLocalChanges || hasLocalOnlySettings)) {
           logToConsole(
             "info",
             "Changes detected on both sides - queuing bidirectional sync"
@@ -3005,7 +3021,7 @@ function startSyncInterval() {
         } else if (hasCloudChanges) {
           logToConsole("info", "Cloud changes detected - queuing cloud sync");
           queueOperation("cloud-changes-sync", syncFromCloud);
-        } else if (hasLocalChanges) {
+        } else if (hasLocalChanges || hasLocalOnlySettings) {
           logToConsole("info", "Local changes detected - queuing local sync");
           queueOperation("local-changes-sync", syncToCloud);
         }
@@ -6513,16 +6529,16 @@ async function syncSettingsToCloud() {
         }
       } else {
         skippedCount++;
-        logToConsole("debug", `Skipped setting ${key}: already in sync`, {
-          lastModified: localMeta.lastModified
-            ? new Date(localMeta.lastModified).toISOString()
-            : "never",
-          syncedAt: localMeta.syncedAt
-            ? new Date(localMeta.syncedAt).toISOString()
-            : "never",
-          hashMatch: localMeta.hash === currentHash,
-          existsInCloud: settingExistsInCloud,
-        });
+        // logToConsole("debug", `Skipped setting ${key}: already in sync`, {
+        //   lastModified: localMeta.lastModified
+        //     ? new Date(localMeta.lastModified).toISOString()
+        //     : "never",
+        //   syncedAt: localMeta.syncedAt
+        //     ? new Date(localMeta.syncedAt).toISOString()
+        //     : "never",
+        //   hashMatch: localMeta.hash === currentHash,
+        //   existsInCloud: settingExistsInCloud,
+        // });
       }
     }
     try {
@@ -6620,13 +6636,13 @@ async function syncSettingsToCloud() {
       });
 
       const updatedCloudMetadata = await downloadCloudMetadata();
-      logToConsole("debug", "Downloaded cloud metadata for update", {
-        hasSettings: !!updatedCloudMetadata.settings,
-        hasSettingsItems: !!updatedCloudMetadata.settings?.items,
-        currentSettingsItemsCount: updatedCloudMetadata.settings?.items
-          ? Object.keys(updatedCloudMetadata.settings.items).length
-          : 0,
-      });
+      // logToConsole("debug", "Downloaded cloud metadata for update", {
+      //   hasSettings: !!updatedCloudMetadata.settings,
+      //   hasSettingsItems: !!updatedCloudMetadata.settings?.items,
+      //   currentSettingsItemsCount: updatedCloudMetadata.settings?.items
+      //     ? Object.keys(updatedCloudMetadata.settings.items).length
+      //     : 0,
+      // });
 
       if (!updatedCloudMetadata.settings)
         updatedCloudMetadata.settings = { items: {} };
@@ -6678,11 +6694,11 @@ async function syncSettingsToCloud() {
         const verifySettingsCount = verifyMetadata.settings?.items
           ? Object.keys(verifyMetadata.settings.items).length
           : 0;
-        logToConsole("debug", "Verified cloud metadata after upload", {
-          verifySettingsCount,
-          expectedCount: afterCount,
-          verificationMatch: verifySettingsCount === afterCount,
-        });
+        // logToConsole("debug", "Verified cloud metadata after upload", {
+        //   verifySettingsCount,
+        //   expectedCount: afterCount,
+        //   verificationMatch: verifySettingsCount === afterCount,
+        // });
       } catch (verifyError) {
         logToConsole("error", "Failed to verify metadata upload", verifyError);
       }
