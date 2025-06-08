@@ -6328,38 +6328,7 @@ async function downloadSettingFromCloud(settingKey) {
       return settingData;
     } catch (error) {
       if (error.code === "NoSuchKey") {
-        logToConsole(
-          "warning",
-          `Setting ${settingKey} file not found in cloud`
-        );
-        const cloudMetadata = await downloadCloudMetadata();
-        if (
-          cloudMetadata.settings?.items?.[settingKey] &&
-          !cloudMetadata.settings.items[settingKey].deleted
-        ) {
-          cloudMetadata.settings.items[settingKey] = {
-            deleted: true,
-            deletedAt: Date.now(),
-            lastModified: Date.now(),
-            syncedAt: Date.now(),
-            tombstoneVersion:
-              (cloudMetadata.settings.items[settingKey]?.tombstoneVersion ||
-                0) + 1,
-            deletionSource: "file-missing",
-          };
-          await uploadToS3(
-            "metadata.json",
-            new TextEncoder().encode(JSON.stringify(cloudMetadata)),
-            {
-              ContentType: "application/json",
-              ServerSideEncryption: "AES256",
-            }
-          );
-          logToConsole(
-            "info",
-            `Created tombstone for missing setting ${settingKey} in cloud metadata`
-          );
-        }
+        logToConsole("info", `Setting ${settingKey} not found in cloud`);
         return null;
       }
       throw error;
@@ -6438,28 +6407,47 @@ async function syncSettingsToCloud() {
 
     let orphanedMetadataCount = 0;
     if (!isInitialSync && cloudMetadata.settings?.items) {
+      const s3 = initializeS3Client();
       for (const [settingKey, settingMeta] of Object.entries(
         cloudMetadata.settings.items
       )) {
         if (!settingMeta.deleted) {
           try {
-            const settingData = await downloadSettingFromCloud(settingKey);
-            if (!settingData) {
-              orphanedMetadataCount++;
-            }
+            const params = {
+              Bucket: config.bucketName,
+              Key: `settings/${settingKey}.json`,
+            };
+            await s3.headObject(params).promise();
           } catch (error) {
-            logToConsole(
-              "warning",
-              `Error checking setting file ${settingKey}`,
-              error
-            );
+            if (error.code === "NoSuchKey" || error.code === "NotFound") {
+              orphanedMetadataCount++;
+              delete cloudMetadata.settings.items[settingKey];
+              logToConsole(
+                "info",
+                `Removed orphaned metadata for missing setting ${settingKey}`
+              );
+            } else {
+              logToConsole(
+                "warning",
+                `Error checking setting file ${settingKey}`,
+                error
+              );
+            }
           }
         }
       }
       if (orphanedMetadataCount > 0) {
         logToConsole(
           "info",
-          `Detected ${orphanedMetadataCount} orphaned metadata entries - files missing but metadata exists`
+          `Cleaned up ${orphanedMetadataCount} orphaned metadata entries - triggering re-upload`
+        );
+        await uploadToS3(
+          "metadata.json",
+          new TextEncoder().encode(JSON.stringify(cloudMetadata)),
+          {
+            ContentType: "application/json",
+            ServerSideEncryption: "AES256",
+          }
         );
       }
     }
