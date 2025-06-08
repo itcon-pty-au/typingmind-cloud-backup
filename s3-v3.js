@@ -2857,6 +2857,7 @@ async function detectCloudChanges(cloudMetadata) {
       logToConsole("debug", "No settings found modified in the last 5 minutes");
     }
 
+    const settingsEntries = Object.entries(cloudMetadata.settings.items);
     logToConsole(
       "debug",
       `Starting to check ${settingsEntries.length} cloud settings individually`
