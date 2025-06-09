@@ -2615,8 +2615,15 @@ function queueOperation(name, operation, dependencies = [], timeout = 30000) {
     logToConsole("skip", `Skipping operation ${name} - sync is disabled`);
     return;
   }
-  if (operationState.operationQueue.some((op) => op.name === name)) {
-    logToConsole("skip", `Skipping duplicate operation: ${name}`);
+  const existingOp = operationState.operationQueue.find(
+    (op) => op.name === name
+  );
+  if (existingOp) {
+    logToConsole("skip", `Skipping duplicate operation: ${name}`, {
+      existingDeps: existingOp.dependencies,
+      newDeps: dependencies,
+      queueLength: operationState.operationQueue.length,
+    });
     return;
   }
   dependencies = dependencies.filter(
@@ -2635,6 +2642,14 @@ function queueOperation(name, operation, dependencies = [], timeout = 30000) {
     operationState.operationQueue.unshift(operationObject);
   } else {
     operationState.operationQueue.push(operationObject);
+  }
+  if (name.includes("bidirectional")) {
+    logToConsole("info", `Queued ${name}`, {
+      dependencies: dependencies,
+      queuePosition: dependencies.length === 0 ? "immediate" : "waiting",
+      queueLength: operationState.operationQueue.length,
+      completedOps: Array.from(operationState.completedOperations),
+    });
   }
   processOperationQueue();
 }
@@ -2717,6 +2732,18 @@ async function processOperationQueue() {
           clearTimeout(operationState.operationTimeouts.get(name));
           operationState.operationTimeouts.delete(name);
           operationState.completedOperations.add(name);
+          if (name.includes("bidirectional")) {
+            logToConsole("info", `Completed ${name}`, {
+              completedOps: Array.from(operationState.completedOperations),
+              remainingQueue: operationState.operationQueue.map((op) => ({
+                name: op.name,
+                deps: op.dependencies,
+                canRun: op.dependencies.every((dep) =>
+                  operationState.completedOperations.has(dep)
+                ),
+              })),
+            });
+          }
           operationState.operationQueue.splice(nextOpIndex, 1);
           await new Promise((resolve) => setTimeout(resolve, 100));
         } catch (error) {
