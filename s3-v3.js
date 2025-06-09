@@ -7219,10 +7219,13 @@ async function syncSettingsFromCloud() {
         const needsDownload =
           !localSettingMeta ||
           !localSettingMeta.hash ||
-          !localSettingMeta.syncedAt ||
-          (cloudSettingMeta.hash &&
-            cloudSettingMeta.hash !== localSettingMeta.hash) ||
-          cloudSettingMeta.lastModified > localSettingMeta.syncedAt;
+          (!localSettingMeta.syncedAt &&
+            cloudSettingMeta.lastModified >
+              (localSettingMeta.lastModified || 0)) ||
+          (localSettingMeta.syncedAt &&
+            ((cloudSettingMeta.hash &&
+              cloudSettingMeta.hash !== localSettingMeta.hash) ||
+              cloudSettingMeta.lastModified > localSettingMeta.syncedAt));
 
         if (needsDownload) {
           logToConsole("info", `Downloading setting ${settingKey} from cloud`, {
