@@ -3016,31 +3016,6 @@ async function detectCloudChanges(cloudMetadata) {
       });
     }
 
-    const specificSetting =
-      cloudMetadata.settings.items["TM_useUserCharacters"];
-    const localSpecificSetting =
-      localMetadata.settings?.items?.["TM_useUserCharacters"];
-    if (specificSetting || localSpecificSetting) {
-      logToConsole("info", "Specific setting 'TM_useUserCharacters' status", {
-        cloudExists: !!specificSetting,
-        localExists: !!localSpecificSetting,
-        cloudHash: specificSetting?.hash?.substring(0, 12) + "..." || "NONE",
-        localHash:
-          localSpecificSetting?.hash?.substring(0, 12) + "..." || "NONE",
-        cloudModified: specificSetting?.lastModified
-          ? new Date(specificSetting.lastModified).toISOString()
-          : "NONE",
-        localModified: localSpecificSetting?.lastModified
-          ? new Date(localSpecificSetting.lastModified).toISOString()
-          : "NONE",
-        localSynced: localSpecificSetting?.syncedAt
-          ? new Date(localSpecificSetting.syncedAt).toISOString()
-          : "NONE",
-        hashMatch: specificSetting?.hash === localSpecificSetting?.hash,
-        deleted: specificSetting?.deleted || localSpecificSetting?.deleted,
-      });
-    }
-
     logToConsole("debug", "❌ No individual settings changes detected");
   } else {
     logToConsole(
@@ -6336,39 +6311,10 @@ async function forceSettingsCheck() {
         checkedIndexedDB++;
         const value = await getIndexedDBValue(key);
         if (value !== undefined) {
-          if (key === "TM_useUserCharacters") {
-            const currentHash = await generateContentHash(value);
-            const existingMeta = localMetadata.settings.items[key];
-            logToConsole(
-              "info",
-              `ForceSettingsCheck examining TM_useUserCharacters`,
-              {
-                valueExists: value !== undefined,
-                currentValue:
-                  typeof value === "object"
-                    ? JSON.stringify(value).substring(0, 100) + "..."
-                    : String(value).substring(0, 100) + "...",
-                currentHash: currentHash?.substring(0, 12) + "...",
-                existingHash: existingMeta?.hash?.substring(0, 12) + "...",
-                hashesMatch: currentHash === existingMeta?.hash,
-                existingModified: existingMeta?.lastModified
-                  ? new Date(existingMeta.lastModified).toISOString()
-                  : "NONE",
-                willCallHandleChange: true,
-              }
-            );
-          }
-
           const changed = await handleSettingChange(key, value, "indexeddb");
           if (changed) {
             hasChanges = true;
             changesIndexedDB++;
-            if (key === "TM_useUserCharacters") {
-              logToConsole(
-                "info",
-                `TM_useUserCharacters change detected in forceSettingsCheck!`
-              );
-            }
           }
         }
       }
@@ -7386,27 +7332,6 @@ async function checkLocalSettingsChanges() {
         checkedIndexedDB++;
 
         const localMeta = localMetadata.settings?.items?.[key];
-
-        if (key === "TM_useUserCharacters") {
-          logToConsole(
-            "info",
-            `Checking specific setting TM_useUserCharacters in IndexedDB`,
-            {
-              keyExists: true,
-              hasMetadata: !!localMeta,
-              hasSyncedAt: !!localMeta?.syncedAt,
-              lastModified: localMeta?.lastModified
-                ? new Date(localMeta.lastModified).toISOString()
-                : "NONE",
-              syncedAt: localMeta?.syncedAt
-                ? new Date(localMeta.syncedAt).toISOString()
-                : "NONE",
-              isNewer: localMeta
-                ? localMeta.lastModified > localMeta.syncedAt
-                : "NO_META",
-            }
-          );
-        }
 
         if (
           !localMeta ||
