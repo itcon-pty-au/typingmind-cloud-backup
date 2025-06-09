@@ -687,7 +687,10 @@ async function initializeExtension() {
           "IndexedDB duplicate cleanup completed during extension initialization"
         );
       } else {
-        logToConsole("info", "No duplicates found - skipping cleanup");
+        logToConsole(
+          "info",
+          "No duplicates found between IndexedDB and localStorage - skipping cleanup"
+        );
       }
     } catch (cleanupError) {
       logToConsole(
@@ -812,7 +815,7 @@ async function initializeExtension() {
         cloudTombstonesRemoved: cloudCleanupCount,
       });
     }
-    setupVisibilityChangeHandler();
+    // setupVisibilityChangeHandler();
     logToConsole("success", "Initialization completed successfully");
   } catch (error) {
     logToConsole("error", "Error initializing extension:", error);
@@ -1139,12 +1142,13 @@ async function saveLocalMetadata() {
         //       )}...`
         //     : "none",
         // });
-      } else {
-        logToConsole(
-          "success",
-          "Local metadata saved and verified in IndexedDB"
-        );
       }
+      // else {
+      //   logToConsole(
+      //     "success",
+      //     "Local metadata saved and verified in IndexedDB"
+      //   );
+      // }
     } catch (parseError) {
       logToConsole(
         "warning",
@@ -5776,10 +5780,10 @@ async function downloadCloudMetadata() {
       ResponseCacheControl: "no-cache, no-store, must-revalidate",
     };
 
-    logToConsole("debug", "Downloading cloud metadata", {
-      timestamp: new Date(timestamp).toISOString(),
-      cacheBusting: true,
-    });
+    // logToConsole("debug", "Downloading cloud metadata", {
+    //   timestamp: new Date(timestamp).toISOString(),
+    //   cacheBusting: true,
+    // });
 
     try {
       const data = await s3.getObject(params).promise();
@@ -6568,10 +6572,10 @@ async function detectIndexedDBDuplicates() {
       return true;
     } else {
       localStorage.removeItem("sync_duplicateDetected");
-      logToConsole(
-        "info",
-        "No duplicates detected between IndexedDB and localStorage"
-      );
+      // logToConsole(
+      //   "info",
+      //   "No duplicates detected between IndexedDB and localStorage"
+      // );
       return false;
     }
   } catch (error) {
