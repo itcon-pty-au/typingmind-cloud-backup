@@ -843,7 +843,7 @@ if (window.typingMindCloudSync) {
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", initializeExtension);
   } else {
-    initializeExtension();
+    setTimeout(initializeExtension, 0);
   }
   function throttle(func, limit) {
     let inThrottle;
