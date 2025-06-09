@@ -1,5 +1,11 @@
 // TypingMind Cloud Sync & Backup v2.0.0
 // Combines features from s3.js and YATSE for comprehensive sync and backup
+if (window.typingMindCloudSync) {
+  console.log("TypingMind Cloud Sync script already loaded, skipping");
+  return;
+}
+window.typingMindCloudSync = true;
+const CONSOLE_TAG = "[Cloud Sync]";
 const EXTENSION_VERSION = "2.0.0";
 const EXCLUDED_SETTINGS = [
   "aws-bucket",
@@ -653,7 +659,16 @@ async function performFullInitialization() {
     return false;
   }
 }
+let isInitialized = false;
 async function initializeExtension() {
+  if (isInitialized) {
+    logToConsole(
+      "skip",
+      "Extension already initialized, skipping duplicate initialization"
+    );
+    return;
+  }
+  isInitialized = true;
   initializeLoggingState();
   try {
     await loadAwsSdk();
@@ -5392,15 +5407,15 @@ async function initializeSettingsMonitoring() {
   const existingSettings = new Set();
   let orphanedMetadataCount = 0;
 
-  logToConsole("debug", "Settings monitoring initialization stats", {
-    totalMetadataEntries: Object.keys(localMetadata.settings.items).length,
-    deletedEntries: Object.values(localMetadata.settings.items).filter(
-      (entry) => entry.deleted
-    ).length,
-    activeEntries: Object.values(localMetadata.settings.items).filter(
-      (entry) => !entry.deleted
-    ).length,
-  });
+  // logToConsole("debug", "Settings monitoring initialization stats", {
+  //   totalMetadataEntries: Object.keys(localMetadata.settings.items).length,
+  //   deletedEntries: Object.values(localMetadata.settings.items).filter(
+  //     (entry) => entry.deleted
+  //   ).length,
+  //   activeEntries: Object.values(localMetadata.settings.items).filter(
+  //     (entry) => !entry.deleted
+  //   ).length,
+  // });
 
   const db = await openIndexedDB();
   const transaction = db.transaction("keyval", "readonly");
@@ -5795,10 +5810,13 @@ async function downloadCloudMetadata() {
       );
 
       logToConsole("debug", "Successfully downloaded cloud metadata", {
-        settingsItemsCount: metadata.settings?.items
+        settingsCount: metadata.settings?.items
           ? Object.keys(metadata.settings.items).length
           : 0,
-        lastModified: metadata.settings?.lastModified
+        chatsCount: metadata.chats?.items
+          ? Object.keys(metadata.chats.items).length
+          : 0,
+        lastModified: metadata.lastModified
           ? new Date(metadata.settings.lastModified).toISOString()
           : "none",
         lastSyncTime: metadata.lastSyncTime
