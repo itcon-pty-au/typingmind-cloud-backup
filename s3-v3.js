@@ -3258,14 +3258,11 @@ function startSyncInterval() {
             "info",
             "Changes detected on both sides - queuing bidirectional sync"
           );
-          const cloudSyncOp = "bidirectional-cloud-sync";
+          const syncId = Date.now();
+          const cloudSyncOp = `bidirectional-cloud-sync-${syncId}`;
+          const localSyncOp = `bidirectional-local-sync-${syncId}`;
           queueOperation(cloudSyncOp, syncFromCloud, [], 300000);
-          queueOperation(
-            "bidirectional-local-sync",
-            syncToCloud,
-            [cloudSyncOp],
-            60000
-          );
+          queueOperation(localSyncOp, syncToCloud, [cloudSyncOp], 60000);
           logToConsole("info", "Queued bidirectional sync operations");
         } else if (hasCloudChanges) {
           logToConsole("info", "Cloud changes detected - queuing cloud sync");
@@ -6999,20 +6996,20 @@ async function syncSettingsToCloud() {
           }
         } else {
           skippedCount++;
-          logToConsole(
-            "debug",
-            `Skipped IndexedDB setting ${key}: already in sync`,
-            {
-              lastModified: localMeta.lastModified
-                ? new Date(localMeta.lastModified).toISOString()
-                : "never",
-              syncedAt: localMeta.syncedAt
-                ? new Date(localMeta.syncedAt).toISOString()
-                : "never",
-              hashMatch: localMeta.hash === currentHash,
-              existsInCloud: settingExistsInCloud,
-            }
-          );
+          // logToConsole(
+          //   "debug",
+          //   `Skipped IndexedDB setting ${key}: already in sync`,
+          //   {
+          //     lastModified: localMeta.lastModified
+          //       ? new Date(localMeta.lastModified).toISOString()
+          //       : "never",
+          //     syncedAt: localMeta.syncedAt
+          //       ? new Date(localMeta.syncedAt).toISOString()
+          //       : "never",
+          //     hashMatch: localMeta.hash === currentHash,
+          //     existsInCloud: settingExistsInCloud,
+          //   }
+          // );
         }
       }
     } catch (error) {
