@@ -796,10 +796,17 @@ if (window.typingMindCloudSync) {
             "Cloud data found. Performing standard startup sync check."
           );
           if (document.visibilityState === "visible") {
+            console.log("🔍 About to queue startup-sync-check");
+            console.log("🔍 Current time:", new Date().toISOString());
             console.log(
-              "🔍 About to queue startup-sync-check, stack trace:",
-              new Error().stack
+              "🔍 Operation queue length:",
+              operationState.operationQueue.length
             );
+            console.log(
+              "🔍 Completed operations:",
+              Array.from(operationState.completedOperations)
+            );
+            console.log("🔍 Stack trace:", new Error().stack);
             queueOperation("startup-sync-check", syncFromCloud, [], 300000);
           }
         } else {
@@ -2670,6 +2677,12 @@ if (window.typingMindCloudSync) {
     );
   }
   function queueOperation(name, operation, dependencies = [], timeout = 30000) {
+    console.log("🔍 queueOperation called with name:", name);
+    console.log("🔍 Current time:", new Date().toISOString());
+    console.log(
+      "🔍 Queue length before:",
+      operationState.operationQueue.length
+    );
     if (config.syncMode === "disabled" && !name.startsWith("manual")) {
       logToConsole("skip", `Skipping operation ${name} - sync is disabled`);
       return;
