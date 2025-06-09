@@ -623,7 +623,7 @@ async function performFullInitialization() {
     setupLocalStorageChangeListener();
     monitorIndexedDBForDeletions();
     startPeriodicChangeCheck();
-    setupVisibilityChangeHandler();
+    //setupVisibilityChangeHandler();
     try {
       await cleanupMetadataVersions();
       // logToConsole(
@@ -2864,61 +2864,61 @@ async function detectCloudChanges(cloudMetadata) {
       .sort((a, b) => b.lastModified - a.lastModified)
       .slice(0, 5);
 
-    logToConsole(
-      "debug",
-      "Most recently modified settings (regardless of age)",
-      {
-        currentTime: new Date().toISOString(),
-        settings: allModificationTimes,
-      }
-    );
+    // logToConsole(
+    //   "debug",
+    //   "Most recently modified settings (regardless of age)",
+    //   {
+    //     currentTime: new Date().toISOString(),
+    //     settings: allModificationTimes,
+    //   }
+    // );
 
-    if (recentlyModified.length > 0) {
-      logToConsole(
-        "debug",
-        "Recently modified settings in cloud (last 5 minutes)",
-        {
-          count: recentlyModified.length,
-          settings: recentlyModified.map(([key, meta]) => ({
-            key,
-            lastModified: new Date(meta.lastModified).toISOString(),
-            hash: meta.hash?.substring(0, 8) + "...",
-            ageMinutes: Math.round((Date.now() - meta.lastModified) / 60000),
-          })),
-        }
-      );
-    } else {
-      logToConsole("debug", "No settings found modified in the last 5 minutes");
-    }
+    // if (recentlyModified.length > 0) {
+    //   logToConsole(
+    //     "debug",
+    //     "Recently modified settings in cloud (last 5 minutes)",
+    //     {
+    //       count: recentlyModified.length,
+    //       settings: recentlyModified.map(([key, meta]) => ({
+    //         key,
+    //         lastModified: new Date(meta.lastModified).toISOString(),
+    //         hash: meta.hash?.substring(0, 8) + "...",
+    //         ageMinutes: Math.round((Date.now() - meta.lastModified) / 60000),
+    //       })),
+    //     }
+    //   );
+    // } else {
+    //   logToConsole("debug", "No settings found modified in the last 5 minutes");
+    // }
 
     const settingsEntries = Object.entries(cloudMetadata.settings.items);
-    logToConsole(
-      "debug",
-      `Starting to check ${settingsEntries.length} cloud settings individually`
-    );
+    // logToConsole(
+    //   "debug",
+    //   `Starting to check ${settingsEntries.length} cloud settings individually`
+    // );
 
     let checkedCount = 0;
     let changesFound = 0;
-    let sampleSettings = [];
+    // let sampleSettings = [];
 
     for (const [settingKey, cloudSettingMeta] of settingsEntries) {
       checkedCount++;
       const localSettingMeta = localMetadata.settings?.items?.[settingKey];
 
-      if (checkedCount <= 3) {
-        sampleSettings.push({
-          key: settingKey,
-          cloudHash: cloudSettingMeta.hash?.substring(0, 12) + "...",
-          localHash: localSettingMeta?.hash?.substring(0, 12) + "...",
-          hashMatch: cloudSettingMeta.hash === localSettingMeta?.hash,
-          cloudModified: cloudSettingMeta.lastModified
-            ? new Date(cloudSettingMeta.lastModified).toISOString()
-            : "NONE",
-          localSynced: localSettingMeta?.syncedAt
-            ? new Date(localSettingMeta.syncedAt).toISOString()
-            : "NONE",
-        });
-      }
+      // if (checkedCount <= 3) {
+      //   sampleSettings.push({
+      //     key: settingKey,
+      //     cloudHash: cloudSettingMeta.hash?.substring(0, 12) + "...",
+      //     localHash: localSettingMeta?.hash?.substring(0, 12) + "...",
+      //     hashMatch: cloudSettingMeta.hash === localSettingMeta?.hash,
+      //     cloudModified: cloudSettingMeta.lastModified
+      //       ? new Date(cloudSettingMeta.lastModified).toISOString()
+      //       : "NONE",
+      //     localSynced: localSettingMeta?.syncedAt
+      //       ? new Date(localSettingMeta.syncedAt).toISOString()
+      //       : "NONE",
+      //   });
+      // }
 
       if (cloudSettingMeta.deleted === true) {
         if (
@@ -3012,9 +3012,9 @@ async function detectCloudChanges(cloudMetadata) {
       `Finished checking individual settings: ${checkedCount} checked, ${changesFound} potential changes found, 0 confirmed changes`
     );
 
-    if (sampleSettings.length > 0) {
-      logToConsole("debug", "Sample settings checked", { sampleSettings });
-    }
+    // if (sampleSettings.length > 0) {
+    //   logToConsole("debug", "Sample settings checked", { sampleSettings });
+    // }
 
     const timestampMismatches = [];
     for (const [settingKey, cloudSettingMeta] of settingsEntries.slice(0, 10)) {
@@ -3041,11 +3041,11 @@ async function detectCloudChanges(cloudMetadata) {
       }
     }
 
-    if (timestampMismatches.length > 0) {
-      logToConsole("debug", "Found timestamp mismatches in sample", {
-        timestampMismatches,
-      });
-    }
+    // if (timestampMismatches.length > 0) {
+    //   logToConsole("debug", "Found timestamp mismatches in sample", {
+    //     timestampMismatches,
+    //   });
+    // }
 
     logToConsole("debug", "❌ No individual settings changes detected");
   } else {
