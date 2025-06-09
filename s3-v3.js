@@ -6297,18 +6297,27 @@ async function forceSettingsCheck() {
     await initializeSettingsMonitoring();
     return false;
   }
+
   let hasChanges = false;
+  let checkedLocalStorage = 0;
+  let checkedIndexedDB = 0;
+  let changesLocalStorage = 0;
+  let changesIndexedDB = 0;
+
   for (const key of Object.keys(localStorage)) {
     if (!shouldExcludeSetting(key)) {
+      checkedLocalStorage++;
       const value = localStorage.getItem(key);
       if (value !== null) {
         const changed = await handleSettingChange(key, value, "localstorage");
         if (changed) {
           hasChanges = true;
+          changesLocalStorage++;
         }
       }
     }
   }
+
   try {
     const db = await openIndexedDB();
     const transaction = db.transaction("keyval", "readonly");
@@ -6318,13 +6327,41 @@ async function forceSettingsCheck() {
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve(request.result);
     });
+
     for (const key of keys) {
       if (!shouldExcludeSetting(key)) {
+        checkedIndexedDB++;
         const value = await getIndexedDBValue(key);
         if (value !== undefined) {
+          if (key === "TM_useUserCharacters") {
+            const currentHash = await generateContentHash(value);
+            const existingMeta = localMetadata.settings.items[key];
+            logToConsole(
+              "info",
+              `ForceSettingsCheck examining TM_useUserCharacters`,
+              {
+                valueExists: value !== undefined,
+                currentHash: currentHash?.substring(0, 12) + "...",
+                existingHash: existingMeta?.hash?.substring(0, 12) + "...",
+                hashesMatch: currentHash === existingMeta?.hash,
+                existingModified: existingMeta?.lastModified
+                  ? new Date(existingMeta.lastModified).toISOString()
+                  : "NONE",
+                willCallHandleChange: true,
+              }
+            );
+          }
+
           const changed = await handleSettingChange(key, value, "indexeddb");
           if (changed) {
             hasChanges = true;
+            changesIndexedDB++;
+            if (key === "TM_useUserCharacters") {
+              logToConsole(
+                "info",
+                `TM_useUserCharacters change detected in forceSettingsCheck!`
+              );
+            }
           }
         }
       }
@@ -6332,6 +6369,15 @@ async function forceSettingsCheck() {
   } catch (error) {
     logToConsole("error", "Error during forced settings check:", error);
   }
+
+  logToConsole("debug", `Force settings check completed`, {
+    checkedLocalStorage,
+    checkedIndexedDB,
+    changesLocalStorage,
+    changesIndexedDB,
+    hasChanges,
+  });
+
   if (hasChanges) {
     logToConsole("info", "Forced settings check detected real changes");
     await saveLocalMetadata();
