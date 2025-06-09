@@ -3013,6 +3013,31 @@ async function detectCloudChanges(cloudMetadata) {
       });
     }
 
+    const specificSetting =
+      cloudMetadata.settings.items["TM_useUserCharacters"];
+    const localSpecificSetting =
+      localMetadata.settings?.items?.["TM_useUserCharacters"];
+    if (specificSetting || localSpecificSetting) {
+      logToConsole("info", "Specific setting 'TM_useUserCharacters' status", {
+        cloudExists: !!specificSetting,
+        localExists: !!localSpecificSetting,
+        cloudHash: specificSetting?.hash?.substring(0, 12) + "..." || "NONE",
+        localHash:
+          localSpecificSetting?.hash?.substring(0, 12) + "..." || "NONE",
+        cloudModified: specificSetting?.lastModified
+          ? new Date(specificSetting.lastModified).toISOString()
+          : "NONE",
+        localModified: localSpecificSetting?.lastModified
+          ? new Date(localSpecificSetting.lastModified).toISOString()
+          : "NONE",
+        localSynced: localSpecificSetting?.syncedAt
+          ? new Date(localSpecificSetting.syncedAt).toISOString()
+          : "NONE",
+        hashMatch: specificSetting?.hash === localSpecificSetting?.hash,
+        deleted: specificSetting?.deleted || localSpecificSetting?.deleted,
+      });
+    }
+
     logToConsole("debug", "❌ No individual settings changes detected");
   } else {
     logToConsole(
@@ -7259,10 +7284,15 @@ async function syncSettingsFromCloud() {
 
 async function checkLocalSettingsChanges() {
   try {
+    let foundChanges = false;
+    let checkedLocalStorage = 0;
+    let checkedIndexedDB = 0;
+
     for (const key of Object.keys(localStorage)) {
       if (shouldExcludeSetting(key)) {
         continue;
       }
+      checkedLocalStorage++;
 
       const localMeta = localMetadata.settings?.items?.[key];
       if (
@@ -7280,7 +7310,7 @@ async function checkLocalSettingsChanges() {
             ? new Date(localMeta.syncedAt).toISOString()
             : "NONE",
         });
-        return true;
+        foundChanges = true;
       }
     }
 
@@ -7298,8 +7328,31 @@ async function checkLocalSettingsChanges() {
         if (shouldExcludeSetting(key)) {
           continue;
         }
+        checkedIndexedDB++;
 
         const localMeta = localMetadata.settings?.items?.[key];
+
+        if (key === "TM_useUserCharacters") {
+          logToConsole(
+            "info",
+            `Checking specific setting TM_useUserCharacters in IndexedDB`,
+            {
+              keyExists: true,
+              hasMetadata: !!localMeta,
+              hasSyncedAt: !!localMeta?.syncedAt,
+              lastModified: localMeta?.lastModified
+                ? new Date(localMeta.lastModified).toISOString()
+                : "NONE",
+              syncedAt: localMeta?.syncedAt
+                ? new Date(localMeta.syncedAt).toISOString()
+                : "NONE",
+              isNewer: localMeta
+                ? localMeta.lastModified > localMeta.syncedAt
+                : "NO_META",
+            }
+          );
+        }
+
         if (
           !localMeta ||
           !localMeta.syncedAt ||
@@ -7319,7 +7372,7 @@ async function checkLocalSettingsChanges() {
                 : "NONE",
             }
           );
-          return true;
+          foundChanges = true;
         }
       }
     } catch (error) {
@@ -7330,7 +7383,13 @@ async function checkLocalSettingsChanges() {
       );
     }
 
-    return false;
+    logToConsole("debug", `Local settings check completed`, {
+      checkedLocalStorage,
+      checkedIndexedDB,
+      foundChanges,
+    });
+
+    return foundChanges;
   } catch (error) {
     logToConsole("error", "Error checking local settings changes", error);
     return false;
