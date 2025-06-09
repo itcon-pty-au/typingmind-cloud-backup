@@ -2671,6 +2671,7 @@ if (window.typingMindCloudSync) {
         existingDeps: existingOp.dependencies,
         newDeps: dependencies,
         queueLength: operationState.operationQueue.length,
+        stackTrace: new Error().stack.split("\n").slice(2, 5).join("\n"),
       });
       return;
     }
