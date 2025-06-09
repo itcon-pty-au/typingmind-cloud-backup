@@ -94,6 +94,7 @@ if (window.typingMindCloudSync) {
     queueProcessingPromise: null,
     completedOperations: new Set(),
     operationTimeouts: new Map(),
+    currentlyExecutingOperation: null,
   };
   let backupState = {
     isBackupInProgress: false,
@@ -2691,9 +2692,7 @@ if (window.typingMindCloudSync) {
       (op) => op.name === name
     );
     const isCurrentlyExecuting =
-      operationState.isProcessingQueue &&
-      operationState.operationQueue.length > 0 &&
-      operationState.operationQueue[0].name === name;
+      operationState.currentlyExecutingOperation === name;
 
     if (existingOp || isCurrentlyExecuting) {
       console.log("🔍 Duplicate operation detected:", name);
@@ -2806,6 +2805,7 @@ if (window.typingMindCloudSync) {
           const nextOperation = operationState.operationQueue[nextOpIndex];
           const { name, operation, timeout } = nextOperation;
           console.log("🔍 About to execute operation:", name);
+          operationState.currentlyExecutingOperation = name;
           console.log("🔍 Queue state before execution:", {
             queueLength: operationState.operationQueue.length,
             processingQueue: operationState.isProcessingQueue,
@@ -2838,6 +2838,7 @@ if (window.typingMindCloudSync) {
               });
             }
             operationState.operationQueue.splice(nextOpIndex, 1);
+            operationState.currentlyExecutingOperation = null;
             await new Promise((resolve) => setTimeout(resolve, 100));
           } catch (error) {
             if (operationState.operationTimeouts.has(name)) {
@@ -2859,6 +2860,7 @@ if (window.typingMindCloudSync) {
               continue;
             }
             operationState.operationQueue.splice(nextOpIndex, 1);
+            operationState.currentlyExecutingOperation = null;
             operationState.completedOperations.delete(name);
             const dependentOps = operationState.operationQueue.filter((op) =>
               op.dependencies.includes(name)
