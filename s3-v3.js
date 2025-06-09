@@ -840,10 +840,10 @@ if (window.typingMindCloudSync) {
       throw error;
     }
   }
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", initializeExtension);
+  if (document.readyState === "complete") {
+    initializeExtension();
   } else {
-    setTimeout(initializeExtension, 0);
+    window.addEventListener("load", initializeExtension);
   }
   function throttle(func, limit) {
     let inThrottle;
