@@ -2690,7 +2690,12 @@ if (window.typingMindCloudSync) {
     const existingOp = operationState.operationQueue.find(
       (op) => op.name === name
     );
-    if (existingOp) {
+    const isCurrentlyExecuting =
+      operationState.isProcessingQueue &&
+      operationState.operationQueue.length > 0 &&
+      operationState.operationQueue[0].name === name;
+
+    if (existingOp || isCurrentlyExecuting) {
       console.log("🔍 Duplicate operation detected:", name);
       console.log("🔍 Stack trace:", new Error().stack);
       logToConsole("skip", `Skipping duplicate operation: ${name}`, {
