@@ -661,6 +661,13 @@ if (window.typingMindCloudSync) {
   }
   let isInitialized = false;
   async function initializeExtension() {
+    console.log(
+      "🔍 initializeExtension called, stack trace:",
+      new Error().stack
+    );
+    console.log("🔍 isInitialized:", isInitialized);
+    console.log("🔍 window.typingMindCloudSync:", window.typingMindCloudSync);
+
     if (isInitialized) {
       logToConsole(
         "skip",
@@ -789,6 +796,10 @@ if (window.typingMindCloudSync) {
             "Cloud data found. Performing standard startup sync check."
           );
           if (document.visibilityState === "visible") {
+            console.log(
+              "🔍 About to queue startup-sync-check, stack trace:",
+              new Error().stack
+            );
             queueOperation("startup-sync-check", syncFromCloud, [], 300000);
           }
         } else {
@@ -2667,6 +2678,8 @@ if (window.typingMindCloudSync) {
       (op) => op.name === name
     );
     if (existingOp) {
+      console.log("🔍 Duplicate operation detected:", name);
+      console.log("🔍 Stack trace:", new Error().stack);
       logToConsole("skip", `Skipping duplicate operation: ${name}`, {
         existingDeps: existingOp.dependencies,
         newDeps: dependencies,
