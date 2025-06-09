@@ -1096,7 +1096,10 @@ async function saveLocalMetadata() {
     //       "Sample hashes being saved:",
     //       sampleKeys.reduce((acc, key) => {
     //         acc[key] = localMetadata.settings.items[key]?.hash
-    //           ? `${localMetadata.settings.items[key].hash.substring(0, 8)}...`
+    //           ? `${localMetadata.settings.items[key].hash.substring(
+    //               0,
+    //               8
+    //             )}...`
     //           : "none";
     //         return acc;
     //       }, {})
@@ -7223,9 +7226,8 @@ async function syncSettingsFromCloud() {
             cloudSettingMeta.lastModified >
               (localSettingMeta.lastModified || 0)) ||
           (localSettingMeta.syncedAt &&
-            ((cloudSettingMeta.hash &&
-              cloudSettingMeta.hash !== localSettingMeta.hash) ||
-              cloudSettingMeta.lastModified > localSettingMeta.syncedAt));
+            cloudSettingMeta.lastModified > localSettingMeta.syncedAt &&
+            cloudSettingMeta.hash !== localSettingMeta.hash);
 
         if (needsDownload) {
           logToConsole("info", `Downloading setting ${settingKey} from cloud`, {
