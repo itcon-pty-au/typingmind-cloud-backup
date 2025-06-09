@@ -2729,6 +2729,14 @@ if (window.typingMindCloudSync) {
     processOperationQueue();
   }
   async function processOperationQueue() {
+    console.log("🔍 processOperationQueue called");
+    console.log("🔍 Queue length:", operationState.operationQueue.length);
+    console.log(
+      "🔍 Queue contents:",
+      operationState.operationQueue.map((op) => op.name)
+    );
+    console.log("🔍 isProcessingQueue:", operationState.isProcessingQueue);
+
     if (
       operationState.isProcessingQueue ||
       operationState.operationQueue.length === 0
@@ -2792,6 +2800,12 @@ if (window.typingMindCloudSync) {
           }
           const nextOperation = operationState.operationQueue[nextOpIndex];
           const { name, operation, timeout } = nextOperation;
+          console.log("🔍 About to execute operation:", name);
+          console.log("🔍 Queue state before execution:", {
+            queueLength: operationState.operationQueue.length,
+            processingQueue: operationState.isProcessingQueue,
+            completedOps: Array.from(operationState.completedOperations),
+          });
           try {
             const timeoutPromise = new Promise((_, reject) => {
               const timeoutId = setTimeout(() => {
