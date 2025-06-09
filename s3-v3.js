@@ -6341,6 +6341,10 @@ async function forceSettingsCheck() {
               `ForceSettingsCheck examining TM_useUserCharacters`,
               {
                 valueExists: value !== undefined,
+                currentValue:
+                  typeof value === "object"
+                    ? JSON.stringify(value).substring(0, 100) + "..."
+                    : String(value).substring(0, 100) + "...",
                 currentHash: currentHash?.substring(0, 12) + "...",
                 existingHash: existingMeta?.hash?.substring(0, 12) + "...",
                 hashesMatch: currentHash === existingMeta?.hash,
