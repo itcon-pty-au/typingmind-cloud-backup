@@ -26,6 +26,7 @@ if (window.typingMindCloudSync) {
     "INSTANCE_ID",
     "referrer",
     "setItem",
+    "TM_useDismissedOnboarding",
   ];
   function getUserDefinedExclusions() {
     const exclusions = localStorage.getItem("sync-exclusions");
