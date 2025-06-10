@@ -7400,6 +7400,26 @@ if (window.typingMindCloudSync) {
             }
           } else {
             skippedCount++;
+            // Hash matches but cloud timestamp may be newer - update local syncedAt to prevent repeated checks
+            if (
+              localSettingMeta &&
+              localSettingMeta.syncedAt &&
+              cloudSettingMeta.lastModified > localSettingMeta.syncedAt &&
+              cloudSettingMeta.hash === localSettingMeta.hash
+            ) {
+              localSettingMeta.syncedAt = cloudSettingMeta.lastModified;
+              logToConsole(
+                "debug",
+                `Updated syncedAt timestamp for ${settingKey} (content unchanged)`,
+                {
+                  newSyncedAt: new Date(
+                    cloudSettingMeta.lastModified
+                  ).toISOString(),
+                  reason: "hash match but cloud newer",
+                }
+              );
+              await saveLocalMetadata();
+            }
           }
         } catch (error) {
           logToConsole(
