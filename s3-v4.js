@@ -25,852 +25,1088 @@ if (window.typingMindCloudSync) {
     endpoint: "aws-endpoint",
     encryptionKey: "encryption-key",
   };
-  let config = {
-    syncMode: "disabled",
-    syncInterval: 15,
-    bucketName: "",
-    region: "",
-    accessKey: "",
-    secretKey: "",
-    endpoint: "",
-    encryptionKey: "",
-  };
-  let isLoggingEnabled =
-    new URLSearchParams(window.location.search).get("log") === "true";
-  let s3Client = null;
-  let syncInterval = null;
-  let operationQueue = [];
-  let isProcessingQueue = false;
-  let dbConnection = null;
-  let hashCache = new Map();
-  let localMetadata = {
-    lastSync: 0,
-    lastModified: 0,
-    items: {},
-    deleted: [],
-  };
-  function log(type, message, data = null) {
-    if (!isLoggingEnabled) return;
-    const icons = {
-      info: "ℹ️",
-      success: "✅",
-      warning: "⚠️",
-      error: "❌",
-      start: "🔄",
-    };
-    const timestamp = new Date().toLocaleString();
-    console.log(
-      `${icons[type] || "ℹ️"} ${CONSOLE_TAG} [${timestamp}] ${message}`,
-      data || ""
-    );
-  }
-  function loadConfiguration() {
-    Object.keys(CONFIG_KEYS).forEach((key) => {
-      const value = localStorage.getItem(CONFIG_KEYS[key]);
-      config[key] =
-        key === "syncInterval"
-          ? parseInt(value) || 15
-          : value || (key === "syncMode" ? "disabled" : "");
-    });
-  }
-  function saveConfiguration() {
-    Object.keys(CONFIG_KEYS).forEach((key) => {
-      localStorage.setItem(CONFIG_KEYS[key], config[key].toString());
-    });
-  }
-  function getUserExclusions() {
-    const exclusions = localStorage.getItem("sync-exclusions");
-    return exclusions
-      ? exclusions
-          .split(",")
-          .map((item) => item.trim())
-          .filter((item) => item)
-      : [];
-  }
-  function shouldExcludeSetting(key) {
-    const userExclusions = getUserExclusions();
-    return (
-      EXCLUDED_SETTINGS.includes(key) ||
-      userExclusions.includes(key) ||
-      key.startsWith("CHAT_") ||
-      key.startsWith("last-seen-") ||
-      !isNaN(key)
-    );
-  }
-  async function loadAwsSdk() {
-    if (window.AWS) return;
-    return new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = "https://sdk.amazonaws.com/js/aws-sdk-2.1691.0.min.js";
-      script.onload = resolve;
-      script.onerror = reject;
-      document.head.appendChild(script);
-    });
-  }
-  function initializeS3Client() {
-    if (
-      !config.bucketName ||
-      !config.accessKey ||
-      !config.secretKey ||
-      !config.region
-    ) {
-      log("warning", "AWS configuration incomplete");
-      return false;
+  class CloudSyncError extends Error {
+    constructor(message, type = "GENERAL", details = null) {
+      super(message);
+      this.name = "CloudSyncError";
+      this.type = type;
+      this.details = details;
     }
-    const s3Config = {
-      accessKeyId: config.accessKey,
-      secretAccessKey: config.secretKey,
-      region: config.region,
-    };
-    if (config.endpoint) {
-      s3Config.endpoint = config.endpoint;
-      s3Config.s3ForcePathStyle = true;
-    }
-    AWS.config.update(s3Config);
-    s3Client = new AWS.S3();
-    log("success", "S3 client initialized");
-    return true;
   }
-  async function getDBConnection() {
-    if (dbConnection) return dbConnection;
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open("typingmind", 1);
-      request.onsuccess = (event) => {
-        dbConnection = event.target.result;
-        resolve(dbConnection);
+  class Logger {
+    constructor() {
+      this.enabled =
+        new URLSearchParams(window.location.search).get("log") === "true";
+      this.icons = {
+        info: "ℹ️",
+        success: "✅",
+        warning: "⚠️",
+        error: "❌",
+        start: "🔄",
+        skip: "⏭️",
       };
-      request.onerror = () => reject(new Error("Failed to open IndexedDB"));
-    });
-  }
-  async function deriveKey(password) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password);
-    const hash = await crypto.subtle.digest("SHA-256", data);
-    return await crypto.subtle.importKey(
-      "raw",
-      hash,
-      { name: "AES-GCM" },
-      false,
-      ["encrypt", "decrypt"]
-    );
-  }
-  async function encryptData(data) {
-    if (!config.encryptionKey) throw new Error("No encryption key");
-    const key = await deriveKey(config.encryptionKey);
-    const encoder = new TextEncoder();
-    const encodedData = encoder.encode(JSON.stringify(data));
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const encrypted = await crypto.subtle.encrypt(
-      { name: "AES-GCM", iv },
-      key,
-      encodedData
-    );
-    const result = new Uint8Array(iv.length + encrypted.byteLength);
-    result.set(iv, 0);
-    result.set(new Uint8Array(encrypted), iv.length);
-    return result;
-  }
-  async function decryptData(encryptedData) {
-    if (!config.encryptionKey) throw new Error("No encryption key");
-    const key = await deriveKey(config.encryptionKey);
-    const iv = encryptedData.slice(0, 12);
-    const data = encryptedData.slice(12);
-    const decrypted = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv },
-      key,
-      data
-    );
-    return JSON.parse(new TextDecoder().decode(decrypted));
-  }
-  async function uploadToS3(key, data, isMetadata = false) {
-    if (!s3Client) return false;
-    try {
-      const body = isMetadata ? JSON.stringify(data) : await encryptData(data);
-      await s3Client
-        .upload({
-          Bucket: config.bucketName,
-          Key: key,
-          Body: body,
-          ContentType: isMetadata
-            ? "application/json"
-            : "application/octet-stream",
-        })
-        .promise();
-      log("success", `Uploaded ${key}`);
-      return true;
-    } catch (error) {
-      log("error", `Failed to upload ${key}`, error.message);
-      return false;
     }
-  }
-  async function downloadFromS3(key, isMetadata = false) {
-    if (!s3Client) return null;
-    try {
-      const result = await s3Client
-        .getObject({ Bucket: config.bucketName, Key: key })
-        .promise();
-      return isMetadata
-        ? JSON.parse(result.Body.toString())
-        : await decryptData(new Uint8Array(result.Body));
-    } catch (error) {
-      log("error", `Failed to download ${key}`, error.message);
-      return null;
-    }
-  }
-  async function deleteFromS3(key) {
-    if (!s3Client) return false;
-    try {
-      await s3Client
-        .deleteObject({ Bucket: config.bucketName, Key: key })
-        .promise();
-      log("success", `Deleted ${key}`);
-      return true;
-    } catch (error) {
-      log("error", `Failed to delete ${key}`, error.message);
-      return false;
-    }
-  }
-  async function listS3Objects(prefix = "") {
-    if (!s3Client) return [];
-    try {
-      const result = await s3Client
-        .listObjectsV2({ Bucket: config.bucketName, Prefix: prefix })
-        .promise();
-      return result.Contents || [];
-    } catch (error) {
-      log("error", "Failed to list S3 objects", error.message);
-      return [];
-    }
-  }
-  async function generateHash(content) {
-    const key = typeof content === "string" ? content : JSON.stringify(content);
-    if (hashCache.has(key)) return hashCache.get(key);
-    const encoder = new TextEncoder();
-    const data = encoder.encode(key);
-    const hash = await crypto.subtle.digest("SHA-256", data);
-    const result = Array.from(new Uint8Array(hash))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .slice(0, 4)
-      .join("");
-    hashCache.set(key, result);
-    if (hashCache.size > 1000) hashCache.clear();
-    return result;
-  }
-  async function getAllChatsFromIndexedDB() {
-    try {
-      const db = await getDBConnection();
-      const transaction = db.transaction(["chats"], "readonly");
-      const store = transaction.objectStore("chats");
-      return new Promise((resolve) => {
-        const request = store.getAll();
-        request.onsuccess = () => resolve(request.result || []);
-        request.onerror = () => resolve([]);
-      });
-    } catch {
-      return [];
-    }
-  }
-  async function getChatFromIndexedDB(chatId) {
-    try {
-      const db = await getDBConnection();
-      const transaction = db.transaction(["chats"], "readonly");
-      const store = transaction.objectStore("chats");
-      return new Promise((resolve) => {
-        const request = store.get(chatId);
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => resolve(null);
-      });
-    } catch {
-      return null;
-    }
-  }
-  async function saveChatToIndexedDB(chat) {
-    try {
-      const db = await getDBConnection();
-      const transaction = db.transaction(["chats"], "readwrite");
-      const store = transaction.objectStore("chats");
-      return new Promise((resolve) => {
-        const request = store.put(chat);
-        request.onsuccess = () => resolve(true);
-        request.onerror = () => resolve(false);
-      });
-    } catch {
-      return false;
-    }
-  }
-  async function deleteChatFromIndexedDB(chatId) {
-    try {
-      const db = await getDBConnection();
-      const transaction = db.transaction(["chats"], "readwrite");
-      const store = transaction.objectStore("chats");
-      return new Promise((resolve) => {
-        const request = store.delete(chatId);
-        request.onsuccess = () => resolve(true);
-        request.onerror = () => resolve(false);
-      });
-    } catch {
-      return false;
-    }
-  }
-  async function loadLocalMetadata() {
-    const stored = localStorage.getItem("cloud-metadata-v4");
-    if (stored) {
-      localMetadata = JSON.parse(stored);
-    }
-    log("info", "Local metadata loaded", localMetadata);
-  }
-  async function saveLocalMetadata() {
-    localMetadata.lastModified = Date.now();
-    localStorage.setItem("cloud-metadata-v4", JSON.stringify(localMetadata));
-    log("info", "Local metadata saved");
-  }
-  async function detectLocalChanges() {
-    const [chats, settingsEntries] = await Promise.all([
-      getAllChatsFromIndexedDB(),
-      Promise.resolve(
-        Array.from({ length: localStorage.length }, (_, i) => {
-          const key = localStorage.key(i);
-          return shouldExcludeSetting(key)
-            ? null
-            : [key, localStorage.getItem(key)];
-        }).filter(Boolean)
-      ),
-    ]);
-    let hasChanges = false;
-    const promises = [];
-    for (const chat of chats) {
-      promises.push(
-        (async () => {
-          const hash = await generateHash(chat);
-          const existing = localMetadata.items[chat.id];
-          if (!existing || existing.hash !== hash) {
-            localMetadata.items[chat.id] = {
-              hash,
-              modified: Date.now(),
-              synced: existing?.synced || 0,
-              type: "idb",
-            };
-            hasChanges = true;
-            log("info", `Chat modified: ${chat.id}`);
-          }
-        })()
+    log(type, message, data = null) {
+      if (!this.enabled) return;
+      const timestamp = new Date().toLocaleString();
+      console.log(
+        `${this.icons[type] || "ℹ️"} ${CONSOLE_TAG} [${timestamp}] ${message}`,
+        data || ""
       );
     }
-    for (const [key, value] of settingsEntries) {
-      promises.push(
-        (async () => {
-          const hash = await generateHash(value);
-          const existing = localMetadata.items[key];
-          if (!existing || existing.hash !== hash) {
-            localMetadata.items[key] = {
-              hash,
-              modified: Date.now(),
-              synced: existing?.synced || 0,
-              type: "ls",
-            };
-            hasChanges = true;
-          }
-        })()
-      );
+    setEnabled(enabled) {
+      this.enabled = enabled;
+      const url = new URL(window.location);
+      if (enabled) url.searchParams.set("log", "true");
+      else url.searchParams.delete("log");
+      window.history.replaceState({}, "", url);
     }
-    await Promise.all(promises);
-    if (hasChanges) await saveLocalMetadata();
-    return hasChanges;
   }
-  function queueOperation(name, operation) {
-    operationQueue.push({ name, operation, timestamp: Date.now() });
-    log("info", `Queued operation: ${name}`);
-    processOperationQueue();
-  }
-  async function processOperationQueue() {
-    if (isProcessingQueue || operationQueue.length === 0) return;
-    isProcessingQueue = true;
-    log("start", "Processing operation queue");
-    while (operationQueue.length > 0) {
-      const { name, operation } = operationQueue.shift();
-      try {
-        log("start", `Executing operation: ${name}`);
-        await operation();
-        log("success", `Completed operation: ${name}`);
-      } catch (error) {
-        log("error", `Failed operation: ${name}`, error.message);
-      }
+  const logger = new Logger();
+  class ConfigManager {
+    constructor() {
+      this.config = {
+        syncMode: "disabled",
+        syncInterval: 15,
+        bucketName: "",
+        region: "",
+        accessKey: "",
+        secretKey: "",
+        endpoint: "",
+        encryptionKey: "",
+      };
+      this.load();
     }
-    isProcessingQueue = false;
-    log("success", "Operation queue processed");
-  }
-  async function syncToCloud() {
-    if (!s3Client) {
-      log("error", "S3 client not initialized");
-      return false;
-    }
-    log("start", "Starting sync to cloud");
-    await detectLocalChanges();
-    const cloudMetadata = (await downloadFromS3("metadata.json", true)) || {
-      lastSync: 0,
-      lastModified: 0,
-      items: {},
-      deleted: [],
-    };
-    const itemsToSync = Object.entries(localMetadata.items).filter(
-      ([key, item]) => item.modified > (item.synced || 0)
-    );
-    const uploadPromises = itemsToSync.map(async ([key, item]) => {
-      let success = false;
-      if (item.type === "idb") {
-        const chat = await getChatFromIndexedDB(key);
-        if (chat) {
-          success = await uploadToS3(`chats/${key}.json`, chat);
-        }
-      } else if (item.type === "ls") {
-        const value = localStorage.getItem(key);
-        if (value !== null) {
-          success = await uploadToS3(`settings/${key}.json`, { key, value });
-        }
-      }
-      if (success) {
-        localMetadata.items[key].synced = Date.now();
-        cloudMetadata.items[key] = localMetadata.items[key];
-      }
-      return success;
-    });
-    await Promise.all(uploadPromises);
-    cloudMetadata.lastSync = Date.now();
-    cloudMetadata.lastModified = localMetadata.lastModified;
-    const metadataUploaded = await uploadToS3(
-      "metadata.json",
-      cloudMetadata,
-      true
-    );
-    if (metadataUploaded) {
-      localMetadata.lastSync = cloudMetadata.lastSync;
-      await saveLocalMetadata();
-      updateSyncStatusDot("success");
-      log("success", "Sync to cloud completed");
-      return true;
-    }
-    log("error", "Failed to sync to cloud");
-    return false;
-  }
-  async function syncFromCloud() {
-    if (!s3Client) {
-      log("error", "S3 client not initialized");
-      return false;
-    }
-    log("start", "Starting sync from cloud");
-    const cloudMetadata = await downloadFromS3("metadata.json", true);
-    if (!cloudMetadata) {
-      log("info", "No cloud metadata found");
-      return await syncToCloud();
-    }
-    await detectLocalChanges();
-    const downloadPromises = Object.entries(cloudMetadata.items).map(
-      async ([key, cloudItem]) => {
-        const localItem = localMetadata.items[key];
-        const shouldDownload =
-          !localItem ||
-          (cloudItem.hash !== localItem.hash &&
-            cloudItem.modified > localItem.modified);
-        if (!shouldDownload) return;
-        if (cloudItem.type === "idb") {
-          const chatData = await downloadFromS3(`chats/${key}.json`);
-          if (chatData) {
-            await saveChatToIndexedDB(chatData);
-            localMetadata.items[key] = { ...cloudItem };
-            log("info", `Downloaded chat: ${key}`);
-          }
-        } else if (cloudItem.type === "ls") {
-          const settingData = await downloadFromS3(`settings/${key}.json`);
-          if (settingData?.value !== undefined) {
-            localStorage.setItem(key, settingData.value);
-            localMetadata.items[key] = { ...cloudItem };
-            log("info", `Downloaded setting: ${key}`);
-          }
-        }
-      }
-    );
-    await Promise.all(downloadPromises);
-    for (const deletedKey of cloudMetadata.deleted || []) {
-      if (localMetadata.items[deletedKey]) {
-        const item = localMetadata.items[deletedKey];
-        if (item.type === "idb") {
-          await deleteChatFromIndexedDB(deletedKey);
-        } else if (item.type === "ls") {
-          localStorage.removeItem(deletedKey);
-        }
-        delete localMetadata.items[deletedKey];
-        log("info", `Deleted item: ${deletedKey}`);
-      }
-    }
-    localMetadata.lastSync = Date.now();
-    await saveLocalMetadata();
-    updateSyncStatusDot("success");
-    log("success", "Sync from cloud completed");
-    return true;
-  }
-  async function createSnapshot(name) {
-    if (!s3Client) {
-      log("error", "S3 client not initialized");
-      return false;
-    }
-    log("start", `Creating snapshot: ${name}`);
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const filename = `snapshot-${timestamp}-${name.replace(
-      /[^a-zA-Z0-9]/g,
-      "-"
-    )}.json`;
-    const [chats, settings] = await Promise.all([
-      getAllChatsFromIndexedDB(),
-      Promise.resolve(
-        Array.from({ length: localStorage.length }, (_, i) => {
-          const key = localStorage.key(i);
-          return shouldExcludeSetting(key)
-            ? null
-            : [key, localStorage.getItem(key)];
-        })
-          .filter(Boolean)
-          .reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {})
-      ),
-    ]);
-    const snapshot = { chats, settings, created: Date.now(), name };
-    const success = await uploadToS3(`snapshots/${filename}`, snapshot);
-    if (success) {
-      log("success", `Snapshot created: ${filename}`);
-      return true;
-    }
-    log("error", "Failed to create snapshot");
-    return false;
-  }
-  async function loadBackupList() {
-    const objects = await listS3Objects("snapshots/");
-    return objects.map((obj) => ({
-      key: obj.Key,
-      name: obj.Key.replace("snapshots/", "").replace(".json", ""),
-      size: obj.Size,
-      modified: obj.LastModified,
-    }));
-  }
-  async function restoreFromBackup(key) {
-    log("start", `Restoring from backup: ${key}`);
-    const backup = await downloadFromS3(key);
-    if (!backup) {
-      log("error", "Failed to download backup");
-      return false;
-    }
-    const promises = [];
-    if (backup.chats) {
-      promises.push(...backup.chats.map((chat) => saveChatToIndexedDB(chat)));
-    }
-    if (backup.settings) {
-      Object.entries(backup.settings).forEach(([k, v]) =>
-        localStorage.setItem(k, v)
-      );
-    }
-    await Promise.all(promises);
-    await detectLocalChanges();
-    log("success", "Backup restored successfully");
-    return true;
-  }
-  function insertSyncButton() {
-    if (document.querySelector("#sync-button")) return;
-    const targetSelector =
-      'button[class*="rounded"][class*="bg-slate-100"]:has(svg)';
-    const targetButton = document.querySelector(targetSelector);
-    if (!targetButton) return;
-    const syncButton = document.createElement("button");
-    syncButton.id = "sync-button";
-    syncButton.className = targetButton.className + " relative";
-    syncButton.innerHTML = `
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-      </svg>
-      <div id="sync-status-dot" class="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-gray-400"></div>
-    `;
-    syncButton.addEventListener("click", openSyncModal);
-    targetButton.parentNode.insertBefore(syncButton, targetButton.nextSibling);
-    log("success", "Sync button inserted");
-  }
-  function updateSyncStatusDot(status = "success") {
-    const dot = document.querySelector("#sync-status-dot");
-    if (!dot) return;
-    const colors = {
-      success: "bg-green-500",
-      error: "bg-red-500",
-      warning: "bg-yellow-500",
-      syncing: "bg-blue-500",
-    };
-    dot.className = `absolute -top-1 -right-1 w-3 h-3 rounded-full ${
-      colors[status] || colors.success
-    }`;
-  }
-  function openSyncModal() {
-    if (document.querySelector(".cloud-sync-modal")) return;
-    log("start", "Opening sync modal");
-    const overlay = document.createElement("div");
-    overlay.style.cssText =
-      "position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 9999;";
-    const modal = document.createElement("div");
-    modal.className = "cloud-sync-modal";
-    modal.style.cssText =
-      "background: white; border-radius: 8px; padding: 24px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto; color: black;";
-    modal.innerHTML = `<h3 style="text-align: center; font-size: 20px; font-weight: bold; margin-bottom: 16px;">Cloud Sync Settings</h3><div style="background: #f9f9f9; padding: 12px; border-radius: 6px; margin-bottom: 16px;"><label style="display: block; font-weight: 500; margin-bottom: 8px;">Available Backups</label><select id="backup-files" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 8px;"><option value="">Loading...</option></select><div style="display: flex; gap: 8px;"><button id="download-backup-btn" style="padding: 6px 12px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer;" disabled>Download</button><button id="restore-backup-btn" style="padding: 6px 12px; background: #16a34a; color: white; border: none; border-radius: 4px; cursor: pointer;" disabled>Restore</button><button id="delete-backup-btn" style="padding: 6px 12px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;" disabled>Delete</button></div></div><div style="background: #f9f9f9; padding: 12px; border-radius: 6px; margin-bottom: 16px;"><div style="display: flex; gap: 16px; margin-bottom: 12px;"><label style="display: flex; align-items: center;"><input type="radio" name="sync-mode" value="sync" ${
-      config.syncMode === "sync" ? "checked" : ""
-    }><span style="margin-left: 8px;">Sync</span></label><label style="display: flex; align-items: center;"><input type="radio" name="sync-mode" value="backup" ${
-      config.syncMode === "backup" ? "checked" : ""
-    }><span style="margin-left: 8px;">Backup</span></label><label style="display: flex; align-items: center;"><input type="radio" name="sync-mode" value="disabled" ${
-      config.syncMode === "disabled" ? "checked" : ""
-    }><span style="margin-left: 8px;">Disabled</span></label></div><div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;"><input id="aws-bucket" placeholder="Bucket Name" value="${
-      config.bucketName
-    }" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px;"><input id="aws-region" placeholder="Region" value="${
-      config.region
-    }" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px;"></div><input id="aws-access-key" type="password" placeholder="Access Key" value="${
-      config.accessKey
-    }" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 8px;"><input id="aws-secret-key" type="password" placeholder="Secret Key" value="${
-      config.secretKey
-    }" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 8px;"><input id="aws-endpoint" placeholder="Endpoint (optional)" value="${
-      config.endpoint
-    }" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 8px;"><div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;"><input id="sync-interval" type="number" min="15" placeholder="Interval (sec)" value="${
-      config.syncInterval
-    }" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px;"><input id="encryption-key" type="password" placeholder="Encryption Key" value="${
-      config.encryptionKey
-    }" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px;"></div><input id="sync-exclusions" placeholder="Exclusions (comma separated)" value="${
-      localStorage.getItem("sync-exclusions") || ""
-    }" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;"></div><div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;"><label style="display: flex; align-items: center;"><input type="checkbox" id="console-logging-toggle" ${
-      isLoggingEnabled ? "checked" : ""
-    }><span style="margin-left: 8px;">Console Logging</span></label></div><div style="display: flex; justify-content: space-between; gap: 8px;"><button id="save-settings" style="padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer;">Save</button><div style="display: flex; gap: 8px;"><button id="sync-now" style="padding: 8px 12px; background: #16a34a; color: white; border: none; border-radius: 4px; cursor: pointer;">${
-      config.syncMode === "sync" ? "Sync Now" : "Backup Now"
-    }</button><button id="create-snapshot" style="padding: 8px 12px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer;">Snapshot</button><button id="close-modal" style="padding: 8px 12px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;">Close</button></div></div><div id="action-msg" style="text-align: center; margin-top: 16px;"></div>`;
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
-    const handlers = {
-      "#close-modal": () => overlay.remove(),
-      "#save-settings": async () => {
-        Object.keys(CONFIG_KEYS).forEach((key) => {
-          const element = modal.querySelector(`#${CONFIG_KEYS[key]}`);
-          if (element)
-            config[key] =
-              key === "syncInterval"
-                ? parseInt(element.value) || 15
-                : element.value;
-        });
-        const exclusions = modal.querySelector("#sync-exclusions").value;
-        localStorage.setItem("sync-exclusions", exclusions);
-        config.syncMode = modal.querySelector(
-          'input[name="sync-mode"]:checked'
-        ).value;
-        saveConfiguration();
-        await loadAwsSdk();
-        const s3Ready = initializeS3Client();
-        const msg = modal.querySelector("#action-msg");
-        if (s3Ready) {
-          startSyncInterval();
-          msg.textContent = "Settings saved successfully!";
-          setTimeout(() => (msg.textContent = ""), 3000);
-        } else {
-          msg.textContent = "Please check AWS configuration";
-        }
-      },
-      "#sync-now": () => {
-        queueOperation(
-          config.syncMode === "sync" ? "manual-sync" : "manual-backup",
-          config.syncMode === "sync" ? syncFromCloud : syncToCloud
-        );
-      },
-      "#create-snapshot": async () => {
-        const name = prompt("Enter snapshot name:");
-        if (name) {
-          await createSnapshot(name);
-          loadBackupListInModal();
-        }
-      },
-      "#console-logging-toggle": (e) => {
-        isLoggingEnabled = e.target.checked;
-        const url = new URL(window.location);
-        if (isLoggingEnabled) url.searchParams.set("log", "true");
-        else url.searchParams.delete("log");
-        window.history.replaceState({}, "", url);
-      },
-    };
-    Object.entries(handlers).forEach(([selector, handler]) => {
-      modal.querySelector(selector).addEventListener("click", handler);
-    });
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) overlay.remove();
-    });
-    setupBackupHandlers(modal);
-    loadBackupListInModal();
-  }
-  function closeModal() {
-    const modal = document.querySelector(".cloud-sync-modal");
-    if (modal) modal.parentElement.remove();
-  }
-  async function saveSettings() {
-    const modal = document.querySelector(".cloud-sync-modal");
-    Object.keys(CONFIG_KEYS).forEach((key) => {
-      const element = modal.querySelector(`#${CONFIG_KEYS[key]}`);
-      if (element)
-        config[key] =
+    load() {
+      Object.keys(CONFIG_KEYS).forEach((key) => {
+        const value = localStorage.getItem(CONFIG_KEYS[key]);
+        this.config[key] =
           key === "syncInterval"
-            ? parseInt(element.value) || 15
-            : element.value;
-    });
-    const exclusions = modal.querySelector("#sync-exclusions").value;
-    localStorage.setItem("sync-exclusions", exclusions);
-    config.syncMode = modal.querySelector(
-      'input[name="sync-mode"]:checked'
-    ).value;
-    saveConfiguration();
-    await loadAwsSdk();
-    const s3Ready = initializeS3Client();
-    const msg = modal.querySelector("#action-msg");
-    if (s3Ready) {
-      startSyncInterval();
-      msg.textContent = "Settings saved successfully!";
-      setTimeout(() => (msg.textContent = ""), 3000);
-    } else {
-      msg.textContent = "Please check AWS configuration";
+            ? parseInt(value) || 15
+            : value || (key === "syncMode" ? "disabled" : "");
+      });
     }
-  }
-  async function loadBackupListInModal() {
-    const select = document.querySelector("#backup-files");
-    if (!select || !s3Client) return;
-    select.innerHTML = '<option value="">Loading...</option>';
-    const backups = await loadBackupList();
-    select.innerHTML =
-      backups.length === 0
-        ? '<option value="">No backups found</option>'
-        : backups
-            .map(
-              (b) =>
-                `<option value="${b.key}">${b.name} (${formatFileSize(
-                  b.size
-                )})</option>`
-            )
-            .join("");
-    updateBackupButtons();
-  }
-  function setupBackupHandlers(modal) {
-    const select = modal.querySelector("#backup-files");
-    const handlers = {
-      "#download-backup-btn": async () => {
-        const data = await downloadFromS3(select.value);
-        if (data) {
-          const blob = new Blob([JSON.stringify(data, null, 2)], {
-            type: "application/json",
-          });
-          const a = Object.assign(document.createElement("a"), {
-            href: URL.createObjectURL(blob),
-            download: select.value.split("/").pop(),
-          });
-          a.click();
-          URL.revokeObjectURL(a.href);
-        }
-      },
-      "#restore-backup-btn": async () => {
-        if (
-          !select.value ||
-          !confirm("This will overwrite your current data. Continue?")
-        )
-          return;
-        const success = await restoreFromBackup(select.value);
-        if (success) {
-          alert("Backup restored successfully!");
-          location.reload();
-        }
-      },
-      "#delete-backup-btn": async () => {
-        if (!select.value || !confirm("Delete this backup permanently?"))
-          return;
-        if (await deleteFromS3(select.value)) loadBackupListInModal();
-      },
-    };
-    Object.entries(handlers).forEach(([selector, handler]) => {
-      modal.querySelector(selector).addEventListener("click", handler);
-    });
-    select.addEventListener("change", updateBackupButtons);
-  }
-  function updateBackupButtons() {
-    const select = document.querySelector("#backup-files");
-    const hasSelection = select?.value;
-    [
-      "#download-backup-btn",
-      "#restore-backup-btn",
-      "#delete-backup-btn",
-    ].forEach((selector) => {
-      const btn = document.querySelector(selector);
-      if (btn) btn.disabled = !hasSelection;
-    });
-  }
-  function formatFileSize(bytes) {
-    if (bytes === 0) return "0 B";
-    const k = 1024;
-    const sizes = ["B", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  }
-  function startSyncInterval() {
-    if (syncInterval) clearInterval(syncInterval);
-    if (config.syncMode === "disabled") return;
-    syncInterval = setInterval(() => {
-      queueOperation(
-        `auto-${config.syncMode}`,
-        config.syncMode === "sync" ? syncFromCloud : syncToCloud
+    save() {
+      Object.keys(CONFIG_KEYS).forEach((key) => {
+        localStorage.setItem(CONFIG_KEYS[key], this.config[key].toString());
+      });
+    }
+    get(key) {
+      return this.config[key];
+    }
+    set(key, value) {
+      this.config[key] = value;
+    }
+    getAll() {
+      return { ...this.config };
+    }
+    isAwsConfigured() {
+      return !!(
+        this.config.accessKey &&
+        this.config.secretKey &&
+        this.config.region &&
+        this.config.bucketName
       );
-    }, config.syncInterval * 1000);
-    log("info", `Sync interval started: ${config.syncInterval}s`);
-  }
-  function startPeriodicChangeCheck() {
-    setInterval(async () => {
-      if (config.syncMode !== "disabled") {
-        await detectLocalChanges();
-      }
-    }, 5000);
-  }
-  async function performDailyBackup() {
-    const lastBackupDate = localStorage.getItem("last-daily-backup-date");
-    const today = new Date().toLocaleDateString("en-GB");
-    if (lastBackupDate === today)
-      return log("info", "Daily backup already completed today");
-    log("start", "Performing daily backup");
-    const success = await createSnapshot("daily-auto");
-    if (success) {
-      localStorage.setItem("last-daily-backup-date", today);
-      log("success", `Daily backup completed for ${today}`);
-      await cleanupOldBackups();
+    }
+    getUserExclusions() {
+      const exclusions = localStorage.getItem("sync-exclusions");
+      return exclusions
+        ? exclusions
+            .split(",")
+            .map((item) => item.trim())
+            .filter((item) => item)
+        : [];
+    }
+    shouldExcludeSetting(key) {
+      const userExclusions = this.getUserExclusions();
+      return (
+        EXCLUDED_SETTINGS.includes(key) ||
+        userExclusions.includes(key) ||
+        key.startsWith("CHAT_") ||
+        key.startsWith("last-seen-") ||
+        !isNaN(key)
+      );
     }
   }
-  async function cleanupOldBackups() {
-    if (!s3Client) return;
-    log("start", "Cleaning up old backups");
-    const objects = await listS3Objects("snapshots/");
-    const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    let deletedCount = 0;
-    for (const obj of objects) {
-      if (new Date(obj.LastModified).getTime() < thirtyDaysAgo) {
-        if (await deleteFromS3(obj.Key)) {
-          deletedCount++;
-          log("info", `Deleted old backup: ${obj.Key}`);
+  const configManager = new ConfigManager();
+  class ResourceManager {
+    constructor() {
+      this.domCache = new Map();
+      this.dbPool = [];
+      this.dbInUse = new Set();
+      this.dbWaitingQueue = [];
+      this.maxDbConnections = 3;
+    }
+    getDOMElement(selector, refetch = false) {
+      if (!this.domCache.has(selector) || refetch) {
+        this.domCache.set(selector, document.querySelector(selector));
+      }
+      return this.domCache.get(selector);
+    }
+    clearDOMCache() {
+      this.domCache.clear();
+    }
+    async getDBConnection() {
+      if (this.dbPool.length > 0) {
+        const conn = this.dbPool.pop();
+        this.dbInUse.add(conn);
+        return conn;
+      }
+      if (this.dbInUse.size < this.maxDbConnections) {
+        const conn = await this._createDBConnection();
+        this.dbInUse.add(conn);
+        return conn;
+      }
+      return new Promise((resolve) => {
+        this.dbWaitingQueue.push(resolve);
+      });
+    }
+    releaseDBConnection(conn) {
+      this.dbInUse.delete(conn);
+      if (this.dbWaitingQueue.length > 0) {
+        const resolve = this.dbWaitingQueue.shift();
+        this.dbInUse.add(conn);
+        resolve(conn);
+      } else {
+        this.dbPool.push(conn);
+      }
+    }
+    async _createDBConnection() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open("typingmind", 1);
+        request.onsuccess = (event) => resolve(event.target.result);
+        request.onerror = () =>
+          reject(
+            new CloudSyncError("Failed to open IndexedDB", "DB_CONNECTION")
+          );
+      });
+    }
+  }
+  const resourceManager = new ResourceManager();
+  class CryptoService {
+    constructor() {
+      this.keyCache = new Map();
+    }
+    async deriveKey(password) {
+      if (this.keyCache.has(password)) {
+        return this.keyCache.get(password);
+      }
+      try {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(password);
+        const hash = await crypto.subtle.digest("SHA-256", data);
+        const key = await crypto.subtle.importKey(
+          "raw",
+          hash,
+          { name: "AES-GCM" },
+          false,
+          ["encrypt", "decrypt"]
+        );
+        this.keyCache.set(password, key);
+        return key;
+      } catch (error) {
+        throw new CloudSyncError(
+          "Failed to derive encryption key",
+          "CRYPTO",
+          error
+        );
+      }
+    }
+    async encrypt(data) {
+      const encryptionKey = configManager.get("encryptionKey");
+      if (!encryptionKey)
+        throw new CloudSyncError("No encryption key configured", "CRYPTO");
+      try {
+        const key = await this.deriveKey(encryptionKey);
+        const encoder = new TextEncoder();
+        const encodedData = encoder.encode(JSON.stringify(data));
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const encrypted = await crypto.subtle.encrypt(
+          { name: "AES-GCM", iv },
+          key,
+          encodedData
+        );
+        const result = new Uint8Array(iv.length + encrypted.byteLength);
+        result.set(iv, 0);
+        result.set(new Uint8Array(encrypted), iv.length);
+        return result;
+      } catch (error) {
+        throw new CloudSyncError("Encryption failed", "CRYPTO", error);
+      }
+    }
+    async decrypt(encryptedData) {
+      const encryptionKey = configManager.get("encryptionKey");
+      if (!encryptionKey)
+        throw new CloudSyncError("No encryption key configured", "CRYPTO");
+      try {
+        const key = await this.deriveKey(encryptionKey);
+        const iv = encryptedData.slice(0, 12);
+        const data = encryptedData.slice(12);
+        const decrypted = await crypto.subtle.decrypt(
+          { name: "AES-GCM", iv },
+          key,
+          data
+        );
+        return JSON.parse(new TextDecoder().decode(decrypted));
+      } catch (error) {
+        throw new CloudSyncError("Decryption failed", "CRYPTO", error);
+      }
+    }
+    async encryptBatch(dataItems) {
+      const results = await Promise.all(
+        dataItems.map((data) => this.encrypt(data))
+      );
+      return results;
+    }
+    async decryptBatch(encryptedItems) {
+      const results = await Promise.all(
+        encryptedItems.map((data) => this.decrypt(data))
+      );
+      return results;
+    }
+  }
+  const cryptoService = new CryptoService();
+  class S3Service {
+    constructor() {
+      this.client = null;
+      this.retryConfig = {
+        maxRetries: 3,
+        baseDelay: 1000,
+        maxDelay: 30000,
+        backoffMultiplier: 2,
+      };
+    }
+    async initialize() {
+      if (!configManager.isAwsConfigured()) {
+        throw new CloudSyncError("AWS configuration incomplete", "S3_CONFIG");
+      }
+      await this._loadSDK();
+      const config = configManager.getAll();
+      const s3Config = {
+        accessKeyId: config.accessKey,
+        secretAccessKey: config.secretKey,
+        region: config.region,
+      };
+      if (config.endpoint) {
+        s3Config.endpoint = config.endpoint;
+        s3Config.s3ForcePathStyle = true;
+      }
+      AWS.config.update(s3Config);
+      this.client = new AWS.S3();
+      logger.log("success", "S3 service initialized");
+    }
+    async _loadSDK() {
+      if (window.AWS) return;
+      return new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "https://sdk.amazonaws.com/js/aws-sdk-2.1691.0.min.js";
+        script.onload = resolve;
+        script.onerror = () =>
+          reject(new CloudSyncError("Failed to load AWS SDK", "SDK_LOAD"));
+        document.head.appendChild(script);
+      });
+    }
+    async upload(key, data, isMetadata = false) {
+      return this._executeWithRetry(`upload-${key}`, async () => {
+        const body = isMetadata
+          ? JSON.stringify(data)
+          : await cryptoService.encrypt(data);
+        const result = await this.client
+          .upload({
+            Bucket: configManager.get("bucketName"),
+            Key: key,
+            Body: body,
+            ContentType: isMetadata
+              ? "application/json"
+              : "application/octet-stream",
+          })
+          .promise();
+        logger.log("success", `Uploaded ${key}`);
+        return result;
+      });
+    }
+    async download(key, isMetadata = false) {
+      return this._executeWithRetry(`download-${key}`, async () => {
+        const result = await this.client
+          .getObject({
+            Bucket: configManager.get("bucketName"),
+            Key: key,
+          })
+          .promise();
+        const data = isMetadata
+          ? JSON.parse(result.Body.toString())
+          : await cryptoService.decrypt(new Uint8Array(result.Body));
+        return data;
+      });
+    }
+    async delete(key) {
+      return this._executeWithRetry(`delete-${key}`, async () => {
+        await this.client
+          .deleteObject({
+            Bucket: configManager.get("bucketName"),
+            Key: key,
+          })
+          .promise();
+        logger.log("success", `Deleted ${key}`);
+      });
+    }
+    async list(prefix = "") {
+      return this._executeWithRetry(`list-${prefix}`, async () => {
+        const result = await this.client
+          .listObjectsV2({
+            Bucket: configManager.get("bucketName"),
+            Prefix: prefix,
+          })
+          .promise();
+        return result.Contents || [];
+      });
+    }
+    async _executeWithRetry(operationKey, operation) {
+      let lastError;
+      for (let attempt = 0; attempt <= this.retryConfig.maxRetries; attempt++) {
+        try {
+          return await operation();
+        } catch (error) {
+          lastError = error;
+          if (attempt === this.retryConfig.maxRetries) break;
+          const delay = Math.min(
+            this.retryConfig.baseDelay *
+              Math.pow(this.retryConfig.backoffMultiplier, attempt),
+            this.retryConfig.maxDelay
+          );
+          logger.log(
+            "warning",
+            `Retry ${attempt + 1}/${
+              this.retryConfig.maxRetries
+            } for ${operationKey} in ${delay}ms`
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+      throw new CloudSyncError(
+        `Operation failed after ${this.retryConfig.maxRetries} retries: ${operationKey}`,
+        "S3_OPERATION",
+        lastError
+      );
+    }
+  }
+  const s3Service = new S3Service();
+  class DataService {
+    async generateHash(content) {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(
+        typeof content === "string" ? content : JSON.stringify(content)
+      );
+      const hash = await crypto.subtle.digest("SHA-256", data);
+      return Array.from(new Uint8Array(hash))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .slice(0, 4)
+        .join("");
+    }
+    async executeDBOperation(operation, mode = "readonly") {
+      const db = await resourceManager.getDBConnection();
+      try {
+        const transaction = db.transaction(["chats"], mode);
+        const store = transaction.objectStore("chats");
+        return await operation(store);
+      } finally {
+        resourceManager.releaseDBConnection(db);
+      }
+    }
+    async getAllChats() {
+      return this.executeDBOperation((store) => {
+        return new Promise((resolve) => {
+          const request = store.getAll();
+          request.onsuccess = () => resolve(request.result || []);
+          request.onerror = () => resolve([]);
+        });
+      });
+    }
+    async getChat(chatId) {
+      return this.executeDBOperation((store) => {
+        return new Promise((resolve) => {
+          const request = store.get(chatId);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => resolve(null);
+        });
+      });
+    }
+    async saveChat(chat) {
+      return this.executeDBOperation((store) => {
+        return new Promise((resolve) => {
+          const request = store.put(chat);
+          request.onsuccess = () => resolve(true);
+          request.onerror = () => resolve(false);
+        });
+      }, "readwrite");
+    }
+    async deleteChat(chatId) {
+      return this.executeDBOperation((store) => {
+        return new Promise((resolve) => {
+          const request = store.delete(chatId);
+          request.onsuccess = () => resolve(true);
+          request.onerror = () => resolve(false);
+        });
+      }, "readwrite");
+    }
+    async getFilteredSettings() {
+      return Array.from({ length: localStorage.length }, (_, i) => {
+        const key = localStorage.key(i);
+        return configManager.shouldExcludeSetting(key)
+          ? null
+          : [key, localStorage.getItem(key)];
+      }).filter(Boolean);
+    }
+  }
+  const dataService = new DataService();
+  class MetadataManager {
+    constructor() {
+      this.localMetadata = {
+        lastSync: 0,
+        lastModified: 0,
+        items: {},
+        deleted: [],
+      };
+      this.load();
+    }
+    async load() {
+      const stored = localStorage.getItem("cloud-metadata-v4");
+      if (stored) {
+        this.localMetadata = JSON.parse(stored);
+      }
+      logger.log("info", "Local metadata loaded", this.localMetadata);
+    }
+    async save() {
+      this.localMetadata.lastModified = Date.now();
+      localStorage.setItem(
+        "cloud-metadata-v4",
+        JSON.stringify(this.localMetadata)
+      );
+      logger.log("info", "Local metadata saved");
+    }
+    get() {
+      return this.localMetadata;
+    }
+    set(metadata) {
+      this.localMetadata = metadata;
+    }
+    updateItem(key, item) {
+      this.localMetadata.items[key] = item;
+    }
+    deleteItem(key) {
+      delete this.localMetadata.items[key];
+    }
+    async detectChanges() {
+      const [chats, settingsEntries] = await Promise.all([
+        dataService.getAllChats(),
+        dataService.getFilteredSettings(),
+      ]);
+      const changesBatch = {
+        chats: new Map(),
+        settings: new Map(),
+        hasChanges: false,
+      };
+      const BATCH_SIZE = 50;
+      for (let i = 0; i < chats.length; i += BATCH_SIZE) {
+        const chatBatch = chats.slice(i, i + BATCH_SIZE);
+        await Promise.all(
+          chatBatch.map(async (chat) => {
+            const hash = await dataService.generateHash(chat);
+            const existing = this.localMetadata.items[chat.id];
+            if (!existing || existing.hash !== hash) {
+              changesBatch.chats.set(chat.id, {
+                hash,
+                modified: Date.now(),
+                synced: existing?.synced || 0,
+                type: "idb",
+              });
+              changesBatch.hasChanges = true;
+              logger.log("info", `Chat modified: ${chat.id}`);
+            }
+          })
+        );
+      }
+      for (let i = 0; i < settingsEntries.length; i += BATCH_SIZE) {
+        const settingsBatch = settingsEntries.slice(i, i + BATCH_SIZE);
+        await Promise.all(
+          settingsBatch.map(async ([key, value]) => {
+            const hash = await dataService.generateHash(value);
+            const existing = this.localMetadata.items[key];
+            if (!existing || existing.hash !== hash) {
+              changesBatch.settings.set(key, {
+                hash,
+                modified: Date.now(),
+                synced: existing?.synced || 0,
+                type: "ls",
+              });
+              changesBatch.hasChanges = true;
+            }
+          })
+        );
+      }
+      if (changesBatch.hasChanges) {
+        changesBatch.chats.forEach((item, key) => {
+          this.localMetadata.items[key] = item;
+        });
+        changesBatch.settings.forEach((item, key) => {
+          this.localMetadata.items[key] = item;
+        });
+        await this.save();
+      }
+      return changesBatch;
+    }
+  }
+  const metadataManager = new MetadataManager();
+  class OperationQueue {
+    constructor() {
+      this.queue = [];
+      this.processing = false;
+      this.completed = new Set();
+      this.priorities = { critical: 0, high: 1, normal: 2, low: 3 };
+      this.timeouts = new Map();
+    }
+    add(
+      name,
+      operation,
+      dependencies = [],
+      priority = "normal",
+      timeout = 30000
+    ) {
+      if (
+        this.queue.some((op) => op.name === name) ||
+        this.completed.has(name)
+      ) {
+        logger.log("skip", `Duplicate operation: ${name}`);
+        return;
+      }
+      this.queue.push({
+        name,
+        operation,
+        dependencies: dependencies.filter((dep) => !this.completed.has(dep)),
+        priority: this.priorities[priority],
+        timeout,
+        retryCount: 0,
+        maxRetries: 3,
+        addedAt: Date.now(),
+      });
+      this.queue.sort((a, b) => a.priority - b.priority);
+      this.process();
+    }
+    async process() {
+      if (this.processing) return;
+      this.processing = true;
+      while (this.queue.length > 0) {
+        const readyOp = this.queue.find((op) =>
+          op.dependencies.every((dep) => this.completed.has(dep))
+        );
+        if (!readyOp) {
+          this._handleDeadlock();
+          break;
+        }
+        await this._executeOperation(readyOp);
+      }
+      this.processing = false;
+    }
+    async _executeOperation(op) {
+      const index = this.queue.indexOf(op);
+      this.queue.splice(index, 1);
+      try {
+        const timeoutPromise = new Promise((_, reject) => {
+          const timeoutId = setTimeout(
+            () =>
+              reject(
+                new CloudSyncError(`Operation timeout: ${op.name}`, "TIMEOUT")
+              ),
+            op.timeout
+          );
+          this.timeouts.set(op.name, timeoutId);
+        });
+        logger.log("start", `Executing operation: ${op.name}`);
+        await Promise.race([op.operation(), timeoutPromise]);
+        const timeoutId = this.timeouts.get(op.name);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          this.timeouts.delete(op.name);
+        }
+        this.completed.add(op.name);
+        logger.log("success", `Completed: ${op.name}`);
+      } catch (error) {
+        const timeoutId = this.timeouts.get(op.name);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          this.timeouts.delete(op.name);
+        }
+        if (op.retryCount < op.maxRetries) {
+          op.retryCount++;
+          const delay = Math.min(1000 * Math.pow(2, op.retryCount), 30000);
+          logger.log(
+            "warning",
+            `Retrying ${op.name} (${op.retryCount}/${op.maxRetries}) in ${delay}ms`
+          );
+          setTimeout(() => {
+            this.queue.unshift(op);
+            this.process();
+          }, delay);
+        } else {
+          logger.log(
+            "error",
+            `Failed: ${op.name}`,
+            error instanceof CloudSyncError ? error.message : error
+          );
+          this._handleFailedOperation(op);
         }
       }
     }
-    if (deletedCount > 0)
-      log("success", `Cleaned up ${deletedCount} old backups`);
-  }
-  async function initialize() {
-    log("start", "Initializing Cloud Sync v4");
-    loadConfiguration();
-    await loadLocalMetadata();
-    await loadAwsSdk();
-    if (initializeS3Client()) {
-      if (config.syncMode === "sync") {
-        queueOperation("initial-sync", syncFromCloud);
-      }
-      await performDailyBackup();
+    _handleDeadlock() {
+      const unmetDeps = new Set();
+      this.queue.forEach((op) => {
+        op.dependencies.forEach((dep) => {
+          if (!this.completed.has(dep)) unmetDeps.add(dep);
+        });
+      });
+      logger.log("error", "Deadlock detected", Array.from(unmetDeps));
+      this.queue = this.queue.filter(
+        (op) => !op.dependencies.some((dep) => unmetDeps.has(dep))
+      );
     }
-    setTimeout(insertSyncButton, 1000);
-    startSyncInterval();
-    startPeriodicChangeCheck();
-    log("success", "Cloud Sync v4 initialized");
+    _handleFailedOperation(failedOp) {
+      this.queue = this.queue.filter(
+        (op) => !op.dependencies.includes(failedOp.name)
+      );
+    }
+  }
+  const operationQueue = new OperationQueue();
+  class IntervalCoordinator {
+    constructor() {
+      this.intervals = new Map();
+      this.isActive = false;
+      this.lastSyncCheck = 0;
+      this.lastChangeCheck = 0;
+      this.lastBackupCheck = 0;
+    }
+    start() {
+      if (this.isActive) return;
+      this.isActive = true;
+      this.intervals.set(
+        "master",
+        setInterval(() => {
+          this._coordinateActivities();
+        }, 1000)
+      );
+      logger.log("info", "Interval coordinator started");
+    }
+    _coordinateActivities() {
+      const now = Date.now();
+      if (configManager.get("syncMode") === "disabled") return;
+      if (this._shouldSync(now)) {
+        this.lastSyncCheck = now;
+        operationQueue.add(
+          "interval-sync",
+          configManager.get("syncMode") === "sync"
+            ? () => syncService.syncFromCloud()
+            : () => syncService.syncToCloud(),
+          [],
+          "normal"
+        );
+      }
+      if (this._shouldCheckChanges(now)) {
+        this.lastChangeCheck = now;
+        this._scheduleChangeDetection();
+      }
+      if (this._shouldCheckDailyBackup(now)) {
+        this.lastBackupCheck = now;
+        operationQueue.add(
+          "daily-backup",
+          () => backupService.performDailyBackup(),
+          [],
+          "low"
+        );
+      }
+    }
+    _shouldSync(now) {
+      const interval = configManager.get("syncInterval") * 1000;
+      return !this.lastSyncCheck || now - this.lastSyncCheck >= interval;
+    }
+    _shouldCheckChanges(now) {
+      const interval = 5000;
+      const offset = 2500;
+      return (
+        !this.lastChangeCheck ||
+        (now - this.lastChangeCheck >= interval &&
+          !this._isNearSyncTime(now, offset))
+      );
+    }
+    _shouldCheckDailyBackup(now) {
+      const interval = 24 * 60 * 60 * 1000;
+      return !this.lastBackupCheck || now - this.lastBackupCheck >= interval;
+    }
+    _isNearSyncTime(now, offsetMs) {
+      if (!this.lastSyncCheck) return false;
+      const timeSinceSync = now - this.lastSyncCheck;
+      const syncInterval = configManager.get("syncInterval") * 1000;
+      return syncInterval - timeSinceSync <= offsetMs;
+    }
+    _scheduleChangeDetection() {
+      if (window.requestIdleCallback) {
+        requestIdleCallback(() => metadataManager.detectChanges(), {
+          timeout: 1000,
+        });
+      } else {
+        setTimeout(() => metadataManager.detectChanges(), 0);
+      }
+    }
+    stop() {
+      this.intervals.forEach((interval) => clearInterval(interval));
+      this.intervals.clear();
+      this.isActive = false;
+      logger.log("info", "Interval coordinator stopped");
+    }
+  }
+  const intervalCoordinator = new IntervalCoordinator();
+  class SyncService {
+    async syncToCloud() {
+      try {
+        logger.log("start", "Starting sync to cloud");
+        const changesBatch = await metadataManager.detectChanges();
+        let cloudMetadata;
+        try {
+          cloudMetadata = await s3Service.download("metadata.json", true);
+        } catch (error) {
+          if (error.type === "S3_OPERATION") {
+            cloudMetadata = null;
+          } else {
+            throw error;
+          }
+        }
+        if (!cloudMetadata) {
+          cloudMetadata = {
+            lastSync: 0,
+            lastModified: 0,
+            items: {},
+            deleted: [],
+          };
+        }
+        const itemsToSync = [];
+        changesBatch.chats.forEach((item, key) => {
+          if (item.modified > (item.synced || 0)) {
+            itemsToSync.push([key, item]);
+          }
+        });
+        changesBatch.settings.forEach((item, key) => {
+          if (item.modified > (item.synced || 0)) {
+            itemsToSync.push([key, item]);
+          }
+        });
+        const uploadResults = await Promise.allSettled(
+          itemsToSync.map(async ([key, item]) => {
+            if (item.type === "idb") {
+              const chat = await dataService.getChat(key);
+              if (chat) {
+                await s3Service.upload(`chats/${key}.json`, chat);
+                const localMetadata = metadataManager.get();
+                localMetadata.items[key].synced = Date.now();
+                cloudMetadata.items[key] = localMetadata.items[key];
+              }
+            } else if (item.type === "ls") {
+              const value = localStorage.getItem(key);
+              if (value !== null) {
+                await s3Service.upload(`settings/${key}.json`, { key, value });
+                const localMetadata = metadataManager.get();
+                localMetadata.items[key].synced = Date.now();
+                cloudMetadata.items[key] = localMetadata.items[key];
+              }
+            }
+          })
+        );
+        const failedUploads = uploadResults.filter(
+          (result) => result.status === "rejected"
+        );
+        if (failedUploads.length > 0) {
+          logger.log("warning", `${failedUploads.length} uploads failed`);
+        }
+        cloudMetadata.lastSync = Date.now();
+        cloudMetadata.lastModified = metadataManager.get().lastModified;
+        await s3Service.upload("metadata.json", cloudMetadata, true);
+        const localMetadata = metadataManager.get();
+        localMetadata.lastSync = cloudMetadata.lastSync;
+        await metadataManager.save();
+        uiService.updateSyncStatus("success");
+        logger.log("success", "Sync to cloud completed");
+        return true;
+      } catch (error) {
+        logger.log(
+          "error",
+          "Failed to sync to cloud",
+          error instanceof CloudSyncError ? error.message : error
+        );
+        uiService.updateSyncStatus("error");
+        throw error;
+      }
+    }
+    async syncFromCloud() {
+      try {
+        logger.log("start", "Starting sync from cloud");
+        let cloudMetadata;
+        try {
+          cloudMetadata = await s3Service.download("metadata.json", true);
+        } catch (error) {
+          if (error.type === "S3_OPERATION") {
+            logger.log("info", "No cloud metadata found");
+            return await this.syncToCloud();
+          }
+          throw error;
+        }
+        await metadataManager.detectChanges();
+        const downloadResults = await Promise.allSettled(
+          Object.entries(cloudMetadata.items).map(async ([key, cloudItem]) => {
+            const localMetadata = metadataManager.get();
+            const localItem = localMetadata.items[key];
+            const shouldDownload =
+              !localItem ||
+              (cloudItem.hash !== localItem.hash &&
+                cloudItem.modified > localItem.modified);
+            if (!shouldDownload) return;
+            if (cloudItem.type === "idb") {
+              const chatData = await s3Service.download(`chats/${key}.json`);
+              if (chatData) {
+                await dataService.saveChat(chatData);
+                localMetadata.items[key] = { ...cloudItem };
+                logger.log("info", `Downloaded chat: ${key}`);
+              }
+            } else if (cloudItem.type === "ls") {
+              const settingData = await s3Service.download(
+                `settings/${key}.json`
+              );
+              if (settingData?.value !== undefined) {
+                localStorage.setItem(key, settingData.value);
+                localMetadata.items[key] = { ...cloudItem };
+                logger.log("info", `Downloaded setting: ${key}`);
+              }
+            }
+          })
+        );
+        const failedDownloads = downloadResults.filter(
+          (result) => result.status === "rejected"
+        );
+        if (failedDownloads.length > 0) {
+          logger.log("warning", `${failedDownloads.length} downloads failed`);
+        }
+        for (const deletedKey of cloudMetadata.deleted || []) {
+          const localMetadata = metadataManager.get();
+          if (localMetadata.items[deletedKey]) {
+            const item = localMetadata.items[deletedKey];
+            if (item.type === "idb") {
+              await dataService.deleteChat(deletedKey);
+            } else if (item.type === "ls") {
+              localStorage.removeItem(deletedKey);
+            }
+            metadataManager.deleteItem(deletedKey);
+            logger.log("info", `Deleted item: ${deletedKey}`);
+          }
+        }
+        const localMetadata = metadataManager.get();
+        localMetadata.lastSync = Date.now();
+        await metadataManager.save();
+        uiService.updateSyncStatus("success");
+        logger.log("success", "Sync from cloud completed");
+        return true;
+      } catch (error) {
+        logger.log(
+          "error",
+          "Failed to sync from cloud",
+          error instanceof CloudSyncError ? error.message : error
+        );
+        uiService.updateSyncStatus("error");
+        throw error;
+      }
+    }
+    queueBidirectionalSync() {
+      operationQueue.add(
+        "sync-from-cloud",
+        () => this.syncFromCloud(),
+        [],
+        "high"
+      );
+      operationQueue.add(
+        "sync-to-cloud",
+        () => this.syncToCloud(),
+        ["sync-from-cloud"],
+        "high"
+      );
+    }
+  }
+  const syncService = new SyncService();
+  class BackupService {
+    async createSnapshot(name) {
+      try {
+        logger.log("start", `Creating snapshot: ${name}`);
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const filename = `snapshot-${timestamp}-${name.replace(
+          /[^a-zA-Z0-9]/g,
+          "-"
+        )}.json`;
+        const [chats, settings] = await Promise.all([
+          dataService.getAllChats(),
+          this._getSettingsForBackup(),
+        ]);
+        const snapshot = { chats, settings, created: Date.now(), name };
+        await s3Service.upload(`snapshots/${filename}`, snapshot);
+        logger.log("success", `Snapshot created: ${filename}`);
+        return true;
+      } catch (error) {
+        logger.log(
+          "error",
+          "Failed to create snapshot",
+          error instanceof CloudSyncError ? error.message : error
+        );
+        throw error;
+      }
+    }
+    async _getSettingsForBackup() {
+      const settingsEntries = await dataService.getFilteredSettings();
+      return settingsEntries.reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {});
+    }
+    async loadBackupList() {
+      try {
+        const objects = await s3Service.list("snapshots/");
+        return objects.map((obj) => ({
+          key: obj.Key,
+          name: obj.Key.replace("snapshots/", "").replace(".json", ""),
+          size: obj.Size,
+          modified: obj.LastModified,
+        }));
+      } catch (error) {
+        logger.log(
+          "error",
+          "Failed to load backup list",
+          error instanceof CloudSyncError ? error.message : error
+        );
+        return [];
+      }
+    }
+    async restoreFromBackup(key) {
+      try {
+        logger.log("start", `Restoring from backup: ${key}`);
+        const backup = await s3Service.download(key);
+        const promises = [];
+        if (backup.chats) {
+          promises.push(
+            ...backup.chats.map((chat) => dataService.saveChat(chat))
+          );
+        }
+        if (backup.settings) {
+          Object.entries(backup.settings).forEach(([k, v]) =>
+            localStorage.setItem(k, v)
+          );
+        }
+        await Promise.all(promises);
+        await metadataManager.detectChanges();
+        logger.log("success", "Backup restored successfully");
+        return true;
+      } catch (error) {
+        logger.log(
+          "error",
+          "Failed to restore backup",
+          error instanceof CloudSyncError ? error.message : error
+        );
+        throw error;
+      }
+    }
+    async performDailyBackup() {
+      const lastBackupDate = localStorage.getItem("last-daily-backup-date");
+      const today = new Date().toLocaleDateString("en-GB");
+      if (lastBackupDate === today) {
+        logger.log("info", "Daily backup already completed today");
+        return;
+      }
+      try {
+        logger.log("start", "Performing daily backup");
+        await this.createSnapshot("daily-auto");
+        localStorage.setItem("last-daily-backup-date", today);
+        logger.log("success", `Daily backup completed for ${today}`);
+        await this.cleanupOldBackups();
+      } catch (error) {
+        logger.log(
+          "error",
+          "Daily backup failed",
+          error instanceof CloudSyncError ? error.message : error
+        );
+        throw error;
+      }
+    }
+    async cleanupOldBackups() {
+      try {
+        logger.log("start", "Cleaning up old backups");
+        const objects = await s3Service.list("snapshots/");
+        const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+        let deletedCount = 0;
+        for (const obj of objects) {
+          if (new Date(obj.LastModified).getTime() < thirtyDaysAgo) {
+            try {
+              await s3Service.delete(obj.Key);
+              deletedCount++;
+              logger.log("info", `Deleted old backup: ${obj.Key}`);
+            } catch (error) {
+              logger.log("warning", `Failed to delete backup: ${obj.Key}`);
+            }
+          }
+        }
+        if (deletedCount > 0) {
+          logger.log("success", `Cleaned up ${deletedCount} old backups`);
+        }
+      } catch (error) {
+        logger.log(
+          "error",
+          "Failed to cleanup old backups",
+          error instanceof CloudSyncError ? error.message : error
+        );
+      }
+    }
+  }
+  const backupService = new BackupService();
+  const uiService = {
+    updateSyncStatus(status = "success") {
+      const dot = document.getElementById("sync-status-dot");
+      if (!dot) return;
+      const colors = {
+        success: "#22c55e",
+        error: "#ef4444",
+        warning: "#eab308",
+        syncing: "#3b82f6",
+      };
+      dot.style.backgroundColor = colors[status] || "#6b7280";
+    },
+  };
+  async function initialize() {
+    logger.log("start", "Initializing Cloud Sync v4");
+    await metadataManager.load();
+    try {
+      if (configManager.isAwsConfigured()) {
+        await s3Service.initialize();
+        if (configManager.get("syncMode") === "sync") {
+          operationQueue.add(
+            "initial-sync",
+            () => syncService.syncFromCloud(),
+            [],
+            "high"
+          );
+        }
+        operationQueue.add(
+          "daily-backup-check",
+          () => backupService.performDailyBackup(),
+          [],
+          "low"
+        );
+      }
+    } catch (error) {
+      logger.log(
+        "warning",
+        "S3 initialization failed",
+        error instanceof CloudSyncError ? error.message : error
+      );
+    }
+    intervalCoordinator.start();
+    logger.log("success", "Cloud Sync v4 initialized");
   }
   initialize();
 }
