@@ -3504,6 +3504,7 @@ if (window.typingMindCloudSync) {
       operationState.isPendingSync = false;
       logToConsole("start", "Starting sync from cloud...");
       const syncTimestamp = Date.now();
+      await loadLocalMetadata();
       const cloudMetadata = await downloadCloudMetadata();
       if (!cloudMetadata || !cloudMetadata.chats) {
         logToConsole("info", "No cloud metadata found or invalid format");
