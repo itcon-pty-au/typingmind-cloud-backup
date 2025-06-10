@@ -2794,7 +2794,6 @@ if (window.typingMindCloudSync) {
                 })),
               });
             }
-            operationState.operationQueue.splice(nextOpIndex, 1);
             operationState.currentlyExecutingOperation = null;
             await new Promise((resolve) => setTimeout(resolve, 100));
           } catch (error) {
