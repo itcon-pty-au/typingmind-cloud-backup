@@ -2826,6 +2826,14 @@ if (window.typingMindCloudSync) {
             processingQueue: operationState.isProcessingQueue,
             completedOps: Array.from(operationState.completedOperations),
           });
+
+          // Remove the operation from queue BEFORE execution
+          operationState.operationQueue.splice(nextOpIndex, 1);
+          console.log(
+            "🔍 Removed operation from queue before execution:",
+            name
+          );
+
           try {
             const timeoutPromise = new Promise((_, reject) => {
               const timeoutId = setTimeout(() => {
