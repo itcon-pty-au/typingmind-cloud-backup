@@ -3641,7 +3641,7 @@ if (window.typingMindCloudSync) {
               if (!currentLocalMeta.chats) currentLocalMeta.chats = {};
               if (!currentLocalMeta.chats[chatId])
                 currentLocalMeta.chats[chatId] = {};
-              currentLocalMeta.chats[chatId].hash = newHash;
+              currentLocalMeta.chats[chatId].hash = cloudChatMeta.hash;
               currentLocalMeta.chats[chatId].syncedAt = syncTimestamp;
               currentLocalMeta.chats[chatId].lastModified = syncTimestamp;
               currentLocalMeta.chats[chatId].deleted = false;
