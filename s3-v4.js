@@ -13,6 +13,7 @@ if (window.typingMindCloudSync) {
     "encryption-key",
     "last-cloud-sync",
     "sync-exclusions",
+    "cloud-metadata-v4",
   ];
   const CONFIG_KEYS = {
     syncInterval: "sync-interval",
@@ -537,6 +538,10 @@ if (window.typingMindCloudSync) {
         dataService.getAllChats(),
         dataService.getFilteredSettings(),
       ]);
+      logger.log(
+        "info",
+        `Found ${chats.length} chats and ${settingsEntries.length} settings for change detection`
+      );
       const changesBatch = {
         chats: new Map(),
         settings: new Map(),
