@@ -11,12 +11,10 @@ if (window.typingMindCloudSync) {
     "aws-region",
     "aws-endpoint",
     "encryption-key",
-    "sync-mode",
     "last-cloud-sync",
     "sync-exclusions",
   ];
   const CONFIG_KEYS = {
-    syncMode: "sync-mode",
     syncInterval: "sync-interval",
     bucketName: "aws-bucket",
     region: "aws-region",
@@ -66,7 +64,6 @@ if (window.typingMindCloudSync) {
   class ConfigManager {
     constructor() {
       this.config = {
-        syncMode: "disabled",
         syncInterval: 15,
         bucketName: "",
         region: "",
@@ -81,9 +78,7 @@ if (window.typingMindCloudSync) {
       Object.keys(CONFIG_KEYS).forEach((key) => {
         const value = localStorage.getItem(CONFIG_KEYS[key]);
         this.config[key] =
-          key === "syncInterval"
-            ? parseInt(value) || 15
-            : value || (key === "syncMode" ? "disabled" : "");
+          key === "syncInterval" ? parseInt(value) || 15 : value || "";
       });
     }
     save() {
@@ -173,7 +168,7 @@ if (window.typingMindCloudSync) {
     }
     async _createDBConnection() {
       return new Promise((resolve, reject) => {
-        const request = indexedDB.open("typingmind", 1);
+        const request = indexedDB.open("keyval-store");
         request.onsuccess = (event) => resolve(event.target.result);
         request.onerror = () =>
           reject(
@@ -406,8 +401,8 @@ if (window.typingMindCloudSync) {
     async executeDBOperation(operation, mode = "readonly") {
       const db = await resourceManager.getDBConnection();
       try {
-        const transaction = db.transaction(["chats"], mode);
-        const store = transaction.objectStore("chats");
+        const transaction = db.transaction(["keyval"], mode);
+        const store = transaction.objectStore("keyval");
         return await operation(store);
       } finally {
         resourceManager.releaseDBConnection(db);
@@ -416,8 +411,26 @@ if (window.typingMindCloudSync) {
     async getAllChats() {
       return this.executeDBOperation((store) => {
         return new Promise((resolve) => {
-          const request = store.getAll();
-          request.onsuccess = () => resolve(request.result || []);
+          const chats = [];
+          const request = store.openCursor();
+          request.onsuccess = (event) => {
+            const cursor = event.target.result;
+            if (cursor) {
+              const key = cursor.key;
+              const value = cursor.value;
+              if (
+                typeof key === "string" &&
+                key.startsWith("chat_") &&
+                value &&
+                typeof value === "object"
+              ) {
+                chats.push({ id: key.replace("chat_", ""), ...value });
+              }
+              cursor.continue();
+            } else {
+              resolve(chats);
+            }
+          };
           request.onerror = () => resolve([]);
         });
       });
@@ -425,8 +438,11 @@ if (window.typingMindCloudSync) {
     async getChat(chatId) {
       return this.executeDBOperation((store) => {
         return new Promise((resolve) => {
-          const request = store.get(chatId);
-          request.onsuccess = () => resolve(request.result);
+          const request = store.get(`chat_${chatId}`);
+          request.onsuccess = () => {
+            const result = request.result;
+            resolve(result ? { id: chatId, ...result } : null);
+          };
           request.onerror = () => resolve(null);
         });
       });
@@ -434,7 +450,10 @@ if (window.typingMindCloudSync) {
     async saveChat(chat) {
       return this.executeDBOperation((store) => {
         return new Promise((resolve) => {
-          const request = store.put(chat);
+          const chatId = chat.id;
+          const chatData = { ...chat };
+          delete chatData.id;
+          const request = store.put(chatData, `chat_${chatId}`);
           request.onsuccess = () => resolve(true);
           request.onerror = () => resolve(false);
         });
@@ -443,7 +462,7 @@ if (window.typingMindCloudSync) {
     async deleteChat(chatId) {
       return this.executeDBOperation((store) => {
         return new Promise((resolve) => {
-          const request = store.delete(chatId);
+          const request = store.delete(`chat_${chatId}`);
           request.onsuccess = () => resolve(true);
           request.onerror = () => resolve(false);
         });
@@ -697,14 +716,12 @@ if (window.typingMindCloudSync) {
     }
     _coordinateActivities() {
       const now = Date.now();
-      if (configManager.get("syncMode") === "disabled") return;
+      if (!configManager.isAwsConfigured()) return;
       if (this._shouldSync(now)) {
         this.lastSyncCheck = now;
         operationQueue.add(
           "interval-sync",
-          configManager.get("syncMode") === "sync"
-            ? () => syncService.syncFromCloud()
-            : () => syncService.syncToCloud(),
+          () => syncService.syncFromCloud(),
           [],
           "normal"
         );
@@ -1075,22 +1092,255 @@ if (window.typingMindCloudSync) {
         syncing: "#3b82f6",
       };
       dot.style.backgroundColor = colors[status] || "#6b7280";
+      dot.style.display = "block";
     },
   };
+  function insertSyncButton() {
+    const existingButton = document.querySelector('[onclick*="openSyncModal"]');
+    if (existingButton) return;
+    let targetElement = document.querySelector('nav a[href="/logout"]');
+    if (!targetElement) {
+      targetElement = document.querySelector('[aria-label="Log out"]');
+    }
+    if (!targetElement) {
+      targetElement = document.querySelector(".space-y-4 button");
+    }
+    if (!targetElement) {
+      logger.log("warning", "Could not find target element for sync button");
+      return;
+    }
+    const syncButton = document.createElement("button");
+    syncButton.className =
+      targetElement.className ||
+      "flex items-center px-4 py-2 text-sm font-medium text-gray-700 rounded-md hover:bg-gray-100";
+    syncButton.innerHTML = `
+      <svg class="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path>
+      </svg>
+      Sync
+      <div id="sync-status-dot" style="display:none;"></div>
+    `;
+    syncButton.onclick = () => openSyncModal();
+    const parentContainer = targetElement.parentElement;
+    parentContainer.insertBefore(syncButton, targetElement);
+    logger.log("success", "Sync button inserted into menu");
+  }
+  function openSyncModal() {
+    const modalHTML = `
+      <div class="modal-overlay" id="sync-modal-overlay">
+        <div class="cloud-sync-modal">
+          <div class="modal-header">
+            <h2 class="modal-title">Cloud Sync Configuration</h2>
+          </div>
+          <div class="modal-section">
+            <div class="modal-section-title">AWS S3 Configuration</div>
+            <div class="form-group">
+              <label>Bucket Name</label>
+              <input type="text" id="bucket-name" value="${
+                configManager.get("bucketName") || ""
+              }" placeholder="your-bucket-name">
+            </div>
+            <div class="form-group">
+              <label>Region</label>
+              <input type="text" id="region" value="${
+                configManager.get("region") || ""
+              }" placeholder="us-east-1">
+            </div>
+            <div class="form-group">
+              <label>Access Key ID</label>
+              <input type="text" id="access-key" value="${
+                configManager.get("accessKey") || ""
+              }" placeholder="AKIA...">
+            </div>
+            <div class="form-group">
+              <label>Secret Access Key</label>
+              <input type="password" id="secret-key" value="${
+                configManager.get("secretKey") || ""
+              }" placeholder="...">
+            </div>
+            <div class="form-group">
+              <label>Endpoint (Optional)</label>
+              <input type="text" id="endpoint" value="${
+                configManager.get("endpoint") || ""
+              }" placeholder="s3.amazonaws.com">
+            </div>
+            <div class="form-group">
+              <label>Encryption Key</label>
+              <input type="password" id="encryption-key" value="${
+                configManager.get("encryptionKey") || ""
+              }" placeholder="Your encryption password">
+            </div>
+            <div class="form-group">
+              <label>Sync Interval (seconds)</label>
+              <input type="number" id="sync-interval" value="${
+                configManager.get("syncInterval") || 15
+              }" min="5" max="3600">
+            </div>
+          </div>
+          <div class="button-group">
+            <button class="button button-secondary" onclick="closeModal()">Cancel</button>
+            <button class="button button-primary" onclick="saveSettings()">Save & Start Sync</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.insertAdjacentHTML("beforeend", modalHTML);
+  }
+  function closeModal() {
+    const modal = document.getElementById("sync-modal-overlay");
+    if (modal) modal.remove();
+  }
+  async function saveSettings() {
+    const config = {
+      bucketName: document.getElementById("bucket-name").value,
+      region: document.getElementById("region").value,
+      accessKey: document.getElementById("access-key").value,
+      secretKey: document.getElementById("secret-key").value,
+      endpoint: document.getElementById("endpoint").value,
+      encryptionKey: document.getElementById("encryption-key").value,
+      syncInterval:
+        parseInt(document.getElementById("sync-interval").value) || 15,
+    };
+    Object.keys(config).forEach((key) => {
+      configManager.set(key, config[key]);
+    });
+    configManager.save();
+    closeModal();
+    try {
+      await s3Service.initialize();
+      operationQueue.add(
+        "initial-sync",
+        () => syncService.syncFromCloud(),
+        [],
+        "high"
+      );
+      uiService.updateSyncStatus("success");
+      logger.log("success", "Configuration saved and sync started");
+    } catch (error) {
+      logger.log("error", "Failed to initialize sync", error);
+      uiService.updateSyncStatus("error");
+    }
+  }
+  const styleSheet = document.createElement("style");
+  styleSheet.textContent = `
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(4px);
+      z-index: 99999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    #sync-status-dot {
+      position: absolute;
+      top: -0.15rem;
+      right: -0.6rem;
+      width: 0.625rem;
+      height: 0.625rem;
+      border-radius: 9999px;
+    }
+    .cloud-sync-modal {
+      background-color: rgb(9, 9, 11);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      max-width: 32rem;
+      width: 100%;
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .modal-header {
+      margin-bottom: 1rem;
+    }
+    .modal-title {
+      font-size: 1.25rem;
+      font-weight: bold;
+      text-align: center;
+    }
+    .modal-section {
+      margin-bottom: 1rem;
+      background-color: rgb(39, 39, 42);
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      border: 1px solid rgb(63, 63, 70);
+    }
+    .modal-section-title {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: rgb(161, 161, 170);
+      margin-bottom: 0.5rem;
+    }
+    .form-group {
+      margin-bottom: 0.75rem;
+    }
+    .form-group label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: rgb(161, 161, 170);
+      margin-bottom: 0.25rem;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 0.375rem 0.5rem;
+      border: 1px solid rgb(63, 63, 70);
+      border-radius: 0.375rem;
+      background-color: rgb(39, 39, 42);
+      color: white;
+      font-size: 0.875rem;
+    }
+    .form-group input:focus {
+      border-color: rgb(59, 130, 246);
+      outline: none;
+    }
+    .button-group {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+    .button {
+      padding: 0.375rem 0.75rem;
+      border: none;
+      border-radius: 0.375rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .button-primary {
+      background-color: rgb(37, 99, 235);
+      color: white;
+    }
+    .button-primary:hover {
+      background-color: rgb(29, 78, 216);
+    }
+    .button-secondary {
+      background-color: rgb(82, 82, 91);
+      color: white;
+    }
+    .button-secondary:hover {
+      background-color: rgb(63, 63, 70);
+    }
+  `;
+  document.head.appendChild(styleSheet);
   async function initialize() {
     logger.log("start", "Initializing Cloud Sync v4");
     await metadataManager.load();
+    setTimeout(insertSyncButton, 1000);
     try {
       if (configManager.isAwsConfigured()) {
         await s3Service.initialize();
-        if (configManager.get("syncMode") === "sync") {
-          operationQueue.add(
-            "initial-sync",
-            () => syncService.syncFromCloud(),
-            [],
-            "high"
-          );
-        }
+        operationQueue.add(
+          "initial-sync",
+          () => syncService.syncFromCloud(),
+          [],
+          "high"
+        );
         operationQueue.add(
           "daily-backup-check",
           () => backupService.performDailyBackup(),
@@ -1108,5 +1358,8 @@ if (window.typingMindCloudSync) {
     intervalCoordinator.start();
     logger.log("success", "Cloud Sync v4 initialized");
   }
+  window.openSyncModal = openSyncModal;
+  window.closeModal = closeModal;
+  window.saveSettings = saveSettings;
   initialize();
 }
