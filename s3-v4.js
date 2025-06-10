@@ -1096,36 +1096,74 @@ if (window.typingMindCloudSync) {
     },
   };
   function insertSyncButton() {
-    const existingButton = document.querySelector('[onclick*="openSyncModal"]');
-    if (existingButton) return;
-    let targetElement = document.querySelector('nav a[href="/logout"]');
-    if (!targetElement) {
-      targetElement = document.querySelector('[aria-label="Log out"]');
+    const existingButton = document.querySelector(
+      '[data-element-id="workspace-tab-cloudsync"]'
+    );
+    if (existingButton) {
+      logger.log("info", "Sync button already exists");
+      return;
     }
-    if (!targetElement) {
-      targetElement = document.querySelector(".space-y-4 button");
+    const targetSelectors = [
+      'nav[role="tablist"]',
+      ".space-y-4",
+      '[role="navigation"]',
+      ".flex.flex-col.space-y-4",
+      "nav",
+    ];
+    let targetContainer = null;
+    for (const selector of targetSelectors) {
+      targetContainer = document.querySelector(selector);
+      if (targetContainer) {
+        logger.log("success", `Found target container: ${selector}`);
+        break;
+      }
     }
-    if (!targetElement) {
-      logger.log("warning", "Could not find target element for sync button");
+    if (!targetContainer) {
+      logger.log(
+        "warning",
+        "Could not find navigation container, retrying in 2s"
+      );
+      setTimeout(insertSyncButton, 2000);
       return;
     }
     const syncButton = document.createElement("button");
+    syncButton.setAttribute("data-element-id", "workspace-tab-cloudsync");
     syncButton.className =
-      targetElement.className ||
-      "flex items-center px-4 py-2 text-sm font-medium text-gray-700 rounded-md hover:bg-gray-100";
+      "min-w-[58px] sm:min-w-0 sm:aspect-auto aspect-square cursor-pointer h-12 md:h-[50px] flex-col justify-start items-start inline-flex focus:outline-0 focus:text-white w-full relative";
     syncButton.innerHTML = `
-      <svg class="w-4 h-4 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path>
-      </svg>
-      Sync
-      <div id="sync-status-dot" style="display:none;"></div>
+      <span class="text-white/70 hover:bg-white/20 self-stretch h-12 md:h-[50px] px-0.5 py-1.5 rounded-xl flex-col justify-start items-center gap-1.5 flex transition-colors">
+        <div class="relative">
+          <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">
+            <path fill="currentColor" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"/>
+          </svg>
+          <div id="sync-status-dot" style="position: absolute; top: -0.15rem; right: -0.6rem; width: 0.625rem; height: 0.625rem; border-radius: 9999px; display: none;"></div>
+        </div>
+        <span class="text-xs font-medium">Sync</span>
+      </span>
     `;
     syncButton.onclick = () => openSyncModal();
-    const parentContainer = targetElement.parentElement;
-    parentContainer.insertBefore(syncButton, targetElement);
-    logger.log("success", "Sync button inserted into menu");
+    const firstChild = targetContainer.firstElementChild;
+    if (firstChild) {
+      targetContainer.insertBefore(syncButton, firstChild);
+    } else {
+      targetContainer.appendChild(syncButton);
+    }
+    logger.log("success", "Sync button inserted into navigation");
+  }
+  function waitForDOM() {
+    return new Promise((resolve) => {
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", resolve);
+      } else {
+        resolve();
+      }
+    });
   }
   function openSyncModal() {
+    const existingModal = document.getElementById("sync-modal-overlay");
+    if (existingModal) {
+      existingModal.remove();
+    }
     const modalHTML = `
       <div class="modal-overlay" id="sync-modal-overlay">
         <div class="cloud-sync-modal">
@@ -1135,43 +1173,43 @@ if (window.typingMindCloudSync) {
           <div class="modal-section">
             <div class="modal-section-title">AWS S3 Configuration</div>
             <div class="form-group">
-              <label>Bucket Name</label>
+              <label for="bucket-name">Bucket Name</label>
               <input type="text" id="bucket-name" value="${
                 configManager.get("bucketName") || ""
               }" placeholder="your-bucket-name">
             </div>
             <div class="form-group">
-              <label>Region</label>
+              <label for="region">Region</label>
               <input type="text" id="region" value="${
                 configManager.get("region") || ""
               }" placeholder="us-east-1">
             </div>
             <div class="form-group">
-              <label>Access Key ID</label>
+              <label for="access-key">Access Key ID</label>
               <input type="text" id="access-key" value="${
                 configManager.get("accessKey") || ""
               }" placeholder="AKIA...">
             </div>
             <div class="form-group">
-              <label>Secret Access Key</label>
+              <label for="secret-key">Secret Access Key</label>
               <input type="password" id="secret-key" value="${
                 configManager.get("secretKey") || ""
-              }" placeholder="...">
+              }" placeholder="Enter your secret key">
             </div>
             <div class="form-group">
-              <label>Endpoint (Optional)</label>
+              <label for="endpoint">Endpoint (Optional)</label>
               <input type="text" id="endpoint" value="${
                 configManager.get("endpoint") || ""
               }" placeholder="s3.amazonaws.com">
             </div>
             <div class="form-group">
-              <label>Encryption Key</label>
+              <label for="encryption-key">Encryption Key</label>
               <input type="password" id="encryption-key" value="${
                 configManager.get("encryptionKey") || ""
               }" placeholder="Your encryption password">
             </div>
             <div class="form-group">
-              <label>Sync Interval (seconds)</label>
+              <label for="sync-interval">Sync Interval (seconds)</label>
               <input type="number" id="sync-interval" value="${
                 configManager.get("syncInterval") || 15
               }" min="5" max="3600">
@@ -1185,22 +1223,42 @@ if (window.typingMindCloudSync) {
       </div>
     `;
     document.body.insertAdjacentHTML("beforeend", modalHTML);
+    const modal = document.getElementById("sync-modal-overlay");
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) {
+        closeModal();
+      }
+    });
   }
   function closeModal() {
     const modal = document.getElementById("sync-modal-overlay");
-    if (modal) modal.remove();
+    if (modal) {
+      modal.remove();
+    }
   }
   async function saveSettings() {
     const config = {
-      bucketName: document.getElementById("bucket-name").value,
-      region: document.getElementById("region").value,
-      accessKey: document.getElementById("access-key").value,
-      secretKey: document.getElementById("secret-key").value,
-      endpoint: document.getElementById("endpoint").value,
-      encryptionKey: document.getElementById("encryption-key").value,
+      bucketName: document.getElementById("bucket-name").value.trim(),
+      region: document.getElementById("region").value.trim(),
+      accessKey: document.getElementById("access-key").value.trim(),
+      secretKey: document.getElementById("secret-key").value.trim(),
+      endpoint: document.getElementById("endpoint").value.trim(),
+      encryptionKey: document.getElementById("encryption-key").value.trim(),
       syncInterval:
         parseInt(document.getElementById("sync-interval").value) || 15,
     };
+    if (
+      !config.bucketName ||
+      !config.region ||
+      !config.accessKey ||
+      !config.secretKey ||
+      !config.encryptionKey
+    ) {
+      alert(
+        "Please fill in all required fields (Bucket Name, Region, Access Key, Secret Key, and Encryption Key)."
+      );
+      return;
+    }
     Object.keys(config).forEach((key) => {
       configManager.set(key, config[key]);
     });
@@ -1219,6 +1277,9 @@ if (window.typingMindCloudSync) {
     } catch (error) {
       logger.log("error", "Failed to initialize sync", error);
       uiService.updateSyncStatus("error");
+      alert(
+        "Failed to initialize sync. Please check your configuration and try again."
+      );
     }
   }
   const styleSheet = document.createElement("style");
@@ -1236,36 +1297,46 @@ if (window.typingMindCloudSync) {
       align-items: center;
       justify-content: center;
       padding: 1rem;
+      animation: fadeIn 0.2s ease-out;
     }
-    #sync-status-dot {
-      position: absolute;
-      top: -0.15rem;
-      right: -0.6rem;
-      width: 0.625rem;
-      height: 0.625rem;
-      border-radius: 9999px;
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes slideIn {
+      from { 
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to { 
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
     .cloud-sync-modal {
       background-color: rgb(9, 9, 11);
       border-radius: 0.5rem;
-      padding: 1rem;
+      padding: 1.5rem;
       max-width: 32rem;
       width: 100%;
       color: white;
       border: 1px solid rgba(255, 255, 255, 0.1);
+      animation: slideIn 0.3s ease-out;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
     }
     .modal-header {
-      margin-bottom: 1rem;
+      margin-bottom: 1.5rem;
+      text-align: center;
     }
     .modal-title {
       font-size: 1.25rem;
       font-weight: bold;
-      text-align: center;
+      color: white;
     }
     .modal-section {
-      margin-bottom: 1rem;
+      margin-bottom: 1.5rem;
       background-color: rgb(39, 39, 42);
-      padding: 0.75rem;
+      padding: 1rem;
       border-radius: 0.5rem;
       border: 1px solid rgb(63, 63, 70);
     }
@@ -1273,38 +1344,44 @@ if (window.typingMindCloudSync) {
       font-size: 0.875rem;
       font-weight: 500;
       color: rgb(161, 161, 170);
-      margin-bottom: 0.5rem;
+      margin-bottom: 1rem;
     }
     .form-group {
-      margin-bottom: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .form-group:last-child {
+      margin-bottom: 0;
     }
     .form-group label {
       display: block;
       font-size: 0.875rem;
       font-weight: 500;
       color: rgb(161, 161, 170);
-      margin-bottom: 0.25rem;
+      margin-bottom: 0.5rem;
     }
     .form-group input {
       width: 100%;
-      padding: 0.375rem 0.5rem;
+      padding: 0.5rem;
       border: 1px solid rgb(63, 63, 70);
       border-radius: 0.375rem;
-      background-color: rgb(39, 39, 42);
+      background-color: rgb(24, 24, 27);
       color: white;
       font-size: 0.875rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
     }
     .form-group input:focus {
       border-color: rgb(59, 130, 246);
       outline: none;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
     }
     .button-group {
       display: flex;
       justify-content: space-between;
-      gap: 0.5rem;
+      gap: 1rem;
     }
     .button {
-      padding: 0.375rem 0.75rem;
+      flex: 1;
+      padding: 0.75rem 1rem;
       border: none;
       border-radius: 0.375rem;
       font-size: 0.875rem;
@@ -1318,6 +1395,7 @@ if (window.typingMindCloudSync) {
     }
     .button-primary:hover {
       background-color: rgb(29, 78, 216);
+      transform: translateY(-1px);
     }
     .button-secondary {
       background-color: rgb(82, 82, 91);
@@ -1326,12 +1404,19 @@ if (window.typingMindCloudSync) {
     .button-secondary:hover {
       background-color: rgb(63, 63, 70);
     }
+    .button:active {
+      transform: translateY(0);
+    }
   `;
   document.head.appendChild(styleSheet);
   async function initialize() {
     logger.log("start", "Initializing Cloud Sync v4");
+    await waitForDOM();
     await metadataManager.load();
-    setTimeout(insertSyncButton, 1000);
+    setTimeout(() => {
+      insertSyncButton();
+      setTimeout(insertSyncButton, 3000);
+    }, 1000);
     try {
       if (configManager.isAwsConfigured()) {
         await s3Service.initialize();
@@ -1347,6 +1432,7 @@ if (window.typingMindCloudSync) {
           [],
           "low"
         );
+        uiService.updateSyncStatus("success");
       }
     } catch (error) {
       logger.log(
@@ -1354,6 +1440,7 @@ if (window.typingMindCloudSync) {
         "S3 initialization failed",
         error instanceof CloudSyncError ? error.message : error
       );
+      uiService.updateSyncStatus("error");
     }
     intervalCoordinator.start();
     logger.log("success", "Cloud Sync v4 initialized");
