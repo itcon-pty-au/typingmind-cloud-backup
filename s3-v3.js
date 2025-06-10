@@ -5907,11 +5907,9 @@ if (window.typingMindCloudSync) {
           settingsCount: metadata.settings?.items
             ? Object.keys(metadata.settings.items).length
             : 0,
-          chatsCount: metadata.chats?.items
-            ? Object.keys(metadata.chats.items).length
-            : 0,
+          chatsCount: metadata.chats ? Object.keys(metadata.chats).length : 0,
           lastModified: metadata.lastModified
-            ? new Date(metadata.settings.lastModified).toISOString()
+            ? new Date(metadata.lastModified).toISOString()
             : "none",
           lastSyncTime: metadata.lastSyncTime
             ? new Date(metadata.lastSyncTime).toISOString()
