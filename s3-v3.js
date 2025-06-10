@@ -7247,6 +7247,7 @@ if (window.typingMindCloudSync) {
       let skippedCount = 0;
       let appliedCount = 0;
       let errorCount = 0;
+      let orphanedMetadataCount = 0;
 
       const cloudMetadata = await downloadCloudMetadata();
 
@@ -7261,6 +7262,8 @@ if (window.typingMindCloudSync) {
           Object.keys(cloudMetadata.settings.items).length
         } settings from cloud`
       );
+
+      const orphanedSettings = [];
 
       for (const [settingKey, cloudSettingMeta] of Object.entries(
         cloudMetadata.settings.items
@@ -7382,6 +7385,13 @@ if (window.typingMindCloudSync) {
 
               downloadedCount++;
               appliedCount++;
+            } else {
+              // Setting file not found in S3 - this is orphaned metadata
+              orphanedSettings.push(settingKey);
+              logToConsole(
+                "info",
+                `Found orphaned metadata for missing setting ${settingKey}`
+              );
             }
           } else {
             skippedCount++;
@@ -7393,6 +7403,43 @@ if (window.typingMindCloudSync) {
             error
           );
           errorCount++;
+        }
+      }
+
+      // Clean up orphaned metadata entries
+      if (orphanedSettings.length > 0) {
+        const totalSettings = Object.keys(cloudMetadata.settings.items).length;
+        const orphanedPercentage =
+          (orphanedSettings.length / totalSettings) * 100;
+
+        if (orphanedPercentage > 50) {
+          logToConsole(
+            "warning",
+            `Detected ${
+              orphanedSettings.length
+            }/${totalSettings} (${orphanedPercentage.toFixed(
+              1
+            )}%) orphaned settings - this may indicate a sync race condition. Skipping cleanup to prevent data loss.`
+          );
+        } else {
+          for (const settingKey of orphanedSettings) {
+            delete cloudMetadata.settings.items[settingKey];
+            orphanedMetadataCount++;
+          }
+
+          logToConsole(
+            "info",
+            `Cleaned up ${orphanedMetadataCount} orphaned metadata entries - uploading updated metadata`
+          );
+
+          await uploadToS3(
+            "metadata.json",
+            new TextEncoder().encode(JSON.stringify(cloudMetadata)),
+            {
+              ContentType: "application/json",
+              ServerSideEncryption: "AES256",
+            }
+          );
         }
       }
 
@@ -7431,11 +7478,12 @@ if (window.typingMindCloudSync) {
         downloaded: downloadedCount,
         applied: appliedCount,
         skipped: skippedCount,
+        orphanedCleaned: orphanedMetadataCount,
         errors: errorCount,
         timestamp: new Date(syncTimestamp).toISOString(),
       });
 
-      return appliedCount > 0;
+      return appliedCount > 0 || orphanedMetadataCount > 0;
     } catch (error) {
       logToConsole("error", "Error during settings sync from cloud", error);
       throw error;
