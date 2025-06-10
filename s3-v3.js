@@ -2684,15 +2684,30 @@ if (window.typingMindCloudSync) {
       "🔍 Queue length before:",
       operationState.operationQueue.length
     );
+
     if (config.syncMode === "disabled" && !name.startsWith("manual")) {
       logToConsole("skip", `Skipping operation ${name} - sync is disabled`);
       return;
     }
+
+    console.log("🔍 Checking for existing operation:", name);
+    console.log(
+      "🔍 Current queue:",
+      operationState.operationQueue.map((op) => op.name)
+    );
+    console.log(
+      "🔍 Currently executing:",
+      operationState.currentlyExecutingOperation
+    );
+
     const existingOp = operationState.operationQueue.find(
       (op) => op.name === name
     );
     const isCurrentlyExecuting =
       operationState.currentlyExecutingOperation === name;
+
+    console.log("🔍 existingOp:", !!existingOp);
+    console.log("🔍 isCurrentlyExecuting:", isCurrentlyExecuting);
 
     if (existingOp || isCurrentlyExecuting) {
       console.log("🔍 Duplicate operation detected:", name);
