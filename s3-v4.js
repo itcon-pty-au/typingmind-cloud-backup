@@ -1099,56 +1099,46 @@ if (window.typingMindCloudSync) {
     const existingButton = document.querySelector(
       '[data-element-id="workspace-tab-cloudsync"]'
     );
-    if (existingButton) {
-      logger.log("info", "Sync button already exists");
-      return;
-    }
-    const targetSelectors = [
-      'nav[role="tablist"]',
-      ".space-y-4",
-      '[role="navigation"]',
-      ".flex.flex-col.space-y-4",
-      "nav",
-    ];
-    let targetContainer = null;
-    for (const selector of targetSelectors) {
-      targetContainer = document.querySelector(selector);
-      if (targetContainer) {
-        logger.log("success", `Found target container: ${selector}`);
-        break;
-      }
-    }
-    if (!targetContainer) {
-      logger.log(
-        "warning",
-        "Could not find navigation container, retrying in 2s"
-      );
-      setTimeout(insertSyncButton, 2000);
-      return;
-    }
-    const syncButton = document.createElement("button");
-    syncButton.setAttribute("data-element-id", "workspace-tab-cloudsync");
-    syncButton.className =
-      "min-w-[58px] sm:min-w-0 sm:aspect-auto aspect-square cursor-pointer h-12 md:h-[50px] flex-col justify-start items-start inline-flex focus:outline-0 focus:text-white w-full relative";
-    syncButton.innerHTML = `
+    if (existingButton) return;
+    const button = document.createElement("button");
+    button.setAttribute("data-element-id", "workspace-tab-cloudsync");
+    button.className =
+      "min-w-[58px] sm:min-w-0 sm:aspect-auto aspect-square cursor-default h-12 md:h-[50px] flex-col justify-start items-start inline-flex focus:outline-0 focus:text-white w-full relative";
+    button.innerHTML = `
       <span class="text-white/70 hover:bg-white/20 self-stretch h-12 md:h-[50px] px-0.5 py-1.5 rounded-xl flex-col justify-start items-center gap-1.5 flex transition-colors">
         <div class="relative">
           <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">
-            <path fill="currentColor" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"/>
+            <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 4.5A4.5 4.5 0 0114.5 9M9 13.5A4.5 4.5 0 013.5 9"/>
+              <polyline points="9,2.5 9,4.5 11,4.5"/>
+              <polyline points="9,15.5 9,13.5 7,13.5"/>
+            </g>
           </svg>
-          <div id="sync-status-dot" style="position: absolute; top: -0.15rem; right: -0.6rem; width: 0.625rem; height: 0.625rem; border-radius: 9999px; display: none;"></div>
+          <div id="sync-status-dot"></div>
         </div>
-        <span class="text-xs font-medium">Sync</span>
+        <span class="font-normal self-stretch text-center text-xs leading-4 md:leading-none">Sync</span>
       </span>
     `;
-    syncButton.onclick = () => openSyncModal();
-    const firstChild = targetContainer.firstElementChild;
-    if (firstChild) {
-      targetContainer.insertBefore(syncButton, firstChild);
-    } else {
-      targetContainer.appendChild(syncButton);
+    button.addEventListener("click", () => {
+      openSyncModal();
+    });
+    const chatButton = document.querySelector(
+      'button[data-element-id="workspace-tab-chat"]'
+    );
+    if (chatButton && chatButton.parentNode) {
+      chatButton.parentNode.insertBefore(button, chatButton.nextSibling);
+      logger.log("success", "Sync button inserted next to chat button");
+      return;
     }
-    logger.log("success", "Sync button inserted into navigation");
+    const buttons = document.querySelectorAll("button");
+    for (const btn of buttons) {
+      if (btn.querySelector("svg")) {
+        btn.parentNode.insertBefore(button, btn.nextSibling);
+        logger.log("success", "Sync button inserted after first SVG button");
+        return;
+      }
+    }
+    logger.log("warning", "Could not find ideal location for sync button");
   }
   function waitForDOM() {
     return new Promise((resolve) => {
@@ -1160,89 +1150,216 @@ if (window.typingMindCloudSync) {
     });
   }
   function openSyncModal() {
-    const existingModal = document.getElementById("sync-modal-overlay");
-    if (existingModal) {
-      existingModal.remove();
+    if (document.querySelector(".cloud-sync-modal")) {
+      logger.log("skip", "Modal already open - skipping");
+      return;
     }
-    const modalHTML = `
-      <div class="modal-overlay" id="sync-modal-overlay">
-        <div class="cloud-sync-modal">
-          <div class="modal-header">
-            <h2 class="modal-title">Cloud Sync Configuration</h2>
-          </div>
-          <div class="modal-section">
-            <div class="modal-section-title">AWS S3 Configuration</div>
-            <div class="form-group">
-              <label for="bucket-name">Bucket Name</label>
-              <input type="text" id="bucket-name" value="${
-                configManager.get("bucketName") || ""
-              }" placeholder="your-bucket-name">
+    logger.log("start", "Opening sync modal...");
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    const modal = document.createElement("div");
+    modal.className = "cloud-sync-modal";
+    modal.innerHTML = `
+      <div class="text-gray-800 dark:text-white text-left text-sm">
+        <div class="flex justify-center items-center mb-3">
+          <h3 class="text-center text-xl font-bold">S3 Cloud Sync Settings</h3>
+          <button class="ml-2 text-blue-600 text-lg hint--bottom-left hint--rounded hint--large" 
+            aria-label="Fill form & Save. Configure your S3 credentials and encryption key.&#10;&#10;Sync: Automatically syncs data between devices in real-time.&#10;&#10;Snapshot: Creates an instant backup that will not be overwritten.&#10;&#10;Download: Select and download backup data for local storage.&#10;&#10;Restore: Select a backup to restore your data to that point in time.">ⓘ</button>
+        </div>
+        <div class="space-y-3">
+          <div class="mt-4 bg-gray-100 dark:bg-zinc-800 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600">
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">Available Backups</label>
             </div>
-            <div class="form-group">
-              <label for="region">Region</label>
-              <input type="text" id="region" value="${
-                configManager.get("region") || ""
-              }" placeholder="us-east-1">
-            </div>
-            <div class="form-group">
-              <label for="access-key">Access Key ID</label>
-              <input type="text" id="access-key" value="${
-                configManager.get("accessKey") || ""
-              }" placeholder="AKIA...">
-            </div>
-            <div class="form-group">
-              <label for="secret-key">Secret Access Key</label>
-              <input type="password" id="secret-key" value="${
-                configManager.get("secretKey") || ""
-              }" placeholder="Enter your secret key">
-            </div>
-            <div class="form-group">
-              <label for="endpoint">Endpoint (Optional)</label>
-              <input type="text" id="endpoint" value="${
-                configManager.get("endpoint") || ""
-              }" placeholder="s3.amazonaws.com">
-            </div>
-            <div class="form-group">
-              <label for="encryption-key">Encryption Key</label>
-              <input type="password" id="encryption-key" value="${
-                configManager.get("encryptionKey") || ""
-              }" placeholder="Your encryption password">
-            </div>
-            <div class="form-group">
-              <label for="sync-interval">Sync Interval (seconds)</label>
-              <input type="number" id="sync-interval" value="${
-                configManager.get("syncInterval") || 15
-              }" min="5" max="3600">
+            <div class="space-y-2">
+              <div class="w-full">
+                <select id="backup-files" class="w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700">
+                  <option value="">Please configure AWS credentials first</option>
+                </select>
+              </div>
+              <div class="flex justify-end space-x-2">
+                <button id="download-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                  Download
+                </button>
+                <button id="restore-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                  Restore
+                </button>
+                <button id="delete-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                  Delete
+                </button>
+              </div>
             </div>
           </div>
-          <div class="button-group">
-            <button class="button button-secondary" onclick="closeModal()">Cancel</button>
-            <button class="button button-primary" onclick="saveSettings()">Save & Start Sync</button>
+          <div class="mt-4 bg-gray-100 dark:bg-zinc-800 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600">
+            <div class="space-y-2">
+              <div class="flex space-x-4">
+                <div class="w-2/3">
+                  <label for="aws-bucket" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Bucket Name <span class="text-red-500">*</span></label>
+                  <input id="aws-bucket" name="aws-bucket" type="text" value="${
+                    configManager.get("bucketName") || ""
+                  }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                </div>
+                <div class="w-1/3">
+                  <label for="aws-region" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Region <span class="text-red-500">*</span></label>
+                  <input id="aws-region" name="aws-region" type="text" value="${
+                    configManager.get("region") || ""
+                  }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                </div>
+              </div>
+              <div>
+                <label for="aws-access-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Access Key <span class="text-red-500">*</span></label>
+                <input id="aws-access-key" name="aws-access-key" type="password" value="${
+                  configManager.get("accessKey") || ""
+                }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+              </div>
+              <div>
+                <label for="aws-secret-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Secret Key <span class="text-red-500">*</span></label>
+                <input id="aws-secret-key" name="aws-secret-key" type="password" value="${
+                  configManager.get("secretKey") || ""
+                }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+              </div>
+              <div>
+                <label for="aws-endpoint" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
+                  S3 Compatible Storage Endpoint
+                  <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="For Amazon AWS, leave this blank. For S3 compatible services like Cloudflare R2, enter the endpoint URL.">ⓘ</button>
+                </label>
+                <input id="aws-endpoint" name="aws-endpoint" type="text" value="${
+                  configManager.get("endpoint") || ""
+                }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off">
+              </div>
+              <div class="flex space-x-4">
+                <div class="w-1/2">
+                  <label for="sync-interval" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Sync Interval (seconds)
+                  <button class="ml-1 text-blue-600 text-lg hint--top-right hint--rounded hint--medium" aria-label="How often to sync data to cloud. Minimum 15 seconds.">ⓘ</button></label>
+                  <input id="sync-interval" name="sync-interval" type="number" min="15" value="${configManager.get(
+                    "syncInterval"
+                  )}" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                </div>
+                <div class="w-1/2">
+                  <label for="encryption-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
+                    Encryption Key <span class="text-red-500">*</span>
+                    <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="Choose a secure 8+ character string. Used to encrypt backup files before uploading to cloud. Store this securely - you'll need it to restore backups.">ⓘ</button>
+                  </label>
+                  <input id="encryption-key" name="encryption-key" type="password" value="${
+                    configManager.get("encryptionKey") || ""
+                  }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                </div>
+              </div>
+              <div>
+                <label for="sync-exclusions" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
+                  Exclusions (Comma separated)
+                  <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="Additional settings to exclude from sync. Enter comma-separated setting names.">ⓘ</button>
+                </label>
+                <input id="sync-exclusions" name="sync-exclusions" type="text" value="${
+                  localStorage.getItem("sync-exclusions") || ""
+                }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" placeholder="e.g., my-setting, another-setting" autocomplete="off">
+              </div>
+            </div>
           </div>
+          <div class="flex items-center justify-end mb-4 space-x-2">
+            <span class="text-sm text-gray-600 dark:text-gray-400">
+              Console Logging
+              <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="Enable detailed logging in browser console for troubleshooting. Add ?log=true to URL and reload for complete logging.">ⓘ</button>
+            </span>
+            <input type="checkbox" id="console-logging-toggle" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer">
+          </div>
+          <div class="flex justify-between space-x-2 mt-4">
+            <button id="save-settings" class="z-1 inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors">
+              Save
+            </button>
+            <div class="flex space-x-2">
+              <button id="sync-now" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-default transition-colors">
+                Sync Now
+              </button>
+              <button id="create-snapshot" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors">
+                Snapshot
+              </button>
+              <button id="close-modal" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                Close
+              </button>
+            </div>
+          </div>
+          <div class="text-center mt-4">
+            <span id="last-sync-msg"></span>
+          </div>
+          <div id="action-msg" class="text-center"></div>
         </div>
       </div>
     `;
-    document.body.insertAdjacentHTML("beforeend", modalHTML);
-    const modal = document.getElementById("sync-modal-overlay");
-    modal.addEventListener("click", (e) => {
-      if (e.target === modal) {
-        closeModal();
-      }
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    modal.querySelector("#close-modal").addEventListener("click", closeModal);
+    overlay.addEventListener("click", closeModal);
+    modal
+      .querySelector("#save-settings")
+      .addEventListener("click", saveSettings);
+    modal.querySelector("#sync-now").addEventListener("click", () => {
+      const syncNowButton = modal.querySelector("#sync-now");
+      const originalText = syncNowButton.textContent;
+      syncNowButton.disabled = true;
+      syncNowButton.textContent = "Done!";
+      operationQueue.add(
+        "manual-sync",
+        () => syncService.syncFromCloud(),
+        [],
+        "high"
+      );
+      setTimeout(() => {
+        syncNowButton.textContent = originalText;
+        syncNowButton.disabled = false;
+      }, 2000);
     });
+    modal
+      .querySelector("#create-snapshot")
+      .addEventListener("click", async () => {
+        const snapshotButton = modal.querySelector("#create-snapshot");
+        const name = prompt("Enter snapshot name:");
+        if (name) {
+          snapshotButton.disabled = true;
+          const originalText = snapshotButton.textContent;
+          snapshotButton.textContent = "Working...";
+          try {
+            const success = await backupService.createSnapshot(name);
+            if (success) {
+              snapshotButton.textContent = "Completed!";
+              await loadBackupList();
+            } else {
+              snapshotButton.textContent = "Failed";
+            }
+          } catch (error) {
+            logger.log("error", "Snapshot button error:", error);
+            snapshotButton.textContent = "Failed";
+          } finally {
+            setTimeout(() => {
+              snapshotButton.textContent = originalText;
+              snapshotButton.disabled = false;
+            }, 2000);
+          }
+        }
+      });
+    const consoleLoggingCheckbox = modal.querySelector(
+      "#console-logging-toggle"
+    );
+    consoleLoggingCheckbox.checked = logger.enabled;
+    consoleLoggingCheckbox.addEventListener("change", (e) => {
+      logger.setEnabled(e.target.checked);
+    });
+    modal.addEventListener("click", (e) => e.stopPropagation());
+    loadBackupList();
   }
   function closeModal() {
-    const modal = document.getElementById("sync-modal-overlay");
-    if (modal) {
-      modal.remove();
-    }
+    const modal = document.querySelector(".cloud-sync-modal");
+    const overlay = document.querySelector(".modal-overlay");
+    if (modal) modal.remove();
+    if (overlay) overlay.remove();
   }
   async function saveSettings() {
     const config = {
-      bucketName: document.getElementById("bucket-name").value.trim(),
-      region: document.getElementById("region").value.trim(),
-      accessKey: document.getElementById("access-key").value.trim(),
-      secretKey: document.getElementById("secret-key").value.trim(),
-      endpoint: document.getElementById("endpoint").value.trim(),
+      bucketName: document.getElementById("aws-bucket").value.trim(),
+      region: document.getElementById("aws-region").value.trim(),
+      accessKey: document.getElementById("aws-access-key").value.trim(),
+      secretKey: document.getElementById("aws-secret-key").value.trim(),
+      endpoint: document.getElementById("aws-endpoint").value.trim(),
       encryptionKey: document.getElementById("encryption-key").value.trim(),
       syncInterval:
         parseInt(document.getElementById("sync-interval").value) || 15,
@@ -1259,11 +1376,16 @@ if (window.typingMindCloudSync) {
       );
       return;
     }
+    const exclusions = document.getElementById("sync-exclusions").value.trim();
+    if (exclusions) {
+      localStorage.setItem("sync-exclusions", exclusions);
+    } else {
+      localStorage.removeItem("sync-exclusions");
+    }
     Object.keys(config).forEach((key) => {
       configManager.set(key, config[key]);
     });
     configManager.save();
-    closeModal();
     try {
       await s3Service.initialize();
       operationQueue.add(
@@ -1274,6 +1396,7 @@ if (window.typingMindCloudSync) {
       );
       uiService.updateSyncStatus("success");
       logger.log("success", "Configuration saved and sync started");
+      await loadBackupList();
     } catch (error) {
       logger.log("error", "Failed to initialize sync", error);
       uiService.updateSyncStatus("error");
@@ -1281,6 +1404,167 @@ if (window.typingMindCloudSync) {
         "Failed to initialize sync. Please check your configuration and try again."
       );
     }
+  }
+  async function loadBackupList() {
+    try {
+      const backupList = document.getElementById("backup-files");
+      if (!backupList) return;
+      backupList.innerHTML = '<option value="">Loading backups...</option>';
+      backupList.disabled = true;
+      if (!configManager.isAwsConfigured()) {
+        backupList.innerHTML =
+          '<option value="">Please configure AWS credentials first</option>';
+        backupList.disabled = false;
+        return;
+      }
+      const backups = await s3Service.list();
+      backupList.innerHTML = "";
+      backupList.disabled = false;
+      const filteredBackups = backups.filter(
+        (backup) =>
+          !backup.Key.startsWith("chats/") &&
+          backup.Key !== "chats/" &&
+          backup.Key !== "metadata.json"
+      );
+      if (filteredBackups.length === 0) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.text = "No backups found";
+        backupList.appendChild(option);
+      } else {
+        const sortedBackups = filteredBackups.sort((a, b) => {
+          const timestampA = a.LastModified?.getTime() || 0;
+          const timestampB = b.LastModified?.getTime() || 0;
+          return timestampB - timestampA;
+        });
+        sortedBackups.forEach((backup) => {
+          const option = document.createElement("option");
+          option.value = backup.Key;
+          const size = formatFileSize(backup.Size || 0);
+          option.text = `${backup.Key} - ${size}`;
+          backupList.appendChild(option);
+        });
+      }
+      updateButtonStates();
+      backupList.addEventListener("change", updateButtonStates);
+      setupButtonHandlers(backupList);
+    } catch (error) {
+      logger.log("error", "Failed to load backup list:", error);
+      const backupList = document.getElementById("backup-files");
+      if (backupList) {
+        backupList.innerHTML =
+          '<option value="">Error loading backups</option>';
+        backupList.disabled = false;
+      }
+    }
+  }
+  function updateButtonStates() {
+    const backupList = document.getElementById("backup-files");
+    const selectedValue = backupList ? backupList.value || "" : "";
+    const downloadButton = document.getElementById("download-backup-btn");
+    const restoreButton = document.getElementById("restore-backup-btn");
+    const deleteButton = document.getElementById("delete-backup-btn");
+    const isSnapshot = selectedValue.startsWith("snapshot-");
+    if (downloadButton) {
+      downloadButton.disabled = !selectedValue;
+    }
+    if (restoreButton) {
+      restoreButton.disabled = !selectedValue || !isSnapshot;
+    }
+    if (deleteButton) {
+      const isProtectedFile =
+        !selectedValue || selectedValue === "metadata.json";
+      deleteButton.disabled = isProtectedFile;
+    }
+  }
+  function setupButtonHandlers(backupList) {
+    const downloadButton = document.getElementById("download-backup-btn");
+    if (downloadButton) {
+      const newDownloadButton = downloadButton.cloneNode(true);
+      downloadButton.parentNode.replaceChild(newDownloadButton, downloadButton);
+      newDownloadButton.onclick = async () => {
+        const key = backupList.value;
+        if (!key) {
+          alert("Please select a backup to download");
+          return;
+        }
+        try {
+          const backup = await s3Service.download(key);
+          const filename = key.replace(/^snapshots\//, "");
+          const dataStr = JSON.stringify(backup, null, 2);
+          const dataBlob = new Blob([dataStr], { type: "application/json" });
+          const url = URL.createObjectURL(dataBlob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        } catch (error) {
+          logger.log("error", "Failed to download backup:", error);
+          alert("Failed to download backup: " + error.message);
+        }
+      };
+    }
+    const restoreButton = document.getElementById("restore-backup-btn");
+    if (restoreButton) {
+      const newRestoreButton = restoreButton.cloneNode(true);
+      restoreButton.parentNode.replaceChild(newRestoreButton, restoreButton);
+      newRestoreButton.onclick = async () => {
+        const key = backupList.value;
+        if (!key) {
+          alert("Please select a backup to restore");
+          return;
+        }
+        if (
+          confirm(
+            "Are you sure you want to restore from this backup? This will overwrite your current data."
+          )
+        ) {
+          try {
+            await backupService.restoreFromBackup(key);
+            alert("Backup restored successfully!");
+          } catch (error) {
+            logger.log("error", "Failed to restore backup:", error);
+            alert("Failed to restore backup: " + error.message);
+          }
+        }
+      };
+    }
+    const deleteButton = document.getElementById("delete-backup-btn");
+    if (deleteButton) {
+      const newDeleteButton = deleteButton.cloneNode(true);
+      deleteButton.parentNode.replaceChild(newDeleteButton, deleteButton);
+      newDeleteButton.onclick = async () => {
+        const key = backupList.value;
+        if (!key) {
+          alert("Please select a backup to delete");
+          return;
+        }
+        if (
+          confirm(
+            `Are you sure you want to delete the backup "${key}"? This action cannot be undone.`
+          )
+        ) {
+          try {
+            await s3Service.delete(key);
+            alert("Backup deleted successfully!");
+            await loadBackupList();
+          } catch (error) {
+            logger.log("error", "Failed to delete backup:", error);
+            alert("Failed to delete backup: " + error.message);
+          }
+        }
+      };
+    }
+  }
+  function formatFileSize(bytes) {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   }
   const styleSheet = document.createElement("style");
   styleSheet.textContent = `
@@ -1292,12 +1576,102 @@ if (window.typingMindCloudSync) {
       bottom: 0;
       background-color: rgba(0, 0, 0, 0.6);
       backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
       z-index: 99999;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 1rem;
+      overflow-y: auto;
       animation: fadeIn 0.2s ease-out;
+    }
+    #sync-status-dot {
+      position: absolute;
+      top: -0.15rem;
+      right: -0.6rem;
+      width: 0.625rem;
+      height: 0.625rem;
+      border-radius: 9999px;
+    }
+    .cloud-sync-modal {
+      display: inline-block;
+      width: 100%;
+      background-color: rgb(9, 9, 11);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      text-align: left;
+      box-shadow: 0 0 15px rgba(255, 255, 255, 0.1), 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      transform: translateY(0);
+      transition: all 0.3s ease-in-out;
+      max-width: 32rem;
+      overflow: hidden;
+      animation: slideIn 0.3s ease-out;
+      position: relative;
+      z-index: 100000;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    [class*="hint--"] {
+      position: relative;
+      display: inline-block;
+    }
+    [class*="hint--"]::before,
+    [class*="hint--"]::after {
+      position: absolute;
+      transform: translate3d(0, 0, 0);
+      visibility: hidden;
+      opacity: 0;
+      z-index: 100000;
+    }
+    [class*="hint--"]::before {
+      content: '';
+      position: absolute;
+      background: transparent;
+      border: 6px solid transparent;
+      z-index: 100000;
+    }
+    [class*="hint--"]::after {
+      content: attr(aria-label);
+      background: #383838;
+      color: white;
+      padding: 8px 10px;
+      font-size: 12px;
+      line-height: 16px;
+      white-space: pre-wrap;
+      box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.3);
+      max-width: 400px !important;
+      min-width: 200px !important;
+      width: auto !important;
+      border-radius: 4px;
+    }
+    [class*="hint--"]:hover::before,
+    [class*="hint--"]:hover::after {
+      visibility: visible;
+      opacity: 1;
+    }
+    .hint--top::before {
+      border-top-color: #383838;
+      margin-bottom: -12px;
+    }
+    .hint--top::after {
+      margin-bottom: -6px;
+    }
+    .hint--top::before,
+    .hint--top::after {
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+    .hint--bottom-left::before {
+      border-bottom-color: #383838;
+      margin-top: -12px;
+    }
+    .hint--bottom-left::after {
+      margin-top: -6px;
+    }
+    .hint--bottom-left::before,
+    .hint--bottom-left::after {
+      top: 100%;
+      right: 0;
     }
     @keyframes fadeIn {
       from { opacity: 0; }
@@ -1312,100 +1686,6 @@ if (window.typingMindCloudSync) {
         opacity: 1;
         transform: translateY(0);
       }
-    }
-    .cloud-sync-modal {
-      background-color: rgb(9, 9, 11);
-      border-radius: 0.5rem;
-      padding: 1.5rem;
-      max-width: 32rem;
-      width: 100%;
-      color: white;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      animation: slideIn 0.3s ease-out;
-      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    }
-    .modal-header {
-      margin-bottom: 1.5rem;
-      text-align: center;
-    }
-    .modal-title {
-      font-size: 1.25rem;
-      font-weight: bold;
-      color: white;
-    }
-    .modal-section {
-      margin-bottom: 1.5rem;
-      background-color: rgb(39, 39, 42);
-      padding: 1rem;
-      border-radius: 0.5rem;
-      border: 1px solid rgb(63, 63, 70);
-    }
-    .modal-section-title {
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: rgb(161, 161, 170);
-      margin-bottom: 1rem;
-    }
-    .form-group {
-      margin-bottom: 1rem;
-    }
-    .form-group:last-child {
-      margin-bottom: 0;
-    }
-    .form-group label {
-      display: block;
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: rgb(161, 161, 170);
-      margin-bottom: 0.5rem;
-    }
-    .form-group input {
-      width: 100%;
-      padding: 0.5rem;
-      border: 1px solid rgb(63, 63, 70);
-      border-radius: 0.375rem;
-      background-color: rgb(24, 24, 27);
-      color: white;
-      font-size: 0.875rem;
-      transition: border-color 0.2s, box-shadow 0.2s;
-    }
-    .form-group input:focus {
-      border-color: rgb(59, 130, 246);
-      outline: none;
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-    }
-    .button-group {
-      display: flex;
-      justify-content: space-between;
-      gap: 1rem;
-    }
-    .button {
-      flex: 1;
-      padding: 0.75rem 1rem;
-      border: none;
-      border-radius: 0.375rem;
-      font-size: 0.875rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .button-primary {
-      background-color: rgb(37, 99, 235);
-      color: white;
-    }
-    .button-primary:hover {
-      background-color: rgb(29, 78, 216);
-      transform: translateY(-1px);
-    }
-    .button-secondary {
-      background-color: rgb(82, 82, 91);
-      color: white;
-    }
-    .button-secondary:hover {
-      background-color: rgb(63, 63, 70);
-    }
-    .button:active {
-      transform: translateY(0);
     }
   `;
   document.head.appendChild(styleSheet);
