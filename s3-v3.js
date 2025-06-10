@@ -3790,6 +3790,12 @@ if (window.typingMindCloudSync) {
     try {
       const syncTimestamp = Date.now();
       await loadLocalMetadata();
+      logToConsole("debug", "Loaded metadata after refresh", {
+        chatsCount: Object.keys(localMetadata.chats || {}).length,
+        sampleHash: Object.values(
+          localMetadata.chats || {}
+        )[0]?.hash?.substring(0, 12),
+      });
       const cloudMetadata = await downloadCloudMetadata();
       let hasChanges = false;
       let uploadedChats = 0;
