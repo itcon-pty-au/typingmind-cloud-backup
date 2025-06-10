@@ -542,11 +542,8 @@ if (window.typingMindCloudSync) {
         "info",
         `Found ${chats.length} chats and ${settingsEntries.length} settings for change detection`
       );
-      const changesBatch = {
-        chats: new Map(),
-        settings: new Map(),
-        hasChanges: false,
-      };
+      const changedItems = new Map();
+      let hasChanges = false;
       const BATCH_SIZE = 50;
       for (let i = 0; i < chats.length; i += BATCH_SIZE) {
         const chatBatch = chats.slice(i, i + BATCH_SIZE);
@@ -555,13 +552,13 @@ if (window.typingMindCloudSync) {
             const hash = await dataService.generateHash(chat);
             const existing = this.localMetadata.items[chat.id];
             if (!existing || existing.hash !== hash) {
-              changesBatch.chats.set(chat.id, {
+              changedItems.set(chat.id, {
                 hash,
                 modified: Date.now(),
                 synced: existing?.synced || 0,
                 type: "idb",
               });
-              changesBatch.hasChanges = true;
+              hasChanges = true;
               logger.log("info", `Chat modified: ${chat.id}`);
             }
           })
@@ -574,27 +571,30 @@ if (window.typingMindCloudSync) {
             const hash = await dataService.generateHash(value);
             const existing = this.localMetadata.items[key];
             if (!existing || existing.hash !== hash) {
-              changesBatch.settings.set(key, {
+              changedItems.set(key, {
                 hash,
                 modified: Date.now(),
                 synced: existing?.synced || 0,
                 type: "ls",
               });
-              changesBatch.hasChanges = true;
+              hasChanges = true;
+              logger.log("info", `Setting modified: ${key}`);
             }
           })
         );
       }
-      if (changesBatch.hasChanges) {
-        changesBatch.chats.forEach((item, key) => {
-          this.localMetadata.items[key] = item;
-        });
-        changesBatch.settings.forEach((item, key) => {
+      if (hasChanges) {
+        changedItems.forEach((item, key) => {
           this.localMetadata.items[key] = item;
         });
         await this.save();
+        logger.log("info", `Updated metadata for ${changedItems.size} items`);
       }
-      return changesBatch;
+      return {
+        changedItems,
+        hasChanges,
+        totalItems: chats.length + settingsEntries.length,
+      };
     }
   }
   const metadataManager = new MetadataManager();
@@ -832,16 +832,12 @@ if (window.typingMindCloudSync) {
           };
         }
         const itemsToSync = [];
-        changesBatch.chats.forEach((item, key) => {
+        changesBatch.changedItems.forEach((item, key) => {
           if (item.modified > (item.synced || 0)) {
             itemsToSync.push([key, item]);
           }
         });
-        changesBatch.settings.forEach((item, key) => {
-          if (item.modified > (item.synced || 0)) {
-            itemsToSync.push([key, item]);
-          }
-        });
+        logger.log("info", `Syncing ${itemsToSync.length} items to cloud`);
         const uploadResults = await Promise.allSettled(
           itemsToSync.map(async ([key, item]) => {
             if (item.type === "idb") {
@@ -851,6 +847,7 @@ if (window.typingMindCloudSync) {
                 const localMetadata = metadataManager.get();
                 localMetadata.items[key].synced = Date.now();
                 cloudMetadata.items[key] = localMetadata.items[key];
+                logger.log("info", `Uploaded chat: ${key}`);
               }
             } else if (item.type === "ls") {
               const value = localStorage.getItem(key);
@@ -859,6 +856,7 @@ if (window.typingMindCloudSync) {
                 const localMetadata = metadataManager.get();
                 localMetadata.items[key].synced = Date.now();
                 cloudMetadata.items[key] = localMetadata.items[key];
+                logger.log("info", `Uploaded setting: ${key}`);
               }
             }
           })
@@ -876,12 +874,90 @@ if (window.typingMindCloudSync) {
         localMetadata.lastSync = cloudMetadata.lastSync;
         await metadataManager.save();
         uiService.updateSyncStatus("success");
-        logger.log("success", "Sync to cloud completed");
+        logger.log(
+          "success",
+          `Sync to cloud completed - ${itemsToSync.length} items synced`
+        );
         return true;
       } catch (error) {
         logger.log(
           "error",
           "Failed to sync to cloud",
+          error instanceof CloudSyncError ? error.message : error
+        );
+        uiService.updateSyncStatus("error");
+        throw error;
+      }
+    }
+    async createInitialSync() {
+      try {
+        logger.log("start", "Creating initial sync for new installation");
+        const changesBatch = await metadataManager.detectChanges();
+        const totalItems = changesBatch.totalItems;
+        logger.log(
+          "info",
+          `Creating initial manifest for ${totalItems} local items`
+        );
+        const cloudMetadata = {
+          lastSync: Date.now(),
+          lastModified: Date.now(),
+          items: { ...metadataManager.get().items },
+          deleted: [],
+        };
+        const uploadPromises = [];
+        changesBatch.changedItems.forEach((item, key) => {
+          if (item.type === "idb") {
+            uploadPromises.push(
+              dataService.getChat(key).then(async (chat) => {
+                if (chat) {
+                  await s3Service.upload(`items/${key}.json`, chat);
+                  const localMetadata = metadataManager.get();
+                  localMetadata.items[key].synced = Date.now();
+                  cloudMetadata.items[key] = localMetadata.items[key];
+                  logger.log("info", `Initial upload chat: ${key}`);
+                }
+              })
+            );
+          } else if (item.type === "ls") {
+            const value = localStorage.getItem(key);
+            if (value !== null) {
+              uploadPromises.push(
+                s3Service
+                  .upload(`items/${key}.json`, { key, value })
+                  .then(() => {
+                    const localMetadata = metadataManager.get();
+                    localMetadata.items[key].synced = Date.now();
+                    cloudMetadata.items[key] = localMetadata.items[key];
+                    logger.log("info", `Initial upload setting: ${key}`);
+                  })
+              );
+            }
+          }
+        });
+        const uploadResults = await Promise.allSettled(uploadPromises);
+        const failedUploads = uploadResults.filter(
+          (result) => result.status === "rejected"
+        );
+        if (failedUploads.length > 0) {
+          logger.log(
+            "warning",
+            `${failedUploads.length} initial uploads failed`
+          );
+        }
+        await s3Service.upload("metadata.json", cloudMetadata, true);
+        const localMetadata = metadataManager.get();
+        localMetadata.lastSync = cloudMetadata.lastSync;
+        await metadataManager.save();
+        uiService.updateSyncStatus("success");
+        logger.log(
+          "success",
+          `Initial sync completed - ${uploadPromises.length} items uploaded`
+        );
+        return true;
+      } catch (error) {
+        logger.log(
+          "error",
+          "Failed to create initial sync",
           error instanceof CloudSyncError ? error.message : error
         );
         uiService.updateSyncStatus("error");
@@ -900,7 +976,7 @@ if (window.typingMindCloudSync) {
               "info",
               "No cloud metadata found - treating as new installation"
             );
-            return await this.syncToCloud();
+            return await this.createInitialSync();
           } else {
             throw error;
           }
