@@ -737,9 +737,15 @@ if (window.typingMindCloudSync) {
       if (this._shouldSync(now)) {
         this.lastSyncCheck = now;
         operationQueue.add(
-          "interval-sync",
+          "interval-sync-from",
           () => syncService.syncFromCloud(),
           [],
+          "normal"
+        );
+        operationQueue.add(
+          "interval-sync-to",
+          () => syncService.syncToCloud(),
+          ["interval-sync-from"],
           "normal"
         );
       }
