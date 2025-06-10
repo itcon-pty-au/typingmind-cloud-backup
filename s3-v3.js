@@ -662,13 +662,6 @@ if (window.typingMindCloudSync) {
   }
   let isInitialized = false;
   async function initializeExtension() {
-    console.log(
-      "🔍 initializeExtension called, stack trace:",
-      new Error().stack
-    );
-    console.log("🔍 isInitialized:", isInitialized);
-    console.log("🔍 window.typingMindCloudSync:", window.typingMindCloudSync);
-
     if (isInitialized) {
       logToConsole(
         "skip",
@@ -796,26 +789,11 @@ if (window.typingMindCloudSync) {
             "info",
             "Cloud data found. Performing standard startup sync check."
           );
-          if (document.visibilityState === "visible") {
-            console.log("🔍 About to queue startup-sync-check");
-            console.log("🔍 Current time:", new Date().toISOString());
-            console.log(
-              "🔍 Operation queue length:",
-              operationState.operationQueue.length
-            );
-            console.log(
-              "🔍 Completed operations:",
-              Array.from(operationState.completedOperations)
-            );
-            console.log("🔍 Stack trace:", new Error().stack);
-            queueOperation("startup-sync-check", syncFromCloud, [], 300000);
-          }
         } else {
           logToConsole(
             "info",
             "Both cloud and local seem empty or new. No initial sync needed immediately."
           );
-          // Normal interval/visibility checks will handle future changes.
         }
       }
       if (config.syncMode !== "disabled") {
@@ -2678,40 +2656,17 @@ if (window.typingMindCloudSync) {
     );
   }
   function queueOperation(name, operation, dependencies = [], timeout = 30000) {
-    console.log("🔍 queueOperation called with name:", name);
-    console.log("🔍 Current time:", new Date().toISOString());
-    console.log(
-      "🔍 Queue length before:",
-      operationState.operationQueue.length
-    );
-
     if (config.syncMode === "disabled" && !name.startsWith("manual")) {
       logToConsole("skip", `Skipping operation ${name} - sync is disabled`);
       return;
     }
-
-    console.log("🔍 Checking for existing operation:", name);
-    console.log(
-      "🔍 Current queue:",
-      operationState.operationQueue.map((op) => op.name)
-    );
-    console.log(
-      "🔍 Currently executing:",
-      operationState.currentlyExecutingOperation
-    );
-
     const existingOp = operationState.operationQueue.find(
       (op) => op.name === name
     );
     const isCurrentlyExecuting =
       operationState.currentlyExecutingOperation === name;
 
-    console.log("🔍 existingOp:", !!existingOp);
-    console.log("🔍 isCurrentlyExecuting:", isCurrentlyExecuting);
-
     if (existingOp || isCurrentlyExecuting) {
-      console.log("🔍 Duplicate operation detected:", name);
-      console.log("🔍 Stack trace:", new Error().stack);
       logToConsole("skip", `Skipping duplicate operation: ${name}`, {
         existingDeps: existingOp.dependencies,
         newDeps: dependencies,
@@ -2748,14 +2703,6 @@ if (window.typingMindCloudSync) {
     processOperationQueue();
   }
   async function processOperationQueue() {
-    console.log("🔍 processOperationQueue called");
-    console.log("🔍 Queue length:", operationState.operationQueue.length);
-    console.log(
-      "🔍 Queue contents:",
-      operationState.operationQueue.map((op) => op.name)
-    );
-    console.log("🔍 isProcessingQueue:", operationState.isProcessingQueue);
-
     if (
       operationState.isProcessingQueue ||
       operationState.operationQueue.length === 0
@@ -2819,21 +2766,8 @@ if (window.typingMindCloudSync) {
           }
           const nextOperation = operationState.operationQueue[nextOpIndex];
           const { name, operation, timeout } = nextOperation;
-          console.log("🔍 About to execute operation:", name);
           operationState.currentlyExecutingOperation = name;
-          console.log("🔍 Queue state before execution:", {
-            queueLength: operationState.operationQueue.length,
-            processingQueue: operationState.isProcessingQueue,
-            completedOps: Array.from(operationState.completedOperations),
-          });
-
-          // Remove the operation from queue BEFORE execution
           operationState.operationQueue.splice(nextOpIndex, 1);
-          console.log(
-            "🔍 Removed operation from queue before execution:",
-            name
-          );
-
           try {
             const timeoutPromise = new Promise((_, reject) => {
               const timeoutId = setTimeout(() => {
