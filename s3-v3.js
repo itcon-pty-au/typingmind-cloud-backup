@@ -3539,13 +3539,18 @@ if (window.typingMindCloudSync) {
         logToConsole("info", "No settings changes applied from cloud");
       }
 
+      // Refresh cloud metadata after settings sync to avoid overwriting cleaned metadata
+      const refreshedCloudMetadata = settingsChanged
+        ? await downloadCloudMetadata()
+        : cloudMetadata;
+
       const currentLocalChats = await getAllChatsFromIndexedDB();
       const currentLocalChatIds = new Set(
         currentLocalChats.map((chat) => chat.id)
       );
-      const cloudChatIds = new Set(Object.keys(cloudMetadata.chats));
+      const cloudChatIds = new Set(Object.keys(refreshedCloudMetadata.chats));
       for (const [chatId, cloudChatMeta] of Object.entries(
-        cloudMetadata.chats
+        refreshedCloudMetadata.chats
       )) {
         processedChats++;
         const localChatMeta = localMetadata.chats[chatId];
@@ -3729,10 +3734,10 @@ if (window.typingMindCloudSync) {
       }
       if (hasChanges) {
         localMetadata.lastSyncTime = syncTimestamp;
-        cloudMetadata.lastSyncTime = syncTimestamp;
+        refreshedCloudMetadata.lastSyncTime = syncTimestamp;
         await uploadToS3(
           "metadata.json",
-          new TextEncoder().encode(JSON.stringify(cloudMetadata)),
+          new TextEncoder().encode(JSON.stringify(refreshedCloudMetadata)),
           {
             ContentType: "application/json",
             ServerSideEncryption: "AES256",
