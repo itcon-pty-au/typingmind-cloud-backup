@@ -322,16 +322,27 @@ if (window.typingMindCloudSync) {
     }
     async download(key, isMetadata = false) {
       return this._executeWithRetry(`download-${key}`, async () => {
-        const result = await this.client
-          .getObject({
-            Bucket: configManager.get("bucketName"),
-            Key: key,
-          })
-          .promise();
-        const data = isMetadata
-          ? JSON.parse(result.Body.toString())
-          : await cryptoService.decrypt(new Uint8Array(result.Body));
-        return data;
+        try {
+          const result = await this.client
+            .getObject({
+              Bucket: configManager.get("bucketName"),
+              Key: key,
+            })
+            .promise();
+          const data = isMetadata
+            ? JSON.parse(result.Body.toString())
+            : await cryptoService.decrypt(new Uint8Array(result.Body));
+          return data;
+        } catch (error) {
+          if (error.code === "NoSuchKey" || error.statusCode === 404) {
+            throw new CloudSyncError(
+              `File not found: ${key}`,
+              "S3_NOT_FOUND",
+              error
+            );
+          }
+          throw error;
+        }
       });
     }
     async delete(key) {
@@ -362,6 +373,12 @@ if (window.typingMindCloudSync) {
         try {
           return await operation();
         } catch (error) {
+          if (
+            error instanceof CloudSyncError &&
+            error.type === "S3_NOT_FOUND"
+          ) {
+            throw error;
+          }
           lastError = error;
           if (attempt === this.retryConfig.maxRetries) break;
           const delay = Math.min(
@@ -867,11 +884,15 @@ if (window.typingMindCloudSync) {
         try {
           cloudMetadata = await s3Service.download("metadata.json", true);
         } catch (error) {
-          if (error.type === "S3_OPERATION") {
-            logger.log("info", "No cloud metadata found");
+          if (error.type === "S3_OPERATION" || error.type === "S3_NOT_FOUND") {
+            logger.log(
+              "info",
+              "No cloud metadata found - treating as new installation"
+            );
             return await this.syncToCloud();
+          } else {
+            throw error;
           }
-          throw error;
         }
         await metadataManager.detectChanges();
         const downloadResults = await Promise.allSettled(
