@@ -836,7 +836,7 @@ if (window.typingMindCloudSync) {
             if (item.type === "idb") {
               const chat = await dataService.getChat(key);
               if (chat) {
-                await s3Service.upload(`chats/${key}.json`, chat);
+                await s3Service.upload(`items/${key}.json`, chat);
                 const localMetadata = metadataManager.get();
                 localMetadata.items[key].synced = Date.now();
                 cloudMetadata.items[key] = localMetadata.items[key];
@@ -844,7 +844,7 @@ if (window.typingMindCloudSync) {
             } else if (item.type === "ls") {
               const value = localStorage.getItem(key);
               if (value !== null) {
-                await s3Service.upload(`settings/${key}.json`, { key, value });
+                await s3Service.upload(`items/${key}.json`, { key, value });
                 const localMetadata = metadataManager.get();
                 localMetadata.items[key].synced = Date.now();
                 cloudMetadata.items[key] = localMetadata.items[key];
@@ -905,16 +905,14 @@ if (window.typingMindCloudSync) {
                 cloudItem.modified > localItem.modified);
             if (!shouldDownload) return;
             if (cloudItem.type === "idb") {
-              const chatData = await s3Service.download(`chats/${key}.json`);
+              const chatData = await s3Service.download(`items/${key}.json`);
               if (chatData) {
                 await dataService.saveChat(chatData);
                 localMetadata.items[key] = { ...cloudItem };
                 logger.log("info", `Downloaded chat: ${key}`);
               }
             } else if (cloudItem.type === "ls") {
-              const settingData = await s3Service.download(
-                `settings/${key}.json`
-              );
+              const settingData = await s3Service.download(`items/${key}.json`);
               if (settingData?.value !== undefined) {
                 localStorage.setItem(key, settingData.value);
                 localMetadata.items[key] = { ...cloudItem };
@@ -1426,290 +1424,6 @@ if (window.typingMindCloudSync) {
       );
     }
   }
-  async function loadBackupList() {
-    try {
-      const backupList = document.getElementById("backup-files");
-      if (!backupList) return;
-      backupList.innerHTML = '<option value="">Loading backups...</option>';
-      backupList.disabled = true;
-      if (!configManager.isAwsConfigured()) {
-        backupList.innerHTML =
-          '<option value="">Please configure AWS credentials first</option>';
-        backupList.disabled = false;
-        return;
-      }
-      const backups = await s3Service.list();
-      backupList.innerHTML = "";
-      backupList.disabled = false;
-      const filteredBackups = backups.filter(
-        (backup) =>
-          !backup.Key.startsWith("chats/") &&
-          backup.Key !== "chats/" &&
-          backup.Key !== "metadata.json"
-      );
-      if (filteredBackups.length === 0) {
-        const option = document.createElement("option");
-        option.value = "";
-        option.text = "No backups found";
-        backupList.appendChild(option);
-      } else {
-        const sortedBackups = filteredBackups.sort((a, b) => {
-          const timestampA = a.LastModified?.getTime() || 0;
-          const timestampB = b.LastModified?.getTime() || 0;
-          return timestampB - timestampA;
-        });
-        sortedBackups.forEach((backup) => {
-          const option = document.createElement("option");
-          option.value = backup.Key;
-          const size = formatFileSize(backup.Size || 0);
-          option.text = `${backup.Key} - ${size}`;
-          backupList.appendChild(option);
-        });
-      }
-      updateButtonStates();
-      backupList.addEventListener("change", updateButtonStates);
-      setupButtonHandlers(backupList);
-    } catch (error) {
-      logger.log("error", "Failed to load backup list:", error);
-      const backupList = document.getElementById("backup-files");
-      if (backupList) {
-        backupList.innerHTML =
-          '<option value="">Error loading backups</option>';
-        backupList.disabled = false;
-      }
-    }
-  }
-  function updateButtonStates() {
-    const backupList = document.getElementById("backup-files");
-    const selectedValue = backupList ? backupList.value || "" : "";
-    const downloadButton = document.getElementById("download-backup-btn");
-    const restoreButton = document.getElementById("restore-backup-btn");
-    const deleteButton = document.getElementById("delete-backup-btn");
-    const isSnapshot = selectedValue.startsWith("snapshot-");
-    if (downloadButton) {
-      downloadButton.disabled = !selectedValue;
-    }
-    if (restoreButton) {
-      restoreButton.disabled = !selectedValue || !isSnapshot;
-    }
-    if (deleteButton) {
-      const isProtectedFile =
-        !selectedValue || selectedValue === "metadata.json";
-      deleteButton.disabled = isProtectedFile;
-    }
-  }
-  function setupButtonHandlers(backupList) {
-    const downloadButton = document.getElementById("download-backup-btn");
-    if (downloadButton) {
-      const newDownloadButton = downloadButton.cloneNode(true);
-      downloadButton.parentNode.replaceChild(newDownloadButton, downloadButton);
-      newDownloadButton.onclick = async () => {
-        const key = backupList.value;
-        if (!key) {
-          alert("Please select a backup to download");
-          return;
-        }
-        try {
-          const backup = await s3Service.download(key);
-          const filename = key.replace(/^snapshots\//, "");
-          const dataStr = JSON.stringify(backup, null, 2);
-          const dataBlob = new Blob([dataStr], { type: "application/json" });
-          const url = URL.createObjectURL(dataBlob);
-          const link = document.createElement("a");
-          link.href = url;
-          link.download = filename;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
-        } catch (error) {
-          logger.log("error", "Failed to download backup:", error);
-          alert("Failed to download backup: " + error.message);
-        }
-      };
-    }
-    const restoreButton = document.getElementById("restore-backup-btn");
-    if (restoreButton) {
-      const newRestoreButton = restoreButton.cloneNode(true);
-      restoreButton.parentNode.replaceChild(newRestoreButton, restoreButton);
-      newRestoreButton.onclick = async () => {
-        const key = backupList.value;
-        if (!key) {
-          alert("Please select a backup to restore");
-          return;
-        }
-        if (
-          confirm(
-            "Are you sure you want to restore from this backup? This will overwrite your current data."
-          )
-        ) {
-          try {
-            await backupService.restoreFromBackup(key);
-            alert("Backup restored successfully!");
-          } catch (error) {
-            logger.log("error", "Failed to restore backup:", error);
-            alert("Failed to restore backup: " + error.message);
-          }
-        }
-      };
-    }
-    const deleteButton = document.getElementById("delete-backup-btn");
-    if (deleteButton) {
-      const newDeleteButton = deleteButton.cloneNode(true);
-      deleteButton.parentNode.replaceChild(newDeleteButton, deleteButton);
-      newDeleteButton.onclick = async () => {
-        const key = backupList.value;
-        if (!key) {
-          alert("Please select a backup to delete");
-          return;
-        }
-        if (
-          confirm(
-            `Are you sure you want to delete the backup "${key}"? This action cannot be undone.`
-          )
-        ) {
-          try {
-            await s3Service.delete(key);
-            alert("Backup deleted successfully!");
-            await loadBackupList();
-          } catch (error) {
-            logger.log("error", "Failed to delete backup:", error);
-            alert("Failed to delete backup: " + error.message);
-          }
-        }
-      };
-    }
-  }
-  function formatFileSize(bytes) {
-    if (bytes === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  }
-  const styleSheet = document.createElement("style");
-  styleSheet.textContent = `
-    .modal-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-color: rgba(0, 0, 0, 0.6);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
-      z-index: 99999;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 1rem;
-      overflow-y: auto;
-      animation: fadeIn 0.2s ease-out;
-    }
-    #sync-status-dot {
-      position: absolute;
-      top: -0.15rem;
-      right: -0.6rem;
-      width: 0.625rem;
-      height: 0.625rem;
-      border-radius: 9999px;
-    }
-    .cloud-sync-modal {
-      display: inline-block;
-      width: 100%;
-      background-color: rgb(9, 9, 11);
-      border-radius: 0.5rem;
-      padding: 1rem;
-      text-align: left;
-      box-shadow: 0 0 15px rgba(255, 255, 255, 0.1), 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-      transform: translateY(0);
-      transition: all 0.3s ease-in-out;
-      max-width: 32rem;
-      overflow: hidden;
-      animation: slideIn 0.3s ease-out;
-      position: relative;
-      z-index: 100000;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-    [class*="hint--"] {
-      position: relative;
-      display: inline-block;
-    }
-    [class*="hint--"]::before,
-    [class*="hint--"]::after {
-      position: absolute;
-      transform: translate3d(0, 0, 0);
-      visibility: hidden;
-      opacity: 0;
-      z-index: 100000;
-    }
-    [class*="hint--"]::before {
-      content: '';
-      position: absolute;
-      background: transparent;
-      border: 6px solid transparent;
-      z-index: 100000;
-    }
-    [class*="hint--"]::after {
-      content: attr(aria-label);
-      background: #383838;
-      color: white;
-      padding: 8px 10px;
-      font-size: 12px;
-      line-height: 16px;
-      white-space: pre-wrap;
-      box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.3);
-      max-width: 400px !important;
-      min-width: 200px !important;
-      width: auto !important;
-      border-radius: 4px;
-    }
-    [class*="hint--"]:hover::before,
-    [class*="hint--"]:hover::after {
-      visibility: visible;
-      opacity: 1;
-    }
-    .hint--top::before {
-      border-top-color: #383838;
-      margin-bottom: -12px;
-    }
-    .hint--top::after {
-      margin-bottom: -6px;
-    }
-    .hint--top::before,
-    .hint--top::after {
-      bottom: 100%;
-      left: 50%;
-      transform: translateX(-50%);
-    }
-    .hint--bottom-left::before {
-      border-bottom-color: #383838;
-      margin-top: -12px;
-    }
-    .hint--bottom-left::after {
-      margin-top: -6px;
-    }
-    .hint--bottom-left::before,
-    .hint--bottom-left::after {
-      top: 100%;
-      right: 0;
-    }
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-    @keyframes slideIn {
-      from { 
-        opacity: 0;
-        transform: translateY(-20px);
-      }
-      to { 
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-  `;
-  document.head.appendChild(styleSheet);
   async function initialize() {
     logger.log("start", "Initializing Cloud Sync v4");
     await waitForDOM();
