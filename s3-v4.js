@@ -1100,11 +1100,14 @@ if (window.typingMindCloudSync) {
     async createSnapshot(name) {
       try {
         logger.log("start", `Creating snapshot: ${name}`);
-        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-        const filename = `snapshot-${timestamp}-${name.replace(
+        const timestamp = new Date()
+          .toISOString()
+          .replace(/[-:]/g, "")
+          .replace(/\..+/, "");
+        const filename = `SS_${timestamp}_${name.replace(
           /[^a-zA-Z0-9]/g,
           "-"
-        )}.json`;
+        )}.zip`;
         const allItems = await dataService.getAllItems();
         const chats = allItems
           .filter((item) => item.type === "idb")
@@ -1142,7 +1145,7 @@ if (window.typingMindCloudSync) {
         const objects = await s3Service.list("snapshots/");
         return objects.map((obj) => ({
           key: obj.Key,
-          name: obj.Key.replace("snapshots/", "").replace(".json", ""),
+          name: obj.Key.replace("snapshots/", "").replace(".zip", ""),
           size: obj.Size,
           modified: obj.LastModified,
         }));
@@ -1192,9 +1195,30 @@ if (window.typingMindCloudSync) {
       }
       try {
         logger.log("start", "Performing daily backup");
-        await this.createSnapshot("daily-auto");
+        const timestamp = new Date()
+          .toISOString()
+          .replace(/[-:]/g, "")
+          .replace(/\..+/, "");
+        const filename = `Daily_${timestamp}.zip`;
+        const allItems = await dataService.getAllItems();
+        const chats = allItems
+          .filter((item) => item.type === "idb")
+          .map((item) => item.data);
+        const settings = allItems
+          .filter((item) => item.type === "ls")
+          .reduce((acc, item) => {
+            acc[item.data.key] = item.data.value;
+            return acc;
+          }, {});
+        const backup = {
+          chats,
+          settings,
+          created: Date.now(),
+          name: "daily-auto",
+        };
+        await s3Service.upload(`snapshots/${filename}`, backup);
         localStorage.setItem("last-daily-backup-date", today);
-        logger.log("success", `Daily backup completed for ${today}`);
+        logger.log("success", `Daily backup completed: ${filename}`);
         await this.cleanupOldBackups();
       } catch (error) {
         logger.log(
@@ -1254,6 +1278,21 @@ if (window.typingMindCloudSync) {
       '[data-element-id="workspace-tab-cloudsync"]'
     );
     if (existingButton) return;
+    const style = document.createElement("style");
+    style.textContent = `
+      #sync-status-dot {
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background-color: #6b7280;
+        display: none;
+        z-index: 10;
+      }
+    `;
+    document.head.appendChild(style);
     const button = document.createElement("button");
     button.setAttribute("data-element-id", "workspace-tab-cloudsync");
     button.className =
@@ -1499,6 +1538,92 @@ if (window.typingMindCloudSync) {
       logger.setEnabled(e.target.checked);
     });
     modal.addEventListener("click", (e) => e.stopPropagation());
+    modal
+      .querySelector("#download-backup-btn")
+      .addEventListener("click", async () => {
+        const select = document.getElementById("backup-files");
+        if (!select.value) {
+          alert("Please select a backup to download");
+          return;
+        }
+        try {
+          const backup = await s3Service.download(select.value);
+          const dataStr = JSON.stringify(backup, null, 2);
+          const dataBlob = new Blob([dataStr], { type: "application/json" });
+          const url = URL.createObjectURL(dataBlob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download =
+            select.options[select.selectedIndex].text.split(" ")[0] + ".json";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        } catch (error) {
+          alert("Failed to download backup: " + error.message);
+        }
+      });
+    modal
+      .querySelector("#restore-backup-btn")
+      .addEventListener("click", async () => {
+        const select = document.getElementById("backup-files");
+        if (!select.value) {
+          alert("Please select a backup to restore");
+          return;
+        }
+        if (confirm("This will overwrite your current data. Are you sure?")) {
+          const restoreButton = modal.querySelector("#restore-backup-btn");
+          const originalText = restoreButton.textContent;
+          restoreButton.disabled = true;
+          restoreButton.textContent = "Restoring...";
+          try {
+            await backupService.restoreFromBackup(select.value);
+            restoreButton.textContent = "Restored!";
+            setTimeout(() => {
+              location.reload();
+            }, 1000);
+          } catch (error) {
+            restoreButton.textContent = "Failed";
+            alert("Failed to restore backup: " + error.message);
+            setTimeout(() => {
+              restoreButton.textContent = originalText;
+              restoreButton.disabled = false;
+            }, 2000);
+          }
+        }
+      });
+    modal
+      .querySelector("#delete-backup-btn")
+      .addEventListener("click", async () => {
+        const select = document.getElementById("backup-files");
+        if (!select.value) {
+          alert("Please select a backup to delete");
+          return;
+        }
+        if (
+          confirm(
+            "Are you sure you want to delete this backup? This cannot be undone."
+          )
+        ) {
+          const deleteButton = modal.querySelector("#delete-backup-btn");
+          const originalText = deleteButton.textContent;
+          deleteButton.disabled = true;
+          deleteButton.textContent = "Deleting...";
+          try {
+            await s3Service.delete(select.value);
+            deleteButton.textContent = "Deleted!";
+            await loadBackupList();
+          } catch (error) {
+            deleteButton.textContent = "Failed";
+            alert("Failed to delete backup: " + error.message);
+          } finally {
+            setTimeout(() => {
+              deleteButton.textContent = originalText;
+              deleteButton.disabled = false;
+            }, 2000);
+          }
+        }
+      });
     loadBackupList();
   }
   function closeModal() {
@@ -1598,5 +1723,44 @@ if (window.typingMindCloudSync) {
   window.openSyncModal = openSyncModal;
   window.closeModal = closeModal;
   window.saveSettings = saveSettings;
+  async function loadBackupList() {
+    try {
+      const backups = await backupService.loadBackupList();
+      const select = document.getElementById("backup-files");
+      if (!select) return;
+      select.innerHTML = "";
+      if (backups.length === 0) {
+        select.innerHTML = '<option value="">No backups found</option>';
+        document.getElementById("download-backup-btn").disabled = true;
+        document.getElementById("restore-backup-btn").disabled = true;
+        document.getElementById("delete-backup-btn").disabled = true;
+      } else {
+        select.innerHTML = '<option value="">Select a backup...</option>';
+        backups.forEach((backup) => {
+          const option = document.createElement("option");
+          option.value = backup.key;
+          option.textContent = `${backup.name} (${(backup.size / 1024).toFixed(
+            1
+          )}KB) - ${new Date(backup.modified).toLocaleString()}`;
+          select.appendChild(option);
+        });
+        document.getElementById("download-backup-btn").disabled = false;
+        document.getElementById("restore-backup-btn").disabled = false;
+        document.getElementById("delete-backup-btn").disabled = false;
+      }
+      select.addEventListener("change", () => {
+        const hasSelection = select.value !== "";
+        document.getElementById("download-backup-btn").disabled = !hasSelection;
+        document.getElementById("restore-backup-btn").disabled = !hasSelection;
+        document.getElementById("delete-backup-btn").disabled = !hasSelection;
+      });
+    } catch (error) {
+      logger.log("error", "Failed to load backup list", error);
+      const select = document.getElementById("backup-files");
+      if (select) {
+        select.innerHTML = '<option value="">Failed to load backups</option>';
+      }
+    }
+  }
   initialize();
 }
