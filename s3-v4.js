@@ -739,7 +739,6 @@ if (window.typingMindCloudSync) {
             "info",
             "No cloud changes detected - skipping item downloads"
           );
-          await this.detectChanges();
           this.metadata.lastSync = Date.now();
           this.setLastCloudSync(cloudLastModified);
           this.saveMetadata();
@@ -751,7 +750,6 @@ if (window.typingMindCloudSync) {
           "info",
           `Cloud changes detected - proceeding with full sync (cloud: ${cloudLastModified}, local: ${lastCloudSync})`
         );
-        await this.detectChanges();
         const itemsToDownload = Object.entries(cloudMetadata.items).filter(
           ([key, cloudItem]) => {
             const localItem = this.metadata.items[key];
