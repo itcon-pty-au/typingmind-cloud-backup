@@ -157,6 +157,9 @@ if (window.typingMindCloudSync) {
       const db = await this.getDB();
       const transaction = db.transaction(["keyval"], "readonly");
       const store = transaction.objectStore("keyval");
+      let totalIDB = 0;
+      let includedIDB = 0;
+      let excludedIDB = 0;
       await new Promise((resolve) => {
         const request = store.openCursor();
         request.onsuccess = (event) => {
@@ -164,6 +167,7 @@ if (window.typingMindCloudSync) {
           if (cursor) {
             const key = cursor.key;
             const value = cursor.value;
+            totalIDB++;
             if (
               typeof key === "string" &&
               value !== undefined &&
@@ -174,6 +178,9 @@ if (window.typingMindCloudSync) {
                 data: { id: key, ...value },
                 type: "idb",
               });
+              includedIDB++;
+            } else {
+              excludedIDB++;
             }
             cursor.continue();
           } else {
@@ -201,6 +208,9 @@ if (window.typingMindCloudSync) {
         }
       }
       if (debugEnabled) {
+        console.log(
+          `📊 IndexedDB Stats: Total=${totalIDB}, Included=${includedIDB}, Excluded=${excludedIDB}`
+        );
         console.log(
           `📊 localStorage Stats: Total=${totalLS}, Included=${includedLS}, Excluded=${excludedLS}`
         );
