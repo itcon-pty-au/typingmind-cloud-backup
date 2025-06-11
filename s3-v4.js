@@ -124,7 +124,7 @@ if (window.typingMindCloudSync) {
       if (!this.enabled) return;
       const timestamp = new Date().toLocaleString();
       console.log(
-        `${this.icons[type] || "ℹ️"} [Cloud Sync v4] [${timestamp}] ${message}`,
+        `${this.icons[type] || "ℹ️"} [${timestamp}] ${message}`,
         data || ""
       );
     }
