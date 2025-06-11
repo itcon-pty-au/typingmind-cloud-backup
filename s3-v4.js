@@ -138,8 +138,9 @@ if (window.typingMindCloudSync) {
   }
 
   class DataService {
-    constructor(configManager) {
+    constructor(configManager, logger) {
       this.config = configManager;
+      this.logger = logger;
       this.dbPromise = null;
     }
     async getDB() {
@@ -291,6 +292,7 @@ if (window.typingMindCloudSync) {
         .join("");
     }
     async cleanupChatDuplicates() {
+      this.logger.log("start", "🔍 Checking for chat duplicates to clean up");
       const db = await this.getDB();
       const transaction = db.transaction(["keyval"], "readwrite");
       const store = transaction.objectStore("keyval");
@@ -315,6 +317,10 @@ if (window.typingMindCloudSync) {
                 unprefixed: key,
                 prefixed: prefixedKey,
               });
+              this.logger.log(
+                "info",
+                `🔍 Found potential duplicate: ${key} (checking for ${prefixedKey})`
+              );
             }
             cursor.continue();
           } else {
@@ -323,6 +329,10 @@ if (window.typingMindCloudSync) {
         };
         request.onerror = () => resolve();
       });
+      this.logger.log(
+        "info",
+        `🔍 Found ${duplicatesToRemove.length} potential duplicates to check`
+      );
       let cleanedCount = 0;
       for (const duplicate of duplicatesToRemove) {
         try {
@@ -340,20 +350,37 @@ if (window.typingMindCloudSync) {
               const request = deleteStore.delete(duplicate.unprefixed);
               request.onsuccess = () => {
                 cleanedCount++;
+                this.logger.log(
+                  "success",
+                  `🧹 Removed duplicate chat: ${duplicate.unprefixed}`
+                );
                 resolve();
               };
               request.onerror = () => resolve();
             });
+          } else {
+            this.logger.log(
+              "info",
+              `ℹ️ No prefixed version found for ${duplicate.unprefixed}, keeping it`
+            );
           }
         } catch (error) {
-          console.warn(
-            `Failed to clean duplicate chat ${duplicate.unprefixed}:`,
-            error
+          this.logger.log(
+            "warning",
+            `Failed to clean duplicate chat ${duplicate.unprefixed}: ${error.message}`
           );
         }
       }
       if (cleanedCount > 0) {
-        console.log(`🧹 Cleaned up ${cleanedCount} duplicate chat entries`);
+        this.logger.log(
+          "success",
+          `🧹 Cleaned up ${cleanedCount} duplicate chat entries`
+        );
+      } else {
+        this.logger.log(
+          "info",
+          "🧹 No duplicate chat entries found to clean up"
+        );
       }
       return cleanedCount;
     }
@@ -1263,7 +1290,7 @@ if (window.typingMindCloudSync) {
     constructor() {
       this.logger = new Logger();
       this.config = new ConfigManager();
-      this.dataService = new DataService(this.config);
+      this.dataService = new DataService(this.config, this.logger);
       this.cryptoService = new CryptoService(this.config);
       this.s3Service = new S3Service(
         this.config,
