@@ -618,6 +618,25 @@ if (window.typingMindCloudSync) {
       const changedItems = [];
       let processedCount = 0;
 
+      if (debugEnabled) {
+        this.logger.log(
+          "info",
+          `🔍 detectChanges: Found ${allItems.length} items in storage`
+        );
+        this.logger.log(
+          "info",
+          `🔍 detectChanges: Metadata has ${
+            Object.keys(this.metadata.items).length
+          } tracked items`
+        );
+        this.logger.log(
+          "info",
+          `🔍 detectChanges: timeSinceActivity=${timeSinceActivity}, lastChangeCheck=${
+            now - this.lastChangeCheck
+          }`
+        );
+      }
+
       for (const item of allItems) {
         const existingItem = this.metadata.items[item.id];
         const hash = await this.dataService.generateHash(item.data);
@@ -637,9 +656,14 @@ if (window.typingMindCloudSync) {
               "info",
               `📝 Change detected: ${item.id} (${item.type}) - ${
                 !existingItem ? "NEW" : "MODIFIED"
-              }`
+              } (synced: ${existingItem?.synced || 0})`
             );
           }
+        } else if (debugEnabled) {
+          this.logger.log(
+            "info",
+            `⏭️ No change: ${item.id} (${item.type}) - hash match, synced: ${existingItem.synced}`
+          );
         }
       }
 
