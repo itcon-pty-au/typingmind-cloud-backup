@@ -14,6 +14,7 @@ if (window.typingMindCloudSync) {
     "last-cloud-sync",
     "sync-exclusions",
     "cloud-metadata-v4",
+    "referrer",
   ];
   const CONFIG_KEYS = {
     syncInterval: "sync-interval",
