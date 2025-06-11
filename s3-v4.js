@@ -422,6 +422,14 @@ if (window.typingMindCloudSync) {
         return data;
       });
     }
+    async downloadRaw(key) {
+      return this.withRetry(async () => {
+        const result = await this.client
+          .getObject({ Bucket: this.config.get("bucketName"), Key: key })
+          .promise();
+        return new Uint8Array(result.Body);
+      });
+    }
     async delete(key) {
       return this.withRetry(async () => {
         await this.client
@@ -924,7 +932,6 @@ if (window.typingMindCloudSync) {
       overlay.style.cssText = `position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 9999;`;
       const modal = document.createElement("div");
       modal.className = "cloud-sync-modal";
-      modal.style.cssText = `background: white; border-radius: 8px; padding: 24px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto;`;
       modal.innerHTML = this.getModalHTML();
       overlay.appendChild(modal);
       document.body.appendChild(overlay);
@@ -1255,7 +1262,7 @@ if (window.typingMindCloudSync) {
           try {
             downloadButton.disabled = true;
             downloadButton.textContent = "Downloading...";
-            const backup = await this.s3Service.download(key);
+            const backup = await this.s3Service.downloadRaw(key);
             if (backup) {
               await this.handleBackupDownload(backup, key);
               downloadButton.textContent = "Downloaded!";
@@ -1346,26 +1353,62 @@ if (window.typingMindCloudSync) {
       try {
         let content;
         if (key.endsWith(".zip")) {
-          const JSZip = (
-            await import(
-              "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"
-            )
-          ).default;
-          const zip = await JSZip.loadAsync(backupData);
-          const jsonFile = Object.keys(zip.files).find((f) =>
-            f.endsWith(".json")
-          );
-          if (!jsonFile) {
-            throw new Error("No JSON file found in backup");
+          try {
+            const decryptedContent = await this.cryptoService.decrypt(
+              backupData
+            );
+            content = JSON.stringify(decryptedContent, null, 2);
+          } catch (decryptError) {
+            console.warn(
+              "Failed to decrypt zip file, downloading as raw data:",
+              decryptError
+            );
+            const blob = new Blob([backupData], { type: "application/zip" });
+            this.downloadFile(key, blob);
+            return;
           }
-          const fileContent = await zip.file(jsonFile).async("uint8array");
-          const decryptedContent = await this.cryptoService.decrypt(
-            fileContent
-          );
-          content = JSON.stringify(decryptedContent, null, 2);
+        } else if (
+          key.startsWith("SS_") ||
+          key.startsWith("Daily_") ||
+          key.includes("snapshot")
+        ) {
+          try {
+            const decryptedContent = await this.cryptoService.decrypt(
+              backupData
+            );
+            content = JSON.stringify(decryptedContent, null, 2);
+          } catch (decryptError) {
+            console.warn(
+              "Failed to decrypt backup file, downloading as raw data:",
+              decryptError
+            );
+            const blob = new Blob([backupData], {
+              type: "application/octet-stream",
+            });
+            this.downloadFile(key, blob);
+            return;
+          }
         } else {
-          const decryptedContent = await this.cryptoService.decrypt(backupData);
-          content = JSON.stringify(decryptedContent, null, 2);
+          if (typeof backupData === "string") {
+            content = backupData;
+          } else {
+            try {
+              const decryptedContent = await this.cryptoService.decrypt(
+                backupData
+              );
+              content = JSON.stringify(decryptedContent, null, 2);
+            } catch (decryptError) {
+              console.warn(
+                "Failed to decrypt file, downloading as raw data:",
+                decryptError
+              );
+              const blob = new Blob([backupData], {
+                type: "application/octet-stream",
+              });
+              this.downloadFile(key, blob);
+              return;
+            }
+          }
         }
         this.downloadFile(key.replace(".zip", ".json"), content);
       } catch (error) {
