@@ -3,63 +3,6 @@ if (window.typingMindCloudSync) {
 } else {
   window.typingMindCloudSync = true;
 
-  class ErrorHandler {
-    constructor(logger) {
-      this.logger = logger;
-    }
-    handleError(error, context = "", shouldThrow = true) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      this.logger.log("error", `${context}: ${errorMessage}`, error);
-      if (shouldThrow) {
-        throw error instanceof Error ? error : new Error(errorMessage);
-      }
-      return null;
-    }
-    async safeExecute(operation, context = "", defaultValue = null) {
-      try {
-        return await operation();
-      } catch (error) {
-        this.logger.log("error", `${context}: ${error.message}`, error);
-        return defaultValue;
-      }
-    }
-    createRetryWrapper(maxRetries = 3, baseDelay = 1000) {
-      return async (operation, context = "") => {
-        let lastError;
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-          try {
-            return await operation();
-          } catch (error) {
-            lastError = error;
-            if (attempt === maxRetries) break;
-            const delay =
-              baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
-            this.logger.log(
-              "warning",
-              `${context} - Retry ${attempt + 1}/${maxRetries} in ${Math.round(
-                delay
-              )}ms`
-            );
-            await new Promise((resolve) => setTimeout(resolve, delay));
-          }
-        }
-        throw lastError;
-      };
-    }
-  }
-
-  const CONFIG_KEY_MAPPINGS = {
-    bucketName: "tcs_aws-bucket",
-    region: "tcs_aws-region",
-    accessKey: "tcs_aws-access-key",
-    secretKey: "tcs_aws-secret-key",
-    endpoint: "tcs_aws-endpoint",
-    encryptionKey: "tcs_encryption-key",
-    syncInterval: "tcs_backup-interval",
-    syncMode: "tcs_sync-mode",
-  };
-
   class ConfigManager {
     constructor() {
       this.config = this.loadConfig();
@@ -77,9 +20,19 @@ if (window.typingMindCloudSync) {
         syncMode: "sync",
       };
       const stored = {};
+      const keyMappings = {
+        bucketName: "tcs_aws-bucket",
+        region: "tcs_aws-region",
+        accessKey: "tcs_aws-access-key",
+        secretKey: "tcs_aws-secret-key",
+        endpoint: "tcs_aws-endpoint",
+        encryptionKey: "tcs_encryption-key",
+        syncInterval: "tcs_backup-interval",
+        syncMode: "tcs_sync-mode",
+      };
       Object.keys(defaults).forEach((key) => {
         const storageKey =
-          CONFIG_KEY_MAPPINGS[key] ||
+          keyMappings[key] ||
           `tcs_${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
         const value = localStorage.getItem(storageKey);
         stored[key] =
@@ -116,9 +69,19 @@ if (window.typingMindCloudSync) {
       this.config[key] = value;
     }
     save() {
+      const keyMappings = {
+        bucketName: "tcs_aws-bucket",
+        region: "tcs_aws-region",
+        accessKey: "tcs_aws-access-key",
+        secretKey: "tcs_aws-secret-key",
+        endpoint: "tcs_aws-endpoint",
+        encryptionKey: "tcs_encryption-key",
+        syncInterval: "tcs_backup-interval",
+        syncMode: "tcs_sync-mode",
+      };
       Object.keys(this.config).forEach((key) => {
         const storageKey =
-          CONFIG_KEY_MAPPINGS[key] ||
+          keyMappings[key] ||
           `tcs_${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
         localStorage.setItem(storageKey, this.config[key].toString());
       });
@@ -170,7 +133,6 @@ if (window.typingMindCloudSync) {
     constructor(configManager) {
       this.config = configManager;
       this.dbPromise = null;
-      this.batchSize = 5;
     }
     async getDB() {
       if (!this.dbPromise) {
@@ -182,66 +144,11 @@ if (window.typingMindCloudSync) {
       }
       return this.dbPromise;
     }
-    async *getItemsIterator() {
+    async getAllItems() {
+      const items = new Map();
       const db = await this.getDB();
       const transaction = db.transaction(["keyval"], "readonly");
       const store = transaction.objectStore("keyval");
-      const totalItems = await this.getTotalItemsCount();
-      let processedItems = 0;
-      const idbRequest = store.openCursor();
-      const idbItems = [];
-      await new Promise((resolve) => {
-        idbRequest.onsuccess = (event) => {
-          const cursor = event.target.result;
-          if (cursor) {
-            const key = cursor.key;
-            const value = cursor.value;
-            if (
-              typeof key === "string" &&
-              value !== undefined &&
-              !this.config.shouldExclude(key)
-            ) {
-              idbItems.push({
-                id: key,
-                data: { id: key, ...value },
-                type: "idb",
-              });
-            }
-            cursor.continue();
-          } else {
-            resolve();
-          }
-        };
-        idbRequest.onerror = () => resolve();
-      });
-      for (const item of idbItems) {
-        processedItems++;
-        yield {
-          ...item,
-          progress: { current: processedItems, total: totalItems },
-        };
-      }
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && !this.config.shouldExclude(key)) {
-          const value = localStorage.getItem(key);
-          if (value !== null) {
-            processedItems++;
-            yield {
-              id: key,
-              data: { key, value },
-              type: "ls",
-              progress: { current: processedItems, total: totalItems },
-            };
-          }
-        }
-      }
-    }
-    async getTotalItemsCount() {
-      const db = await this.getDB();
-      const transaction = db.transaction(["keyval"], "readonly");
-      const store = transaction.objectStore("keyval");
-      let idbCount = 0;
       await new Promise((resolve) => {
         const request = store.openCursor();
         request.onsuccess = (event) => {
@@ -254,7 +161,11 @@ if (window.typingMindCloudSync) {
               value !== undefined &&
               !this.config.shouldExclude(key)
             ) {
-              idbCount++;
+              items.set(key, {
+                id: key,
+                data: { id: key, ...value },
+                type: "idb",
+              });
             }
             cursor.continue();
           } else {
@@ -263,36 +174,16 @@ if (window.typingMindCloudSync) {
         };
         request.onerror = () => resolve();
       });
-      return idbCount + this.getLocalStorageCount();
-    }
-    getLocalStorageCount() {
-      let count = 0;
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && !this.config.shouldExclude(key)) {
           const value = localStorage.getItem(key);
-          if (value !== null) count++;
+          if (value !== null) {
+            items.set(key, { id: key, data: { key, value }, type: "ls" });
+          }
         }
       }
-      return count;
-    }
-    async getAllItems() {
-      const items = [];
-      for await (const item of this.getItemsIterator()) {
-        items.push(item);
-      }
-      return items;
-    }
-    async processBatch(items, processor, concurrency = 5) {
-      const results = [];
-      for (let i = 0; i < items.length; i += concurrency) {
-        const batch = items.slice(i, i + concurrency);
-        const batchPromises = batch.map(processor);
-        const batchResults = await Promise.allSettled(batchPromises);
-        results.push(...batchResults);
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      return results;
+      return Array.from(items.values());
     }
     async getItem(itemId, type) {
       if (type === "idb") {
@@ -372,14 +263,6 @@ if (window.typingMindCloudSync) {
     constructor(configManager) {
       this.config = configManager;
       this.keyCache = new Map();
-      this.compressionSupported = "CompressionStream" in window;
-    }
-    clearSensitiveData() {
-      this.keyCache.clear();
-      if (this.tempKeys) {
-        this.tempKeys.fill(0);
-        delete this.tempKeys;
-      }
     }
     async deriveKey(password) {
       if (this.keyCache.has(password)) return this.keyCache.get(password);
@@ -393,24 +276,18 @@ if (window.typingMindCloudSync) {
         ["encrypt", "decrypt"]
       );
       this.keyCache.set(password, key);
-      setTimeout(() => {
-        this.keyCache.delete(password);
-      }, 300000);
       return key;
     }
     async encrypt(data) {
       const encryptionKey = this.config.get("encryptionKey");
       if (!encryptionKey) throw new Error("No encryption key configured");
       const key = await this.deriveKey(encryptionKey);
-      const compressed = await this.compress(data);
-      const encodedData = new TextEncoder().encode(
-        typeof compressed === "string" ? compressed : JSON.stringify(compressed)
-      );
+      const encodedData = new TextEncoder().encode(JSON.stringify(data));
       const iv = crypto.getRandomValues(new Uint8Array(12));
       const encrypted = await crypto.subtle.encrypt(
         { name: "AES-GCM", iv },
         key,
-        compressed instanceof Uint8Array ? compressed : encodedData
+        encodedData
       );
       const result = new Uint8Array(iv.length + encrypted.byteLength);
       result.set(iv, 0);
@@ -428,77 +305,7 @@ if (window.typingMindCloudSync) {
         key,
         data
       );
-      const decompressed = await this.decompress(new Uint8Array(decrypted));
-      return decompressed;
-    }
-    async compress(data) {
-      if (!this.compressionSupported) return data;
-      try {
-        const stream = new CompressionStream("gzip");
-        const writer = stream.writable.getWriter();
-        const reader = stream.readable.getReader();
-        const chunks = [];
-        const readPromise = (async () => {
-          let result;
-          while (!(result = await reader.read()).done) {
-            chunks.push(result.value);
-          }
-        })();
-        const input = new TextEncoder().encode(
-          typeof data === "string" ? data : JSON.stringify(data)
-        );
-        await writer.write(input);
-        await writer.close();
-        await readPromise;
-        const compressed = new Uint8Array(
-          chunks.reduce((acc, chunk) => acc + chunk.length, 0)
-        );
-        let offset = 0;
-        for (const chunk of chunks) {
-          compressed.set(chunk, offset);
-          offset += chunk.length;
-        }
-        return compressed;
-      } catch (error) {
-        console.warn("Compression failed, using uncompressed data:", error);
-        return data;
-      }
-    }
-    async decompress(compressedData) {
-      if (!this.compressionSupported || typeof compressedData === "string")
-        return compressedData;
-      try {
-        const stream = new DecompressionStream("gzip");
-        const writer = stream.writable.getWriter();
-        const reader = stream.readable.getReader();
-        const chunks = [];
-        const readPromise = (async () => {
-          let result;
-          while (!(result = await reader.read()).done) {
-            chunks.push(result.value);
-          }
-        })();
-        await writer.write(compressedData);
-        await writer.close();
-        await readPromise;
-        const decompressed = new Uint8Array(
-          chunks.reduce((acc, chunk) => acc + chunk.length, 0)
-        );
-        let offset = 0;
-        for (const chunk of chunks) {
-          decompressed.set(chunk, offset);
-          offset += chunk.length;
-        }
-        const text = new TextDecoder().decode(decompressed);
-        try {
-          return JSON.parse(text);
-        } catch {
-          return text;
-        }
-      } catch (error) {
-        console.warn("Decompression failed, using original data:", error);
-        return compressedData;
-      }
+      return JSON.parse(new TextDecoder().decode(decrypted));
     }
   }
 
@@ -509,8 +316,6 @@ if (window.typingMindCloudSync) {
       this.logger = logger;
       this.client = null;
       this.sdkLoaded = false;
-      this.rateLimitDelay = 0;
-      this.lastRequestTime = 0;
     }
     async initialize() {
       if (!this.config.isConfigured())
@@ -550,40 +355,21 @@ if (window.typingMindCloudSync) {
       let lastError;
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
-          await this.enforceRateLimit();
-          const result = await operation();
-          this.rateLimitDelay = Math.max(0, this.rateLimitDelay - 100);
-          return result;
+          return await operation();
         } catch (error) {
           lastError = error;
           if (error.code === "NoSuchKey" || error.statusCode === 404)
             throw error;
-          if (error.statusCode === 429 || error.code === "TooManyRequests") {
-            this.rateLimitDelay = Math.min(this.rateLimitDelay + 1000, 30000);
-          }
           if (attempt === maxRetries) break;
-          const baseDelay = Math.min(1000 * Math.pow(2, attempt), 10000);
-          const jitter = Math.random() * 1000;
-          const delay = baseDelay + jitter + this.rateLimitDelay;
+          const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
           this.logger.log(
             "warning",
-            `Retry ${attempt + 1}/${maxRetries} in ${Math.round(delay)}ms`
+            `Retry ${attempt + 1}/${maxRetries} in ${delay}ms`
           );
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
       throw lastError;
-    }
-    async enforceRateLimit() {
-      const now = Date.now();
-      const timeSinceLastRequest = now - this.lastRequestTime;
-      const minInterval = 50 + this.rateLimitDelay / 10;
-      if (timeSinceLastRequest < minInterval) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, minInterval - timeSinceLastRequest)
-        );
-      }
-      this.lastRequestTime = Date.now();
     }
     async upload(key, data, isMetadata = false) {
       return this.withRetry(async () => {
@@ -644,26 +430,9 @@ if (window.typingMindCloudSync) {
       this.logger = logger;
       this.metadata = this.loadMetadata();
       this.syncInProgress = false;
-      this.syncQueue = [];
       this.lastChangeCheck = 0;
       this.lastActivity = Date.now();
-      this.isTabVisible = !document.hidden;
-      this.batchSize = 5;
       this.setupActivityMonitoring();
-      this.setupVisibilityMonitoring();
-    }
-    setupVisibilityMonitoring() {
-      this.visibilityChangeHandler = () => {
-        this.isTabVisible = !document.hidden;
-        this.logger.log(
-          "info",
-          `Tab visibility changed: ${this.isTabVisible ? "visible" : "hidden"}`
-        );
-      };
-      document.addEventListener(
-        "visibilitychange",
-        this.visibilityChangeHandler
-      );
     }
     loadMetadata() {
       const stored = localStorage.getItem("tcs_cloud-metadata-v4");
@@ -681,8 +450,6 @@ if (window.typingMindCloudSync) {
     setupActivityMonitoring() {
       const originalSetItem = localStorage.setItem;
       const originalRemoveItem = localStorage.removeItem;
-      this.originalSetItem = originalSetItem;
-      this.originalRemoveItem = originalRemoveItem;
       localStorage.setItem = (...args) => {
         this.lastActivity = Date.now();
         return originalSetItem.apply(localStorage, args);
@@ -692,22 +459,6 @@ if (window.typingMindCloudSync) {
         return originalRemoveItem.apply(localStorage, args);
       };
     }
-    cleanup() {
-      if (this.originalSetItem) {
-        localStorage.setItem = this.originalSetItem;
-      }
-      if (this.originalRemoveItem) {
-        localStorage.removeItem = this.originalRemoveItem;
-      }
-      if (this.autoSyncInterval) {
-        clearInterval(this.autoSyncInterval);
-      }
-      this.syncQueue = [];
-      document.removeEventListener(
-        "visibilitychange",
-        this.visibilityChangeHandler
-      );
-    }
     async detectChanges() {
       const now = Date.now();
       const timeSinceActivity = now - this.lastActivity;
@@ -715,8 +466,9 @@ if (window.typingMindCloudSync) {
         return { changedItems: [], hasChanges: false };
       }
       this.lastChangeCheck = now;
+      const allItems = await this.dataService.getAllItems();
       const changedItems = [];
-      for await (const item of this.dataService.getItemsIterator()) {
+      for (const item of allItems) {
         const existingItem = this.metadata.items[item.id];
         const hash = await this.dataService.generateHash(item.data);
         if (!existingItem || existingItem.hash !== hash) {
@@ -739,44 +491,8 @@ if (window.typingMindCloudSync) {
       return { changedItems, hasChanges: changedItems.length > 0 };
     }
     async syncToCloud() {
-      return this.queueSync(() => this._syncToCloud());
-    }
-    async syncFromCloud() {
-      return this.queueSync(() => this._syncFromCloud());
-    }
-    async performFullSync() {
-      return this.queueSync(() => this._performFullSync());
-    }
-    async queueSync(operation) {
-      return new Promise((resolve, reject) => {
-        this.syncQueue.push({ operation, resolve, reject });
-        this.processSyncQueue();
-      });
-    }
-    async processSyncQueue() {
-      if (this.syncInProgress || this.syncQueue.length === 0) return;
-      this.syncInProgress = true;
-      try {
-        while (this.syncQueue.length > 0) {
-          const { operation, resolve, reject } = this.syncQueue.shift();
-          try {
-            const result = await operation();
-            resolve(result);
-          } catch (error) {
-            reject(error);
-          }
-        }
-      } finally {
-        this.syncInProgress = false;
-      }
-    }
-    async _syncToCloud() {
       if (this.syncInProgress) {
         this.logger.log("skip", "Sync already in progress");
-        return;
-      }
-      if (!this.isTabVisible) {
-        this.logger.log("skip", "Tab not visible, skipping sync");
         return;
       }
       this.syncInProgress = true;
@@ -806,7 +522,15 @@ if (window.typingMindCloudSync) {
             throw error;
           }
         }
-        await this.processSyncBatch(itemsToSync, cloudMetadata);
+        const uploadPromises = itemsToSync.map(async (item) => {
+          const data = await this.dataService.getItem(item.id, item.type);
+          if (data) {
+            await this.s3.upload(`items/${item.id}.json`, data);
+            this.metadata.items[item.id].synced = Date.now();
+            cloudMetadata.items[item.id] = { ...this.metadata.items[item.id] };
+          }
+        });
+        await Promise.allSettled(uploadPromises);
         cloudMetadata.lastSync = Date.now();
         cloudMetadata.lastModified = this.metadata.lastModified;
         await this.s3.upload("metadata.json", cloudMetadata, true);
@@ -823,28 +547,9 @@ if (window.typingMindCloudSync) {
         this.syncInProgress = false;
       }
     }
-    async processSyncBatch(itemsToSync, cloudMetadata) {
-      const processor = async (item) => {
-        const data = await this.dataService.getItem(item.id, item.type);
-        if (data) {
-          await this.s3.upload(`items/${item.id}.json`, data);
-          this.metadata.items[item.id].synced = Date.now();
-          cloudMetadata.items[item.id] = { ...this.metadata.items[item.id] };
-        }
-      };
-      await this.dataService.processBatch(
-        itemsToSync,
-        processor,
-        this.batchSize
-      );
-    }
-    async _syncFromCloud() {
+    async syncFromCloud() {
       if (this.syncInProgress) {
         this.logger.log("skip", "Sync already in progress");
-        return;
-      }
-      if (!this.isTabVisible) {
-        this.logger.log("skip", "Tab not visible, skipping sync");
         return;
       }
       this.syncInProgress = true;
@@ -881,7 +586,16 @@ if (window.typingMindCloudSync) {
             `Downloading ${itemsToDownload.length} items from cloud`
           );
         }
-        await this.processDownloadBatch(itemsToDownload);
+        const downloadPromises = itemsToDownload.map(
+          async ([key, cloudItem]) => {
+            const data = await this.s3.download(`items/${key}.json`);
+            if (data) {
+              await this.dataService.saveItem(data, cloudItem.type);
+              this.metadata.items[key] = { ...cloudItem };
+            }
+          }
+        );
+        await Promise.allSettled(downloadPromises);
         const deletedItems = cloudMetadata.deleted || [];
         for (const deletedKey of deletedItems) {
           if (this.metadata.items[deletedKey]) {
@@ -900,20 +614,6 @@ if (window.typingMindCloudSync) {
         this.syncInProgress = false;
       }
     }
-    async processDownloadBatch(itemsToDownload) {
-      const processor = async ([key, cloudItem]) => {
-        const data = await this.s3.download(`items/${key}.json`);
-        if (data) {
-          await this.dataService.saveItem(data, cloudItem.type);
-          this.metadata.items[key] = { ...cloudItem };
-        }
-      };
-      await this.dataService.processBatch(
-        itemsToDownload,
-        processor,
-        this.batchSize
-      );
-    }
     async createInitialSync() {
       this.logger.log("start", "Creating initial sync");
       const { changedItems } = await this.detectChanges();
@@ -923,19 +623,15 @@ if (window.typingMindCloudSync) {
         items: {},
         deleted: [],
       };
-      const processor = async (item) => {
+      const uploadPromises = changedItems.map(async (item) => {
         const data = await this.dataService.getItem(item.id, item.type);
         if (data) {
           await this.s3.upload(`items/${item.id}.json`, data);
           this.metadata.items[item.id].synced = Date.now();
           cloudMetadata.items[item.id] = { ...this.metadata.items[item.id] };
         }
-      };
-      await this.dataService.processBatch(
-        changedItems,
-        processor,
-        this.batchSize
-      );
+      });
+      await Promise.allSettled(uploadPromises);
       await this.s3.upload("metadata.json", cloudMetadata, true);
       this.metadata.lastSync = cloudMetadata.lastSync;
       this.saveMetadata();
@@ -944,19 +640,14 @@ if (window.typingMindCloudSync) {
         `Initial sync completed - ${changedItems.length} items uploaded`
       );
     }
-    async _performFullSync() {
+    async performFullSync() {
       await this.syncFromCloud();
       await this.syncToCloud();
     }
     startAutoSync() {
-      if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
       const interval = Math.max(this.config.get("syncInterval") * 1000, 15000);
-      this.autoSyncInterval = setInterval(async () => {
-        if (
-          this.config.isConfigured() &&
-          !this.syncInProgress &&
-          this.isTabVisible
-        ) {
+      return setInterval(async () => {
+        if (this.config.isConfigured() && !this.syncInProgress) {
           try {
             await this.performFullSync();
           } catch (error) {
@@ -964,7 +655,6 @@ if (window.typingMindCloudSync) {
           }
         }
       }, interval);
-      this.logger.log("info", "Auto-sync started");
     }
   }
 
@@ -984,15 +674,16 @@ if (window.typingMindCloudSync) {
         /[^a-zA-Z0-9]/g,
         "-"
       )}.zip`;
-      const chats = [];
-      const settings = {};
-      for await (const item of this.dataService.getItemsIterator()) {
-        if (item.type === "idb") {
-          chats.push(item.data);
-        } else if (item.type === "ls") {
-          settings[item.data.key] = item.data.value;
-        }
-      }
+      const allItems = await this.dataService.getAllItems();
+      const chats = allItems
+        .filter((item) => item.type === "idb")
+        .map((item) => item.data);
+      const settings = allItems
+        .filter((item) => item.type === "ls")
+        .reduce((acc, item) => {
+          acc[item.data.key] = item.data.value;
+          return acc;
+        }, {});
       const snapshot = { chats, settings, created: Date.now(), name };
       await this.s3.upload(`snapshots/${filename}`, snapshot);
       this.logger.log("success", `Snapshot created: ${filename}`);
@@ -1044,15 +735,16 @@ if (window.typingMindCloudSync) {
         .replace(/[-:]/g, "")
         .replace(/\..+/, "");
       const filename = `Daily_${timestamp}.zip`;
-      const chats = [];
-      const settings = {};
-      for await (const item of this.dataService.getItemsIterator()) {
-        if (item.type === "idb") {
-          chats.push(item.data);
-        } else if (item.type === "ls") {
-          settings[item.data.key] = item.data.value;
-        }
-      }
+      const allItems = await this.dataService.getAllItems();
+      const chats = allItems
+        .filter((item) => item.type === "idb")
+        .map((item) => item.data);
+      const settings = allItems
+        .filter((item) => item.type === "ls")
+        .reduce((acc, item) => {
+          acc[item.data.key] = item.data.value;
+          return acc;
+        }, {});
       const backup = {
         chats,
         settings,
@@ -1176,10 +868,7 @@ if (window.typingMindCloudSync) {
       dot.style.display = "block";
     }
     openSyncModal() {
-      const existingModal = document.querySelector(".cloud-sync-modal");
-      if (existingModal) {
-        existingModal.closest(".modal-overlay")?.remove();
-      }
+      if (document.querySelector(".cloud-sync-modal")) return;
       this.logger.log("start", "Opening sync modal");
       this.createModal();
     }
@@ -1194,12 +883,6 @@ if (window.typingMindCloudSync) {
       overlay.appendChild(modal);
       document.body.appendChild(overlay);
       this.setupModalEventListeners(modal, overlay);
-      overlay.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") {
-          this.closeModal(overlay);
-        }
-      });
-      overlay.focus();
     }
     getModalHTML() {
       return `<div class="text-white text-left text-sm">
@@ -1732,20 +1415,7 @@ if (window.typingMindCloudSync) {
     }
     startAutoSync() {
       if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
-      const interval = Math.max(this.config.get("syncInterval") * 1000, 15000);
-      this.autoSyncInterval = setInterval(async () => {
-        if (
-          this.config.isConfigured() &&
-          !this.syncOrchestrator.syncInProgress &&
-          this.syncOrchestrator.isTabVisible
-        ) {
-          try {
-            await this.syncOrchestrator.performFullSync();
-          } catch (error) {
-            this.logger.log("error", "Auto-sync failed", error.message);
-          }
-        }
-      }, interval);
+      this.autoSyncInterval = this.syncOrchestrator.startAutoSync();
       this.logger.log("info", "Auto-sync started");
     }
     async createSnapshot() {
@@ -1759,39 +1429,6 @@ if (window.typingMindCloudSync) {
           alert("Failed to create snapshot: " + error.message);
         }
       }
-    }
-    async performDailyBackup() {
-      const lastBackupDate = localStorage.getItem("tcs_last-daily-backup-date");
-      const today = new Date().toLocaleDateString("en-GB");
-      if (lastBackupDate === today) {
-        this.logger.log("info", "Daily backup already completed today");
-        return;
-      }
-      this.logger.log("start", "Performing daily backup");
-      const timestamp = new Date()
-        .toISOString()
-        .replace(/[-:]/g, "")
-        .replace(/\..+/, "");
-      const filename = `Daily_${timestamp}.zip`;
-      const chats = [];
-      const settings = {};
-      for await (const item of this.dataService.getItemsIterator()) {
-        if (item.type === "idb") {
-          chats.push(item.data);
-        } else if (item.type === "ls") {
-          settings[item.data.key] = item.data.value;
-        }
-      }
-      const backup = {
-        chats,
-        settings,
-        created: Date.now(),
-        name: "daily-auto",
-      };
-      await this.s3.upload(`snapshots/${filename}`, backup);
-      localStorage.setItem("tcs_last-daily-backup-date", today);
-      this.logger.log("success", `Daily backup completed: ${filename}`);
-      await this.cleanupOldBackups();
     }
   }
 
