@@ -519,9 +519,12 @@ if (window.typingMindCloudSync) {
         new URLSearchParams(window.location.search).get("log") === "true";
 
       const changedItems = [];
+      let processedCount = 0;
       for (const item of allItems) {
         const existingItem = this.metadata.items[item.id];
         const hash = await this.dataService.generateHash(item.data);
+        processedCount++;
+
         if (!existingItem || existingItem.hash !== hash) {
           changedItems.push({
             id: item.id,
@@ -536,7 +539,23 @@ if (window.typingMindCloudSync) {
             synced: existingItem?.synced || 0,
             type: item.type,
           };
+
+          if (debugEnabled) {
+            this.logger.log(
+              "info",
+              `📝 Change detected: ${item.id} (${item.type}) - ${
+                !existingItem ? "NEW" : "MODIFIED"
+              }`
+            );
+          }
         }
+      }
+
+      if (debugEnabled) {
+        this.logger.log(
+          "info",
+          `🔍 Change detection: Processed ${processedCount} items, Found ${changedItems.length} changes`
+        );
       }
 
       if (changedItems.length > 0) this.saveMetadata();
@@ -554,6 +573,25 @@ if (window.typingMindCloudSync) {
         const itemsToSync = changedItems.filter(
           (item) => item.modified > item.synced
         );
+
+        const debugEnabled =
+          new URLSearchParams(window.location.search).get("log") === "true";
+        if (debugEnabled && changedItems.length > 0) {
+          this.logger.log(
+            "info",
+            `📊 Sync filter: ${changedItems.length} changed items, ${itemsToSync.length} need sync`
+          );
+          changedItems.forEach((item) => {
+            const needsSync = item.modified > item.synced;
+            this.logger.log(
+              "info",
+              `  • ${item.id} (${item.type}): modified=${
+                item.modified
+              }, synced=${item.synced} → ${needsSync ? "SYNC" : "SKIP"}`
+            );
+          });
+        }
+
         if (itemsToSync.length === 0) {
           this.logger.log("info", "No items to sync to cloud");
           return;
