@@ -426,6 +426,54 @@ if (window.typingMindCloudSync) {
         resourceManager.releaseDBConnection(db);
       }
     }
+    async getAllItems() {
+      const items = new Map();
+      await this.executeDBOperation((store) => {
+        return new Promise((resolve) => {
+          const request = store.openCursor();
+          request.onsuccess = (event) => {
+            const cursor = event.target.result;
+            if (cursor) {
+              const key = cursor.key;
+              const value = cursor.value;
+              if (
+                typeof key === "string" &&
+                key.startsWith("chat_") &&
+                value &&
+                typeof value === "object"
+              ) {
+                const chatId = key.replace("chat_", "");
+                if (!configManager.shouldExcludeSetting(chatId)) {
+                  items.set(chatId, {
+                    id: chatId,
+                    data: { id: chatId, ...value },
+                    type: "idb",
+                  });
+                }
+              }
+              cursor.continue();
+            } else {
+              resolve();
+            }
+          };
+          request.onerror = () => resolve();
+        });
+      });
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && !configManager.shouldExcludeSetting(key)) {
+          const value = localStorage.getItem(key);
+          if (value !== null) {
+            items.set(key, {
+              id: key,
+              data: { key, value },
+              type: "ls",
+            });
+          }
+        }
+      }
+      return Array.from(items.values());
+    }
     async getAllChats() {
       return this.executeDBOperation((store) => {
         return new Promise((resolve) => {
@@ -534,51 +582,26 @@ if (window.typingMindCloudSync) {
       delete this.localMetadata.items[key];
     }
     async detectChanges() {
-      const [chats, settingsEntries] = await Promise.all([
-        dataService.getAllChats(),
-        dataService.getFilteredSettings(),
-      ]);
-      logger.log(
-        "info",
-        `Found ${chats.length} chats and ${settingsEntries.length} settings for change detection`
-      );
+      const allItems = await dataService.getAllItems();
+      logger.log("info", `Found ${allItems.length} items for change detection`);
       const changedItems = new Map();
       let hasChanges = false;
       const BATCH_SIZE = 50;
-      for (let i = 0; i < chats.length; i += BATCH_SIZE) {
-        const chatBatch = chats.slice(i, i + BATCH_SIZE);
+      for (let i = 0; i < allItems.length; i += BATCH_SIZE) {
+        const itemBatch = allItems.slice(i, i + BATCH_SIZE);
         await Promise.all(
-          chatBatch.map(async (chat) => {
-            const hash = await dataService.generateHash(chat);
-            const existing = this.localMetadata.items[chat.id];
+          itemBatch.map(async (item) => {
+            const hash = await dataService.generateHash(item.data);
+            const existing = this.localMetadata.items[item.id];
             if (!existing || existing.hash !== hash) {
-              changedItems.set(chat.id, {
+              changedItems.set(item.id, {
                 hash,
                 modified: Date.now(),
                 synced: existing?.synced || 0,
-                type: "idb",
+                type: item.type,
               });
               hasChanges = true;
-              logger.log("info", `Chat modified: ${chat.id}`);
-            }
-          })
-        );
-      }
-      for (let i = 0; i < settingsEntries.length; i += BATCH_SIZE) {
-        const settingsBatch = settingsEntries.slice(i, i + BATCH_SIZE);
-        await Promise.all(
-          settingsBatch.map(async ([key, value]) => {
-            const hash = await dataService.generateHash(value);
-            const existing = this.localMetadata.items[key];
-            if (!existing || existing.hash !== hash) {
-              changedItems.set(key, {
-                hash,
-                modified: Date.now(),
-                synced: existing?.synced || 0,
-                type: "ls",
-              });
-              hasChanges = true;
-              logger.log("info", `Setting modified: ${key}`);
+              logger.log("info", `Item modified: ${item.id} (${item.type})`);
             }
           })
         );
@@ -593,7 +616,7 @@ if (window.typingMindCloudSync) {
       return {
         changedItems,
         hasChanges,
-        totalItems: chats.length + settingsEntries.length,
+        totalItems: allItems.length,
       };
     }
   }
@@ -901,39 +924,43 @@ if (window.typingMindCloudSync) {
         const cloudMetadata = {
           lastSync: Date.now(),
           lastModified: Date.now(),
-          items: { ...metadataManager.get().items },
+          items: {},
           deleted: [],
         };
         const uploadPromises = [];
         changesBatch.changedItems.forEach((item, key) => {
           if (item.type === "idb") {
             uploadPromises.push(
-              dataService.getChat(key).then(async (chat) => {
+              (async () => {
+                const chat = await dataService.getChat(key);
                 if (chat) {
                   await s3Service.upload(`items/${key}.json`, chat);
                   const localMetadata = metadataManager.get();
                   localMetadata.items[key].synced = Date.now();
-                  cloudMetadata.items[key] = localMetadata.items[key];
+                  cloudMetadata.items[key] = { ...localMetadata.items[key] };
                   logger.log("info", `Initial upload chat: ${key}`);
                 }
-              })
+              })()
             );
           } else if (item.type === "ls") {
             const value = localStorage.getItem(key);
             if (value !== null) {
               uploadPromises.push(
-                s3Service
-                  .upload(`items/${key}.json`, { key, value })
-                  .then(() => {
-                    const localMetadata = metadataManager.get();
-                    localMetadata.items[key].synced = Date.now();
-                    cloudMetadata.items[key] = localMetadata.items[key];
-                    logger.log("info", `Initial upload setting: ${key}`);
-                  })
+                (async () => {
+                  await s3Service.upload(`items/${key}.json`, { key, value });
+                  const localMetadata = metadataManager.get();
+                  localMetadata.items[key].synced = Date.now();
+                  cloudMetadata.items[key] = { ...localMetadata.items[key] };
+                  logger.log("info", `Initial upload setting: ${key}`);
+                })()
               );
             }
           }
         });
+        logger.log(
+          "info",
+          `Starting upload of ${uploadPromises.length} items...`
+        );
         const uploadResults = await Promise.allSettled(uploadPromises);
         const failedUploads = uploadResults.filter(
           (result) => result.status === "rejected"
@@ -943,7 +970,17 @@ if (window.typingMindCloudSync) {
             "warning",
             `${failedUploads.length} initial uploads failed`
           );
+          failedUploads.forEach((result, index) => {
+            logger.log("error", `Upload ${index} failed:`, result.reason);
+          });
         }
+        const successfulUploads = uploadResults.filter(
+          (result) => result.status === "fulfilled"
+        ).length;
+        logger.log(
+          "info",
+          `Successfully uploaded ${successfulUploads}/${uploadPromises.length} items`
+        );
         await s3Service.upload("metadata.json", cloudMetadata, true);
         const localMetadata = metadataManager.get();
         localMetadata.lastSync = cloudMetadata.lastSync;
@@ -951,7 +988,7 @@ if (window.typingMindCloudSync) {
         uiService.updateSyncStatus("success");
         logger.log(
           "success",
-          `Initial sync completed - ${uploadPromises.length} items uploaded`
+          `Initial sync completed - ${successfulUploads} items uploaded`
         );
         return true;
       } catch (error) {
@@ -1068,10 +1105,16 @@ if (window.typingMindCloudSync) {
           /[^a-zA-Z0-9]/g,
           "-"
         )}.json`;
-        const [chats, settings] = await Promise.all([
-          dataService.getAllChats(),
-          this._getSettingsForBackup(),
-        ]);
+        const allItems = await dataService.getAllItems();
+        const chats = allItems
+          .filter((item) => item.type === "idb")
+          .map((item) => item.data);
+        const settings = allItems
+          .filter((item) => item.type === "ls")
+          .reduce((acc, item) => {
+            acc[item.data.key] = item.data.value;
+            return acc;
+          }, {});
         const snapshot = { chats, settings, created: Date.now(), name };
         await s3Service.upload(`snapshots/${filename}`, snapshot);
         logger.log("success", `Snapshot created: ${filename}`);
@@ -1086,8 +1129,13 @@ if (window.typingMindCloudSync) {
       }
     }
     async _getSettingsForBackup() {
-      const settingsEntries = await dataService.getFilteredSettings();
-      return settingsEntries.reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {});
+      const allItems = await dataService.getAllItems();
+      return allItems
+        .filter((item) => item.type === "ls")
+        .reduce((acc, item) => {
+          acc[item.data.key] = item.data.value;
+          return acc;
+        }, {});
     }
     async loadBackupList() {
       try {
