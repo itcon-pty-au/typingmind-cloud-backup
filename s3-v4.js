@@ -290,6 +290,65 @@ if (window.typingMindCloudSync) {
         .slice(0, 4)
         .join("");
     }
+    async cleanupDuplicateChatItems() {
+      try {
+        const db = await this.getDB();
+        const transaction = db.transaction(["keyval"], "readwrite");
+        const store = transaction.objectStore("keyval");
+        const keysToDelete = [];
+
+        await new Promise((resolve) => {
+          const request = store.openCursor();
+          request.onsuccess = (event) => {
+            const cursor = event.target.result;
+            if (cursor) {
+              const key = cursor.key;
+              if (typeof key === "string" && key.startsWith("CHAT_")) {
+                const baseKey = key.substring(5);
+                keysToDelete.push({ chatKey: key, baseKey });
+              }
+              cursor.continue();
+            } else {
+              resolve();
+            }
+          };
+          request.onerror = () => resolve();
+        });
+
+        let deletedCount = 0;
+        for (const { chatKey, baseKey } of keysToDelete) {
+          const baseExists = await new Promise((resolve) => {
+            const checkRequest = store.get(baseKey);
+            checkRequest.onsuccess = (event) => resolve(!!event.target.result);
+            checkRequest.onerror = () => resolve(false);
+          });
+
+          if (baseExists) {
+            await new Promise((resolve) => {
+              const deleteRequest = store.delete(chatKey);
+              deleteRequest.onsuccess = () => {
+                console.log(
+                  `🗑️ Cleaned up duplicate: ${chatKey} (base: ${baseKey} exists)`
+                );
+                deletedCount++;
+                resolve();
+              };
+              deleteRequest.onerror = () => resolve();
+            });
+          }
+        }
+
+        if (deletedCount > 0) {
+          console.log(
+            `✅ Cleanup completed: Removed ${deletedCount} CHAT_ duplicates`
+          );
+        }
+        return deletedCount;
+      } catch (error) {
+        console.error("Error during cleanup:", error);
+        return 0;
+      }
+    }
   }
 
   class CryptoService {
@@ -1203,12 +1262,7 @@ if (window.typingMindCloudSync) {
         this.cryptoService,
         this.logger
       );
-      this.syncOrchestrator = new SyncOrchestrator(
-        this.config,
-        this.dataService,
-        this.s3Service,
-        this.logger
-      );
+      this.syncOrchestrator = null;
       this.backupService = new BackupService(
         this.dataService,
         this.s3Service,
@@ -1222,6 +1276,22 @@ if (window.typingMindCloudSync) {
         "Initializing Cloud Sync v4 (Optimized Single File)"
       );
       await this.waitForDOM();
+
+      const cleanupCount = await this.dataService.cleanupDuplicateChatItems();
+      if (cleanupCount > 0) {
+        this.logger.log(
+          "success",
+          `Cleaned up ${cleanupCount} duplicate CHAT_ items from previous sync versions`
+        );
+      }
+
+      this.syncOrchestrator = new SyncOrchestrator(
+        this.config,
+        this.dataService,
+        this.s3Service,
+        this.logger
+      );
+
       this.insertSyncButton();
       if (this.config.isConfigured()) {
         try {
