@@ -576,7 +576,7 @@ if (window.typingMindCloudSync) {
       const stored = localStorage.getItem("tcs_cloud-metadata-v4");
       return stored
         ? JSON.parse(stored)
-        : { lastSync: 0, lastModified: 0, items: {}, deleted: [] };
+        : { lastSync: 0, lastModified: 0, items: {} };
     }
     saveMetadata() {
       this.metadata.lastModified = Date.now();
@@ -733,7 +733,6 @@ if (window.typingMindCloudSync) {
               lastSync: 0,
               lastModified: 0,
               items: {},
-              deleted: [],
             };
           } else {
             throw error;
@@ -744,14 +743,10 @@ if (window.typingMindCloudSync) {
             lastSync: 0,
             lastModified: 0,
             items: {},
-            deleted: [],
           };
         }
         if (!cloudMetadata.items) {
           cloudMetadata.items = {};
-        }
-        if (!cloudMetadata.deleted) {
-          cloudMetadata.deleted = [];
         }
         const uploadPromises = itemsToSync.map(async (item) => {
           if (item.deleted) {
@@ -879,14 +874,6 @@ if (window.typingMindCloudSync) {
           }
         );
         await Promise.allSettled(downloadPromises);
-        const deletedItems = cloudMetadata.deleted || [];
-        for (const deletedKey of deletedItems) {
-          if (this.metadata.items[deletedKey]) {
-            const item = this.metadata.items[deletedKey];
-            await this.dataService.deleteItem(deletedKey, item.type);
-            delete this.metadata.items[deletedKey];
-          }
-        }
         this.metadata.lastSync = Date.now();
         this.setLastCloudSync(cloudLastModified);
         this.saveMetadata();
@@ -905,7 +892,6 @@ if (window.typingMindCloudSync) {
         lastSync: Date.now(),
         lastModified: Date.now(),
         items: {},
-        deleted: [],
       };
       const uploadPromises = changedItems.map(async (item) => {
         const data = await this.dataService.getItem(item.id, item.type);
@@ -970,13 +956,6 @@ if (window.typingMindCloudSync) {
             ) {
               delete cloudMetadata.items[itemId];
               cleanupCount++;
-
-              if (cloudMetadata.deleted) {
-                const deletedIndex = cloudMetadata.deleted.indexOf(itemId);
-                if (deletedIndex > -1) {
-                  cloudMetadata.deleted.splice(deletedIndex, 1);
-                }
-              }
             }
           }
 
@@ -1090,13 +1069,6 @@ if (window.typingMindCloudSync) {
                     hash: "deleted",
                   };
 
-                  if (!this.metadata.deleted) {
-                    this.metadata.deleted = [];
-                  }
-                  if (!this.metadata.deleted.includes(itemId)) {
-                    this.metadata.deleted.push(itemId);
-                  }
-
                   this.saveMetadata();
                   this.knownItems.delete(itemId);
                   this.potentialDeletions.delete(itemId);
@@ -1139,13 +1111,6 @@ if (window.typingMindCloudSync) {
         ) {
           delete this.metadata.items[itemId];
           cleanupCount++;
-
-          if (this.metadata.deleted) {
-            const deletedIndex = this.metadata.deleted.indexOf(itemId);
-            if (deletedIndex > -1) {
-              this.metadata.deleted.splice(deletedIndex, 1);
-            }
-          }
         }
       }
 
