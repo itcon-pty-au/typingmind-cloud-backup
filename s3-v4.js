@@ -17,12 +17,23 @@ if (window.typingMindCloudSync) {
         secretKey: "",
         endpoint: "",
         encryptionKey: "",
+        syncMode: "sync",
       };
       const stored = {};
+      const keyMappings = {
+        bucketName: "tcs_aws-bucket",
+        region: "tcs_aws-region",
+        accessKey: "tcs_aws-access-key",
+        secretKey: "tcs_aws-secret-key",
+        endpoint: "tcs_aws-endpoint",
+        encryptionKey: "tcs_encryption-key",
+        syncInterval: "tcs_backup-interval",
+        syncMode: "tcs_sync-mode",
+      };
       Object.keys(defaults).forEach((key) => {
-        const storageKey = `tcs_${key
-          .replace(/([A-Z])/g, "-$1")
-          .toLowerCase()}`;
+        const storageKey =
+          keyMappings[key] ||
+          `tcs_${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
         const value = localStorage.getItem(storageKey);
         stored[key] =
           key === "syncInterval" ? parseInt(value) || 15 : value || "";
@@ -58,10 +69,20 @@ if (window.typingMindCloudSync) {
       this.config[key] = value;
     }
     save() {
+      const keyMappings = {
+        bucketName: "tcs_aws-bucket",
+        region: "tcs_aws-region",
+        accessKey: "tcs_aws-access-key",
+        secretKey: "tcs_aws-secret-key",
+        endpoint: "tcs_aws-endpoint",
+        encryptionKey: "tcs_encryption-key",
+        syncInterval: "tcs_backup-interval",
+        syncMode: "tcs_sync-mode",
+      };
       Object.keys(this.config).forEach((key) => {
-        const storageKey = `tcs_${key
-          .replace(/([A-Z])/g, "-$1")
-          .toLowerCase()}`;
+        const storageKey =
+          keyMappings[key] ||
+          `tcs_${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
         localStorage.setItem(storageKey, this.config[key].toString());
       });
     }
@@ -864,145 +885,145 @@ if (window.typingMindCloudSync) {
       this.setupModalEventListeners(modal, overlay);
     }
     getModalHTML() {
-      return `<div class="text-gray-800 dark:text-white text-left text-sm">
+      return `<div class="text-white text-left text-sm">
         <div class="flex justify-center items-center mb-3">
-          <h3 class="text-center text-xl font-bold">S3 Backup & Sync Settings</h3>
-          <button class="ml-2 text-blue-600 text-lg hint--bottom-left hint--rounded hint--large" 
+          <h3 class="text-center text-xl font-bold text-white">S3 Backup & Sync Settings</h3>
+          <button class="ml-2 text-blue-400 text-lg hint--bottom-left hint--rounded hint--large" 
             aria-label="Fill form & Save. If you are using Amazon S3 - fill in S3 Bucket Name, AWS Region, AWS Access Key, AWS Secret Key and Encryption key.&#10;&#10;Initial backup: You will need to click on Export to create your first backup in S3. Thereafter, automatic backups are done to S3 as per Backup Interval if the browser tab is active.&#10;&#10;Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the local data.&#10;&#10;&#10;&#10;Snapshot: Creates an instant no-touch backup that will not be overwritten.&#10;&#10;Download: You can select the backup data to be download and click on Download button to download it for local storage.&#10;&#10;Restore: Select the backup you want to restore and Click on Restore. The typingmind data will be restored to the selected backup data/date.">ⓘ</button>
         </div>
         <div class="space-y-3">
-          <div class="mt-4 bg-gray-100 dark:bg-zinc-800 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600">
+          <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-600">
             <div class="flex items-center justify-between mb-1">
-              <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">Available Backups</label>
+              <label class="block text-sm font-medium text-zinc-300">Available Backups</label>
             </div>
             <div class="space-y-2">
               <div class="w-full">
-                <select id="backup-files" class="w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700">
+                <select id="backup-files" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-zinc-700 text-white">
                   <option value="">Please configure AWS credentials first</option>
                 </select>
               </div>
               <div class="flex justify-end space-x-2">
-                <button id="download-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                <button id="download-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>
                   Download
                 </button>
-                <button id="restore-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                <button id="restore-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>
                   Restore
                 </button>
-                <button id="delete-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                <button id="delete-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>
                   Delete
                 </button>
               </div>
             </div>
           </div>
-          <div class="mt-4 bg-gray-100 dark:bg-zinc-800 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600">
+          <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-600">
             <div class="space-y-2">
               <div class="flex items-center space-x-4 mb-4">
                 <label class="inline-flex items-center">
                   <input type="radio" name="sync-mode" value="sync" class="form-radio text-blue-600" ${
                     this.config.get("syncMode") === "sync" ? "checked" : ""
                   }>
-                  <span class="ml-2">Sync</span>
-                  <button class="ml-1 text-blue-600 text-lg hint--top-right hint--rounded hint--medium" aria-label="Automatically syncs data between devices. When enabled, data will be imported from cloud on app start.">ⓘ</button>
+                  <span class="ml-2 text-white">Sync</span>
+                  <button class="ml-1 text-blue-400 text-lg hint--top-right hint--rounded hint--medium" aria-label="Automatically syncs data between devices. When enabled, data will be imported from cloud on app start.">ⓘ</button>
                 </label>
                 <label class="inline-flex items-center">
                   <input type="radio" name="sync-mode" value="backup" class="form-radio text-blue-600" ${
                     this.config.get("syncMode") === "backup" ? "checked" : ""
                   }>
-                  <span class="ml-2">Backup</span>
-                  <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="Only creates backups. No automatic import from cloud on app start.">ⓘ</button>
+                  <span class="ml-2 text-white">Backup</span>
+                  <button class="ml-1 text-blue-400 text-lg hint--top-left hint--rounded hint--medium" aria-label="Only creates backups. No automatic import from cloud on app start.">ⓘ</button>
                 </label>
                 <label class="inline-flex items-center">
                   <input type="radio" name="sync-mode" value="disabled" class="form-radio text-blue-600" ${
                     this.config.get("syncMode") === "disabled" ? "checked" : ""
                   }>
-                  <span class="ml-2">Disabled</span>
-                  <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="No automatic operations. Manual sync and snapshot operations still work.">ⓘ</button>
+                  <span class="ml-2 text-white">Disabled</span>
+                  <button class="ml-1 text-blue-400 text-lg hint--top-left hint--rounded hint--medium" aria-label="No automatic operations. Manual sync and snapshot operations still work.">ⓘ</button>
                 </label>
               </div>
               <div class="flex space-x-4">
                 <div class="w-2/3">
-                  <label for="aws-bucket" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Bucket Name <span class="text-red-500">*</span></label>
+                  <label for="aws-bucket" class="block text-sm font-medium text-zinc-300">Bucket Name <span class="text-red-400">*</span></label>
                   <input id="aws-bucket" name="aws-bucket" type="text" value="${
                     this.config.get("bucketName") || ""
-                  }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                  }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-zinc-700 text-white" autocomplete="off" required>
                 </div>
                 <div class="w-1/3">
-                  <label for="aws-region" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Region <span class="text-red-500">*</span></label>
+                  <label for="aws-region" class="block text-sm font-medium text-zinc-300">Region <span class="text-red-400">*</span></label>
                   <input id="aws-region" name="aws-region" type="text" value="${
                     this.config.get("region") || ""
-                  }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                  }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-zinc-700 text-white" autocomplete="off" required>
                 </div>
               </div>
               <div>
-                <label for="aws-access-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Access Key <span class="text-red-500">*</span></label>
+                <label for="aws-access-key" class="block text-sm font-medium text-zinc-300">Access Key <span class="text-red-400">*</span></label>
                 <input id="aws-access-key" name="aws-access-key" type="password" value="${
                   this.config.get("accessKey") || ""
-                }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-zinc-700 text-white" autocomplete="off" required>
               </div>
               <div>
-                <label for="aws-secret-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Secret Key <span class="text-red-500">*</span></label>
+                <label for="aws-secret-key" class="block text-sm font-medium text-zinc-300">Secret Key <span class="text-red-400">*</span></label>
                 <input id="aws-secret-key" name="aws-secret-key" type="password" value="${
                   this.config.get("secretKey") || ""
-                }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-zinc-700 text-white" autocomplete="off" required>
               </div>
               <div>
-                <label for="aws-endpoint" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
+                <label for="aws-endpoint" class="block text-sm font-medium text-zinc-300">
                   S3 Compatible Storage Endpoint
-                  <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="For Amazon AWS, leave this blank. For S3 compatible cloud services like Cloudflare, iDrive and the likes, populate this.">ⓘ</button>
+                  <button class="ml-1 text-blue-400 text-lg hint--top hint--rounded hint--medium" aria-label="For Amazon AWS, leave this blank. For S3 compatible cloud services like Cloudflare, iDrive and the likes, populate this.">ⓘ</button>
                 </label>
                 <input id="aws-endpoint" name="aws-endpoint" type="text" value="${
                   this.config.get("endpoint") || ""
-                }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off">
+                }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-zinc-700 text-white" autocomplete="off">
               </div>
               <div class="flex space-x-4">
                 <div class="w-1/2">
-                  <label for="sync-interval" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Sync Interval
-                  <button class="ml-1 text-blue-600 text-lg hint--top-right hint--rounded hint--medium" aria-label="How often do you want to sync your data to cloud? Minimum 15 seconds">ⓘ</button></label>
+                  <label for="sync-interval" class="block text-sm font-medium text-zinc-300">Sync Interval
+                  <button class="ml-1 text-blue-400 text-lg hint--top-right hint--rounded hint--medium" aria-label="How often do you want to sync your data to cloud? Minimum 15 seconds">ⓘ</button></label>
                   <input id="sync-interval" name="sync-interval" type="number" min="15" value="${this.config.get(
                     "syncInterval"
-                  )}" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                  )}" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-zinc-700 text-white" autocomplete="off" required>
                 </div>
                 <div class="w-1/2">
-                  <label for="encryption-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
-                    Encryption Key <span class="text-red-500">*</span>
-                    <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="Choose a secure 8+ character string. This is to encrypt the backup file before uploading to cloud. Securely store this somewhere as you will need this to restore backup from cloud.">ⓘ</button>
+                  <label for="encryption-key" class="block text-sm font-medium text-zinc-300">
+                    Encryption Key <span class="text-red-400">*</span>
+                    <button class="ml-1 text-blue-400 text-lg hint--top-left hint--rounded hint--medium" aria-label="Choose a secure 8+ character string. This is to encrypt the backup file before uploading to cloud. Securely store this somewhere as you will need this to restore backup from cloud.">ⓘ</button>
                   </label>
                   <input id="encryption-key" name="encryption-key" type="password" value="${
                     this.config.get("encryptionKey") || ""
-                  }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                  }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-zinc-700 text-white" autocomplete="off" required>
                 </div>
               </div>
               <div>
-                <label for="sync-exclusions" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
+                <label for="sync-exclusions" class="block text-sm font-medium text-zinc-300">
                   Exclusions (Comma separated)
-                  <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="Additional settings to exclude from sync. Enter comma-separated setting names that you want to prevent from syncing between devices.">ⓘ</button>
+                  <button class="ml-1 text-blue-400 text-lg hint--top hint--rounded hint--medium" aria-label="Additional settings to exclude from sync. Enter comma-separated setting names that you want to prevent from syncing between devices.">ⓘ</button>
                 </label>
                 <input id="sync-exclusions" name="sync-exclusions" type="text" value="${
-                  localStorage.getItem("sync-exclusions") || ""
-                }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" placeholder="e.g., my-setting, another-setting" autocomplete="off">
+                  localStorage.getItem("tcs_sync-exclusions") || ""
+                }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-zinc-700 text-white" placeholder="e.g., my-setting, another-setting" autocomplete="off">
               </div>
             </div>
           </div>
           <div class="flex items-center justify-end mb-4 space-x-2">
-            <span class="text-sm text-gray-600 dark:text-gray-400">
+            <span class="text-sm text-zinc-400">
               Console Logging
-              <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="Use this to enable detailed logging in Browser console for troubleshooting purpose. Clicking on this button will instantly start logging. However, earlier events will not be logged. You could add ?log=true to the page URL and reload the page to start logging from the beginning of the page load.">ⓘ</button>
+              <button class="ml-1 text-blue-400 text-lg hint--top-left hint--rounded hint--medium" aria-label="Use this to enable detailed logging in Browser console for troubleshooting purpose. Clicking on this button will instantly start logging. However, earlier events will not be logged. You could add ?log=true to the page URL and reload the page to start logging from the beginning of the page load.">ⓘ</button>
             </span>
             <input type="checkbox" id="console-logging-toggle" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer">
           </div>
           <div class="flex justify-between space-x-2 mt-4">
-            <button id="save-settings" class="z-1 inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors">
+            <button id="save-settings" class="z-1 inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 disabled:cursor-default transition-colors">
               Save
             </button>
             <div class="flex space-x-2">
-              <button id="sync-now" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-default transition-colors">
+              <button id="sync-now" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-500 disabled:cursor-default transition-colors">
                 ${
                   this.config.get("syncMode") === "sync"
                     ? "Sync Now"
                     : "Backup Now"
                 }
               </button>
-              <button id="create-snapshot" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors">
+              <button id="create-snapshot" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 disabled:cursor-default transition-colors">
                 Snapshot
               </button>
               <button id="close-modal" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
@@ -1011,9 +1032,9 @@ if (window.typingMindCloudSync) {
             </div>
           </div>
           <div class="text-center mt-4">
-            <span id="last-sync-msg"></span>
+            <span id="last-sync-msg" class="text-zinc-400"></span>
           </div>
-          <div id="action-msg" class="text-center"></div>
+          <div id="action-msg" class="text-center text-zinc-400"></div>
         </div>
       </div>`;
     }
@@ -1356,7 +1377,7 @@ if (window.typingMindCloudSync) {
         encryptionKey: document.getElementById("encryption-key").value.trim(),
       };
       const exclusions = document.getElementById("sync-exclusions").value;
-      localStorage.setItem("sync-exclusions", exclusions);
+      localStorage.setItem("tcs_sync-exclusions", exclusions);
       if (
         !newConfig.bucketName ||
         !newConfig.region ||
@@ -1441,7 +1462,8 @@ if (window.typingMindCloudSync) {
     .cloud-sync-modal {
       display: inline-block;
       width: 100%;
-      background-color: rgb(9, 9, 11);
+      background-color: rgb(39, 39, 42);
+      color: white;
       border-radius: 0.5rem;
       padding: 1rem;
       text-align: left;
