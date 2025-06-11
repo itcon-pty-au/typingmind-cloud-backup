@@ -964,6 +964,53 @@ if (window.typingMindCloudSync) {
         return 0;
       }
     }
+    async cleanupCloudChatMetadata() {
+      try {
+        const cloudMetadata = await this.s3.download("metadata.json", true);
+        let cleanupCount = 0;
+
+        if (cloudMetadata.items) {
+          const itemsToCheck = Object.keys(cloudMetadata.items).filter((key) =>
+            key.startsWith("CHAT_")
+          );
+
+          for (const itemId of itemsToCheck) {
+            try {
+              await this.s3.download(`items/${itemId}.json`);
+            } catch (error) {
+              if (error.code === "NoSuchKey" || error.statusCode === 404) {
+                const baseKey = itemId.substring(5);
+                if (cloudMetadata.items[baseKey]) {
+                  delete cloudMetadata.items[itemId];
+                  cleanupCount++;
+                  this.logger.log(
+                    "info",
+                    `🧹 Removed orphaned cloud metadata: ${itemId} (base ${baseKey} exists)`
+                  );
+                }
+              }
+            }
+          }
+
+          if (cleanupCount > 0) {
+            await this.s3.upload("metadata.json", cloudMetadata, true);
+            this.logger.log(
+              "success",
+              `Cleaned up ${cleanupCount} orphaned CHAT_ metadata entries`
+            );
+          }
+        }
+
+        return cleanupCount;
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "Error cleaning up cloud metadata",
+          error.message
+        );
+        return 0;
+      }
+    }
     startAutoSync() {
       const interval = Math.max(this.config.get("syncInterval") * 1000, 15000);
       return setInterval(async () => {
