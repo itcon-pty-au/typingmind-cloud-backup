@@ -810,26 +810,39 @@ if (window.typingMindCloudSync) {
           const allItems = await this.dataService.getAllItems();
           let updatedCount = 0;
 
-          for (const item of allItems) {
-            const existingMetadata = this.metadata.items[item.id];
-            if (existingMetadata && !existingMetadata.deleted) {
-              const hash = await this.dataService.generateHash(item.data);
-              if (
-                existingMetadata.hash === hash &&
-                existingMetadata.synced < currentTime - 30000
-              ) {
-                this.metadata.items[item.id].synced = currentTime;
-                updatedCount++;
+          const lastTimestampRefresh = localStorage.getItem(
+            "tcs_last-timestamp-refresh"
+          );
+          const timeSinceLastRefresh =
+            currentTime - (parseInt(lastTimestampRefresh) || 0);
+          const REFRESH_INTERVAL = 60 * 60 * 1000;
+
+          if (timeSinceLastRefresh > REFRESH_INTERVAL) {
+            for (const item of allItems) {
+              const existingMetadata = this.metadata.items[item.id];
+              if (existingMetadata && !existingMetadata.deleted) {
+                const hash = await this.dataService.generateHash(item.data);
+                if (
+                  existingMetadata.hash === hash &&
+                  existingMetadata.synced < currentTime - REFRESH_INTERVAL
+                ) {
+                  this.metadata.items[item.id].synced = currentTime;
+                  updatedCount++;
+                }
               }
             }
-          }
 
-          if (updatedCount > 0) {
-            this.saveMetadata();
-            this.logger.log(
-              "info",
-              `📅 Updated sync timestamps for ${updatedCount} existing items`
-            );
+            if (updatedCount > 0) {
+              this.saveMetadata();
+              localStorage.setItem(
+                "tcs_last-timestamp-refresh",
+                currentTime.toString()
+              );
+              this.logger.log(
+                "info",
+                `📅 Updated sync timestamps for ${updatedCount} existing items`
+              );
+            }
           }
 
           this.logger.log("info", "No items to sync to cloud");
