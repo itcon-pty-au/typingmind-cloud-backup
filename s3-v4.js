@@ -290,64 +290,72 @@ if (window.typingMindCloudSync) {
         .slice(0, 4)
         .join("");
     }
-    async cleanupDuplicateChatItems() {
-      try {
-        const db = await this.getDB();
-        const transaction = db.transaction(["keyval"], "readwrite");
-        const store = transaction.objectStore("keyval");
-        const keysToDelete = [];
-
-        await new Promise((resolve) => {
-          const request = store.openCursor();
-          request.onsuccess = (event) => {
-            const cursor = event.target.result;
-            if (cursor) {
-              const key = cursor.key;
-              if (typeof key === "string" && key.startsWith("CHAT_")) {
-                const baseKey = key.substring(5);
-                keysToDelete.push({ chatKey: key, baseKey });
-              }
-              cursor.continue();
-            } else {
-              resolve();
+    async cleanupChatDuplicates() {
+      const db = await this.getDB();
+      const transaction = db.transaction(["keyval"], "readwrite");
+      const store = transaction.objectStore("keyval");
+      const duplicatesToRemove = [];
+      await new Promise((resolve) => {
+        const request = store.openCursor();
+        request.onsuccess = (event) => {
+          const cursor = event.target.result;
+          if (cursor) {
+            const key = cursor.key;
+            const value = cursor.value;
+            if (
+              typeof key === "string" &&
+              key.length === 10 &&
+              /^[a-zA-Z0-9]{10}$/.test(key) &&
+              value &&
+              typeof value === "object" &&
+              (value.title || value.messages)
+            ) {
+              const prefixedKey = `CHAT_${key}`;
+              duplicatesToRemove.push({
+                unprefixed: key,
+                prefixed: prefixedKey,
+              });
             }
-          };
-          request.onerror = () => resolve();
-        });
-
-        let deletedCount = 0;
-        for (const { chatKey, baseKey } of keysToDelete) {
-          const baseExists = await new Promise((resolve) => {
-            const checkRequest = store.get(baseKey);
-            checkRequest.onsuccess = (event) => resolve(!!event.target.result);
-            checkRequest.onerror = () => resolve(false);
+            cursor.continue();
+          } else {
+            resolve();
+          }
+        };
+        request.onerror = () => resolve();
+      });
+      let cleanedCount = 0;
+      for (const duplicate of duplicatesToRemove) {
+        try {
+          const checkTransaction = db.transaction(["keyval"], "readonly");
+          const checkStore = checkTransaction.objectStore("keyval");
+          const prefixedExists = await new Promise((resolve) => {
+            const request = checkStore.get(duplicate.prefixed);
+            request.onsuccess = () => resolve(!!request.result);
+            request.onerror = () => resolve(false);
           });
-
-          if (baseExists) {
+          if (prefixedExists) {
+            const deleteTransaction = db.transaction(["keyval"], "readwrite");
+            const deleteStore = deleteTransaction.objectStore("keyval");
             await new Promise((resolve) => {
-              const deleteRequest = store.delete(chatKey);
-              deleteRequest.onsuccess = () => {
-                console.log(
-                  `🗑️ Cleaned up duplicate: ${chatKey} (base: ${baseKey} exists)`
-                );
-                deletedCount++;
+              const request = deleteStore.delete(duplicate.unprefixed);
+              request.onsuccess = () => {
+                cleanedCount++;
                 resolve();
               };
-              deleteRequest.onerror = () => resolve();
+              request.onerror = () => resolve();
             });
           }
-        }
-
-        if (deletedCount > 0) {
-          console.log(
-            `✅ Cleanup completed: Removed ${deletedCount} CHAT_ duplicates`
+        } catch (error) {
+          console.warn(
+            `Failed to clean duplicate chat ${duplicate.unprefixed}:`,
+            error
           );
         }
-        return deletedCount;
-      } catch (error) {
-        console.error("Error during cleanup:", error);
-        return 0;
       }
+      if (cleanedCount > 0) {
+        console.log(`🧹 Cleaned up ${cleanedCount} duplicate chat entries`);
+      }
+      return cleanedCount;
     }
   }
 
@@ -964,53 +972,6 @@ if (window.typingMindCloudSync) {
         return 0;
       }
     }
-    async cleanupCloudChatMetadata() {
-      try {
-        const cloudMetadata = await this.s3.download("metadata.json", true);
-        let cleanupCount = 0;
-
-        if (cloudMetadata.items) {
-          const itemsToCheck = Object.keys(cloudMetadata.items).filter((key) =>
-            key.startsWith("CHAT_")
-          );
-
-          for (const itemId of itemsToCheck) {
-            try {
-              await this.s3.download(`items/${itemId}.json`);
-            } catch (error) {
-              if (error.code === "NoSuchKey" || error.statusCode === 404) {
-                const baseKey = itemId.substring(5);
-                if (cloudMetadata.items[baseKey]) {
-                  delete cloudMetadata.items[itemId];
-                  cleanupCount++;
-                  this.logger.log(
-                    "info",
-                    `🧹 Removed orphaned cloud metadata: ${itemId} (base ${baseKey} exists)`
-                  );
-                }
-              }
-            }
-          }
-
-          if (cleanupCount > 0) {
-            await this.s3.upload("metadata.json", cloudMetadata, true);
-            this.logger.log(
-              "success",
-              `Cleaned up ${cleanupCount} orphaned CHAT_ metadata entries`
-            );
-          }
-        }
-
-        return cleanupCount;
-      } catch (error) {
-        this.logger.log(
-          "error",
-          "Error cleaning up cloud metadata",
-          error.message
-        );
-        return 0;
-      }
-    }
     startAutoSync() {
       const interval = Math.max(this.config.get("syncInterval") * 1000, 15000);
       return setInterval(async () => {
@@ -1309,7 +1270,12 @@ if (window.typingMindCloudSync) {
         this.cryptoService,
         this.logger
       );
-      this.syncOrchestrator = null;
+      this.syncOrchestrator = new SyncOrchestrator(
+        this.config,
+        this.dataService,
+        this.s3Service,
+        this.logger
+      );
       this.backupService = new BackupService(
         this.dataService,
         this.s3Service,
@@ -1323,23 +1289,12 @@ if (window.typingMindCloudSync) {
         "Initializing Cloud Sync v4 (Optimized Single File)"
       );
       await this.waitForDOM();
-
-      const cleanupCount = await this.dataService.cleanupDuplicateChatItems();
-      if (cleanupCount > 0) {
-        this.logger.log(
-          "success",
-          `Cleaned up ${cleanupCount} duplicate CHAT_ items from previous sync versions`
-        );
-      }
-
-      this.syncOrchestrator = new SyncOrchestrator(
-        this.config,
-        this.dataService,
-        this.s3Service,
-        this.logger
-      );
-
       this.insertSyncButton();
+      const hasRunCleanup = localStorage.getItem("tcs_chat-cleanup-v4");
+      if (!hasRunCleanup) {
+        await this.dataService.cleanupChatDuplicates();
+        localStorage.setItem("tcs_chat-cleanup-v4", "true");
+      }
       if (this.config.isConfigured()) {
         try {
           await this.s3Service.initialize();
