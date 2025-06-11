@@ -729,16 +729,16 @@ if (window.typingMindCloudSync) {
         "-"
       )}.zip`;
       const allItems = await this.dataService.getAllItems();
-      const chats = allItems
+      const idbData = allItems
         .filter((item) => item.type === "idb")
         .map((item) => item.data);
-      const settings = allItems
+      const lsData = allItems
         .filter((item) => item.type === "ls")
         .reduce((acc, item) => {
           acc[item.data.key] = item.data.value;
           return acc;
         }, {});
-      const snapshot = { chats, settings, created: Date.now(), name };
+      const snapshot = { idbData, lsData, created: Date.now(), name };
       await this.s3.upload(`snapshots/${filename}`, snapshot);
       this.logger.log("success", `Snapshot created: ${filename}`);
       return true;
@@ -761,16 +761,18 @@ if (window.typingMindCloudSync) {
       this.logger.log("start", `Restoring from backup: ${key}`);
       const backup = await this.s3.download(key);
       const promises = [];
-      if (backup.chats) {
+      if (backup.idbData) {
         promises.push(
-          ...backup.chats.map((chat) => this.dataService.saveItem(chat, "idb"))
+          ...backup.idbData.map((item) =>
+            this.dataService.saveItem(item, "idb")
+          )
         );
       }
-      if (backup.settings) {
-        const settingsPromises = Object.entries(backup.settings).map(([k, v]) =>
+      if (backup.lsData) {
+        const lsPromises = Object.entries(backup.lsData).map(([k, v]) =>
           this.dataService.saveItem({ key: k, value: v }, "ls")
         );
-        promises.push(...settingsPromises);
+        promises.push(...lsPromises);
       }
       await Promise.all(promises);
       this.logger.log("success", "Backup restored successfully");
@@ -790,18 +792,18 @@ if (window.typingMindCloudSync) {
         .replace(/\..+/, "");
       const filename = `Daily_${timestamp}.zip`;
       const allItems = await this.dataService.getAllItems();
-      const chats = allItems
+      const idbData = allItems
         .filter((item) => item.type === "idb")
         .map((item) => item.data);
-      const settings = allItems
+      const lsData = allItems
         .filter((item) => item.type === "ls")
         .reduce((acc, item) => {
           acc[item.data.key] = item.data.value;
           return acc;
         }, {});
       const backup = {
-        chats,
-        settings,
+        idbData,
+        lsData,
         created: Date.now(),
         name: "daily-auto",
       };
@@ -945,13 +947,13 @@ if (window.typingMindCloudSync) {
             aria-label="Fill form & Save. If you are using Amazon S3 - fill in S3 Bucket Name, AWS Region, AWS Access Key, AWS Secret Key and Encryption key.&#10;&#10;Initial backup: You will need to click on Export to create your first backup in S3. Thereafter, automatic backups are done to S3 as per Backup Interval if the browser tab is active.&#10;&#10;Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the local data.&#10;&#10;&#10;&#10;Snapshot: Creates an instant no-touch backup that will not be overwritten.&#10;&#10;Download: You can select the backup data to be download and click on Download button to download it for local storage.&#10;&#10;Restore: Select the backup you want to restore and Click on Restore. The typingmind data will be restored to the selected backup data/date.">ⓘ</button>
         </div>
         <div class="space-y-3">
-          <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-600">
+          <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
             <div class="flex items-center justify-between mb-1">
               <label class="block text-sm font-medium text-zinc-300">Available Backups</label>
             </div>
             <div class="space-y-2">
               <div class="w-full">
-                <select id="backup-files" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-zinc-700 text-white">
+                <select id="backup-files" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white">
                   <option value="">Please configure AWS credentials first</option>
                 </select>
               </div>
@@ -968,56 +970,33 @@ if (window.typingMindCloudSync) {
               </div>
             </div>
           </div>
-          <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-600">
+          <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
             <div class="space-y-2">
-              <div class="flex items-center space-x-4 mb-4">
-                <label class="inline-flex items-center">
-                  <input type="radio" name="sync-mode" value="sync" class="form-radio text-blue-600" ${
-                    this.config.get("syncMode") === "sync" ? "checked" : ""
-                  }>
-                  <span class="ml-2 text-white">Sync</span>
-                  <button class="ml-1 text-blue-400 text-lg hint--top-right hint--rounded hint--medium" aria-label="Automatically syncs data between devices. When enabled, data will be imported from cloud on app start.">ⓘ</button>
-                </label>
-                <label class="inline-flex items-center">
-                  <input type="radio" name="sync-mode" value="backup" class="form-radio text-blue-600" ${
-                    this.config.get("syncMode") === "backup" ? "checked" : ""
-                  }>
-                  <span class="ml-2 text-white">Backup</span>
-                  <button class="ml-1 text-blue-400 text-lg hint--top-left hint--rounded hint--medium" aria-label="Only creates backups. No automatic import from cloud on app start.">ⓘ</button>
-                </label>
-                <label class="inline-flex items-center">
-                  <input type="radio" name="sync-mode" value="disabled" class="form-radio text-blue-600" ${
-                    this.config.get("syncMode") === "disabled" ? "checked" : ""
-                  }>
-                  <span class="ml-2 text-white">Disabled</span>
-                  <button class="ml-1 text-blue-400 text-lg hint--top-left hint--rounded hint--medium" aria-label="No automatic operations. Manual sync and snapshot operations still work.">ⓘ</button>
-                </label>
-              </div>
               <div class="flex space-x-4">
                 <div class="w-2/3">
                   <label for="aws-bucket" class="block text-sm font-medium text-zinc-300">Bucket Name <span class="text-red-400">*</span></label>
                   <input id="aws-bucket" name="aws-bucket" type="text" value="${
                     this.config.get("bucketName") || ""
-                  }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-zinc-700 text-white" autocomplete="off" required>
+                  }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
                 </div>
                 <div class="w-1/3">
                   <label for="aws-region" class="block text-sm font-medium text-zinc-300">Region <span class="text-red-400">*</span></label>
                   <input id="aws-region" name="aws-region" type="text" value="${
                     this.config.get("region") || ""
-                  }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-zinc-700 text-white" autocomplete="off" required>
+                  }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
                 </div>
               </div>
               <div>
                 <label for="aws-access-key" class="block text-sm font-medium text-zinc-300">Access Key <span class="text-red-400">*</span></label>
                 <input id="aws-access-key" name="aws-access-key" type="password" value="${
                   this.config.get("accessKey") || ""
-                }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-zinc-700 text-white" autocomplete="off" required>
+                }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
               </div>
               <div>
                 <label for="aws-secret-key" class="block text-sm font-medium text-zinc-300">Secret Key <span class="text-red-400">*</span></label>
                 <input id="aws-secret-key" name="aws-secret-key" type="password" value="${
                   this.config.get("secretKey") || ""
-                }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-zinc-700 text-white" autocomplete="off" required>
+                }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
               </div>
               <div>
                 <label for="aws-endpoint" class="block text-sm font-medium text-zinc-300">
@@ -1026,7 +1005,7 @@ if (window.typingMindCloudSync) {
                 </label>
                 <input id="aws-endpoint" name="aws-endpoint" type="text" value="${
                   this.config.get("endpoint") || ""
-                }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-zinc-700 text-white" autocomplete="off">
+                }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off">
               </div>
               <div class="flex space-x-4">
                 <div class="w-1/2">
@@ -1034,7 +1013,7 @@ if (window.typingMindCloudSync) {
                   <button class="ml-1 text-blue-400 text-lg hint--top-right hint--rounded hint--medium" aria-label="How often do you want to sync your data to cloud? Minimum 15 seconds">ⓘ</button></label>
                   <input id="sync-interval" name="sync-interval" type="number" min="15" value="${this.config.get(
                     "syncInterval"
-                  )}" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-zinc-700 text-white" autocomplete="off" required>
+                  )}" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
                 </div>
                 <div class="w-1/2">
                   <label for="encryption-key" class="block text-sm font-medium text-zinc-300">
@@ -1043,7 +1022,7 @@ if (window.typingMindCloudSync) {
                   </label>
                   <input id="encryption-key" name="encryption-key" type="password" value="${
                     this.config.get("encryptionKey") || ""
-                  }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-zinc-700 text-white" autocomplete="off" required>
+                  }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
                 </div>
               </div>
               <div>
@@ -1053,7 +1032,7 @@ if (window.typingMindCloudSync) {
                 </label>
                 <input id="sync-exclusions" name="sync-exclusions" type="text" value="${
                   localStorage.getItem("tcs_sync-exclusions") || ""
-                }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm bg-zinc-700 text-white" placeholder="e.g., my-setting, another-setting" autocomplete="off">
+                }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" placeholder="e.g., my-setting, another-setting" autocomplete="off">
               </div>
             </div>
           </div>
@@ -1070,11 +1049,7 @@ if (window.typingMindCloudSync) {
             </button>
             <div class="flex space-x-2">
               <button id="sync-now" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-500 disabled:cursor-default transition-colors">
-                ${
-                  this.config.get("syncMode") === "sync"
-                    ? "Sync Now"
-                    : "Backup Now"
-                }
+                Sync Now
               </button>
               <button id="create-snapshot" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 disabled:cursor-default transition-colors">
                 Snapshot
@@ -1111,16 +1086,6 @@ if (window.typingMindCloudSync) {
         .addEventListener("change", (e) =>
           this.logger.setEnabled(e.target.checked)
         );
-      const syncModeRadios = modal.querySelectorAll('input[name="sync-mode"]');
-      syncModeRadios.forEach((radio) => {
-        radio.addEventListener("change", function () {
-          const syncNowBtn = modal.querySelector("#sync-now");
-          if (syncNowBtn) {
-            syncNowBtn.textContent =
-              this.value === "sync" ? "Sync Now" : "Backup Now";
-          }
-        });
-      });
       const consoleLoggingCheckbox = modal.querySelector(
         "#console-logging-toggle"
       );
@@ -1133,41 +1098,22 @@ if (window.typingMindCloudSync) {
       const originalText = syncNowButton.textContent;
       syncNowButton.disabled = true;
       syncNowButton.textContent = "Working...";
-      if (this.config.get("syncMode") === "sync") {
-        this.syncOrchestrator
-          .performFullSync()
-          .then(() => {
-            syncNowButton.textContent = "Done!";
-            setTimeout(() => {
-              syncNowButton.textContent = originalText;
-              syncNowButton.disabled = false;
-            }, 2000);
-          })
-          .catch(() => {
-            syncNowButton.textContent = "Failed";
-            setTimeout(() => {
-              syncNowButton.textContent = originalText;
-              syncNowButton.disabled = false;
-            }, 2000);
-          });
-      } else {
-        this.syncOrchestrator
-          .syncToCloud()
-          .then(() => {
-            syncNowButton.textContent = "Done!";
-            setTimeout(() => {
-              syncNowButton.textContent = originalText;
-              syncNowButton.disabled = false;
-            }, 2000);
-          })
-          .catch(() => {
-            syncNowButton.textContent = "Failed";
-            setTimeout(() => {
-              syncNowButton.textContent = originalText;
-              syncNowButton.disabled = false;
-            }, 2000);
-          });
-      }
+      this.syncOrchestrator
+        .performFullSync()
+        .then(() => {
+          syncNowButton.textContent = "Done!";
+          setTimeout(() => {
+            syncNowButton.textContent = originalText;
+            syncNowButton.disabled = false;
+          }, 2000);
+        })
+        .catch(() => {
+          syncNowButton.textContent = "Failed";
+          setTimeout(() => {
+            syncNowButton.textContent = originalText;
+            syncNowButton.disabled = false;
+          }, 2000);
+        });
     }
     async loadBackupList(modal) {
       try {
@@ -1186,7 +1132,10 @@ if (window.typingMindCloudSync) {
         backupList.disabled = false;
         const filteredBackups = backups.filter(
           (backup) =>
-            backup.Key !== "metadata.json" && !backup.Key.startsWith("items/")
+            backup.Key !== "metadata.json" &&
+            !backup.Key.startsWith("items/") &&
+            !backup.Key.startsWith("chats/") &&
+            backup.Key !== "chats/"
         );
         if (filteredBackups.length === 0) {
           const option = document.createElement("option");
@@ -1225,19 +1174,13 @@ if (window.typingMindCloudSync) {
       const downloadButton = modal.querySelector("#download-backup-btn");
       const restoreButton = modal.querySelector("#restore-backup-btn");
       const deleteButton = modal.querySelector("#delete-backup-btn");
-      const isSnapshot =
-        selectedValue.startsWith("s-") || selectedValue.startsWith("SS_");
-      const isDailyBackup =
-        selectedValue.includes("Daily_") ||
-        selectedValue.startsWith("typingmind-backup-");
-      const isSettingsFile = selectedValue === "settings.json";
+      const isZipFile = selectedValue.endsWith(".zip");
       const isMetadataFile = selectedValue === "metadata.json";
       if (downloadButton) {
         downloadButton.disabled = !selectedValue;
       }
       if (restoreButton) {
-        restoreButton.disabled =
-          !selectedValue || (!isSnapshot && !isDailyBackup && !isSettingsFile);
+        restoreButton.disabled = !selectedValue || !isZipFile;
       }
       if (deleteButton) {
         const isProtectedFile =
@@ -1456,8 +1399,6 @@ if (window.typingMindCloudSync) {
         accessKey: document.getElementById("aws-access-key").value.trim(),
         secretKey: document.getElementById("aws-secret-key").value.trim(),
         endpoint: document.getElementById("aws-endpoint").value.trim(),
-        syncMode: document.querySelector('input[name="sync-mode"]:checked')
-          .value,
         syncInterval:
           parseInt(document.getElementById("sync-interval").value) || 15,
         encryptionKey: document.getElementById("encryption-key").value.trim(),
@@ -1478,18 +1419,13 @@ if (window.typingMindCloudSync) {
         alert("Sync interval must be at least 15 seconds");
         return;
       }
-      const oldMode = this.config.get("syncMode");
       Object.keys(newConfig).forEach((key) =>
         this.config.set(key, newConfig[key])
       );
       this.config.save();
       try {
         await this.s3Service.initialize();
-        if (newConfig.syncMode === "sync") {
-          await this.syncOrchestrator.performFullSync();
-        } else if (newConfig.syncMode === "backup") {
-          await this.syncOrchestrator.syncToCloud();
-        }
+        await this.syncOrchestrator.performFullSync();
         this.startAutoSync();
         this.updateSyncStatus("success");
         this.closeModal(overlay);
