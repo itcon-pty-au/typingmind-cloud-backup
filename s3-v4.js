@@ -101,15 +101,6 @@ if (window.typingMindCloudSync) {
       const startsWith_tcs = key.startsWith("tcs_");
       const result = inExclusionsList || startsWith_tcs;
 
-      if (debugEnabled && key.startsWith("TM_")) {
-        console.log(
-          `🔍 shouldExclude("${key}"): inExclusionsList=${inExclusionsList}, startsWith_tcs=${startsWith_tcs}, result=${result}`
-        );
-        if (inExclusionsList) {
-          console.log(`   - Found in exclusions list:`, this.exclusions);
-        }
-      }
-
       return result;
     }
   }
@@ -202,19 +193,9 @@ if (window.typingMindCloudSync) {
           if (value !== null) {
             items.set(key, { id: key, data: { key, value }, type: "ls" });
             includedLS++;
-            if (debugEnabled && key.startsWith("TM_")) {
-              console.log(`✅ Including TM_ item: ${key}`);
-            }
           }
         } else {
           excludedLS++;
-          if (debugEnabled && key && key.startsWith("TM_")) {
-            console.log(
-              `❌ Excluding TM_ item: ${key} (excluded by: ${
-                this.config.shouldExclude(key) ? "shouldExclude" : "other"
-              })`
-            );
-          }
         }
       }
       if (debugEnabled) {
@@ -510,17 +491,6 @@ if (window.typingMindCloudSync) {
       const debugEnabled =
         new URLSearchParams(window.location.search).get("log") === "true";
 
-      if (debugEnabled) {
-        console.log(
-          `🔄 detectChanges: Found ${allItems.length} total items to check`
-        );
-        const tmItems = allItems.filter((item) => item.id.startsWith("TM_"));
-        console.log(
-          `🔄 detectChanges: Found ${tmItems.length} TM_ items:`,
-          tmItems.map((item) => item.id)
-        );
-      }
-
       const changedItems = [];
       for (const item of allItems) {
         const existingItem = this.metadata.items[item.id];
@@ -539,20 +509,7 @@ if (window.typingMindCloudSync) {
             synced: existingItem?.synced || 0,
             type: item.type,
           };
-
-          if (debugEnabled && item.id.startsWith("TM_")) {
-            console.log(`✅ Changed TM_ item detected: ${item.id}`);
-          }
         }
-      }
-
-      if (debugEnabled) {
-        const changedTmItems = changedItems.filter((item) =>
-          item.id.startsWith("TM_")
-        );
-        console.log(
-          `🔄 detectChanges: ${changedItems.length} total changed items, ${changedTmItems.length} are TM_ items`
-        );
       }
 
       if (changedItems.length > 0) this.saveMetadata();
