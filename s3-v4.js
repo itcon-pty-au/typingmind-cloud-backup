@@ -57,6 +57,7 @@ if (window.typingMindCloudSync) {
         "tcs_cloud-metadata",
         "tcs_isMigrated",
         "tcs_migrationBackup",
+        "tcs_last-tombstone-cleanup",
         "referrer",
         "TM_useLastVerifiedToken",
         "TM_useStateUpdateHistory",
@@ -132,10 +133,14 @@ if (window.typingMindCloudSync) {
   }
 
   class DataService {
-    constructor(configManager, logger) {
+    constructor(configManager, logger, operationQueue = null) {
       this.config = configManager;
       this.logger = logger;
+      this.operationQueue = operationQueue;
       this.dbPromise = null;
+      this.deletionMonitor = null;
+      this.knownItems = new Map();
+      this.maxKnownItems = 1000;
     }
     async getDB() {
       if (!this.dbPromise) {
@@ -256,6 +261,13 @@ if (window.typingMindCloudSync) {
       return false;
     }
     async deleteItem(itemId, type) {
+      const success = await this.performDelete(itemId, type);
+      if (success) {
+        this.createTombstone(itemId, type, "manual-delete");
+      }
+      return success;
+    }
+    async performDelete(itemId, type) {
       if (type === "idb") {
         const db = await this.getDB();
         const transaction = db.transaction(["keyval"], "readwrite");
@@ -275,15 +287,239 @@ if (window.typingMindCloudSync) {
       }
       return false;
     }
+    createTombstone(itemId, type, source = "unknown") {
+      const timestamp = Date.now();
+      const tombstone = {
+        deleted: timestamp,
+        deletedAt: timestamp,
+        type: type,
+        source: source,
+        tombstoneVersion: 1,
+      };
+
+      const existingTombstone = this.getTombstoneFromStorage(itemId);
+      if (existingTombstone) {
+        tombstone.tombstoneVersion =
+          (existingTombstone.tombstoneVersion || 0) + 1;
+      }
+
+      this.saveTombstoneToStorage(itemId, tombstone);
+      this.logger.log(
+        "info",
+        `🪦 Created tombstone for ${itemId} (v${tombstone.tombstoneVersion})`
+      );
+
+      if (this.operationQueue) {
+        this.operationQueue.add(
+          `tombstone-sync-${itemId}`,
+          () => this.syncTombstone(itemId),
+          "high"
+        );
+      }
+
+      return tombstone;
+    }
+    getTombstoneFromStorage(itemId) {
+      try {
+        const stored = localStorage.getItem(`tcs_tombstone_${itemId}`);
+        return stored ? JSON.parse(stored) : null;
+      } catch {
+        return null;
+      }
+    }
+    saveTombstoneToStorage(itemId, tombstone) {
+      try {
+        localStorage.setItem(
+          `tcs_tombstone_${itemId}`,
+          JSON.stringify(tombstone)
+        );
+      } catch (error) {
+        this.logger.log(
+          "error",
+          `Failed to save tombstone for ${itemId}`,
+          error
+        );
+      }
+    }
+    getAllTombstones() {
+      const tombstones = new Map();
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith("tcs_tombstone_")) {
+          const itemId = key.replace("tcs_tombstone_", "");
+          try {
+            const tombstone = JSON.parse(localStorage.getItem(key));
+            tombstones.set(itemId, tombstone);
+          } catch {
+            continue;
+          }
+        }
+      }
+      return tombstones;
+    }
+    startDeletionMonitoring() {
+      if (this.deletionMonitor) {
+        clearInterval(this.deletionMonitor);
+      }
+
+      this.initializeKnownItems();
+
+      this.deletionMonitor = setInterval(() => {
+        this.checkForDeletions();
+      }, 5000);
+
+      this.logger.log("info", "🔍 Started deletion monitoring");
+    }
+    async initializeKnownItems() {
+      const items = await this.getAllItems();
+      this.knownItems.clear();
+
+      items.forEach((item) => {
+        this.knownItems.set(item.id, {
+          type: item.type,
+          detectedAt: Date.now(),
+          confirmCount: 1,
+        });
+      });
+
+      this.logger.log(
+        "info",
+        `📋 Initialized monitoring for ${this.knownItems.size} items`
+      );
+    }
+    async checkForDeletions() {
+      try {
+        const currentItems = await this.getAllItems();
+        const currentItemIds = new Set(currentItems.map((item) => item.id));
+        const potentialDeletions = new Map();
+
+        for (const [itemId, itemInfo] of this.knownItems.entries()) {
+          if (!currentItemIds.has(itemId)) {
+            const existingTombstone = this.getTombstoneFromStorage(itemId);
+            if (existingTombstone) {
+              this.knownItems.delete(itemId);
+              continue;
+            }
+
+            const missingCount = (potentialDeletions.get(itemId) || 0) + 1;
+            potentialDeletions.set(itemId, missingCount);
+
+            if (missingCount >= 3) {
+              this.logger.log(
+                "info",
+                `🗑️ Confirmed deletion of ${itemId}, creating tombstone`
+              );
+              this.createTombstone(itemId, itemInfo.type, "monitor-detected");
+              this.knownItems.delete(itemId);
+            }
+          }
+        }
+
+        currentItems.forEach((item) => {
+          if (!this.knownItems.has(item.id)) {
+            if (this.knownItems.size >= this.maxKnownItems) {
+              const oldestEntry = this.knownItems.entries().next().value;
+              this.knownItems.delete(oldestEntry[0]);
+              this.logger.log(
+                "warning",
+                `📊 Removed oldest item from monitoring (limit: ${this.maxKnownItems})`
+              );
+            }
+
+            this.knownItems.set(item.id, {
+              type: item.type,
+              detectedAt: Date.now(),
+              confirmCount: 1,
+            });
+          }
+        });
+
+        if (this.knownItems.size > this.maxKnownItems * 1.1) {
+          this.trimKnownItems();
+        }
+      } catch (error) {
+        this.logger.log("error", "Error during deletion monitoring", error);
+      }
+    }
+    trimKnownItems() {
+      const entries = Array.from(this.knownItems.entries());
+      entries.sort((a, b) => a[1].detectedAt - b[1].detectedAt);
+
+      const toRemove = entries.slice(0, entries.length - this.maxKnownItems);
+      toRemove.forEach(([itemId]) => {
+        this.knownItems.delete(itemId);
+      });
+
+      this.logger.log(
+        "info",
+        `🧹 Trimmed knownItems from ${entries.length} to ${this.knownItems.size}`
+      );
+    }
+    stopDeletionMonitoring() {
+      if (this.deletionMonitor) {
+        clearInterval(this.deletionMonitor);
+        this.deletionMonitor = null;
+        this.logger.log("info", "⏹️ Stopped deletion monitoring");
+      }
+    }
+    async syncTombstone(itemId) {
+      this.logger.log("info", `🔄 Triggering sync for tombstone ${itemId}`);
+
+      if (window.cloudSyncApp && window.cloudSyncApp.syncOrchestrator) {
+        try {
+          await window.cloudSyncApp.syncOrchestrator.syncToCloud();
+          this.logger.log(
+            "success",
+            `✅ Tombstone sync completed for ${itemId}`
+          );
+        } catch (error) {
+          this.logger.log(
+            "error",
+            `❌ Tombstone sync failed for ${itemId}`,
+            error.message
+          );
+          throw error;
+        }
+      } else {
+        this.logger.log(
+          "warning",
+          `⚠️ Sync orchestrator not available for ${itemId}`
+        );
+      }
+    }
+    cleanup() {
+      this.stopDeletionMonitoring();
+      this.knownItems.clear();
+      if (this.dbPromise) {
+        this.dbPromise
+          .then((db) => {
+            if (db && db.close) {
+              db.close();
+            }
+          })
+          .catch(() => {});
+      }
+      this.dbPromise = null;
+      this.config = null;
+      this.logger = null;
+      this.operationQueue = null;
+    }
   }
 
   class CryptoService {
     constructor(configManager) {
       this.config = configManager;
       this.keyCache = new Map();
+      this.maxCacheSize = 10;
     }
     async deriveKey(password) {
       if (this.keyCache.has(password)) return this.keyCache.get(password);
+
+      if (this.keyCache.size >= this.maxCacheSize) {
+        const firstKey = this.keyCache.keys().next().value;
+        this.keyCache.delete(firstKey);
+      }
+
       const data = new TextEncoder().encode(password);
       const hash = await crypto.subtle.digest("SHA-256", data);
       const key = await crypto.subtle.importKey(
@@ -324,6 +560,10 @@ if (window.typingMindCloudSync) {
         data
       );
       return JSON.parse(new TextDecoder().decode(decrypted));
+    }
+    cleanup() {
+      this.keyCache.clear();
+      this.config = null;
     }
   }
 
@@ -461,46 +701,46 @@ if (window.typingMindCloudSync) {
   }
 
   class SyncOrchestrator {
-    constructor(configManager, dataService, s3Service, logger) {
+    constructor(
+      configManager,
+      dataService,
+      s3Service,
+      logger,
+      operationQueue = null
+    ) {
       this.config = configManager;
       this.dataService = dataService;
       this.s3Service = s3Service;
       this.logger = logger;
+      this.operationQueue = operationQueue;
       this.metadata = this.loadMetadata();
       this.syncInProgress = false;
+      this.autoSyncInterval = null;
     }
-
     loadMetadata() {
       const stored = localStorage.getItem("tcs_cloud-metadata");
       const result = stored ? JSON.parse(stored) : { lastSync: 0, items: {} };
       return result;
     }
-
     saveMetadata() {
       localStorage.setItem("tcs_cloud-metadata", JSON.stringify(this.metadata));
     }
-
     getLastCloudSync() {
       const stored = localStorage.getItem("tcs_last-cloud-sync");
       return stored ? parseInt(stored) : 0;
     }
-
     setLastCloudSync(timestamp) {
       localStorage.setItem("tcs_last-cloud-sync", timestamp.toString());
     }
-
     getItemSize(data) {
       return JSON.stringify(data).length;
     }
-
     async detectChanges() {
       const changedItems = [];
       const now = Date.now();
-
       const db = await this.dataService.getDB();
       const transaction = db.transaction(["keyval"], "readonly");
       const store = transaction.objectStore("keyval");
-
       await new Promise((resolve) => {
         const request = store.openCursor();
         request.onsuccess = (event) => {
@@ -508,7 +748,6 @@ if (window.typingMindCloudSync) {
           if (cursor) {
             const key = cursor.key;
             const value = cursor.value;
-
             if (
               typeof key === "string" &&
               value !== undefined &&
@@ -516,7 +755,6 @@ if (window.typingMindCloudSync) {
             ) {
               const existingItem = this.metadata.items[key];
               const currentSize = this.getItemSize(value);
-
               if (!existingItem) {
                 changedItems.push({
                   id: key,
@@ -540,15 +778,12 @@ if (window.typingMindCloudSync) {
         };
         request.onerror = () => resolve();
       });
-
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-
         if (key && !this.config.shouldExclude(key)) {
           const value = localStorage.getItem(key);
           const existingItem = this.metadata.items[key];
           const currentSize = this.getItemSize(value);
-
           if (!existingItem) {
             changedItems.push({
               id: key,
@@ -566,7 +801,25 @@ if (window.typingMindCloudSync) {
           }
         }
       }
-
+      const tombstones = this.dataService.getAllTombstones();
+      for (const [itemId, tombstone] of tombstones.entries()) {
+        const existingItem = this.metadata.items[itemId];
+        const needsSync =
+          !existingItem ||
+          !existingItem.deleted ||
+          existingItem.deleted < tombstone.deleted ||
+          (existingItem.tombstoneVersion || 0) <
+            (tombstone.tombstoneVersion || 1);
+        if (needsSync) {
+          changedItems.push({
+            id: itemId,
+            type: tombstone.type,
+            deleted: tombstone.deleted,
+            tombstoneVersion: tombstone.tombstoneVersion,
+            reason: "tombstone",
+          });
+        }
+      }
       for (const [itemId, metadata] of Object.entries(this.metadata.items)) {
         if (metadata.deleted && metadata.deleted > metadata.synced) {
           changedItems.push({
@@ -577,10 +830,8 @@ if (window.typingMindCloudSync) {
           });
         }
       }
-
       return { changedItems, hasChanges: changedItems.length > 0 };
     }
-
     async syncToCloud() {
       if (this.syncInProgress) {
         this.logger.log("skip", "Sync already in progress");
@@ -591,31 +842,30 @@ if (window.typingMindCloudSync) {
         this.logger.log("start", "Starting sync to cloud");
         const { changedItems } = await this.detectChanges();
         const cloudMetadata = await this.getCloudMetadata();
-
         if (changedItems.length === 0) {
           this.logger.log("info", "No items to sync to cloud");
           return;
         }
-
         this.logger.log(
           "info",
           `Syncing ${changedItems.length} items to cloud`
         );
-
         const uploadPromises = changedItems.map(async (item) => {
           try {
-            if (item.deleted) {
-              this.metadata.items[item.id] = {
-                synced: Date.now(),
+            if (item.deleted || item.reason === "tombstone") {
+              const timestamp = Date.now();
+              const tombstoneData = {
+                deleted: item.deleted || timestamp,
+                deletedAt: item.deleted || timestamp,
                 type: item.type,
-                deleted: item.deleted,
+                tombstoneVersion: item.tombstoneVersion || 1,
+                synced: timestamp,
               };
-              cloudMetadata.items[item.id] = {
-                ...this.metadata.items[item.id],
-              };
+              this.metadata.items[item.id] = tombstoneData;
+              cloudMetadata.items[item.id] = { ...tombstoneData };
               this.logger.log(
                 "info",
-                `🗑️ Synced tombstone for ${item.id} to cloud`
+                `🗑️ Synced tombstone for ${item.id} to cloud (v${tombstoneData.tombstoneVersion})`
               );
             } else {
               const data = await this.dataService.getItem(item.id, item.type);
@@ -638,10 +888,19 @@ if (window.typingMindCloudSync) {
                 error.message || error.code || "Unknown error"
               }`
             );
+            if (
+              this.operationQueue &&
+              (item.deleted || item.reason === "tombstone")
+            ) {
+              this.operationQueue.add(
+                `retry-tombstone-${item.id}`,
+                () => this.retrySyncTombstone(item),
+                "high"
+              );
+            }
             throw error;
           }
         });
-
         await Promise.allSettled(uploadPromises);
         cloudMetadata.lastSync = Date.now();
         await this.s3Service.upload("metadata.json", cloudMetadata, true);
@@ -654,10 +913,37 @@ if (window.typingMindCloudSync) {
         );
       } catch (error) {
         this.logger.log("error", "Failed to sync to cloud", error.message);
+        if (this.operationQueue) {
+          this.operationQueue.add(
+            "retry-sync-to-cloud",
+            () => this.syncToCloud(),
+            "normal"
+          );
+        }
         throw error;
       } finally {
         this.syncInProgress = false;
       }
+    }
+    async retrySyncTombstone(item) {
+      this.logger.log("info", `🔄 Retrying tombstone sync for ${item.id}`);
+      const cloudMetadata = await this.getCloudMetadata();
+      const timestamp = Date.now();
+      const tombstoneData = {
+        deleted: item.deleted || timestamp,
+        deletedAt: item.deleted || timestamp,
+        type: item.type,
+        tombstoneVersion: item.tombstoneVersion || 1,
+        synced: timestamp,
+      };
+      this.metadata.items[item.id] = tombstoneData;
+      cloudMetadata.items[item.id] = { ...tombstoneData };
+      await this.s3Service.upload("metadata.json", cloudMetadata, true);
+      this.saveMetadata();
+      this.logger.log(
+        "success",
+        `✅ Retry tombstone sync completed for ${item.id}`
+      );
     }
     async syncFromCloud() {
       if (this.syncInProgress) {
@@ -667,12 +953,10 @@ if (window.typingMindCloudSync) {
       this.syncInProgress = true;
       try {
         this.logger.log("start", "Starting sync from cloud");
-
         const cloudMetadata = await this.getCloudMetadata();
         const lastCloudSync = this.getLastCloudSync();
         const cloudLastSync = cloudMetadata.lastSync || 0;
         const hasCloudChanges = cloudLastSync > lastCloudSync;
-
         if (!hasCloudChanges) {
           this.logger.log(
             "info",
@@ -684,40 +968,46 @@ if (window.typingMindCloudSync) {
           this.logger.log("success", "Sync from cloud completed (no changes)");
           return;
         }
-
         this.logger.log(
           "info",
           `Cloud changes detected - proceeding with full sync`
         );
-
         const itemsToDownload = Object.entries(cloudMetadata.items).filter(
           ([key, cloudItem]) => {
             const localItem = this.metadata.items[key];
+            const localTombstone =
+              this.dataService.getTombstoneFromStorage(key);
             if (cloudItem.deleted) {
-              return (
-                !localItem?.deleted ||
-                cloudItem.deleted > (localItem?.synced || 0)
-              );
+              const cloudVersion = cloudItem.tombstoneVersion || 1;
+              const localVersion = localTombstone?.tombstoneVersion || 0;
+              return cloudVersion > localVersion;
             }
             return !localItem || cloudItem.synced > (localItem?.synced || 0);
           }
         );
-
         if (itemsToDownload.length > 0) {
           this.logger.log(
             "info",
-            `Downloading ${itemsToDownload.length} items from cloud`
+            `Processing ${itemsToDownload.length} items from cloud`
           );
         }
-
         const downloadPromises = itemsToDownload.map(
           async ([key, cloudItem]) => {
             if (cloudItem.deleted) {
               this.logger.log(
                 "info",
-                `🗑️ Processing cloud tombstone for ${key}`
+                `🗑️ Processing cloud tombstone for ${key} (v${
+                  cloudItem.tombstoneVersion || 1
+                })`
               );
-              await this.dataService.deleteItem(key, cloudItem.type);
+              await this.dataService.performDelete(key, cloudItem.type);
+              const tombstoneData = {
+                deleted: cloudItem.deleted,
+                deletedAt: cloudItem.deletedAt || cloudItem.deleted,
+                type: cloudItem.type,
+                tombstoneVersion: cloudItem.tombstoneVersion || 1,
+              };
+              this.dataService.saveTombstoneToStorage(key, tombstoneData);
               this.metadata.items[key] = { ...cloudItem };
             } else {
               const data = await this.s3Service.download(`items/${key}.json`);
@@ -732,7 +1022,6 @@ if (window.typingMindCloudSync) {
             }
           }
         );
-
         await Promise.allSettled(downloadPromises);
         this.metadata.lastSync = Date.now();
         this.setLastCloudSync(cloudLastSync);
@@ -753,26 +1042,41 @@ if (window.typingMindCloudSync) {
           lastSync: Date.now(),
           items: {},
         };
-
         const uploadPromises = changedItems.map(async (item) => {
-          const data = await this.dataService.getItem(item.id, item.type);
-          if (data) {
-            await this.s3Service.upload(`items/${item.id}.json`, data);
-            this.metadata.items[item.id] = {
-              synced: Date.now(),
+          if (item.deleted || item.reason === "tombstone") {
+            const tombstoneData = {
+              deleted: item.deleted || Date.now(),
+              deletedAt: item.deleted || Date.now(),
               type: item.type,
-              size: item.size || this.getItemSize(data),
+              tombstoneVersion: item.tombstoneVersion || 1,
+              synced: Date.now(),
             };
-            cloudMetadata.items[item.id] = { ...this.metadata.items[item.id] };
+            this.metadata.items[item.id] = tombstoneData;
+            cloudMetadata.items[item.id] = { ...tombstoneData };
+            this.logger.log(
+              "info",
+              `🗑️ Added tombstone for ${item.id} to initial sync`
+            );
+          } else {
+            const data = await this.dataService.getItem(item.id, item.type);
+            if (data) {
+              await this.s3Service.upload(`items/${item.id}.json`, data);
+              this.metadata.items[item.id] = {
+                synced: Date.now(),
+                type: item.type,
+                size: item.size || this.getItemSize(data),
+              };
+              cloudMetadata.items[item.id] = {
+                ...this.metadata.items[item.id],
+              };
+            }
           }
         });
-
         await Promise.allSettled(uploadPromises);
         await this.s3Service.upload("metadata.json", cloudMetadata, true);
         this.metadata.lastSync = cloudMetadata.lastSync;
         this.setLastCloudSync(cloudMetadata.lastSync);
         this.saveMetadata();
-
         this.logger.log(
           "success",
           `Initial sync completed - ${changedItems.length} items uploaded`
@@ -869,6 +1173,25 @@ if (window.typingMindCloudSync) {
       const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
       let cleanupCount = 0;
 
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith("tcs_tombstone_")) {
+          try {
+            const tombstone = JSON.parse(localStorage.getItem(key));
+            if (
+              tombstone.deleted &&
+              now - tombstone.deleted > tombstoneRetentionPeriod
+            ) {
+              localStorage.removeItem(key);
+              cleanupCount++;
+            }
+          } catch {
+            localStorage.removeItem(key);
+            cleanupCount++;
+          }
+        }
+      }
+
       for (const [itemId, metadata] of Object.entries(this.metadata.items)) {
         if (
           metadata.deleted &&
@@ -905,6 +1228,19 @@ if (window.typingMindCloudSync) {
         }
         throw error;
       }
+    }
+    cleanup() {
+      if (this.autoSyncInterval) {
+        clearInterval(this.autoSyncInterval);
+        this.autoSyncInterval = null;
+      }
+      this.syncInProgress = false;
+      this.config = null;
+      this.dataService = null;
+      this.s3Service = null;
+      this.logger = null;
+      this.operationQueue = null;
+      this.metadata = null;
     }
   }
 
@@ -1092,11 +1428,123 @@ if (window.typingMindCloudSync) {
     }
   }
 
+  class OperationQueue {
+    constructor(logger) {
+      this.logger = logger;
+      this.queue = new Map();
+      this.processing = false;
+      this.maxRetries = 3;
+      this.activeTimeouts = new Set();
+      this.maxQueueSize = 100;
+    }
+
+    add(operationId, operation, priority = "normal") {
+      if (this.queue.has(operationId)) {
+        this.logger.log("skip", `Operation ${operationId} already queued`);
+        return;
+      }
+
+      if (this.queue.size >= this.maxQueueSize) {
+        this.logger.log(
+          "warning",
+          `Queue full (${this.maxQueueSize}), removing oldest operation`
+        );
+        const oldestKey = this.queue.keys().next().value;
+        this.queue.delete(oldestKey);
+      }
+
+      this.queue.set(operationId, {
+        id: operationId,
+        operation,
+        priority,
+        retries: 0,
+        addedAt: Date.now(),
+      });
+
+      this.logger.log("info", `📋 Queued operation: ${operationId}`);
+      this.process();
+    }
+
+    async process() {
+      if (this.processing || this.queue.size === 0) return;
+
+      this.processing = true;
+
+      while (this.queue.size > 0) {
+        const operations = Array.from(this.queue.values());
+        const highPriority = operations.filter((op) => op.priority === "high");
+        const nextOp =
+          highPriority.length > 0 ? highPriority[0] : operations[0];
+
+        try {
+          this.logger.log("info", `⚡ Executing: ${nextOp.id}`);
+          await nextOp.operation();
+          this.queue.delete(nextOp.id);
+          this.logger.log("success", `✅ Completed: ${nextOp.id}`);
+        } catch (error) {
+          this.logger.log("error", `❌ Failed: ${nextOp.id}`, error.message);
+
+          if (nextOp.retries < this.maxRetries) {
+            nextOp.retries++;
+            const delay = Math.min(1000 * Math.pow(2, nextOp.retries), 10000);
+            this.logger.log(
+              "warning",
+              `🔄 Retrying ${nextOp.id} in ${delay}ms (${nextOp.retries}/${this.maxRetries})`
+            );
+
+            const timeoutId = setTimeout(() => {
+              this.activeTimeouts.delete(timeoutId);
+              if (this.queue.has(nextOp.id)) {
+                this.process();
+              }
+            }, delay);
+            this.activeTimeouts.add(timeoutId);
+            break;
+          } else {
+            this.logger.log("error", `💀 Giving up on: ${nextOp.id}`);
+            this.queue.delete(nextOp.id);
+          }
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      this.processing = false;
+    }
+
+    clear() {
+      this.queue.clear();
+      this.clearTimeouts();
+      this.processing = false;
+    }
+
+    clearTimeouts() {
+      for (const timeoutId of this.activeTimeouts) {
+        clearTimeout(timeoutId);
+      }
+      this.activeTimeouts.clear();
+    }
+
+    size() {
+      return this.queue.size;
+    }
+
+    cleanup() {
+      this.clear();
+      this.logger = null;
+    }
+  }
+
   class CloudSyncApp {
     constructor() {
       this.logger = new Logger();
       this.config = new ConfigManager();
-      this.dataService = new DataService(this.config, this.logger);
+      this.operationQueue = new OperationQueue(this.logger);
+      this.dataService = new DataService(
+        this.config,
+        this.logger,
+        this.operationQueue
+      );
       this.cryptoService = new CryptoService(this.config);
       this.s3Service = new S3Service(
         this.config,
@@ -1107,7 +1555,8 @@ if (window.typingMindCloudSync) {
         this.config,
         this.dataService,
         this.s3Service,
-        this.logger
+        this.logger,
+        this.operationQueue
       );
       this.backupService = new BackupService(
         this.dataService,
@@ -1115,15 +1564,20 @@ if (window.typingMindCloudSync) {
         this.logger
       );
       this.autoSyncInterval = null;
+      this.eventListeners = [];
+      this.modalCleanupCallbacks = [];
     }
     async initialize() {
       this.logger.log(
         "start",
-        "Initializing Cloud Sync V3 (Optimized Single File)"
+        "Initializing Cloud Sync V4 with Enhanced Tombstone Support"
       );
       await this.performV2toV3Migration();
       await this.waitForDOM();
       this.insertSyncButton();
+
+      this.dataService.startDeletionMonitoring();
+
       if (this.config.isConfigured()) {
         try {
           await this.s3Service.initialize();
@@ -1131,11 +1585,19 @@ if (window.typingMindCloudSync) {
           await this.syncOrchestrator.performFullSync();
           this.startAutoSync();
           this.updateSyncStatus("success");
-          this.logger.log("success", "Cloud Sync initialized successfully");
+          this.logger.log(
+            "success",
+            "Cloud Sync initialized successfully with tombstone monitoring"
+          );
         } catch (error) {
           this.logger.log("error", "Initialization failed", error.message);
           this.updateSyncStatus("error");
         }
+      } else {
+        this.logger.log(
+          "info",
+          "AWS not configured - running in monitoring mode only"
+        );
       }
     }
     async waitForDOM() {
@@ -1306,25 +1768,50 @@ if (window.typingMindCloudSync) {
       </div>`;
     }
     setupModalEventListeners(modal, overlay) {
-      overlay.addEventListener("click", () => this.closeModal(overlay));
+      const closeModalHandler = () => this.closeModal(overlay);
+      const saveSettingsHandler = () => this.saveSettings(overlay);
+      const createSnapshotHandler = () => this.createSnapshot();
+      const handleSyncNowHandler = () => this.handleSyncNow(modal);
+      const consoleLoggingHandler = (e) =>
+        this.logger.setEnabled(e.target.checked);
+
+      overlay.addEventListener("click", closeModalHandler);
       modal.addEventListener("click", (e) => e.stopPropagation());
       modal
         .querySelector("#close-modal")
-        .addEventListener("click", () => this.closeModal(overlay));
+        .addEventListener("click", closeModalHandler);
       modal
         .querySelector("#save-settings")
-        .addEventListener("click", () => this.saveSettings(overlay));
+        .addEventListener("click", saveSettingsHandler);
       modal
         .querySelector("#create-snapshot")
-        .addEventListener("click", () => this.createSnapshot());
+        .addEventListener("click", createSnapshotHandler);
       modal
         .querySelector("#sync-now")
-        .addEventListener("click", () => this.handleSyncNow(modal));
+        .addEventListener("click", handleSyncNowHandler);
       modal
         .querySelector("#console-logging-toggle")
-        .addEventListener("change", (e) =>
-          this.logger.setEnabled(e.target.checked)
-        );
+        .addEventListener("change", consoleLoggingHandler);
+
+      this.modalCleanupCallbacks.push(() => {
+        overlay.removeEventListener("click", closeModalHandler);
+        modal
+          .querySelector("#close-modal")
+          ?.removeEventListener("click", closeModalHandler);
+        modal
+          .querySelector("#save-settings")
+          ?.removeEventListener("click", saveSettingsHandler);
+        modal
+          .querySelector("#create-snapshot")
+          ?.removeEventListener("click", createSnapshotHandler);
+        modal
+          .querySelector("#sync-now")
+          ?.removeEventListener("click", handleSyncNowHandler);
+        modal
+          .querySelector("#console-logging-toggle")
+          ?.removeEventListener("change", consoleLoggingHandler);
+      });
+
       const consoleLoggingCheckbox = modal.querySelector(
         "#console-logging-toggle"
       );
@@ -1337,22 +1824,22 @@ if (window.typingMindCloudSync) {
       const originalText = syncNowButton.textContent;
       syncNowButton.disabled = true;
       syncNowButton.textContent = "Working...";
-      this.syncOrchestrator
-        .performFullSync()
-        .then(() => {
-          syncNowButton.textContent = "Done!";
-          setTimeout(() => {
-            syncNowButton.textContent = originalText;
-            syncNowButton.disabled = false;
-          }, 2000);
-        })
-        .catch(() => {
-          syncNowButton.textContent = "Failed";
-          setTimeout(() => {
-            syncNowButton.textContent = originalText;
-            syncNowButton.disabled = false;
-          }, 2000);
-        });
+
+      this.operationQueue.add(
+        "manual-full-sync",
+        async () => {
+          await this.syncOrchestrator.performFullSync();
+        },
+        "high"
+      );
+
+      setTimeout(() => {
+        syncNowButton.textContent = "Done!";
+        setTimeout(() => {
+          syncNowButton.textContent = originalText;
+          syncNowButton.disabled = false;
+        }, 2000);
+      }, 1000);
     }
     async loadBackupList(modal) {
       try {
@@ -1648,6 +2135,18 @@ if (window.typingMindCloudSync) {
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
     }
     closeModal(overlay) {
+      this.modalCleanupCallbacks.forEach((cleanup) => {
+        try {
+          cleanup();
+        } catch (error) {
+          this.logger.log(
+            "warning",
+            "Error during modal cleanup",
+            error.message
+          );
+        }
+      });
+      this.modalCleanupCallbacks = [];
       if (overlay) overlay.remove();
     }
     async saveSettings(overlay) {
@@ -1682,17 +2181,20 @@ if (window.typingMindCloudSync) {
         this.config.set(key, newConfig[key])
       );
       this.config.save();
-      try {
-        await this.s3Service.initialize();
-        await this.syncOrchestrator.performFullSync();
-        this.startAutoSync();
-        this.updateSyncStatus("success");
-        this.closeModal(overlay);
-        this.logger.log("success", "Configuration saved and sync completed");
-      } catch (error) {
-        this.logger.log("error", "Failed to save configuration", error.message);
-        alert("Failed to initialize sync. Please check your configuration.");
-      }
+
+      this.operationQueue.add(
+        "save-and-sync",
+        async () => {
+          await this.s3Service.initialize();
+          await this.syncOrchestrator.performFullSync();
+          this.startAutoSync();
+          this.updateSyncStatus("success");
+          this.logger.log("success", "Configuration saved and sync completed");
+        },
+        "high"
+      );
+
+      this.closeModal(overlay);
     }
     async createSnapshot() {
       const name = prompt("Enter snapshot name:");
@@ -1897,6 +2399,83 @@ if (window.typingMindCloudSync) {
         this.logger.log("info", "AWS not configured, skipping cloud cleanup");
       }
     }
+    startAutoSync() {
+      if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
+
+      const interval = Math.max(this.config.get("syncInterval") * 1000, 15000);
+
+      this.autoSyncInterval = setInterval(async () => {
+        if (
+          this.config.isConfigured() &&
+          !this.syncOrchestrator.syncInProgress
+        ) {
+          try {
+            await this.syncOrchestrator.performFullSync();
+          } catch (error) {
+            this.logger.log("error", "Auto-sync failed", error.message);
+          }
+        }
+      }, interval);
+
+      this.logger.log("info", "Auto-sync started");
+    }
+    cleanup() {
+      this.logger.log("info", "🧹 Starting comprehensive cleanup");
+
+      if (this.autoSyncInterval) {
+        clearInterval(this.autoSyncInterval);
+        this.autoSyncInterval = null;
+      }
+
+      this.modalCleanupCallbacks.forEach((cleanup) => {
+        try {
+          cleanup();
+        } catch (error) {
+          console.warn("Modal cleanup error:", error);
+        }
+      });
+      this.modalCleanupCallbacks = [];
+
+      this.eventListeners.forEach(({ element, event, handler }) => {
+        try {
+          element.removeEventListener(event, handler);
+        } catch (error) {
+          console.warn("Event listener cleanup error:", error);
+        }
+      });
+      this.eventListeners = [];
+
+      const existingModal = document.querySelector(".cloud-sync-modal");
+      if (existingModal) {
+        existingModal.closest(".modal-overlay")?.remove();
+      }
+
+      if (this.operationQueue) {
+        this.operationQueue.cleanup();
+      }
+
+      if (this.dataService) {
+        this.dataService.cleanup();
+      }
+
+      if (this.cryptoService) {
+        this.cryptoService.cleanup();
+      }
+
+      if (this.syncOrchestrator) {
+        this.syncOrchestrator.cleanup();
+      }
+
+      this.logger.log("success", "✅ Cleanup completed");
+      this.config = null;
+      this.dataService = null;
+      this.cryptoService = null;
+      this.s3Service = null;
+      this.syncOrchestrator = null;
+      this.backupService = null;
+      this.operationQueue = null;
+      this.logger = null;
+    }
   }
 
   const styleSheet = document.createElement("style");
@@ -1975,4 +2554,44 @@ if (window.typingMindCloudSync) {
   const app = new CloudSyncApp();
   app.initialize();
   window.cloudSyncApp = app;
+
+  const cleanupHandler = () => {
+    if (app && app.cleanup) {
+      try {
+        app.cleanup();
+      } catch (error) {
+        console.warn("Cleanup error:", error);
+      }
+    }
+  };
+
+  window.addEventListener("beforeunload", cleanupHandler);
+  window.addEventListener("unload", cleanupHandler);
+  window.addEventListener("pagehide", cleanupHandler);
+
+  window.createTombstone = (itemId, type, source = "manual") => {
+    if (app && app.dataService) {
+      return app.dataService.createTombstone(itemId, type, source);
+    }
+    return null;
+  };
+
+  window.getTombstones = () => {
+    if (app && app.dataService) {
+      return Array.from(app.dataService.getAllTombstones().entries());
+    }
+    return [];
+  };
+
+  window.getMemoryStats = () => {
+    if (app) {
+      return {
+        knownItems: app.dataService?.knownItems?.size || 0,
+        operationQueue: app.operationQueue?.size() || 0,
+        eventListeners: app.eventListeners?.length || 0,
+        modalCallbacks: app.modalCleanupCallbacks?.length || 0,
+      };
+    }
+    return {};
+  };
 }
