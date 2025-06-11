@@ -473,7 +473,10 @@ if (window.typingMindCloudSync) {
       this.syncInProgress = false;
       this.lastChangeCheck = 0;
       this.lastActivity = Date.now();
+      this.knownItems = new Map();
+      this.potentialDeletions = new Map();
       this.setupActivityMonitoring();
+      this.startDeletionMonitoring();
     }
     loadMetadata() {
       const stored = localStorage.getItem("tcs_cloud-metadata-v4");
@@ -520,6 +523,7 @@ if (window.typingMindCloudSync) {
 
       const changedItems = [];
       let processedCount = 0;
+
       for (const item of allItems) {
         const existingItem = this.metadata.items[item.id];
         const hash = await this.dataService.generateHash(item.data);
@@ -546,6 +550,26 @@ if (window.typingMindCloudSync) {
               `📝 Change detected: ${item.id} (${item.type}) - ${
                 !existingItem ? "NEW" : "MODIFIED"
               }`
+            );
+          }
+        }
+      }
+
+      for (const [itemId, metadata] of Object.entries(this.metadata.items)) {
+        if (metadata.deleted && metadata.synced < metadata.modified) {
+          changedItems.push({
+            id: itemId,
+            type: metadata.type,
+            hash: "deleted",
+            modified: metadata.modified,
+            synced: metadata.synced,
+            deleted: true,
+          });
+
+          if (debugEnabled) {
+            this.logger.log(
+              "info",
+              `🗑️ Tombstone needs sync: ${itemId} (${metadata.type})`
             );
           }
         }
@@ -627,11 +651,22 @@ if (window.typingMindCloudSync) {
           cloudMetadata.deleted = [];
         }
         const uploadPromises = itemsToSync.map(async (item) => {
-          const data = await this.dataService.getItem(item.id, item.type);
-          if (data) {
-            await this.s3.upload(`items/${item.id}.json`, data);
+          if (item.deleted) {
             this.metadata.items[item.id].synced = Date.now();
             cloudMetadata.items[item.id] = { ...this.metadata.items[item.id] };
+            this.logger.log(
+              "info",
+              `🗑️ Synced tombstone for ${item.id} to cloud`
+            );
+          } else {
+            const data = await this.dataService.getItem(item.id, item.type);
+            if (data) {
+              await this.s3.upload(`items/${item.id}.json`, data);
+              this.metadata.items[item.id].synced = Date.now();
+              cloudMetadata.items[item.id] = {
+                ...this.metadata.items[item.id],
+              };
+            }
           }
         });
         await Promise.allSettled(uploadPromises);
@@ -721,10 +756,19 @@ if (window.typingMindCloudSync) {
         }
         const downloadPromises = itemsToDownload.map(
           async ([key, cloudItem]) => {
-            const data = await this.s3.download(`items/${key}.json`);
-            if (data) {
-              await this.dataService.saveItem(data, cloudItem.type);
+            if (cloudItem.deleted) {
+              this.logger.log(
+                "info",
+                `🗑️ Processing cloud tombstone for ${key}`
+              );
+              await this.dataService.deleteItem(key, cloudItem.type);
               this.metadata.items[key] = { ...cloudItem };
+            } else {
+              const data = await this.s3.download(`items/${key}.json`);
+              if (data) {
+                await this.dataService.saveItem(data, cloudItem.type);
+                this.metadata.items[key] = { ...cloudItem };
+              }
             }
           }
         );
@@ -778,6 +822,71 @@ if (window.typingMindCloudSync) {
     async performFullSync() {
       await this.syncFromCloud();
       await this.syncToCloud();
+
+      const now = Date.now();
+      const lastCleanup = localStorage.getItem("tcs_last-tombstone-cleanup");
+      const cleanupInterval = 24 * 60 * 60 * 1000;
+
+      if (!lastCleanup || now - parseInt(lastCleanup) > cleanupInterval) {
+        this.logger.log("info", "🧹 Starting periodic tombstone cleanup");
+        const localCleaned = this.cleanupOldTombstones();
+        const cloudCleaned = await this.cleanupCloudTombstones();
+        localStorage.setItem("tcs_last-tombstone-cleanup", now.toString());
+
+        if (localCleaned > 0 || cloudCleaned > 0) {
+          this.logger.log(
+            "success",
+            `Tombstone cleanup completed: ${localCleaned} local, ${cloudCleaned} cloud`
+          );
+        }
+      }
+    }
+    async cleanupCloudTombstones() {
+      try {
+        const cloudMetadata = await this.s3.download("metadata.json", true);
+        const now = Date.now();
+        const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
+        let cleanupCount = 0;
+
+        if (cloudMetadata.items) {
+          for (const [itemId, metadata] of Object.entries(
+            cloudMetadata.items
+          )) {
+            if (
+              metadata.deleted &&
+              metadata.deletedAt &&
+              now - metadata.deletedAt > tombstoneRetentionPeriod
+            ) {
+              delete cloudMetadata.items[itemId];
+              cleanupCount++;
+
+              if (cloudMetadata.deleted) {
+                const deletedIndex = cloudMetadata.deleted.indexOf(itemId);
+                if (deletedIndex > -1) {
+                  cloudMetadata.deleted.splice(deletedIndex, 1);
+                }
+              }
+            }
+          }
+
+          if (cleanupCount > 0) {
+            await this.s3.upload("metadata.json", cloudMetadata, true);
+            this.logger.log(
+              "info",
+              `🧹 Cleaned up ${cleanupCount} old cloud tombstones`
+            );
+          }
+        }
+
+        return cleanupCount;
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "Error cleaning up cloud tombstones",
+          error.message
+        );
+        return 0;
+      }
     }
     startAutoSync() {
       const interval = Math.max(this.config.get("syncInterval") * 1000, 15000);
@@ -1533,6 +1642,151 @@ if (window.typingMindCloudSync) {
           alert("Failed to create snapshot: " + error.message);
         }
       }
+    }
+    startDeletionMonitoring() {
+      const MIN_ITEM_AGE_MS = 60 * 1000;
+      const REQUIRED_MISSING_DETECTIONS = 2;
+
+      this.dataService.getAllItems().then((items) => {
+        const now = Date.now();
+        items.forEach((item) => {
+          if (item.id) {
+            this.knownItems.set(item.id, {
+              detectedAt: now,
+              confirmedCount: 3,
+              type: item.type,
+            });
+          }
+        });
+        this.logger.log(
+          "info",
+          `🗂️ Initialized deletion monitor with ${this.knownItems.size} items`
+        );
+      });
+
+      setInterval(async () => {
+        if (document.hidden) return;
+        try {
+          const now = Date.now();
+          const currentItems = await this.dataService.getAllItems();
+          const currentItemIds = new Set(currentItems.map((item) => item.id));
+
+          for (const item of currentItems) {
+            if (this.knownItems.has(item.id)) {
+              const itemInfo = this.knownItems.get(item.id);
+              itemInfo.confirmedCount = Math.min(
+                itemInfo.confirmedCount + 1,
+                5
+              );
+              if (this.potentialDeletions.has(item.id)) {
+                this.potentialDeletions.delete(item.id);
+              }
+            } else {
+              this.knownItems.set(item.id, {
+                detectedAt: now,
+                confirmedCount: 1,
+                type: item.type,
+              });
+            }
+          }
+
+          for (const [itemId, itemInfo] of this.knownItems.entries()) {
+            if (!currentItemIds.has(itemId)) {
+              const isEstablishedItem =
+                itemInfo.confirmedCount >= 2 &&
+                now - itemInfo.detectedAt > MIN_ITEM_AGE_MS;
+
+              if (isEstablishedItem) {
+                const missingCount =
+                  (this.potentialDeletions.get(itemId) || 0) + 1;
+                this.potentialDeletions.set(itemId, missingCount);
+
+                if (missingCount >= REQUIRED_MISSING_DETECTIONS) {
+                  if (this.metadata.items[itemId]?.deleted === true) {
+                    this.knownItems.delete(itemId);
+                    this.potentialDeletions.delete(itemId);
+                    continue;
+                  }
+
+                  this.logger.log(
+                    "info",
+                    `🗑️ Confirmed deletion of ${itemId} (${itemInfo.type}) - creating tombstone`
+                  );
+
+                  this.metadata.items[itemId] = {
+                    deleted: true,
+                    deletedAt: Date.now(),
+                    modified: Date.now(),
+                    synced: 0,
+                    type: itemInfo.type,
+                    hash: "deleted",
+                  };
+
+                  if (!this.metadata.deleted) {
+                    this.metadata.deleted = [];
+                  }
+                  if (!this.metadata.deleted.includes(itemId)) {
+                    this.metadata.deleted.push(itemId);
+                  }
+
+                  this.saveMetadata();
+                  this.knownItems.delete(itemId);
+                  this.potentialDeletions.delete(itemId);
+                } else {
+                  this.logger.log(
+                    "info",
+                    `🕐 Item ${itemId} appears deleted (${missingCount}/${REQUIRED_MISSING_DETECTIONS} checks)`
+                  );
+                }
+              } else {
+                if (this.potentialDeletions.has(itemId)) {
+                  const missingCount = this.potentialDeletions.get(itemId) + 1;
+                  if (missingCount > 5) {
+                    this.knownItems.delete(itemId);
+                    this.potentialDeletions.delete(itemId);
+                  } else {
+                    this.potentialDeletions.set(itemId, missingCount);
+                  }
+                } else {
+                  this.potentialDeletions.set(itemId, 1);
+                }
+              }
+            }
+          }
+        } catch (error) {
+          this.logger.log("error", "Error in deletion monitor", error.message);
+        }
+      }, 10000);
+    }
+    cleanupOldTombstones() {
+      const now = Date.now();
+      const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
+      let cleanupCount = 0;
+
+      for (const [itemId, metadata] of Object.entries(this.metadata.items)) {
+        if (
+          metadata.deleted &&
+          metadata.deletedAt &&
+          now - metadata.deletedAt > tombstoneRetentionPeriod
+        ) {
+          delete this.metadata.items[itemId];
+          cleanupCount++;
+
+          if (this.metadata.deleted) {
+            const deletedIndex = this.metadata.deleted.indexOf(itemId);
+            if (deletedIndex > -1) {
+              this.metadata.deleted.splice(deletedIndex, 1);
+            }
+          }
+        }
+      }
+
+      if (cleanupCount > 0) {
+        this.saveMetadata();
+        this.logger.log("info", `🧹 Cleaned up ${cleanupCount} old tombstones`);
+      }
+
+      return cleanupCount;
     }
   }
 
