@@ -85,6 +85,9 @@ if (window.typingMindCloudSync) {
     shouldExclude(key) {
       return this.exclusions.includes(key) || key.startsWith("tcs_");
     }
+    reloadExclusions() {
+      this.exclusions = this.loadExclusions();
+    }
   }
 
   class Logger {
@@ -1575,6 +1578,7 @@ if (window.typingMindCloudSync) {
       };
       const exclusions = document.getElementById("sync-exclusions").value;
       localStorage.setItem("tcs_sync-exclusions", exclusions);
+      this.config.reloadExclusions();
       if (
         !newConfig.bucketName ||
         !newConfig.region ||
@@ -1697,6 +1701,19 @@ if (window.typingMindCloudSync) {
       background-color: rgb(82, 82, 91);
       cursor: not-allowed;
       opacity: 0.5;
+    }
+    
+    .cloud-sync-modal .bg-zinc-800 {
+      border: 1px solid rgb(82, 82, 91);
+    }
+    
+    .cloud-sync-modal input[type="checkbox"] {
+      accent-color: rgb(59, 130, 246);
+    }
+    
+    .cloud-sync-modal input[type="checkbox"]:checked {
+      background-color: rgb(59, 130, 246);
+      border-color: rgb(59, 130, 246);
     }
   `;
   document.head.appendChild(styleSheet);
