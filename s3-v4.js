@@ -462,7 +462,7 @@ if (window.typingMindCloudSync) {
     constructor(configManager, dataService, s3Service, logger) {
       this.config = configManager;
       this.dataService = dataService;
-      this.s3 = s3Service;
+      this.s3Service = s3Service;
       this.logger = logger;
       this.metadata = this.loadMetadata();
       this.syncInProgress = false;
@@ -618,7 +618,7 @@ if (window.typingMindCloudSync) {
             } else {
               const data = await this.dataService.getItem(item.id, item.type);
               if (data) {
-                await this.s3.upload(`items/${item.id}.json`, data);
+                await this.s3Service.upload(`items/${item.id}.json`, data);
                 this.metadata.items[item.id] = {
                   synced: Date.now(),
                   type: item.type,
@@ -642,7 +642,7 @@ if (window.typingMindCloudSync) {
 
         await Promise.allSettled(uploadPromises);
         cloudMetadata.lastSync = Date.now();
-        await this.s3.upload("metadata.json", cloudMetadata, true);
+        await this.s3Service.upload("metadata.json", cloudMetadata, true);
         this.metadata.lastSync = cloudMetadata.lastSync;
         this.setLastCloudSync(cloudMetadata.lastSync);
         this.saveMetadata();
@@ -718,7 +718,7 @@ if (window.typingMindCloudSync) {
               await this.dataService.deleteItem(key, cloudItem.type);
               this.metadata.items[key] = { ...cloudItem };
             } else {
-              const data = await this.s3.download(`items/${key}.json`);
+              const data = await this.s3Service.download(`items/${key}.json`);
               if (data) {
                 await this.dataService.saveItem(data, cloudItem.type);
                 this.metadata.items[key] = {
@@ -755,7 +755,7 @@ if (window.typingMindCloudSync) {
         const uploadPromises = changedItems.map(async (item) => {
           const data = await this.dataService.getItem(item.id, item.type);
           if (data) {
-            await this.s3.upload(`items/${item.id}.json`, data);
+            await this.s3Service.upload(`items/${item.id}.json`, data);
             this.metadata.items[item.id] = {
               synced: Date.now(),
               type: item.type,
@@ -766,7 +766,7 @@ if (window.typingMindCloudSync) {
         });
 
         await Promise.allSettled(uploadPromises);
-        await this.s3.upload("metadata.json", cloudMetadata, true);
+        await this.s3Service.upload("metadata.json", cloudMetadata, true);
         this.metadata.lastSync = cloudMetadata.lastSync;
         this.setLastCloudSync(cloudMetadata.lastSync);
         this.saveMetadata();
@@ -827,7 +827,7 @@ if (window.typingMindCloudSync) {
           }
 
           if (cleanupCount > 0) {
-            await this.s3.upload("metadata.json", cloudMetadata, true);
+            await this.s3Service.upload("metadata.json", cloudMetadata, true);
             this.logger.log(
               "info",
               `🧹 Cleaned up ${cleanupCount} old cloud tombstones`
@@ -846,8 +846,11 @@ if (window.typingMindCloudSync) {
       }
     }
     startAutoSync() {
+      if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
+
       const interval = Math.max(this.config.get("syncInterval") * 1000, 15000);
-      return setInterval(async () => {
+
+      this.autoSyncInterval = setInterval(async () => {
         if (this.config.isConfigured() && !this.syncInProgress) {
           try {
             await this.performFullSync();
@@ -856,6 +859,8 @@ if (window.typingMindCloudSync) {
           }
         }
       }, interval);
+
+      this.logger.log("info", "Auto-sync started");
     }
     cleanupOldTombstones() {
       const now = Date.now();
@@ -881,7 +886,10 @@ if (window.typingMindCloudSync) {
     }
     async getCloudMetadata() {
       try {
-        const cloudMetadata = await this.s3.download("metadata.json", true);
+        const cloudMetadata = await this.s3Service.download(
+          "metadata.json",
+          true
+        );
         if (!cloudMetadata || typeof cloudMetadata !== "object") {
           return { lastSync: 0, items: {} };
         }
@@ -901,7 +909,7 @@ if (window.typingMindCloudSync) {
   class BackupService {
     constructor(dataService, s3Service, logger) {
       this.dataService = dataService;
-      this.s3 = s3Service;
+      this.s3Service = s3Service;
       this.logger = logger;
     }
     async createSnapshot(name) {
@@ -910,31 +918,101 @@ if (window.typingMindCloudSync) {
         .toISOString()
         .replace(/[-:]/g, "")
         .replace(/\..+/, "");
-      const filename = `SS_${timestamp}_${name.replace(
+      const filename = `s-${name.replace(
         /[^a-zA-Z0-9]/g,
         "-"
-      )}.zip`;
+      )}-${timestamp}.zip`;
+
       const allItems = await this.dataService.getAllItems();
-      const idbData = allItems
+
+      const indexedDBData = {};
+      allItems
         .filter((item) => item.type === "idb")
-        .map((item) => item.data);
-      const lsData = allItems
+        .forEach((item) => {
+          if (item.data && item.data.id) {
+            indexedDBData[item.data.id] = item.data;
+          }
+        });
+
+      const localStorageData = {};
+      allItems
         .filter((item) => item.type === "ls")
-        .reduce((acc, item) => {
-          acc[item.data.key] = item.data.value;
-          return acc;
-        }, {});
-      const snapshot = { idbData, lsData, created: Date.now(), name };
-      await this.s3.upload(`snapshots/${filename}`, snapshot);
+        .forEach((item) => {
+          localStorageData[item.data.key] = item.data.value;
+        });
+
+      const snapshot = {
+        localStorage: localStorageData,
+        indexedDB: indexedDBData,
+        created: Date.now(),
+        name,
+      };
+
+      await this.s3Service.upload(`${filename}`, snapshot);
       this.logger.log("success", `Snapshot created: ${filename}`);
       return true;
     }
+
+    async checkAndPerformDailyBackup() {
+      const lastBackupStr = localStorage.getItem("last-daily-backup");
+      const now = new Date();
+      const currentDateStr = `${now.getFullYear()}${String(
+        now.getMonth() + 1
+      ).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+
+      if (!lastBackupStr || lastBackupStr !== currentDateStr) {
+        this.logger.log("info", "Starting daily backup...");
+        await this.performDailyBackup();
+        localStorage.setItem("last-daily-backup", currentDateStr);
+        this.logger.log("success", "Daily backup completed");
+      } else {
+        this.logger.log("info", "Daily backup already performed today");
+      }
+    }
+
+    async performDailyBackup() {
+      const today = new Date();
+      const dateString = `${today.getFullYear()}${String(
+        today.getMonth() + 1
+      ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+      const filename = `typingmind-backup-${dateString}.zip`;
+
+      const allItems = await this.dataService.getAllItems();
+
+      const indexedDBData = {};
+      allItems
+        .filter((item) => item.type === "idb")
+        .forEach((item) => {
+          if (item.data && item.data.id) {
+            indexedDBData[item.data.id] = item.data;
+          }
+        });
+
+      const localStorageData = {};
+      allItems
+        .filter((item) => item.type === "ls")
+        .forEach((item) => {
+          localStorageData[item.data.key] = item.data.value;
+        });
+
+      const backup = {
+        localStorage: localStorageData,
+        indexedDB: indexedDBData,
+        created: Date.now(),
+        name: "daily-auto",
+      };
+
+      await this.s3Service.upload(filename, backup);
+      this.logger.log("success", `Daily backup completed: ${filename}`);
+      await this.cleanupOldBackups();
+    }
+
     async loadBackupList() {
       try {
-        const objects = await this.s3.list("snapshots/");
+        const objects = await this.s3Service.list("");
         return objects.map((obj) => ({
           key: obj.Key,
-          name: obj.Key.replace("snapshots/", "").replace(".zip", ""),
+          name: obj.Key.replace(".zip", ""),
           size: obj.Size,
           modified: obj.LastModified,
         }));
@@ -943,76 +1021,68 @@ if (window.typingMindCloudSync) {
         return [];
       }
     }
-    async restoreFromBackup(key) {
+    async restoreFromBackup(key, cryptoService) {
       this.logger.log("start", `Restoring from backup: ${key}`);
-      const backup = await this.s3.download(key);
+      const backup = await this.s3Service.download(key);
+
+      if (!backup) {
+        throw new Error("Backup not found");
+      }
+
+      // Decrypt the backup data
+      const decryptedData = await cryptoService.decrypt(backup.data);
+
+      if (!decryptedData.localStorage && !decryptedData.indexedDB) {
+        throw new Error(
+          "Invalid backup format - missing localStorage and indexedDB data"
+        );
+      }
+
+      this.logger.log("info", "Restoring data...");
       const promises = [];
-      if (backup.idbData) {
-        promises.push(
-          ...backup.idbData.map((item) =>
-            this.dataService.saveItem(item, "idb")
-          )
-        );
+
+      // Restore IndexedDB data
+      if (decryptedData.indexedDB) {
+        Object.entries(decryptedData.indexedDB).forEach(([key, data]) => {
+          promises.push(this.dataService.saveItem(data, "idb"));
+        });
       }
-      if (backup.lsData) {
-        const lsPromises = Object.entries(backup.lsData).map(([k, v]) =>
-          this.dataService.saveItem({ key: k, value: v }, "ls")
-        );
-        promises.push(...lsPromises);
+
+      // Restore localStorage data
+      if (decryptedData.localStorage) {
+        Object.entries(decryptedData.localStorage).forEach(([key, value]) => {
+          promises.push(this.dataService.saveItem({ key, value }, "ls"));
+        });
       }
+
       await Promise.all(promises);
       this.logger.log("success", "Backup restored successfully");
       return true;
     }
-    async performDailyBackup() {
-      const lastBackupDate = localStorage.getItem("tcs_last-daily-backup-date");
-      const today = new Date().toLocaleDateString("en-GB");
-      if (lastBackupDate === today) {
-        this.logger.log("info", "Daily backup already completed today");
-        return;
-      }
-      this.logger.log("start", "Performing daily backup");
-      const timestamp = new Date()
-        .toISOString()
-        .replace(/[-:]/g, "")
-        .replace(/\..+/, "");
-      const filename = `Daily_${timestamp}.zip`;
-      const allItems = await this.dataService.getAllItems();
-      const idbData = allItems
-        .filter((item) => item.type === "idb")
-        .map((item) => item.data);
-      const lsData = allItems
-        .filter((item) => item.type === "ls")
-        .reduce((acc, item) => {
-          acc[item.data.key] = item.data.value;
-          return acc;
-        }, {});
-      const backup = {
-        idbData,
-        lsData,
-        created: Date.now(),
-        name: "daily-auto",
-      };
-      await this.s3.upload(`snapshots/${filename}`, backup);
-      localStorage.setItem("tcs_last-daily-backup-date", today);
-      this.logger.log("success", `Daily backup completed: ${filename}`);
-      await this.cleanupOldBackups();
-    }
     async cleanupOldBackups() {
       try {
-        const objects = await this.s3.list("snapshots/");
+        const objects = await this.s3Service.list("");
         const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
         let deletedCount = 0;
+
         for (const obj of objects) {
-          if (new Date(obj.LastModified).getTime() < thirtyDaysAgo) {
+          const isOldBackup =
+            new Date(obj.LastModified).getTime() < thirtyDaysAgo;
+          const isBackupFile =
+            obj.Key.startsWith("typingmind-backup-") ||
+            obj.Key.startsWith("s-");
+
+          if (isOldBackup && isBackupFile) {
             try {
-              await this.s3.delete(obj.Key);
+              await this.s3Service.delete(obj.Key);
               deletedCount++;
+              this.logger.log("success", `Cleaned up old backup: ${obj.Key}`);
             } catch (error) {
               this.logger.log("warning", `Failed to delete backup: ${obj.Key}`);
             }
           }
         }
+
         if (deletedCount > 0) {
           this.logger.log("success", `Cleaned up ${deletedCount} old backups`);
         }
@@ -1061,6 +1131,11 @@ if (window.typingMindCloudSync) {
       if (this.config.isConfigured()) {
         try {
           await this.s3Service.initialize();
+
+          if (this.config.get("syncMode") !== "disabled") {
+            await this.backupService.checkAndPerformDailyBackup();
+          }
+
           await this.syncOrchestrator.performFullSync();
           this.startAutoSync();
           this.updateSyncStatus("success");
@@ -1291,25 +1366,31 @@ if (window.typingMindCloudSync) {
       try {
         const backupList = modal.querySelector("#backup-files");
         if (!backupList) return;
+
         backupList.innerHTML = '<option value="">Loading backups...</option>';
         backupList.disabled = true;
+
         if (!this.config.isConfigured()) {
           backupList.innerHTML =
             '<option value="">Please configure AWS credentials first</option>';
           backupList.disabled = false;
           return;
         }
+
         const backups = await this.s3Service.list();
         backupList.innerHTML = "";
         backupList.disabled = false;
+
         const filteredBackups = backups.filter(
           (backup) =>
             backup.Key !== "metadata.json" &&
             !backup.Key.startsWith("items/") &&
             !backup.Key.startsWith("chats/") &&
             !backup.Key.startsWith("settings/") &&
-            backup.Key !== "chats/"
+            backup.Key !== "chats/" &&
+            backup.Key !== "snapshots/"
         );
+
         if (filteredBackups.length === 0) {
           const option = document.createElement("option");
           option.value = "";
@@ -1319,6 +1400,7 @@ if (window.typingMindCloudSync) {
           const sortedBackups = filteredBackups.sort((a, b) => {
             return new Date(b.LastModified) - new Date(a.LastModified);
           });
+
           sortedBackups.forEach((backup) => {
             const option = document.createElement("option");
             option.value = backup.Key;
@@ -1328,6 +1410,7 @@ if (window.typingMindCloudSync) {
             backupList.appendChild(option);
           });
         }
+
         this.updateBackupButtonStates(modal);
         backupList.addEventListener("change", () =>
           this.updateBackupButtonStates(modal)
@@ -1347,14 +1430,21 @@ if (window.typingMindCloudSync) {
       const downloadButton = modal.querySelector("#download-backup-btn");
       const restoreButton = modal.querySelector("#restore-backup-btn");
       const deleteButton = modal.querySelector("#delete-backup-btn");
+
+      const isSnapshot = selectedValue.startsWith("s-");
+      const isDailyBackup = selectedValue.startsWith("typingmind-backup-");
       const isZipFile = selectedValue.endsWith(".zip");
       const isMetadataFile = selectedValue === "metadata.json";
+
       if (downloadButton) {
         downloadButton.disabled = !selectedValue;
       }
+
       if (restoreButton) {
-        restoreButton.disabled = !selectedValue || !isZipFile;
+        restoreButton.disabled =
+          !selectedValue || !(isSnapshot || isDailyBackup) || !isZipFile;
       }
+
       if (deleteButton) {
         const isProtectedFile =
           !selectedValue ||
@@ -1411,7 +1501,10 @@ if (window.typingMindCloudSync) {
             try {
               restoreButton.disabled = true;
               restoreButton.textContent = "Restoring...";
-              const success = await this.backupService.restoreFromBackup(key);
+              const success = await this.backupService.restoreFromBackup(
+                key,
+                this.cryptoService
+              );
               if (success) {
                 alert("Backup restored successfully! Page will reload.");
                 location.reload();
@@ -1484,9 +1577,8 @@ if (window.typingMindCloudSync) {
             return;
           }
         } else if (
-          key.startsWith("SS_") ||
-          key.startsWith("Daily_") ||
-          key.includes("snapshot")
+          key.startsWith("s-") ||
+          key.startsWith("typingmind-backup-")
         ) {
           try {
             const decryptedContent = await this.cryptoService.decrypt(
@@ -1526,6 +1618,7 @@ if (window.typingMindCloudSync) {
             }
           }
         }
+
         this.downloadFile(key.replace(".zip", ".json"), content);
       } catch (error) {
         console.error("Failed to process backup:", error);
@@ -1609,11 +1702,6 @@ if (window.typingMindCloudSync) {
         alert("Failed to initialize sync. Please check your configuration.");
       }
     }
-    startAutoSync() {
-      if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
-      this.autoSyncInterval = this.syncOrchestrator.startAutoSync();
-      this.logger.log("info", "Auto-sync started");
-    }
     async createSnapshot() {
       const name = prompt("Enter snapshot name:");
       if (name) {
@@ -1624,23 +1712,6 @@ if (window.typingMindCloudSync) {
           this.logger.log("error", "Failed to create snapshot", error.message);
           alert("Failed to create snapshot: " + error.message);
         }
-      }
-    }
-    async getCloudMetadata() {
-      try {
-        const cloudMetadata = await this.s3.download("metadata.json", true);
-        if (!cloudMetadata || typeof cloudMetadata !== "object") {
-          return { lastSync: 0, items: {} };
-        }
-        if (!cloudMetadata.items) {
-          cloudMetadata.items = {};
-        }
-        return cloudMetadata;
-      } catch (error) {
-        if (error.code === "NoSuchKey" || error.statusCode === 404) {
-          return { lastSync: 0, items: {} };
-        }
-        throw error;
       }
     }
   }
