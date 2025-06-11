@@ -574,16 +574,53 @@ if (window.typingMindCloudSync) {
     }
     loadMetadata() {
       const stored = localStorage.getItem("tcs_cloud-metadata-v4");
-      return stored
+      const result = stored
         ? JSON.parse(stored)
         : { lastSync: 0, lastModified: 0, items: {} };
+
+      const debugEnabled =
+        new URLSearchParams(window.location.search).get("log") === "true";
+      if (debugEnabled) {
+        this.logger.log(
+          "info",
+          `🔍 loadMetadata: Loaded ${
+            Object.keys(result.items).length
+          } items from storage`
+        );
+        this.logger.log(
+          "info",
+          `🔍 loadMetadata: lastSync=${result.lastSync}, lastModified=${result.lastModified}`
+        );
+      }
+
+      return result;
     }
     saveMetadata() {
       this.metadata.lastModified = Date.now();
+      const debugEnabled =
+        new URLSearchParams(window.location.search).get("log") === "true";
+
+      if (debugEnabled) {
+        this.logger.log(
+          "info",
+          `🔍 saveMetadata: Saving ${
+            Object.keys(this.metadata.items).length
+          } items to storage`
+        );
+        this.logger.log(
+          "info",
+          `🔍 saveMetadata: lastSync=${this.metadata.lastSync}, lastModified=${this.metadata.lastModified}`
+        );
+      }
+
       localStorage.setItem(
         "tcs_cloud-metadata-v4",
         JSON.stringify(this.metadata)
       );
+
+      if (debugEnabled) {
+        this.logger.log("info", `✅ saveMetadata: Metadata saved successfully`);
+      }
     }
     getLastCloudSync() {
       const stored = localStorage.getItem("tcs_last-cloud-sync");
@@ -912,6 +949,16 @@ if (window.typingMindCloudSync) {
     async createInitialSync() {
       this.logger.log("start", "Creating initial sync");
       const { changedItems } = await this.detectChanges();
+      const debugEnabled =
+        new URLSearchParams(window.location.search).get("log") === "true";
+
+      if (debugEnabled) {
+        this.logger.log(
+          "info",
+          `🔍 createInitialSync: Processing ${changedItems.length} items`
+        );
+      }
+
       const cloudMetadata = {
         lastSync: Date.now(),
         lastModified: Date.now(),
@@ -928,6 +975,15 @@ if (window.typingMindCloudSync) {
             type: item.type,
           };
           cloudMetadata.items[item.id] = { ...this.metadata.items[item.id] };
+
+          if (debugEnabled) {
+            this.logger.log(
+              "info",
+              `✅ Uploaded and tracked: ${item.id} (synced: ${
+                this.metadata.items[item.id].synced
+              })`
+            );
+          }
         }
       });
       await Promise.allSettled(uploadPromises);
@@ -935,6 +991,20 @@ if (window.typingMindCloudSync) {
       this.metadata.lastSync = cloudMetadata.lastSync;
       this.setLastCloudSync(cloudMetadata.lastModified);
       this.saveMetadata();
+
+      if (debugEnabled) {
+        this.logger.log(
+          "info",
+          `🔍 createInitialSync: Saved metadata with ${
+            Object.keys(this.metadata.items).length
+          } items`
+        );
+        this.logger.log(
+          "info",
+          `🔍 createInitialSync: lastSync=${this.metadata.lastSync}`
+        );
+      }
+
       this.logger.log(
         "success",
         `Initial sync completed - ${changedItems.length} items uploaded`
