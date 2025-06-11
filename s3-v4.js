@@ -95,7 +95,22 @@ if (window.typingMindCloudSync) {
       );
     }
     shouldExclude(key) {
-      return this.exclusions.includes(key) || key.startsWith("tcs_");
+      const debugEnabled =
+        new URLSearchParams(window.location.search).get("log") === "true";
+      const inExclusionsList = this.exclusions.includes(key);
+      const startsWith_tcs = key.startsWith("tcs_");
+      const result = inExclusionsList || startsWith_tcs;
+
+      if (debugEnabled && key.startsWith("TM_")) {
+        console.log(
+          `🔍 shouldExclude("${key}"): inExclusionsList=${inExclusionsList}, startsWith_tcs=${startsWith_tcs}, result=${result}`
+        );
+        if (inExclusionsList) {
+          console.log(`   - Found in exclusions list:`, this.exclusions);
+        }
+      }
+
+      return result;
     }
   }
 
@@ -174,14 +189,39 @@ if (window.typingMindCloudSync) {
         };
         request.onerror = () => resolve();
       });
+      const debugEnabled =
+        new URLSearchParams(window.location.search).get("log") === "true";
+      let totalLS = 0;
+      let excludedLS = 0;
+      let includedLS = 0;
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
+        totalLS++;
         if (key && !this.config.shouldExclude(key)) {
           const value = localStorage.getItem(key);
           if (value !== null) {
             items.set(key, { id: key, data: { key, value }, type: "ls" });
+            includedLS++;
+            if (debugEnabled && key.startsWith("TM_")) {
+              console.log(`✅ Including TM_ item: ${key}`);
+            }
+          }
+        } else {
+          excludedLS++;
+          if (debugEnabled && key && key.startsWith("TM_")) {
+            console.log(
+              `❌ Excluding TM_ item: ${key} (excluded by: ${
+                this.config.shouldExclude(key) ? "shouldExclude" : "other"
+              })`
+            );
           }
         }
+      }
+      if (debugEnabled) {
+        console.log(
+          `📊 localStorage Stats: Total=${totalLS}, Included=${includedLS}, Excluded=${excludedLS}`
+        );
+        console.log(`📊 Total items to sync: ${items.size} (IDB + LS)`);
       }
       return Array.from(items.values());
     }
@@ -467,6 +507,20 @@ if (window.typingMindCloudSync) {
       }
       this.lastChangeCheck = now;
       const allItems = await this.dataService.getAllItems();
+      const debugEnabled =
+        new URLSearchParams(window.location.search).get("log") === "true";
+
+      if (debugEnabled) {
+        console.log(
+          `🔄 detectChanges: Found ${allItems.length} total items to check`
+        );
+        const tmItems = allItems.filter((item) => item.id.startsWith("TM_"));
+        console.log(
+          `🔄 detectChanges: Found ${tmItems.length} TM_ items:`,
+          tmItems.map((item) => item.id)
+        );
+      }
+
       const changedItems = [];
       for (const item of allItems) {
         const existingItem = this.metadata.items[item.id];
@@ -485,8 +539,22 @@ if (window.typingMindCloudSync) {
             synced: existingItem?.synced || 0,
             type: item.type,
           };
+
+          if (debugEnabled && item.id.startsWith("TM_")) {
+            console.log(`✅ Changed TM_ item detected: ${item.id}`);
+          }
         }
       }
+
+      if (debugEnabled) {
+        const changedTmItems = changedItems.filter((item) =>
+          item.id.startsWith("TM_")
+        );
+        console.log(
+          `🔄 detectChanges: ${changedItems.length} total changed items, ${changedTmItems.length} are TM_ items`
+        );
+      }
+
       if (changedItems.length > 0) this.saveMetadata();
       return { changedItems, hasChanges: changedItems.length > 0 };
     }
@@ -1154,9 +1222,7 @@ if (window.typingMindCloudSync) {
         backupList.disabled = false;
         const filteredBackups = backups.filter(
           (backup) =>
-            !backup.Key.startsWith("chats/") &&
-            backup.Key !== "chats/" &&
-            backup.Key !== "metadata.json"
+            backup.Key !== "metadata.json" && !backup.Key.startsWith("items/")
         );
         if (filteredBackups.length === 0) {
           const option = document.createElement("option");
@@ -1213,8 +1279,7 @@ if (window.typingMindCloudSync) {
         const isProtectedFile =
           !selectedValue ||
           isMetadataFile ||
-          selectedValue.startsWith("chats/") ||
-          selectedValue.startsWith("settings/");
+          selectedValue.startsWith("items/");
         deleteButton.disabled = isProtectedFile;
       }
     }
