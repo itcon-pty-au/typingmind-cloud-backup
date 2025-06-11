@@ -21,9 +21,7 @@ if (window.typingMindCloudSync) {
       };
       const stored = {};
       Object.keys(defaults).forEach((key) => {
-        const storageKey = `tcs_${key
-          .replace(/([A-Z])/g, "-$1")
-          .toLowerCase()}`;
+        const storageKey = `tcs_aws_${key.toLowerCase()}`;
         const value = localStorage.getItem(storageKey);
         stored[key] =
           key === "syncInterval" ? parseInt(value) || 15 : value || "";
@@ -39,15 +37,15 @@ if (window.typingMindCloudSync) {
             .filter(Boolean)
         : [];
       const systemExclusions = [
-        "tcs_aws-bucket",
-        "tcs_aws-access-key",
-        "tcs_aws-secret-key",
-        "tcs_aws-region",
-        "tcs_aws-endpoint",
-        "tcs_encryption-key",
+        "tcs_aws_bucketname",
+        "tcs_aws_accesskey",
+        "tcs_aws_secretkey",
+        "tcs_aws_region",
+        "tcs_aws_endpoint",
+        "tcs_encryptionkey",
         "tcs_last-cloud-sync",
         "tcs_sync-exclusions",
-        "tcs_cloud-metadata-v4",
+        "tcs_cloud-metadata",
         "referrer",
         "TM_useLastVerifiedToken",
         "TM_useStateUpdateHistory",
@@ -62,9 +60,7 @@ if (window.typingMindCloudSync) {
     }
     save() {
       Object.keys(this.config).forEach((key) => {
-        const storageKey = `tcs_${key
-          .replace(/([A-Z])/g, "-$1")
-          .toLowerCase()}`;
+        const storageKey = `tcs_aws_${key.toLowerCase()}`;
         localStorage.setItem(storageKey, this.config[key].toString());
       });
     }
@@ -448,16 +444,13 @@ if (window.typingMindCloudSync) {
     }
 
     loadMetadata() {
-      const stored = localStorage.getItem("tcs_cloud-metadata-v4");
+      const stored = localStorage.getItem("tcs_cloud-metadata");
       const result = stored ? JSON.parse(stored) : { lastSync: 0, items: {} };
       return result;
     }
 
     saveMetadata() {
-      localStorage.setItem(
-        "tcs_cloud-metadata-v4",
-        JSON.stringify(this.metadata)
-      );
+      localStorage.setItem("tcs_cloud-metadata", JSON.stringify(this.metadata));
     }
 
     getLastCloudSync() {
