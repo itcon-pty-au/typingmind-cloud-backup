@@ -1,3 +1,13 @@
+/* 
+TypingMind Cloud Sync v3 by ITCON, AU
+-------------------------
+Features:
+- Sync typingmind database with S3 bucket
+- Snapshots on demand
+- Automatic daily backups
+- Backup management in Extension config UI
+- Detailed logging in console
+*/
 if (window.typingMindCloudSync) {
   console.log("TypingMind Cloud Sync already loaded");
 } else {
@@ -367,7 +377,9 @@ if (window.typingMindCloudSync) {
           const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
           this.logger.log(
             "warning",
-            `Retry ${attempt + 1}/${maxRetries} in ${delay}ms`
+            `Retry ${attempt + 1}/${maxRetries} in ${delay}ms - Error: ${
+              error.message || error.code || "Unknown error"
+            }`
           );
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
@@ -376,21 +388,31 @@ if (window.typingMindCloudSync) {
     }
     async upload(key, data, isMetadata = false) {
       return this.withRetry(async () => {
-        const body = isMetadata
-          ? JSON.stringify(data)
-          : await this.crypto.encrypt(data);
-        const result = await this.client
-          .upload({
-            Bucket: this.config.get("bucketName"),
-            Key: key,
-            Body: body,
-            ContentType: isMetadata
-              ? "application/json"
-              : "application/octet-stream",
-          })
-          .promise();
-        this.logger.log("success", `Uploaded ${key}`);
-        return result;
+        try {
+          const body = isMetadata
+            ? JSON.stringify(data)
+            : await this.crypto.encrypt(data);
+          const result = await this.client
+            .upload({
+              Bucket: this.config.get("bucketName"),
+              Key: key,
+              Body: body,
+              ContentType: isMetadata
+                ? "application/json"
+                : "application/octet-stream",
+            })
+            .promise();
+          this.logger.log("success", `Uploaded ${key}`);
+          return result;
+        } catch (error) {
+          this.logger.log(
+            "error",
+            `Failed to upload ${key}: ${
+              error.message || error.code || "Unknown error"
+            }`
+          );
+          throw error;
+        }
       });
     }
     async download(key, isMetadata = false) {
@@ -576,30 +598,42 @@ if (window.typingMindCloudSync) {
         );
 
         const uploadPromises = changedItems.map(async (item) => {
-          if (item.deleted) {
-            this.metadata.items[item.id] = {
-              synced: Date.now(),
-              type: item.type,
-              deleted: item.deleted,
-            };
-            cloudMetadata.items[item.id] = { ...this.metadata.items[item.id] };
-            this.logger.log(
-              "info",
-              `🗑️ Synced tombstone for ${item.id} to cloud`
-            );
-          } else {
-            const data = await this.dataService.getItem(item.id, item.type);
-            if (data) {
-              await this.s3.upload(`items/${item.id}.json`, data);
+          try {
+            if (item.deleted) {
               this.metadata.items[item.id] = {
                 synced: Date.now(),
                 type: item.type,
-                size: item.size,
+                deleted: item.deleted,
               };
               cloudMetadata.items[item.id] = {
                 ...this.metadata.items[item.id],
               };
+              this.logger.log(
+                "info",
+                `🗑️ Synced tombstone for ${item.id} to cloud`
+              );
+            } else {
+              const data = await this.dataService.getItem(item.id, item.type);
+              if (data) {
+                await this.s3.upload(`items/${item.id}.json`, data);
+                this.metadata.items[item.id] = {
+                  synced: Date.now(),
+                  type: item.type,
+                  size: item.size,
+                };
+                cloudMetadata.items[item.id] = {
+                  ...this.metadata.items[item.id],
+                };
+              }
             }
+          } catch (error) {
+            this.logger.log(
+              "error",
+              `Failed to sync item ${item.id}: ${
+                error.message || error.code || "Unknown error"
+              }`
+            );
+            throw error;
           }
         });
 
