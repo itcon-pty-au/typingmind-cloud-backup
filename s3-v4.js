@@ -478,6 +478,13 @@ if (window.typingMindCloudSync) {
         JSON.stringify(this.metadata)
       );
     }
+    getLastCloudSync() {
+      const stored = localStorage.getItem("tcs_last-cloud-sync");
+      return stored ? parseInt(stored) : 0;
+    }
+    setLastCloudSync(timestamp) {
+      localStorage.setItem("tcs_last-cloud-sync", timestamp.toString());
+    }
     setupActivityMonitoring() {
       const originalSetItem = localStorage.setItem;
       const originalRemoveItem = localStorage.removeItem;
@@ -584,6 +591,7 @@ if (window.typingMindCloudSync) {
         cloudMetadata.lastModified = this.metadata.lastModified;
         await this.s3.upload("metadata.json", cloudMetadata, true);
         this.metadata.lastSync = cloudMetadata.lastSync;
+        this.setLastCloudSync(cloudMetadata.lastModified);
         this.saveMetadata();
         this.logger.log(
           "success",
@@ -625,6 +633,27 @@ if (window.typingMindCloudSync) {
           );
           return await this.createInitialSync();
         }
+        const lastCloudSync = this.getLastCloudSync();
+        const cloudLastModified = cloudMetadata.lastModified || 0;
+        const hasCloudChanges = cloudLastModified > lastCloudSync;
+
+        if (!hasCloudChanges) {
+          this.logger.log(
+            "info",
+            "No cloud changes detected - skipping item downloads"
+          );
+          await this.detectChanges();
+          this.metadata.lastSync = Date.now();
+          this.setLastCloudSync(cloudLastModified);
+          this.saveMetadata();
+          this.logger.log("success", "Sync from cloud completed (no changes)");
+          return;
+        }
+
+        this.logger.log(
+          "info",
+          `Cloud changes detected - proceeding with full sync (cloud: ${cloudLastModified}, local: ${lastCloudSync})`
+        );
         await this.detectChanges();
         const itemsToDownload = Object.entries(cloudMetadata.items).filter(
           ([key, cloudItem]) => {
@@ -661,6 +690,7 @@ if (window.typingMindCloudSync) {
           }
         }
         this.metadata.lastSync = Date.now();
+        this.setLastCloudSync(cloudLastModified);
         this.saveMetadata();
         this.logger.log("success", "Sync from cloud completed");
       } catch (error) {
@@ -690,6 +720,7 @@ if (window.typingMindCloudSync) {
       await Promise.allSettled(uploadPromises);
       await this.s3.upload("metadata.json", cloudMetadata, true);
       this.metadata.lastSync = cloudMetadata.lastSync;
+      this.setLastCloudSync(cloudMetadata.lastModified);
       this.saveMetadata();
       this.logger.log(
         "success",
@@ -1137,6 +1168,7 @@ if (window.typingMindCloudSync) {
             backup.Key !== "metadata.json" &&
             !backup.Key.startsWith("items/") &&
             !backup.Key.startsWith("chats/") &&
+            !backup.Key.startsWith("settings/") &&
             backup.Key !== "chats/"
         );
         if (filteredBackups.length === 0) {
