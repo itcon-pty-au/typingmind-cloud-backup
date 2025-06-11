@@ -537,12 +537,6 @@ if (window.typingMindCloudSync) {
             modified: now,
             synced: existingItem?.synced || 0,
           });
-          this.metadata.items[item.id] = {
-            hash,
-            modified: now,
-            synced: existingItem?.synced || 0,
-            type: item.type,
-          };
 
           if (debugEnabled) {
             this.logger.log(
@@ -582,7 +576,6 @@ if (window.typingMindCloudSync) {
         );
       }
 
-      if (changedItems.length > 0) this.saveMetadata();
       return { changedItems, hasChanges: changedItems.length > 0 };
     }
     async syncToCloud() {
@@ -678,7 +671,12 @@ if (window.typingMindCloudSync) {
             const data = await this.dataService.getItem(item.id, item.type);
             if (data) {
               await this.s3.upload(`items/${item.id}.json`, data);
-              this.metadata.items[item.id].synced = Date.now();
+              this.metadata.items[item.id] = {
+                hash: item.hash,
+                modified: item.modified,
+                synced: Date.now(),
+                type: item.type,
+              };
               cloudMetadata.items[item.id] = {
                 ...this.metadata.items[item.id],
               };
@@ -821,7 +819,12 @@ if (window.typingMindCloudSync) {
         const data = await this.dataService.getItem(item.id, item.type);
         if (data) {
           await this.s3.upload(`items/${item.id}.json`, data);
-          this.metadata.items[item.id].synced = Date.now();
+          this.metadata.items[item.id] = {
+            hash: item.hash,
+            modified: item.modified,
+            synced: Date.now(),
+            type: item.type,
+          };
           cloudMetadata.items[item.id] = { ...this.metadata.items[item.id] };
         }
       });
