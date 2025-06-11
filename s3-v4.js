@@ -281,16 +281,6 @@ if (window.typingMindCloudSync) {
       }
       return false;
     }
-    async generateHash(content) {
-      const data = new TextEncoder().encode(
-        typeof content === "string" ? content : JSON.stringify(content)
-      );
-      const hash = await crypto.subtle.digest("SHA-256", data);
-      return Array.from(new Uint8Array(hash))
-        .map((b) => b.toString(16).padStart(2, "0"))
-        .slice(0, 4)
-        .join("");
-    }
     async cleanupChatDuplicates() {
       this.logger.log("start", "🔍 Checking for chat duplicates to clean up");
       const db = await this.getDB();
@@ -567,10 +557,7 @@ if (window.typingMindCloudSync) {
       this.syncInProgress = false;
       this.lastChangeCheck = 0;
       this.lastActivity = Date.now();
-      this.knownItems = new Map();
-      this.potentialDeletions = new Map();
       this.setupActivityMonitoring();
-      this.startDeletionMonitoring();
     }
     loadMetadata() {
       const stored = localStorage.getItem("tcs_cloud-metadata-v4");
@@ -632,13 +619,37 @@ if (window.typingMindCloudSync) {
     setupActivityMonitoring() {
       const originalSetItem = localStorage.setItem;
       const originalRemoveItem = localStorage.removeItem;
+
       localStorage.setItem = (...args) => {
         this.lastActivity = Date.now();
-        return originalSetItem.apply(localStorage, args);
+        const result = originalSetItem.apply(localStorage, args);
+        const [key] = args;
+        if (!this.config.shouldExclude(key)) {
+          if (!this.metadata.items[key]) {
+            this.metadata.items[key] = {
+              type: "ls",
+              synced: 0,
+            };
+          }
+          this.metadata.items[key].modified = Date.now();
+        }
+        return result;
       };
+
       localStorage.removeItem = (...args) => {
         this.lastActivity = Date.now();
-        return originalRemoveItem.apply(localStorage, args);
+        const result = originalRemoveItem.apply(localStorage, args);
+        const [key] = args;
+        if (!this.config.shouldExclude(key) && this.metadata.items[key]) {
+          this.metadata.items[key] = {
+            deleted: true,
+            deletedAt: Date.now(),
+            modified: Date.now(),
+            synced: 0,
+            type: this.metadata.items[key].type || "ls",
+          };
+        }
+        return result;
       };
     }
     async detectChanges() {
@@ -648,17 +659,21 @@ if (window.typingMindCloudSync) {
         return { changedItems: [], hasChanges: false };
       }
       this.lastChangeCheck = now;
-      const allItems = await this.dataService.getAllItems();
+
       const debugEnabled =
         new URLSearchParams(window.location.search).get("log") === "true";
-
       const changedItems = [];
+
+      const db = await this.dataService.getDB();
+      const transaction = db.transaction(["keyval"], "readonly");
+      const store = transaction.objectStore("keyval");
+
       let processedCount = 0;
 
       if (debugEnabled) {
         this.logger.log(
           "info",
-          `🔍 detectChanges: Found ${allItems.length} items in storage`
+          `🔍 detectChanges: Starting timestamp-based change detection`
         );
         this.logger.log(
           "info",
@@ -666,41 +681,85 @@ if (window.typingMindCloudSync) {
             Object.keys(this.metadata.items).length
           } tracked items`
         );
-        this.logger.log(
-          "info",
-          `🔍 detectChanges: timeSinceActivity=${timeSinceActivity}, lastChangeCheck=${
-            now - this.lastChangeCheck
-          }`
-        );
       }
 
-      for (const item of allItems) {
-        const existingItem = this.metadata.items[item.id];
-        const hash = await this.dataService.generateHash(item.data);
+      await new Promise((resolve) => {
+        const request = store.openCursor();
+        request.onsuccess = (event) => {
+          const cursor = event.target.result;
+          if (cursor) {
+            const key = cursor.key;
+            const value = cursor.value;
+            processedCount++;
+
+            if (
+              typeof key === "string" &&
+              value !== undefined &&
+              !this.config.shouldExclude(key)
+            ) {
+              const existingItem = this.metadata.items[key];
+              const itemUpdatedAt =
+                value.updatedAt || value.lastModified || now;
+              const lastSynced = existingItem?.synced || 0;
+
+              if (!existingItem || itemUpdatedAt > lastSynced) {
+                changedItems.push({
+                  id: key,
+                  type: "idb",
+                  modified: itemUpdatedAt,
+                  synced: lastSynced,
+                });
+
+                if (debugEnabled) {
+                  this.logger.log(
+                    "info",
+                    `📝 Change detected: ${key} (idb) - modified=${itemUpdatedAt}, synced=${lastSynced}`
+                  );
+                }
+              } else if (debugEnabled) {
+                this.logger.log(
+                  "info",
+                  `⏭️ No change: ${key} (idb) - modified=${itemUpdatedAt}, synced=${lastSynced}`
+                );
+              }
+            }
+            cursor.continue();
+          } else {
+            resolve();
+          }
+        };
+        request.onerror = () => resolve();
+      });
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
         processedCount++;
 
-        if (!existingItem || existingItem.hash !== hash) {
-          changedItems.push({
-            id: item.id,
-            type: item.type,
-            hash,
-            modified: now,
-            synced: existingItem?.synced || 0,
-          });
+        if (key && !this.config.shouldExclude(key)) {
+          const existingItem = this.metadata.items[key];
+          const lastSynced = existingItem?.synced || 0;
+          const itemModified = existingItem?.modified || now;
 
-          if (debugEnabled) {
+          if (!existingItem || itemModified > lastSynced) {
+            changedItems.push({
+              id: key,
+              type: "ls",
+              modified: itemModified,
+              synced: lastSynced,
+            });
+
+            if (debugEnabled) {
+              this.logger.log(
+                "info",
+                `📝 Change detected: ${key} (ls) - modified=${itemModified}, synced=${lastSynced}`
+              );
+            }
+          } else if (debugEnabled) {
             this.logger.log(
               "info",
-              `📝 Change detected: ${item.id} (${item.type}) - ${
-                !existingItem ? "NEW" : "MODIFIED"
-              } (synced: ${existingItem?.synced || 0})`
+              `⏭️ No change: ${key} (ls) - modified=${itemModified}, synced=${lastSynced}`
             );
           }
-        } else if (debugEnabled) {
-          this.logger.log(
-            "info",
-            `⏭️ No change: ${item.id} (${item.type}) - hash match, synced: ${existingItem.synced}`
-          );
         }
       }
 
@@ -709,7 +768,6 @@ if (window.typingMindCloudSync) {
           changedItems.push({
             id: itemId,
             type: metadata.type,
-            hash: "deleted",
             modified: metadata.modified,
             synced: metadata.synced,
             deleted: true,
@@ -760,26 +818,6 @@ if (window.typingMindCloudSync) {
           }
         }
 
-        const itemsToSync = changedItems.filter(
-          (item) => item.modified > item.synced
-        );
-
-        if (debugEnabled && changedItems.length > 0) {
-          this.logger.log(
-            "info",
-            `📊 Sync filter: ${changedItems.length} changed items, ${itemsToSync.length} need sync`
-          );
-          changedItems.forEach((item) => {
-            const needsSync = item.modified > item.synced;
-            this.logger.log(
-              "info",
-              `  • ${item.id} (${item.type}): modified=${
-                item.modified
-              }, synced=${item.synced} → ${needsSync ? "SYNC" : "SKIP"}`
-            );
-          });
-        }
-
         let cloudMetadata;
         try {
           cloudMetadata = await this.s3.download("metadata.json", true);
@@ -805,52 +843,16 @@ if (window.typingMindCloudSync) {
           cloudMetadata.items = {};
         }
 
-        if (itemsToSync.length === 0) {
-          const currentTime = Date.now();
-          const allItems = await this.dataService.getAllItems();
-          let updatedCount = 0;
-
-          const lastTimestampRefresh = localStorage.getItem(
-            "tcs_last-timestamp-refresh"
-          );
-          const timeSinceLastRefresh =
-            currentTime - (parseInt(lastTimestampRefresh) || 0);
-          const REFRESH_INTERVAL = 60 * 60 * 1000;
-
-          if (timeSinceLastRefresh > REFRESH_INTERVAL) {
-            for (const item of allItems) {
-              const existingMetadata = this.metadata.items[item.id];
-              if (existingMetadata && !existingMetadata.deleted) {
-                const hash = await this.dataService.generateHash(item.data);
-                if (
-                  existingMetadata.hash === hash &&
-                  existingMetadata.synced < currentTime - REFRESH_INTERVAL
-                ) {
-                  this.metadata.items[item.id].synced = currentTime;
-                  updatedCount++;
-                }
-              }
-            }
-
-            if (updatedCount > 0) {
-              this.saveMetadata();
-              localStorage.setItem(
-                "tcs_last-timestamp-refresh",
-                currentTime.toString()
-              );
-              this.logger.log(
-                "info",
-                `📅 Updated sync timestamps for ${updatedCount} existing items`
-              );
-            }
-          }
-
+        if (changedItems.length === 0) {
           this.logger.log("info", "No items to sync to cloud");
           return;
         }
 
-        this.logger.log("info", `Syncing ${itemsToSync.length} items to cloud`);
-        const uploadPromises = itemsToSync.map(async (item) => {
+        this.logger.log(
+          "info",
+          `Syncing ${changedItems.length} items to cloud`
+        );
+        const uploadPromises = changedItems.map(async (item) => {
           if (item.deleted) {
             this.metadata.items[item.id].synced = Date.now();
             cloudMetadata.items[item.id] = { ...this.metadata.items[item.id] };
@@ -863,7 +865,6 @@ if (window.typingMindCloudSync) {
             if (data) {
               await this.s3.upload(`items/${item.id}.json`, data);
               this.metadata.items[item.id] = {
-                hash: item.hash,
                 modified: item.modified,
                 synced: Date.now(),
                 type: item.type,
@@ -883,7 +884,7 @@ if (window.typingMindCloudSync) {
         this.saveMetadata();
         this.logger.log(
           "success",
-          `Sync to cloud completed - ${itemsToSync.length} items synced`
+          `Sync to cloud completed - ${changedItems.length} items synced`
         );
       } catch (error) {
         this.logger.log("error", "Failed to sync to cloud", error.message);
@@ -947,11 +948,7 @@ if (window.typingMindCloudSync) {
         const itemsToDownload = Object.entries(cloudMetadata.items).filter(
           ([key, cloudItem]) => {
             const localItem = this.metadata.items[key];
-            return (
-              !localItem ||
-              (cloudItem.hash !== localItem.hash &&
-                cloudItem.modified > localItem.modified)
-            );
+            return !localItem || cloudItem.modified > (localItem.modified || 0);
           }
         );
         if (itemsToDownload.length > 0) {
@@ -1013,7 +1010,6 @@ if (window.typingMindCloudSync) {
         if (data) {
           await this.s3.upload(`items/${item.id}.json`, data);
           this.metadata.items[item.id] = {
-            hash: item.hash,
             modified: item.modified,
             synced: Date.now(),
             type: item.type,
@@ -1128,114 +1124,7 @@ if (window.typingMindCloudSync) {
         }
       }, interval);
     }
-    startDeletionMonitoring() {
-      const MIN_ITEM_AGE_MS = 60 * 1000;
-      const REQUIRED_MISSING_DETECTIONS = 2;
-
-      this.dataService.getAllItems().then((items) => {
-        const now = Date.now();
-        items.forEach((item) => {
-          if (item.id) {
-            this.knownItems.set(item.id, {
-              detectedAt: now,
-              confirmedCount: 3,
-              type: item.type,
-            });
-          }
-        });
-        this.logger.log(
-          "info",
-          `🗂️ Initialized deletion monitor with ${this.knownItems.size} items`
-        );
-      });
-
-      setInterval(async () => {
-        if (document.hidden) return;
-        try {
-          const now = Date.now();
-          const currentItems = await this.dataService.getAllItems();
-          const currentItemIds = new Set(currentItems.map((item) => item.id));
-
-          for (const item of currentItems) {
-            if (this.knownItems.has(item.id)) {
-              const itemInfo = this.knownItems.get(item.id);
-              itemInfo.confirmedCount = Math.min(
-                itemInfo.confirmedCount + 1,
-                5
-              );
-              if (this.potentialDeletions.has(item.id)) {
-                this.potentialDeletions.delete(item.id);
-              }
-            } else {
-              this.knownItems.set(item.id, {
-                detectedAt: now,
-                confirmedCount: 1,
-                type: item.type,
-              });
-            }
-          }
-
-          for (const [itemId, itemInfo] of this.knownItems.entries()) {
-            if (!currentItemIds.has(itemId)) {
-              const isEstablishedItem =
-                itemInfo.confirmedCount >= 2 &&
-                now - itemInfo.detectedAt > MIN_ITEM_AGE_MS;
-
-              if (isEstablishedItem) {
-                const missingCount =
-                  (this.potentialDeletions.get(itemId) || 0) + 1;
-                this.potentialDeletions.set(itemId, missingCount);
-
-                if (missingCount >= REQUIRED_MISSING_DETECTIONS) {
-                  if (this.metadata.items[itemId]?.deleted === true) {
-                    this.knownItems.delete(itemId);
-                    this.potentialDeletions.delete(itemId);
-                    continue;
-                  }
-
-                  this.logger.log(
-                    "info",
-                    `🗑️ Confirmed deletion of ${itemId} (${itemInfo.type}) - creating tombstone`
-                  );
-
-                  this.metadata.items[itemId] = {
-                    deleted: true,
-                    deletedAt: Date.now(),
-                    modified: Date.now(),
-                    synced: 0,
-                    type: itemInfo.type,
-                    hash: "deleted",
-                  };
-
-                  this.saveMetadata();
-                  this.knownItems.delete(itemId);
-                  this.potentialDeletions.delete(itemId);
-                } else {
-                  this.logger.log(
-                    "info",
-                    `🕐 Item ${itemId} appears deleted (${missingCount}/${REQUIRED_MISSING_DETECTIONS} checks)`
-                  );
-                }
-              } else {
-                if (this.potentialDeletions.has(itemId)) {
-                  const missingCount = this.potentialDeletions.get(itemId) + 1;
-                  if (missingCount > 5) {
-                    this.knownItems.delete(itemId);
-                    this.potentialDeletions.delete(itemId);
-                  } else {
-                    this.potentialDeletions.set(itemId, missingCount);
-                  }
-                } else {
-                  this.potentialDeletions.set(itemId, 1);
-                }
-              }
-            }
-          }
-        } catch (error) {
-          this.logger.log("error", "Error in deletion monitor", error.message);
-        }
-      }, 10000);
-    }
+    startDeletionMonitoring() {}
     cleanupOldTombstones() {
       const now = Date.now();
       const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
