@@ -59,6 +59,8 @@ if (window.typingMindCloudSync) {
         "tcs_sync-exclusions",
         "tcs_cloud-metadata-v4",
         "referrer",
+        "TM_useLastVerifiedToken",
+        "TM_useStateUpdateHistory",
       ];
       return [...systemExclusions, ...userExclusions];
     }
