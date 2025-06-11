@@ -27,7 +27,6 @@ if (window.typingMindCloudSync) {
         secretKey: "",
         endpoint: "",
         encryptionKey: "",
-        syncMode: "sync",
       };
       const stored = {};
       Object.keys(defaults).forEach((key) => {
@@ -56,9 +55,12 @@ if (window.typingMindCloudSync) {
         "tcs_last-cloud-sync",
         "tcs_sync-exclusions",
         "tcs_cloud-metadata",
+        "tcs_isMigrated",
+        "tcs_migrationBackup",
         "referrer",
         "TM_useLastVerifiedToken",
         "TM_useStateUpdateHistory",
+        "INSTANCE_ID",
       ];
       return [...systemExclusions, ...userExclusions];
     }
@@ -1028,8 +1030,6 @@ if (window.typingMindCloudSync) {
       if (!backup) {
         throw new Error("Backup not found");
       }
-
-      // Decrypt the backup data
       const decryptedData = await cryptoService.decrypt(backup.data);
 
       if (!decryptedData.localStorage && !decryptedData.indexedDB) {
@@ -1040,15 +1040,11 @@ if (window.typingMindCloudSync) {
 
       this.logger.log("info", "Restoring data...");
       const promises = [];
-
-      // Restore IndexedDB data
       if (decryptedData.indexedDB) {
         Object.entries(decryptedData.indexedDB).forEach(([key, data]) => {
           promises.push(this.dataService.saveItem(data, "idb"));
         });
       }
-
-      // Restore localStorage data
       if (decryptedData.localStorage) {
         Object.entries(decryptedData.localStorage).forEach(([key, value]) => {
           promises.push(this.dataService.saveItem({ key, value }, "ls"));
@@ -1123,19 +1119,15 @@ if (window.typingMindCloudSync) {
     async initialize() {
       this.logger.log(
         "start",
-        "Initializing Cloud Sync v4 (Optimized Single File)"
+        "Initializing Cloud Sync V3 (Optimized Single File)"
       );
+      await this.performV2toV3Migration();
       await this.waitForDOM();
       this.insertSyncButton();
-
       if (this.config.isConfigured()) {
         try {
           await this.s3Service.initialize();
-
-          if (this.config.get("syncMode") !== "disabled") {
-            await this.backupService.checkAndPerformDailyBackup();
-          }
-
+          await this.backupService.checkAndPerformDailyBackup();
           await this.syncOrchestrator.performFullSync();
           this.startAutoSync();
           this.updateSyncStatus("success");
@@ -1712,6 +1704,197 @@ if (window.typingMindCloudSync) {
           this.logger.log("error", "Failed to create snapshot", error.message);
           alert("Failed to create snapshot: " + error.message);
         }
+      }
+    }
+    async performV2toV3Migration() {
+      if (localStorage.getItem("tcs_isMigrated") === "true") {
+        this.logger.log(
+          "info",
+          "V2 to V3 migration already completed, skipping"
+        );
+        return;
+      }
+      const v2Keys = [
+        "aws-bucket",
+        "aws-access-key",
+        "aws-secret-key",
+        "aws-region",
+        "aws-endpoint",
+        "encryption-key",
+        "sync-interval",
+        "chat-sync-metadata",
+        "last-cloud-sync",
+        "sync-mode",
+      ];
+
+      const hasV2Keys = v2Keys.some(
+        (key) => localStorage.getItem(key) !== null
+      );
+
+      if (!hasV2Keys) {
+        this.logger.log(
+          "info",
+          "No v2 keys found, skipping migration (new V3 installation)"
+        );
+        localStorage.setItem("tcs_isMigrated", "true");
+        return;
+      }
+
+      this.logger.log("start", "V2 keys detected, starting V2 to V3 migration");
+
+      try {
+        await this.migrateStorageKeys();
+        this.config.config = this.config.loadConfig();
+        this.logger.log("info", "Reloaded configuration with migrated keys");
+        await this.cleanupAndFreshSync();
+        localStorage.setItem("tcs_isMigrated", "true");
+        this.logger.log("success", "V2 to V3 migration completed successfully");
+      } catch (error) {
+        this.logger.log("error", "V2 to V3 migration failed", error.message);
+      }
+    }
+
+    async migrateStorageKeys() {
+      this.logger.log("info", "Migrating v2 storage keys to V3 format");
+      const oldToNewKeyMap = {
+        "aws-bucket": "tcs_aws_bucketname",
+        "aws-access-key": "tcs_aws_accesskey",
+        "aws-secret-key": "tcs_aws_secretkey",
+        "aws-region": "tcs_aws_region",
+        "aws-endpoint": "tcs_aws_endpoint",
+        "encryption-key": "tcs_encryptionkey",
+        "sync-interval": "tcs_syncinterval",
+      };
+      const migrationBackup = {};
+      let migratedCount = 0;
+      Object.entries(oldToNewKeyMap).forEach(([oldKey, newKey]) => {
+        const value = localStorage.getItem(oldKey);
+        if (value) {
+          migrationBackup[oldKey] = value;
+          localStorage.setItem(newKey, value);
+          migratedCount++;
+          this.logger.log("info", `Migrated ${oldKey} → ${newKey}`);
+        }
+      });
+      if (migratedCount > 0) {
+        localStorage.setItem(
+          "tcs_migrationBackup",
+          JSON.stringify(migrationBackup)
+        );
+        this.logger.log(
+          "success",
+          `Successfully migrated ${migratedCount} configuration keys`
+        );
+      } else {
+        this.logger.log("info", "No v2 configuration keys found to migrate");
+      }
+    }
+
+    async cleanupAndFreshSync() {
+      this.logger.log("info", "Cleaning up v2 metadata and obsolete keys");
+      const keysToRemove = [
+        "chat-sync-metadata",
+        "last-cloud-sync",
+        "last-daily-backup",
+        "sync-mode",
+        "sync-exclusions",
+        "aws-bucket",
+        "aws-access-key",
+        "aws-secret-key",
+        "aws-region",
+        "aws-endpoint",
+        "encryption-key",
+        "sync-interval",
+      ];
+
+      let removedCount = 0;
+      keysToRemove.forEach((key) => {
+        if (localStorage.getItem(key) !== null) {
+          localStorage.removeItem(key);
+          removedCount++;
+        }
+      });
+
+      if (removedCount > 0) {
+        this.logger.log(
+          "success",
+          `Cleaned up ${removedCount} obsolete keys from localStorage`
+        );
+      }
+
+      if (this.config.isConfigured()) {
+        try {
+          this.logger.log(
+            "info",
+            "Cleaning cloud v2 metadata and performing fresh sync"
+          );
+
+          await this.s3Service.initialize();
+          try {
+            await this.s3Service.delete("metadata.json");
+            this.logger.log("info", "Removed old cloud metadata.json");
+          } catch (error) {
+            if (error.code !== "NoSuchKey" && error.statusCode !== 404) {
+              this.logger.log(
+                "warning",
+                "Failed to delete old metadata.json",
+                error.message
+              );
+            }
+          }
+          try {
+            const items = await this.s3Service.list("items/");
+            if (items.length > 0) {
+              const deletePromises = items.map((item) =>
+                this.s3Service.delete(item.Key)
+              );
+              await Promise.allSettled(deletePromises);
+              this.logger.log(
+                "success",
+                `Cleaned up ${items.length} items from cloud`
+              );
+            }
+          } catch (error) {
+            this.logger.log(
+              "warning",
+              "Failed to clean items folder",
+              error.message
+            );
+          }
+          const v2Folders = ["chats/", "settings/"];
+          for (const folder of v2Folders) {
+            try {
+              const folderItems = await this.s3Service.list(folder);
+              if (folderItems.length > 0) {
+                const deletePromises = folderItems.map((item) =>
+                  this.s3Service.delete(item.Key)
+                );
+                await Promise.allSettled(deletePromises);
+                this.logger.log(
+                  "success",
+                  `Cleaned up ${folderItems.length} items from ${folder}`
+                );
+              }
+            } catch (error) {
+              this.logger.log(
+                "warning",
+                `Failed to clean ${folder}`,
+                error.message
+              );
+            }
+          }
+          this.logger.log("info", "Performing fresh initial sync");
+          await this.syncOrchestrator.createInitialSync();
+          this.logger.log("success", "Fresh sync completed successfully");
+        } catch (error) {
+          this.logger.log(
+            "warning",
+            "Cloud cleanup had issues, but migration will continue",
+            error.message
+          );
+        }
+      } else {
+        this.logger.log("info", "AWS not configured, skipping cloud cleanup");
       }
     }
   }
