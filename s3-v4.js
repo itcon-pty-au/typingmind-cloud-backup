@@ -716,11 +716,6 @@ if (window.typingMindCloudSync) {
                     `📝 Change detected: ${key} (idb) - modified=${itemUpdatedAt}, synced=${lastSynced}`
                   );
                 }
-              } else if (debugEnabled) {
-                this.logger.log(
-                  "info",
-                  `⏭️ No change: ${key} (idb) - modified=${itemUpdatedAt}, synced=${lastSynced}`
-                );
               }
             }
             cursor.continue();
