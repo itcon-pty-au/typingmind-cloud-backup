@@ -522,6 +522,20 @@ if (window.typingMindCloudSync) {
             throw error;
           }
         }
+        if (!cloudMetadata || typeof cloudMetadata !== "object") {
+          cloudMetadata = {
+            lastSync: 0,
+            lastModified: 0,
+            items: {},
+            deleted: [],
+          };
+        }
+        if (!cloudMetadata.items) {
+          cloudMetadata.items = {};
+        }
+        if (!cloudMetadata.deleted) {
+          cloudMetadata.deleted = [];
+        }
         const uploadPromises = itemsToSync.map(async (item) => {
           const data = await this.dataService.getItem(item.id, item.type);
           if (data) {
@@ -568,6 +582,13 @@ if (window.typingMindCloudSync) {
           } else {
             throw error;
           }
+        }
+        if (!cloudMetadata || !cloudMetadata.items) {
+          this.logger.log(
+            "info",
+            "Invalid or empty cloud metadata - creating initial sync"
+          );
+          return await this.createInitialSync();
         }
         await this.detectChanges();
         const itemsToDownload = Object.entries(cloudMetadata.items).filter(
