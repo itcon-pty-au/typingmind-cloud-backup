@@ -780,11 +780,6 @@ if (window.typingMindCloudSync) {
           });
         }
 
-        if (itemsToSync.length === 0) {
-          this.logger.log("info", "No items to sync to cloud");
-          return;
-        }
-        this.logger.log("info", `Syncing ${itemsToSync.length} items to cloud`);
         let cloudMetadata;
         try {
           cloudMetadata = await this.s3.download("metadata.json", true);
@@ -809,6 +804,39 @@ if (window.typingMindCloudSync) {
         if (!cloudMetadata.items) {
           cloudMetadata.items = {};
         }
+
+        if (itemsToSync.length === 0) {
+          const currentTime = Date.now();
+          const allItems = await this.dataService.getAllItems();
+          let updatedCount = 0;
+
+          for (const item of allItems) {
+            const existingMetadata = this.metadata.items[item.id];
+            if (existingMetadata && !existingMetadata.deleted) {
+              const hash = await this.dataService.generateHash(item.data);
+              if (
+                existingMetadata.hash === hash &&
+                existingMetadata.synced < currentTime - 30000
+              ) {
+                this.metadata.items[item.id].synced = currentTime;
+                updatedCount++;
+              }
+            }
+          }
+
+          if (updatedCount > 0) {
+            this.saveMetadata();
+            this.logger.log(
+              "info",
+              `📅 Updated sync timestamps for ${updatedCount} existing items`
+            );
+          }
+
+          this.logger.log("info", "No items to sync to cloud");
+          return;
+        }
+
+        this.logger.log("info", `Syncing ${itemsToSync.length} items to cloud`);
         const uploadPromises = itemsToSync.map(async (item) => {
           if (item.deleted) {
             this.metadata.items[item.id].synced = Date.now();
@@ -864,21 +892,24 @@ if (window.typingMindCloudSync) {
           cloudMetadata = await this.s3.download("metadata.json", true);
         } catch (error) {
           if (error.code === "NoSuchKey" || error.statusCode === 404) {
-            this.logger.log(
-              "info",
-              "No cloud metadata found - creating initial sync"
-            );
-            return await this.createInitialSync();
+            cloudMetadata = {
+              lastSync: 0,
+              lastModified: 0,
+              items: {},
+            };
           } else {
             throw error;
           }
         }
-        if (!cloudMetadata || !cloudMetadata.items) {
-          this.logger.log(
-            "info",
-            "Invalid or empty cloud metadata - creating initial sync"
-          );
-          return await this.createInitialSync();
+        if (!cloudMetadata || typeof cloudMetadata !== "object") {
+          cloudMetadata = {
+            lastSync: 0,
+            lastModified: 0,
+            items: {},
+          };
+        }
+        if (!cloudMetadata.items) {
+          cloudMetadata.items = {};
         }
         const lastCloudSync = this.getLastCloudSync();
         const cloudLastModified = cloudMetadata.lastModified || 0;
