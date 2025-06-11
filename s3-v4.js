@@ -20,20 +20,10 @@ if (window.typingMindCloudSync) {
         syncMode: "sync",
       };
       const stored = {};
-      const keyMappings = {
-        bucketName: "tcs_aws-bucket",
-        region: "tcs_aws-region",
-        accessKey: "tcs_aws-access-key",
-        secretKey: "tcs_aws-secret-key",
-        endpoint: "tcs_aws-endpoint",
-        encryptionKey: "tcs_encryption-key",
-        syncInterval: "tcs_backup-interval",
-        syncMode: "tcs_sync-mode",
-      };
       Object.keys(defaults).forEach((key) => {
-        const storageKey =
-          keyMappings[key] ||
-          `tcs_${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
+        const storageKey = `tcs_${key
+          .replace(/([A-Z])/g, "-$1")
+          .toLowerCase()}`;
         const value = localStorage.getItem(storageKey);
         stored[key] =
           key === "syncInterval" ? parseInt(value) || 15 : value || "";
@@ -71,20 +61,10 @@ if (window.typingMindCloudSync) {
       this.config[key] = value;
     }
     save() {
-      const keyMappings = {
-        bucketName: "tcs_aws-bucket",
-        region: "tcs_aws-region",
-        accessKey: "tcs_aws-access-key",
-        secretKey: "tcs_aws-secret-key",
-        endpoint: "tcs_aws-endpoint",
-        encryptionKey: "tcs_encryption-key",
-        syncInterval: "tcs_backup-interval",
-        syncMode: "tcs_sync-mode",
-      };
       Object.keys(this.config).forEach((key) => {
-        const storageKey =
-          keyMappings[key] ||
-          `tcs_${key.replace(/([A-Z])/g, "-$1").toLowerCase()}`;
+        const storageKey = `tcs_${key
+          .replace(/([A-Z])/g, "-$1")
+          .toLowerCase()}`;
         localStorage.setItem(storageKey, this.config[key].toString());
       });
     }
@@ -97,13 +77,7 @@ if (window.typingMindCloudSync) {
       );
     }
     shouldExclude(key) {
-      const debugEnabled =
-        new URLSearchParams(window.location.search).get("log") === "true";
-      const inExclusionsList = this.exclusions.includes(key);
-      const startsWith_tcs = key.startsWith("tcs_");
-      const result = inExclusionsList || startsWith_tcs;
-
-      return result;
+      return this.exclusions.includes(key) || key.startsWith("tcs_");
     }
   }
 
@@ -122,11 +96,20 @@ if (window.typingMindCloudSync) {
     }
     log(type, message, data = null) {
       if (!this.enabled) return;
-      const timestamp = new Date().toLocaleString();
-      console.log(
-        `${this.icons[type] || "ℹ️"} [${timestamp}] ${message}`,
-        data || ""
-      );
+      const timestamp = new Date().toLocaleTimeString();
+      const icon = this.icons[type] || "ℹ️";
+      const logMessage = `${icon} [${timestamp}] ${message}`;
+
+      switch (type) {
+        case "error":
+          console.error(logMessage, data || "");
+          break;
+        case "warning":
+          console.warn(logMessage, data || "");
+          break;
+        default:
+          console.log(logMessage, data || "");
+      }
     }
     setEnabled(enabled) {
       this.enabled = enabled;
@@ -280,99 +263,6 @@ if (window.typingMindCloudSync) {
         }
       }
       return false;
-    }
-    async cleanupChatDuplicates() {
-      this.logger.log("start", "🔍 Checking for chat duplicates to clean up");
-      const db = await this.getDB();
-      const transaction = db.transaction(["keyval"], "readwrite");
-      const store = transaction.objectStore("keyval");
-      const duplicatesToRemove = [];
-      await new Promise((resolve) => {
-        const request = store.openCursor();
-        request.onsuccess = (event) => {
-          const cursor = event.target.result;
-          if (cursor) {
-            const key = cursor.key;
-            const value = cursor.value;
-            if (
-              typeof key === "string" &&
-              key.length === 10 &&
-              /^[a-zA-Z0-9]{10}$/.test(key) &&
-              value &&
-              typeof value === "object" &&
-              (value.title || value.messages)
-            ) {
-              const prefixedKey = `CHAT_${key}`;
-              duplicatesToRemove.push({
-                unprefixed: key,
-                prefixed: prefixedKey,
-              });
-              this.logger.log(
-                "info",
-                `🔍 Found potential duplicate: ${key} (checking for ${prefixedKey})`
-              );
-            }
-            cursor.continue();
-          } else {
-            resolve();
-          }
-        };
-        request.onerror = () => resolve();
-      });
-      this.logger.log(
-        "info",
-        `🔍 Found ${duplicatesToRemove.length} potential duplicates to check`
-      );
-      let cleanedCount = 0;
-      for (const duplicate of duplicatesToRemove) {
-        try {
-          const checkTransaction = db.transaction(["keyval"], "readonly");
-          const checkStore = checkTransaction.objectStore("keyval");
-          const prefixedExists = await new Promise((resolve) => {
-            const request = checkStore.get(duplicate.prefixed);
-            request.onsuccess = () => resolve(!!request.result);
-            request.onerror = () => resolve(false);
-          });
-          if (prefixedExists) {
-            const deleteTransaction = db.transaction(["keyval"], "readwrite");
-            const deleteStore = deleteTransaction.objectStore("keyval");
-            await new Promise((resolve) => {
-              const request = deleteStore.delete(duplicate.unprefixed);
-              request.onsuccess = () => {
-                cleanedCount++;
-                this.logger.log(
-                  "success",
-                  `🧹 Removed duplicate chat: ${duplicate.unprefixed}`
-                );
-                resolve();
-              };
-              request.onerror = () => resolve();
-            });
-          } else {
-            this.logger.log(
-              "info",
-              `ℹ️ No prefixed version found for ${duplicate.unprefixed}, keeping it`
-            );
-          }
-        } catch (error) {
-          this.logger.log(
-            "warning",
-            `Failed to clean duplicate chat ${duplicate.unprefixed}: ${error.message}`
-          );
-        }
-      }
-      if (cleanedCount > 0) {
-        this.logger.log(
-          "success",
-          `🧹 Cleaned up ${cleanedCount} duplicate chat entries`
-        );
-      } else {
-        this.logger.log(
-          "info",
-          "🧹 No duplicate chat entries found to clean up"
-        );
-      }
-      return cleanedCount;
     }
   }
 
@@ -555,133 +445,41 @@ if (window.typingMindCloudSync) {
       this.logger = logger;
       this.metadata = this.loadMetadata();
       this.syncInProgress = false;
-      this.lastChangeCheck = 0;
-      this.lastActivity = Date.now();
-      this.setupActivityMonitoring();
     }
+
     loadMetadata() {
       const stored = localStorage.getItem("tcs_cloud-metadata-v4");
-      const result = stored
-        ? JSON.parse(stored)
-        : { lastSync: 0, lastModified: 0, items: {} };
-
-      const debugEnabled =
-        new URLSearchParams(window.location.search).get("log") === "true";
-      if (debugEnabled) {
-        this.logger.log(
-          "info",
-          `🔍 loadMetadata: Loaded ${
-            Object.keys(result.items).length
-          } items from storage`
-        );
-        this.logger.log(
-          "info",
-          `🔍 loadMetadata: lastSync=${result.lastSync}, lastModified=${result.lastModified}`
-        );
-      }
-
+      const result = stored ? JSON.parse(stored) : { lastSync: 0, items: {} };
       return result;
     }
+
     saveMetadata() {
-      this.metadata.lastModified = Date.now();
-      const debugEnabled =
-        new URLSearchParams(window.location.search).get("log") === "true";
-
-      if (debugEnabled) {
-        this.logger.log(
-          "info",
-          `🔍 saveMetadata: Saving ${
-            Object.keys(this.metadata.items).length
-          } items to storage`
-        );
-        this.logger.log(
-          "info",
-          `🔍 saveMetadata: lastSync=${this.metadata.lastSync}, lastModified=${this.metadata.lastModified}`
-        );
-      }
-
       localStorage.setItem(
         "tcs_cloud-metadata-v4",
         JSON.stringify(this.metadata)
       );
-
-      if (debugEnabled) {
-        this.logger.log("info", `✅ saveMetadata: Metadata saved successfully`);
-      }
     }
+
     getLastCloudSync() {
       const stored = localStorage.getItem("tcs_last-cloud-sync");
       return stored ? parseInt(stored) : 0;
     }
+
     setLastCloudSync(timestamp) {
       localStorage.setItem("tcs_last-cloud-sync", timestamp.toString());
     }
-    setupActivityMonitoring() {
-      const originalSetItem = localStorage.setItem;
-      const originalRemoveItem = localStorage.removeItem;
 
-      localStorage.setItem = (...args) => {
-        this.lastActivity = Date.now();
-        const result = originalSetItem.apply(localStorage, args);
-        const [key] = args;
-        if (!this.config.shouldExclude(key)) {
-          if (!this.metadata.items[key]) {
-            this.metadata.items[key] = {
-              type: "ls",
-              synced: 0,
-            };
-          }
-          this.metadata.items[key].modified = Date.now();
-        }
-        return result;
-      };
-
-      localStorage.removeItem = (...args) => {
-        this.lastActivity = Date.now();
-        const result = originalRemoveItem.apply(localStorage, args);
-        const [key] = args;
-        if (!this.config.shouldExclude(key) && this.metadata.items[key]) {
-          this.metadata.items[key] = {
-            deleted: true,
-            deletedAt: Date.now(),
-            modified: Date.now(),
-            synced: 0,
-            type: this.metadata.items[key].type || "ls",
-          };
-        }
-        return result;
-      };
+    getItemSize(data) {
+      return JSON.stringify(data).length;
     }
-    async detectChanges() {
-      const now = Date.now();
-      const timeSinceActivity = now - this.lastActivity;
-      if (timeSinceActivity > 30000 && now - this.lastChangeCheck < 10000) {
-        return { changedItems: [], hasChanges: false };
-      }
-      this.lastChangeCheck = now;
 
-      const debugEnabled =
-        new URLSearchParams(window.location.search).get("log") === "true";
+    async detectChanges() {
       const changedItems = [];
+      const now = Date.now();
 
       const db = await this.dataService.getDB();
       const transaction = db.transaction(["keyval"], "readonly");
       const store = transaction.objectStore("keyval");
-
-      let processedCount = 0;
-
-      if (debugEnabled) {
-        this.logger.log(
-          "info",
-          `🔍 detectChanges: Starting timestamp-based change detection`
-        );
-        this.logger.log(
-          "info",
-          `🔍 detectChanges: Metadata has ${
-            Object.keys(this.metadata.items).length
-          } tracked items`
-        );
-      }
 
       await new Promise((resolve) => {
         const request = store.openCursor();
@@ -690,7 +488,6 @@ if (window.typingMindCloudSync) {
           if (cursor) {
             const key = cursor.key;
             const value = cursor.value;
-            processedCount++;
 
             if (
               typeof key === "string" &&
@@ -698,24 +495,22 @@ if (window.typingMindCloudSync) {
               !this.config.shouldExclude(key)
             ) {
               const existingItem = this.metadata.items[key];
-              const itemUpdatedAt =
-                value.updatedAt || value.lastModified || now;
-              const lastSynced = existingItem?.synced || 0;
+              const currentSize = this.getItemSize(value);
 
-              if (!existingItem || itemUpdatedAt > lastSynced) {
+              if (!existingItem) {
                 changedItems.push({
                   id: key,
                   type: "idb",
-                  modified: itemUpdatedAt,
-                  synced: lastSynced,
+                  size: currentSize,
+                  reason: "new",
                 });
-
-                if (debugEnabled) {
-                  this.logger.log(
-                    "info",
-                    `📝 Change detected: ${key} (idb) - modified=${itemUpdatedAt}, synced=${lastSynced}`
-                  );
-                }
+              } else if (currentSize !== existingItem.size) {
+                changedItems.push({
+                  id: key,
+                  type: "idb",
+                  size: currentSize,
+                  reason: "size",
+                });
               }
             }
             cursor.continue();
@@ -728,59 +523,44 @@ if (window.typingMindCloudSync) {
 
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        processedCount++;
 
         if (key && !this.config.shouldExclude(key)) {
+          const value = localStorage.getItem(key);
           const existingItem = this.metadata.items[key];
-          const lastSynced = existingItem?.synced || 0;
-          const itemModified = existingItem?.modified || now;
+          const currentSize = this.getItemSize(value);
 
-          if (!existingItem || itemModified > lastSynced) {
+          if (!existingItem) {
             changedItems.push({
               id: key,
               type: "ls",
-              modified: itemModified,
-              synced: lastSynced,
+              size: currentSize,
+              reason: "new",
             });
-
-            if (debugEnabled) {
-              this.logger.log(
-                "info",
-                `📝 Change detected: ${key} (ls) - modified=${itemModified}, synced=${lastSynced}`
-              );
-            }
+          } else if (currentSize !== existingItem.size) {
+            changedItems.push({
+              id: key,
+              type: "ls",
+              size: currentSize,
+              reason: "size",
+            });
           }
         }
       }
 
       for (const [itemId, metadata] of Object.entries(this.metadata.items)) {
-        if (metadata.deleted && metadata.synced < metadata.modified) {
+        if (metadata.deleted && metadata.deleted > metadata.synced) {
           changedItems.push({
             id: itemId,
             type: metadata.type,
-            modified: metadata.modified,
-            synced: metadata.synced,
-            deleted: true,
+            deleted: metadata.deleted,
+            reason: "deleted",
           });
-
-          if (debugEnabled) {
-            this.logger.log(
-              "info",
-              `🗑️ Tombstone needs sync: ${itemId} (${metadata.type})`
-            );
-          }
         }
-      }
-
-      if (debugEnabled) {
-        this.logger.log(
-          "info",
-          `🔍 Change detection: Processed ${processedCount} items, Found ${changedItems.length} changes`
-        );
       }
 
       return { changedItems, hasChanges: changedItems.length > 0 };
     }
+
     async syncToCloud() {
       if (this.syncInProgress) {
         this.logger.log("skip", "Sync already in progress");
@@ -790,48 +570,7 @@ if (window.typingMindCloudSync) {
       try {
         this.logger.log("start", "Starting sync to cloud");
         const { changedItems } = await this.detectChanges();
-
-        const debugEnabled =
-          new URLSearchParams(window.location.search).get("log") === "true";
-        if (debugEnabled) {
-          this.logger.log(
-            "info",
-            `🔍 syncToCloud detectChanges result: ${changedItems.length} items`
-          );
-          if (changedItems.length > 0) {
-            changedItems.forEach((item) => {
-              this.logger.log(
-                "info",
-                `  📝 Found change: ${item.id} (${item.type}) - modified=${item.modified}, synced=${item.synced}`
-              );
-            });
-          }
-        }
-
-        let cloudMetadata;
-        try {
-          cloudMetadata = await this.s3.download("metadata.json", true);
-        } catch (error) {
-          if (error.code === "NoSuchKey" || error.statusCode === 404) {
-            cloudMetadata = {
-              lastSync: 0,
-              lastModified: 0,
-              items: {},
-            };
-          } else {
-            throw error;
-          }
-        }
-        if (!cloudMetadata || typeof cloudMetadata !== "object") {
-          cloudMetadata = {
-            lastSync: 0,
-            lastModified: 0,
-            items: {},
-          };
-        }
-        if (!cloudMetadata.items) {
-          cloudMetadata.items = {};
-        }
+        const cloudMetadata = await this.getCloudMetadata();
 
         if (changedItems.length === 0) {
           this.logger.log("info", "No items to sync to cloud");
@@ -842,9 +581,14 @@ if (window.typingMindCloudSync) {
           "info",
           `Syncing ${changedItems.length} items to cloud`
         );
+
         const uploadPromises = changedItems.map(async (item) => {
           if (item.deleted) {
-            this.metadata.items[item.id].synced = Date.now();
+            this.metadata.items[item.id] = {
+              synced: Date.now(),
+              type: item.type,
+              deleted: item.deleted,
+            };
             cloudMetadata.items[item.id] = { ...this.metadata.items[item.id] };
             this.logger.log(
               "info",
@@ -855,9 +599,9 @@ if (window.typingMindCloudSync) {
             if (data) {
               await this.s3.upload(`items/${item.id}.json`, data);
               this.metadata.items[item.id] = {
-                modified: item.modified,
                 synced: Date.now(),
                 type: item.type,
+                size: item.size,
               };
               cloudMetadata.items[item.id] = {
                 ...this.metadata.items[item.id],
@@ -865,12 +609,12 @@ if (window.typingMindCloudSync) {
             }
           }
         });
+
         await Promise.allSettled(uploadPromises);
         cloudMetadata.lastSync = Date.now();
-        cloudMetadata.lastModified = this.metadata.lastModified;
         await this.s3.upload("metadata.json", cloudMetadata, true);
         this.metadata.lastSync = cloudMetadata.lastSync;
-        this.setLastCloudSync(cloudMetadata.lastModified);
+        this.setLastCloudSync(cloudMetadata.lastSync);
         this.saveMetadata();
         this.logger.log(
           "success",
@@ -891,33 +635,11 @@ if (window.typingMindCloudSync) {
       this.syncInProgress = true;
       try {
         this.logger.log("start", "Starting sync from cloud");
-        let cloudMetadata;
-        try {
-          cloudMetadata = await this.s3.download("metadata.json", true);
-        } catch (error) {
-          if (error.code === "NoSuchKey" || error.statusCode === 404) {
-            cloudMetadata = {
-              lastSync: 0,
-              lastModified: 0,
-              items: {},
-            };
-          } else {
-            throw error;
-          }
-        }
-        if (!cloudMetadata || typeof cloudMetadata !== "object") {
-          cloudMetadata = {
-            lastSync: 0,
-            lastModified: 0,
-            items: {},
-          };
-        }
-        if (!cloudMetadata.items) {
-          cloudMetadata.items = {};
-        }
+
+        const cloudMetadata = await this.getCloudMetadata();
         const lastCloudSync = this.getLastCloudSync();
-        const cloudLastModified = cloudMetadata.lastModified || 0;
-        const hasCloudChanges = cloudLastModified > lastCloudSync;
+        const cloudLastSync = cloudMetadata.lastSync || 0;
+        const hasCloudChanges = cloudLastSync > lastCloudSync;
 
         if (!hasCloudChanges) {
           this.logger.log(
@@ -925,7 +647,7 @@ if (window.typingMindCloudSync) {
             "No cloud changes detected - skipping item downloads"
           );
           this.metadata.lastSync = Date.now();
-          this.setLastCloudSync(cloudLastModified);
+          this.setLastCloudSync(cloudLastSync);
           this.saveMetadata();
           this.logger.log("success", "Sync from cloud completed (no changes)");
           return;
@@ -933,20 +655,29 @@ if (window.typingMindCloudSync) {
 
         this.logger.log(
           "info",
-          `Cloud changes detected - proceeding with full sync (cloud: ${cloudLastModified}, local: ${lastCloudSync})`
+          `Cloud changes detected - proceeding with full sync`
         );
+
         const itemsToDownload = Object.entries(cloudMetadata.items).filter(
           ([key, cloudItem]) => {
             const localItem = this.metadata.items[key];
-            return !localItem || cloudItem.modified > (localItem.modified || 0);
+            if (cloudItem.deleted) {
+              return (
+                !localItem?.deleted ||
+                cloudItem.deleted > (localItem?.synced || 0)
+              );
+            }
+            return !localItem || cloudItem.synced > (localItem?.synced || 0);
           }
         );
+
         if (itemsToDownload.length > 0) {
           this.logger.log(
             "info",
             `Downloading ${itemsToDownload.length} items from cloud`
           );
         }
+
         const downloadPromises = itemsToDownload.map(
           async ([key, cloudItem]) => {
             if (cloudItem.deleted) {
@@ -960,14 +691,19 @@ if (window.typingMindCloudSync) {
               const data = await this.s3.download(`items/${key}.json`);
               if (data) {
                 await this.dataService.saveItem(data, cloudItem.type);
-                this.metadata.items[key] = { ...cloudItem };
+                this.metadata.items[key] = {
+                  synced: Date.now(),
+                  type: cloudItem.type,
+                  size: cloudItem.size || this.getItemSize(data),
+                };
               }
             }
           }
         );
+
         await Promise.allSettled(downloadPromises);
         this.metadata.lastSync = Date.now();
-        this.setLastCloudSync(cloudLastModified);
+        this.setLastCloudSync(cloudLastSync);
         this.saveMetadata();
         this.logger.log("success", "Sync from cloud completed");
       } catch (error) {
@@ -979,66 +715,44 @@ if (window.typingMindCloudSync) {
     }
     async createInitialSync() {
       this.logger.log("start", "Creating initial sync");
-      const { changedItems } = await this.detectChanges();
-      const debugEnabled =
-        new URLSearchParams(window.location.search).get("log") === "true";
+      try {
+        const { changedItems } = await this.detectChanges();
+        const cloudMetadata = {
+          lastSync: Date.now(),
+          items: {},
+        };
 
-      if (debugEnabled) {
-        this.logger.log(
-          "info",
-          `🔍 createInitialSync: Processing ${changedItems.length} items`
-        );
-      }
-
-      const cloudMetadata = {
-        lastSync: Date.now(),
-        lastModified: Date.now(),
-        items: {},
-      };
-      const uploadPromises = changedItems.map(async (item) => {
-        const data = await this.dataService.getItem(item.id, item.type);
-        if (data) {
-          await this.s3.upload(`items/${item.id}.json`, data);
-          this.metadata.items[item.id] = {
-            modified: item.modified,
-            synced: Date.now(),
-            type: item.type,
-          };
-          cloudMetadata.items[item.id] = { ...this.metadata.items[item.id] };
-
-          if (debugEnabled) {
-            this.logger.log(
-              "info",
-              `✅ Uploaded and tracked: ${item.id} (synced: ${
-                this.metadata.items[item.id].synced
-              })`
-            );
+        const uploadPromises = changedItems.map(async (item) => {
+          const data = await this.dataService.getItem(item.id, item.type);
+          if (data) {
+            await this.s3.upload(`items/${item.id}.json`, data);
+            this.metadata.items[item.id] = {
+              synced: Date.now(),
+              type: item.type,
+              size: item.size || this.getItemSize(data),
+            };
+            cloudMetadata.items[item.id] = { ...this.metadata.items[item.id] };
           }
-        }
-      });
-      await Promise.allSettled(uploadPromises);
-      await this.s3.upload("metadata.json", cloudMetadata, true);
-      this.metadata.lastSync = cloudMetadata.lastSync;
-      this.setLastCloudSync(cloudMetadata.lastModified);
-      this.saveMetadata();
+        });
 
-      if (debugEnabled) {
+        await Promise.allSettled(uploadPromises);
+        await this.s3.upload("metadata.json", cloudMetadata, true);
+        this.metadata.lastSync = cloudMetadata.lastSync;
+        this.setLastCloudSync(cloudMetadata.lastSync);
+        this.saveMetadata();
+
         this.logger.log(
-          "info",
-          `🔍 createInitialSync: Saved metadata with ${
-            Object.keys(this.metadata.items).length
-          } items`
+          "success",
+          `Initial sync completed - ${changedItems.length} items uploaded`
         );
+      } catch (error) {
         this.logger.log(
-          "info",
-          `🔍 createInitialSync: lastSync=${this.metadata.lastSync}`
+          "error",
+          "Failed to create initial sync",
+          error.message
         );
+        throw error;
       }
-
-      this.logger.log(
-        "success",
-        `Initial sync completed - ${changedItems.length} items uploaded`
-      );
     }
     async performFullSync() {
       await this.syncFromCloud();
@@ -1064,7 +778,7 @@ if (window.typingMindCloudSync) {
     }
     async cleanupCloudTombstones() {
       try {
-        const cloudMetadata = await this.s3.download("metadata.json", true);
+        const cloudMetadata = await this.getCloudMetadata();
         const now = Date.now();
         const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
         let cleanupCount = 0;
@@ -1075,8 +789,7 @@ if (window.typingMindCloudSync) {
           )) {
             if (
               metadata.deleted &&
-              metadata.deletedAt &&
-              now - metadata.deletedAt > tombstoneRetentionPeriod
+              now - metadata.deleted > tombstoneRetentionPeriod
             ) {
               delete cloudMetadata.items[itemId];
               cleanupCount++;
@@ -1114,7 +827,6 @@ if (window.typingMindCloudSync) {
         }
       }, interval);
     }
-    startDeletionMonitoring() {}
     cleanupOldTombstones() {
       const now = Date.now();
       const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
@@ -1123,8 +835,7 @@ if (window.typingMindCloudSync) {
       for (const [itemId, metadata] of Object.entries(this.metadata.items)) {
         if (
           metadata.deleted &&
-          metadata.deletedAt &&
-          now - metadata.deletedAt > tombstoneRetentionPeriod
+          now - metadata.deleted > tombstoneRetentionPeriod
         ) {
           delete this.metadata.items[itemId];
           cleanupCount++;
@@ -1137,6 +848,23 @@ if (window.typingMindCloudSync) {
       }
 
       return cleanupCount;
+    }
+    async getCloudMetadata() {
+      try {
+        const cloudMetadata = await this.s3.download("metadata.json", true);
+        if (!cloudMetadata || typeof cloudMetadata !== "object") {
+          return { lastSync: 0, items: {} };
+        }
+        if (!cloudMetadata.items) {
+          cloudMetadata.items = {};
+        }
+        return cloudMetadata;
+      } catch (error) {
+        if (error.code === "NoSuchKey" || error.statusCode === 404) {
+          return { lastSync: 0, items: {} };
+        }
+        throw error;
+      }
     }
   }
 
@@ -1299,11 +1027,7 @@ if (window.typingMindCloudSync) {
       );
       await this.waitForDOM();
       this.insertSyncButton();
-      const hasRunCleanup = localStorage.getItem("tcs_chat-cleanup-v4");
-      if (!hasRunCleanup) {
-        await this.dataService.cleanupChatDuplicates();
-        localStorage.setItem("tcs_chat-cleanup-v4", "true");
-      }
+
       if (this.config.isConfigured()) {
         try {
           await this.s3Service.initialize();
@@ -1376,8 +1100,6 @@ if (window.typingMindCloudSync) {
       return `<div class="text-white text-left text-sm">
         <div class="flex justify-center items-center mb-3">
           <h3 class="text-center text-xl font-bold text-white">S3 Backup & Sync Settings</h3>
-          <button class="ml-2 text-blue-400 text-lg hint--bottom-left hint--rounded hint--large" 
-            aria-label="Fill form & Save. If you are using Amazon S3 - fill in S3 Bucket Name, AWS Region, AWS Access Key, AWS Secret Key and Encryption key.&#10;&#10;Initial backup: You will need to click on Export to create your first backup in S3. Thereafter, automatic backups are done to S3 as per Backup Interval if the browser tab is active.&#10;&#10;Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the local data.&#10;&#10;&#10;&#10;Snapshot: Creates an instant no-touch backup that will not be overwritten.&#10;&#10;Download: You can select the backup data to be download and click on Download button to download it for local storage.&#10;&#10;Restore: Select the backup you want to restore and Click on Restore. The typingmind data will be restored to the selected backup data/date.">ⓘ</button>
         </div>
         <div class="space-y-3">
           <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
@@ -1432,37 +1154,27 @@ if (window.typingMindCloudSync) {
                 }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
               </div>
               <div>
-                <label for="aws-endpoint" class="block text-sm font-medium text-zinc-300">
-                  S3 Compatible Storage Endpoint
-                  <button class="ml-1 text-blue-400 text-lg hint--top hint--rounded hint--medium" aria-label="For Amazon AWS, leave this blank. For S3 compatible cloud services like Cloudflare, iDrive and the likes, populate this.">ⓘ</button>
-                </label>
+                <label for="aws-endpoint" class="block text-sm font-medium text-zinc-300">S3 Compatible Storage Endpoint</label>
                 <input id="aws-endpoint" name="aws-endpoint" type="text" value="${
                   this.config.get("endpoint") || ""
                 }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off">
               </div>
               <div class="flex space-x-4">
                 <div class="w-1/2">
-                  <label for="sync-interval" class="block text-sm font-medium text-zinc-300">Sync Interval
-                  <button class="ml-1 text-blue-400 text-lg hint--top-right hint--rounded hint--medium" aria-label="How often do you want to sync your data to cloud? Minimum 15 seconds">ⓘ</button></label>
+                  <label for="sync-interval" class="block text-sm font-medium text-zinc-300">Sync Interval</label>
                   <input id="sync-interval" name="sync-interval" type="number" min="15" value="${this.config.get(
                     "syncInterval"
                   )}" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
                 </div>
                 <div class="w-1/2">
-                  <label for="encryption-key" class="block text-sm font-medium text-zinc-300">
-                    Encryption Key <span class="text-red-400">*</span>
-                    <button class="ml-1 text-blue-400 text-lg hint--top-left hint--rounded hint--medium" aria-label="Choose a secure 8+ character string. This is to encrypt the backup file before uploading to cloud. Securely store this somewhere as you will need this to restore backup from cloud.">ⓘ</button>
-                  </label>
+                  <label for="encryption-key" class="block text-sm font-medium text-zinc-300">Encryption Key <span class="text-red-400">*</span></label>
                   <input id="encryption-key" name="encryption-key" type="password" value="${
                     this.config.get("encryptionKey") || ""
                   }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
                 </div>
               </div>
               <div>
-                <label for="sync-exclusions" class="block text-sm font-medium text-zinc-300">
-                  Exclusions (Comma separated)
-                  <button class="ml-1 text-blue-400 text-lg hint--top hint--rounded hint--medium" aria-label="Additional settings to exclude from sync. Enter comma-separated setting names that you want to prevent from syncing between devices.">ⓘ</button>
-                </label>
+                <label for="sync-exclusions" class="block text-sm font-medium text-zinc-300">Exclusions (Comma separated)</label>
                 <input id="sync-exclusions" name="sync-exclusions" type="text" value="${
                   localStorage.getItem("tcs_sync-exclusions") || ""
                 }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" placeholder="e.g., my-setting, another-setting" autocomplete="off">
@@ -1470,10 +1182,7 @@ if (window.typingMindCloudSync) {
             </div>
           </div>
           <div class="flex items-center justify-end mb-4 space-x-2">
-            <span class="text-sm text-zinc-400">
-              Console Logging
-              <button class="ml-1 text-blue-400 text-lg hint--top-left hint--rounded hint--medium" aria-label="Use this to enable detailed logging in Browser console for troubleshooting purpose. Clicking on this button will instantly start logging. However, earlier events will not be logged. You could add ?log=true to the page URL and reload the page to start logging from the beginning of the page load.">ⓘ</button>
-            </span>
+            <span class="text-sm text-zinc-400">Console Logging</span>
             <input type="checkbox" id="console-logging-toggle" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer">
           </div>
           <div class="flex justify-between space-x-2 mt-4">
@@ -1886,6 +1595,23 @@ if (window.typingMindCloudSync) {
         }
       }
     }
+    async getCloudMetadata() {
+      try {
+        const cloudMetadata = await this.s3.download("metadata.json", true);
+        if (!cloudMetadata || typeof cloudMetadata !== "object") {
+          return { lastSync: 0, items: {} };
+        }
+        if (!cloudMetadata.items) {
+          cloudMetadata.items = {};
+        }
+        return cloudMetadata;
+      } catch (error) {
+        if (error.code === "NoSuchKey" || error.statusCode === 404) {
+          return { lastSync: 0, items: {} };
+        }
+        throw error;
+      }
+    }
   }
 
   const styleSheet = document.createElement("style");
@@ -1898,15 +1624,14 @@ if (window.typingMindCloudSync) {
       bottom: 0;
       background-color: rgba(0, 0, 0, 0.6);
       backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
       z-index: 99999;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 1rem;
       overflow-y: auto;
-      animation: fadeIn 0.2s ease-out;
     }
+    
     #sync-status-dot {
       position: absolute;
       top: -0.15rem;
@@ -1915,358 +1640,36 @@ if (window.typingMindCloudSync) {
       height: 0.625rem;
       border-radius: 9999px;
     }
+    
     .cloud-sync-modal {
-      display: inline-block;
       width: 100%;
+      max-width: 32rem;
       background-color: rgb(39, 39, 42);
       color: white;
       border-radius: 0.5rem;
       padding: 1rem;
-      text-align: left;
-      box-shadow: 0 0 15px rgba(255, 255, 255, 0.1), 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-      transform: translateY(0);
-      transition: all 0.3s ease-in-out;
-      max-width: 32rem;
-      overflow: hidden;
-      animation: slideIn 0.3s ease-out;
-      position: relative;
-      z-index: 100000;
       border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
     }
-    [class*="hint--"] {
-      position: relative;
-      display: inline-block;
-    }
-    [class*="hint--"]::before,
-    [class*="hint--"]::after {
-      position: absolute;
-      transform: translate3d(0, 0, 0);
-      visibility: hidden;
-      opacity: 0;
-      z-index: 100000;
-      pointer-events: none;
-      transition: 0.3s ease;
-      transition-delay: 0ms;
-    }
-    [class*="hint--"]::before {
-      content: '';
-      position: absolute;
-      background: transparent;
-      border: 6px solid transparent;
-      z-index: 100000;
-    }
-    [class*="hint--"]::after {
-      content: attr(aria-label);
-      background: #383838;
-      color: white;
-      padding: 8px 10px;
-      font-size: 12px;
-      line-height: 16px;
-      white-space: pre-wrap;
-      box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.3);
-      max-width: 400px !important;
-      min-width: 200px !important;
-      width: auto !important;
-      border-radius: 4px;
-    }
-    .hint--top::after,
-    .hint--top-right::after,
-    .hint--top-left::after,
-    .hint--bottom::after,
-    .hint--bottom-right::after,
-    .hint--bottom-left::after {
-      max-width: 400px !important;
-      min-width: 200px !important;
-      width: auto !important;
-    }
-    [class*="hint--"]:hover::before,
-    [class*="hint--"]:hover::after {
-      visibility: visible;
-      opacity: 1;
-    }
-    .hint--top::before {
-      border-top-color: #383838;
-      margin-bottom: -12px;
-    }
-    .hint--top::after {
-      margin-bottom: -6px;
-    }
-    .hint--top::before,
-    .hint--top::after {
-      bottom: 100%;
-      left: 50%;
-      transform: translateX(-50%);
-    }
-    .hint--top-right::before {
-      border-top-color: #383838;
-      margin-bottom: -12px;
-    }
-    .hint--top-right::after {
-      margin-bottom: -6px;
-    }
-    .hint--top-right::before,
-    .hint--top-right::after {
-      bottom: 100%;
-      left: 0;
-    }
-    .hint--top-left::before {
-      border-top-color: #383838;
-      margin-bottom: -12px;
-    }
-    .hint--top-left::after {
-      margin-bottom: -6px;
-    }
-    .hint--top-left::before,
-    .hint--top-left::after {
-      bottom: 100%;
-      right: 0;
-    }
-    .hint--bottom::before {
-      border-bottom-color: #383838;
-      margin-top: -12px;
-    }
-    .hint--bottom::after {
-      margin-top: -6px;
-    }
-    .hint--bottom::before,
-    .hint--bottom::after {
-      top: 100%;
-      left: 50%;
-      transform: translateX(-50%);
-    }
-    .hint--bottom-right::before {
-      border-bottom-color: #383838;
-      margin-top: -12px;
-    }
-    .hint--bottom-right::after {
-      margin-top: -6px;
-    }
-    .hint--bottom-right::before,
-    .hint--bottom-right::after {
-      top: 100%;
-      left: 0;
-    }
-    .hint--bottom-left::before {
-      border-bottom-color: #383838;
-      margin-top: -12px;
-    }
-    .hint--bottom-left::after {
-      margin-top: -6px;
-    }
-    .hint--bottom-left::before,
-    .hint--bottom-left::after {
-      top: 100%;
-      right: 0;
-    }
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-    @keyframes slideIn {
-      from { 
-        opacity: 0;
-        transform: translateY(-20px);
-      }
-      to { 
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-    .modal-header {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      margin-bottom: 0.75rem;
-    }
-    .modal-title {
-      font-size: 1.25rem;
-      font-weight: bold;
-      text-align: center;
+    
+    .cloud-sync-modal input,
+    .cloud-sync-modal select {
+      background-color: rgb(63, 63, 70);
+      border: 1px solid rgb(82, 82, 91);
       color: white;
     }
-    .modal-section {
-      margin-top: 1rem;
-      background-color: rgb(39, 39, 42);
-      padding: 0.75rem;
-      border-radius: 0.5rem;
-      border: 1px solid rgb(63, 63, 70);
-    }
-    .modal-section-title {
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: rgb(161, 161, 170);
-      margin-bottom: 0.25rem;
-    }
-    .form-group {
-      margin-bottom: 0.75rem;
-    }
-    .form-group label {
-      display: block;
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: rgb(161, 161, 170);
-      margin-bottom: 0.25rem;
-    }
-    .form-group input,
-    .form-group select {
-      width: 100%;
-      padding: 0.375rem 0.5rem;
-      border: 1px solid rgb(63, 63, 70);
-      border-radius: 0.375rem;
-      background-color: rgb(39, 39, 42);
-      color: white;
-      font-size: 0.875rem;
-      line-height: 1.25rem;
-      outline: none;
-    }
-    .form-group input:focus,
-    .form-group select:focus {
+    
+    .cloud-sync-modal input:focus,
+    .cloud-sync-modal select:focus {
       border-color: rgb(59, 130, 246);
+      outline: none;
       box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
     }
-    .button-group {
-      display: flex;
-      justify-content: space-between;
-      gap: 0.5rem;
-      margin-top: 1rem;
-    }
-    .button {
-      display: inline-flex;
-      align-items: center;
-      padding: 0.375rem 0.75rem;
-      border: none;
-      border-radius: 0.375rem;
-      font-size: 0.875rem;
-      font-weight: 500;
-      line-height: 1.25rem;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .button-primary {
-      background-color: rgb(37, 99, 235);
-      color: white;
-    }
-    .button-primary:hover {
-      background-color: rgb(29, 78, 216);
-    }
-    .button-secondary {
-      background-color: rgb(82, 82, 91);
-      color: white;
-    }
-    .button-secondary:hover {
-      background-color: rgb(63, 63, 70);
-    }
-    .button:disabled {
+    
+    .cloud-sync-modal button:disabled {
       background-color: rgb(82, 82, 91);
       cursor: not-allowed;
       opacity: 0.5;
-    }
-    .status-indicator {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      margin-bottom: 1rem;
-      padding: 0.75rem;
-      background-color: rgb(39, 39, 42);
-      border-radius: 0.5rem;
-      border: 1px solid rgb(63, 63, 70);
-    }
-    .backup-list {
-      max-height: 300px;
-      overflow-y: auto;
-      margin-top: 0.5rem;
-      border: 1px solid rgb(63, 63, 70);
-      border-radius: 0.375rem;
-      background-color: rgb(24, 24, 27);
-    }
-    .backup-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 0.75rem;
-      border-bottom: 1px solid rgb(63, 63, 70);
-      transition: background-color 0.2s;
-    }
-    .backup-item:hover {
-      background-color: rgb(39, 39, 42);
-    }
-    .backup-item:last-child {
-      border-bottom: none;
-    }
-    .backup-info {
-      flex: 1;
-      min-width: 0;
-    }
-    .backup-name {
-      font-weight: 500;
-      color: rgb(244, 244, 245);
-      margin-bottom: 0.25rem;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .backup-type {
-      display: inline-block;
-      padding: 0.125rem 0.375rem;
-      margin-right: 0.5rem;
-      border-radius: 0.25rem;
-      font-size: 0.75rem;
-      font-weight: 600;
-      background-color: rgb(59, 130, 246);
-      color: white;
-    }
-    .backup-item.snapshot .backup-type {
-      background-color: rgb(16, 185, 129);
-    }
-    .backup-item.daily .backup-type {
-      background-color: rgb(245, 158, 11);
-    }
-    .backup-item.time .backup-type {
-      background-color: rgb(99, 102, 241);
-    }
-    .backup-date {
-      font-size: 0.875rem;
-      color: rgb(161, 161, 170);
-    }
-    .backup-actions {
-      display: flex;
-      gap: 0.5rem;
-      margin-left: 1rem;
-    }
-    .backup-action {
-      padding: 0.25rem 0.5rem;
-      border: none;
-      border-radius: 0.25rem;
-      font-size: 0.75rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s;
-      color: white;
-      min-width: 4rem;
-      text-align: center;
-    }
-    .restore-btn {
-      background-color: rgb(16, 185, 129);
-    }
-    .restore-btn:hover:not(:disabled) {
-      background-color: rgb(5, 150, 105);
-    }
-    .download-btn {
-      background-color: rgb(59, 130, 246);
-    }
-    .download-btn:hover:not(:disabled) {
-      background-color: rgb(37, 99, 235);
-    }
-    .delete-btn {
-      background-color: rgb(239, 68, 68);
-    }
-    .delete-btn:hover:not(:disabled) {
-      background-color: rgb(220, 38, 38);
-    }
-    .backup-action:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      background-color: rgb(82, 82, 91);
     }
   `;
   document.head.appendChild(styleSheet);
