@@ -864,31 +864,158 @@ if (window.typingMindCloudSync) {
       this.setupModalEventListeners(modal, overlay);
     }
     getModalHTML() {
-      return `<h3 style="text-align: center; margin-bottom: 20px; font-size: 24px; font-weight: bold;">S3 Cloud Sync Settings</h3>
-      <div style="margin-bottom: 20px;"><label style="display: block; margin-bottom: 8px; font-weight: 500;">Bucket Name *</label><input id="aws-bucket" type="text" value="${
-        this.config.get("bucketName") || ""
-      }" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;"></div>
-      <div style="display: flex; gap: 16px; margin-bottom: 20px;"><div style="flex: 1;"><label style="display: block; margin-bottom: 8px; font-weight: 500;">Region *</label><input id="aws-region" type="text" value="${
-        this.config.get("region") || ""
-      }" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;"></div><div style="flex: 1;"><label style="display: block; margin-bottom: 8px; font-weight: 500;">Sync Interval (seconds)</label><input id="sync-interval" type="number" min="15" value="${this.config.get(
-        "syncInterval"
-      )}" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;"></div></div>
-      <div style="margin-bottom: 20px;"><label style="display: block; margin-bottom: 8px; font-weight: 500;">Access Key *</label><input id="aws-access-key" type="password" value="${
-        this.config.get("accessKey") || ""
-      }" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;"></div>
-      <div style="margin-bottom: 20px;"><label style="display: block; margin-bottom: 8px; font-weight: 500;">Secret Key *</label><input id="aws-secret-key" type="password" value="${
-        this.config.get("secretKey") || ""
-      }" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;"></div>
-      <div style="margin-bottom: 20px;"><label style="display: block; margin-bottom: 8px; font-weight: 500;">Encryption Key *</label><input id="encryption-key" type="password" value="${
-        this.config.get("encryptionKey") || ""
-      }" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;"></div>
-      <div style="margin-bottom: 20px;"><label style="display: block; margin-bottom: 8px; font-weight: 500;">S3 Endpoint (optional)</label><input id="aws-endpoint" type="text" value="${
-        this.config.get("endpoint") || ""
-      }" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;"></div>
-      <div style="display: flex; justify-content: space-between; gap: 12px;"><button id="save-settings" style="background: #3b82f6; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;">Save & Sync</button><div style="display: flex; gap: 8px;"><button id="create-snapshot" style="background: #10b981; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;">Create Snapshot</button><button id="restore-backup" style="background: #f59e0b; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;">Restore</button><button id="close-modal" style="background: #ef4444; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;">Close</button></div></div>
-      <div style="margin-top: 20px; text-align: center;"><label style="display: inline-flex; align-items: center; gap: 8px;"><input type="checkbox" id="console-logging-toggle" ${
-        this.logger.enabled ? "checked" : ""
-      }> Enable Console Logging</label></div>`;
+      return `<div class="text-gray-800 dark:text-white text-left text-sm">
+        <div class="flex justify-center items-center mb-3">
+          <h3 class="text-center text-xl font-bold">S3 Backup & Sync Settings</h3>
+          <button class="ml-2 text-blue-600 text-lg hint--bottom-left hint--rounded hint--large" 
+            aria-label="Fill form & Save. If you are using Amazon S3 - fill in S3 Bucket Name, AWS Region, AWS Access Key, AWS Secret Key and Encryption key.&#10;&#10;Initial backup: You will need to click on Export to create your first backup in S3. Thereafter, automatic backups are done to S3 as per Backup Interval if the browser tab is active.&#10;&#10;Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the local data.&#10;&#10;&#10;&#10;Snapshot: Creates an instant no-touch backup that will not be overwritten.&#10;&#10;Download: You can select the backup data to be download and click on Download button to download it for local storage.&#10;&#10;Restore: Select the backup you want to restore and Click on Restore. The typingmind data will be restored to the selected backup data/date.">ⓘ</button>
+        </div>
+        <div class="space-y-3">
+          <div class="mt-4 bg-gray-100 dark:bg-zinc-800 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600">
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">Available Backups</label>
+            </div>
+            <div class="space-y-2">
+              <div class="w-full">
+                <select id="backup-files" class="w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700">
+                  <option value="">Please configure AWS credentials first</option>
+                </select>
+              </div>
+              <div class="flex justify-end space-x-2">
+                <button id="download-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                  Download
+                </button>
+                <button id="restore-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                  Restore
+                </button>
+                <button id="delete-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="mt-4 bg-gray-100 dark:bg-zinc-800 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600">
+            <div class="space-y-2">
+              <div class="flex items-center space-x-4 mb-4">
+                <label class="inline-flex items-center">
+                  <input type="radio" name="sync-mode" value="sync" class="form-radio text-blue-600" ${
+                    this.config.get("syncMode") === "sync" ? "checked" : ""
+                  }>
+                  <span class="ml-2">Sync</span>
+                  <button class="ml-1 text-blue-600 text-lg hint--top-right hint--rounded hint--medium" aria-label="Automatically syncs data between devices. When enabled, data will be imported from cloud on app start.">ⓘ</button>
+                </label>
+                <label class="inline-flex items-center">
+                  <input type="radio" name="sync-mode" value="backup" class="form-radio text-blue-600" ${
+                    this.config.get("syncMode") === "backup" ? "checked" : ""
+                  }>
+                  <span class="ml-2">Backup</span>
+                  <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="Only creates backups. No automatic import from cloud on app start.">ⓘ</button>
+                </label>
+                <label class="inline-flex items-center">
+                  <input type="radio" name="sync-mode" value="disabled" class="form-radio text-blue-600" ${
+                    this.config.get("syncMode") === "disabled" ? "checked" : ""
+                  }>
+                  <span class="ml-2">Disabled</span>
+                  <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="No automatic operations. Manual sync and snapshot operations still work.">ⓘ</button>
+                </label>
+              </div>
+              <div class="flex space-x-4">
+                <div class="w-2/3">
+                  <label for="aws-bucket" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Bucket Name <span class="text-red-500">*</span></label>
+                  <input id="aws-bucket" name="aws-bucket" type="text" value="${
+                    this.config.get("bucketName") || ""
+                  }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                </div>
+                <div class="w-1/3">
+                  <label for="aws-region" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Region <span class="text-red-500">*</span></label>
+                  <input id="aws-region" name="aws-region" type="text" value="${
+                    this.config.get("region") || ""
+                  }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                </div>
+              </div>
+              <div>
+                <label for="aws-access-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Access Key <span class="text-red-500">*</span></label>
+                <input id="aws-access-key" name="aws-access-key" type="password" value="${
+                  this.config.get("accessKey") || ""
+                }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+              </div>
+              <div>
+                <label for="aws-secret-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Secret Key <span class="text-red-500">*</span></label>
+                <input id="aws-secret-key" name="aws-secret-key" type="password" value="${
+                  this.config.get("secretKey") || ""
+                }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+              </div>
+              <div>
+                <label for="aws-endpoint" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
+                  S3 Compatible Storage Endpoint
+                  <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="For Amazon AWS, leave this blank. For S3 compatible cloud services like Cloudflare, iDrive and the likes, populate this.">ⓘ</button>
+                </label>
+                <input id="aws-endpoint" name="aws-endpoint" type="text" value="${
+                  this.config.get("endpoint") || ""
+                }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off">
+              </div>
+              <div class="flex space-x-4">
+                <div class="w-1/2">
+                  <label for="sync-interval" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Sync Interval
+                  <button class="ml-1 text-blue-600 text-lg hint--top-right hint--rounded hint--medium" aria-label="How often do you want to sync your data to cloud? Minimum 15 seconds">ⓘ</button></label>
+                  <input id="sync-interval" name="sync-interval" type="number" min="15" value="${this.config.get(
+                    "syncInterval"
+                  )}" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                </div>
+                <div class="w-1/2">
+                  <label for="encryption-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
+                    Encryption Key <span class="text-red-500">*</span>
+                    <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="Choose a secure 8+ character string. This is to encrypt the backup file before uploading to cloud. Securely store this somewhere as you will need this to restore backup from cloud.">ⓘ</button>
+                  </label>
+                  <input id="encryption-key" name="encryption-key" type="password" value="${
+                    this.config.get("encryptionKey") || ""
+                  }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
+                </div>
+              </div>
+              <div>
+                <label for="sync-exclusions" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
+                  Exclusions (Comma separated)
+                  <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="Additional settings to exclude from sync. Enter comma-separated setting names that you want to prevent from syncing between devices.">ⓘ</button>
+                </label>
+                <input id="sync-exclusions" name="sync-exclusions" type="text" value="${
+                  localStorage.getItem("sync-exclusions") || ""
+                }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" placeholder="e.g., my-setting, another-setting" autocomplete="off">
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center justify-end mb-4 space-x-2">
+            <span class="text-sm text-gray-600 dark:text-gray-400">
+              Console Logging
+              <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="Use this to enable detailed logging in Browser console for troubleshooting purpose. Clicking on this button will instantly start logging. However, earlier events will not be logged. You could add ?log=true to the page URL and reload the page to start logging from the beginning of the page load.">ⓘ</button>
+            </span>
+            <input type="checkbox" id="console-logging-toggle" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer">
+          </div>
+          <div class="flex justify-between space-x-2 mt-4">
+            <button id="save-settings" class="z-1 inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors">
+              Save
+            </button>
+            <div class="flex space-x-2">
+              <button id="sync-now" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-default transition-colors">
+                ${
+                  this.config.get("syncMode") === "sync"
+                    ? "Sync Now"
+                    : "Backup Now"
+                }
+              </button>
+              <button id="create-snapshot" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors">
+                Snapshot
+              </button>
+              <button id="close-modal" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                Close
+              </button>
+            </div>
+          </div>
+          <div class="text-center mt-4">
+            <span id="last-sync-msg"></span>
+          </div>
+          <div id="action-msg" class="text-center"></div>
+        </div>
+      </div>`;
     }
     setupModalEventListeners(modal, overlay) {
       overlay.addEventListener("click", () => this.closeModal(overlay));
@@ -903,43 +1030,359 @@ if (window.typingMindCloudSync) {
         .querySelector("#create-snapshot")
         .addEventListener("click", () => this.createSnapshot());
       modal
-        .querySelector("#restore-backup")
-        .addEventListener("click", () => this.restoreBackup());
+        .querySelector("#sync-now")
+        .addEventListener("click", () => this.handleSyncNow(modal));
       modal
         .querySelector("#console-logging-toggle")
         .addEventListener("change", (e) =>
           this.logger.setEnabled(e.target.checked)
         );
+      const syncModeRadios = modal.querySelectorAll('input[name="sync-mode"]');
+      syncModeRadios.forEach((radio) => {
+        radio.addEventListener("change", function () {
+          const syncNowBtn = modal.querySelector("#sync-now");
+          if (syncNowBtn) {
+            syncNowBtn.textContent =
+              this.value === "sync" ? "Sync Now" : "Backup Now";
+          }
+        });
+      });
+      const consoleLoggingCheckbox = modal.querySelector(
+        "#console-logging-toggle"
+      );
+      consoleLoggingCheckbox.checked = this.logger.enabled;
+      this.loadBackupList(modal);
+      this.setupBackupListHandlers(modal);
+    }
+    handleSyncNow(modal) {
+      const syncNowButton = modal.querySelector("#sync-now");
+      const originalText = syncNowButton.textContent;
+      syncNowButton.disabled = true;
+      syncNowButton.textContent = "Working...";
+      if (this.config.get("syncMode") === "sync") {
+        this.syncOrchestrator
+          .performFullSync()
+          .then(() => {
+            syncNowButton.textContent = "Done!";
+            setTimeout(() => {
+              syncNowButton.textContent = originalText;
+              syncNowButton.disabled = false;
+            }, 2000);
+          })
+          .catch(() => {
+            syncNowButton.textContent = "Failed";
+            setTimeout(() => {
+              syncNowButton.textContent = originalText;
+              syncNowButton.disabled = false;
+            }, 2000);
+          });
+      } else {
+        this.syncOrchestrator
+          .syncToCloud()
+          .then(() => {
+            syncNowButton.textContent = "Done!";
+            setTimeout(() => {
+              syncNowButton.textContent = originalText;
+              syncNowButton.disabled = false;
+            }, 2000);
+          })
+          .catch(() => {
+            syncNowButton.textContent = "Failed";
+            setTimeout(() => {
+              syncNowButton.textContent = originalText;
+              syncNowButton.disabled = false;
+            }, 2000);
+          });
+      }
+    }
+    async loadBackupList(modal) {
+      try {
+        const backupList = modal.querySelector("#backup-files");
+        if (!backupList) return;
+        backupList.innerHTML = '<option value="">Loading backups...</option>';
+        backupList.disabled = true;
+        if (!this.config.isConfigured()) {
+          backupList.innerHTML =
+            '<option value="">Please configure AWS credentials first</option>';
+          backupList.disabled = false;
+          return;
+        }
+        const backups = await this.s3Service.list();
+        backupList.innerHTML = "";
+        backupList.disabled = false;
+        const filteredBackups = backups.filter(
+          (backup) =>
+            !backup.Key.startsWith("chats/") &&
+            backup.Key !== "chats/" &&
+            backup.Key !== "metadata.json"
+        );
+        if (filteredBackups.length === 0) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.text = "No backups found";
+          backupList.appendChild(option);
+        } else {
+          const sortedBackups = filteredBackups.sort((a, b) => {
+            return new Date(b.LastModified) - new Date(a.LastModified);
+          });
+          sortedBackups.forEach((backup) => {
+            const option = document.createElement("option");
+            option.value = backup.Key;
+            const size = this.formatFileSize(backup.Size || 0);
+            const date = new Date(backup.LastModified).toLocaleString();
+            option.text = `${backup.Key} - ${size} (${date})`;
+            backupList.appendChild(option);
+          });
+        }
+        this.updateBackupButtonStates(modal);
+        backupList.addEventListener("change", () =>
+          this.updateBackupButtonStates(modal)
+        );
+      } catch (error) {
+        console.error("Failed to load backup list:", error);
+        if (backupList) {
+          backupList.innerHTML =
+            '<option value="">Error loading backups</option>';
+          backupList.disabled = false;
+        }
+      }
+    }
+    updateBackupButtonStates(modal) {
+      const backupList = modal.querySelector("#backup-files");
+      const selectedValue = backupList.value || "";
+      const downloadButton = modal.querySelector("#download-backup-btn");
+      const restoreButton = modal.querySelector("#restore-backup-btn");
+      const deleteButton = modal.querySelector("#delete-backup-btn");
+      const isSnapshot =
+        selectedValue.startsWith("s-") || selectedValue.startsWith("SS_");
+      const isDailyBackup =
+        selectedValue.includes("Daily_") ||
+        selectedValue.startsWith("typingmind-backup-");
+      const isSettingsFile = selectedValue === "settings.json";
+      const isMetadataFile = selectedValue === "metadata.json";
+      if (downloadButton) {
+        downloadButton.disabled = !selectedValue;
+      }
+      if (restoreButton) {
+        restoreButton.disabled =
+          !selectedValue || (!isSnapshot && !isDailyBackup && !isSettingsFile);
+      }
+      if (deleteButton) {
+        const isProtectedFile =
+          !selectedValue ||
+          isMetadataFile ||
+          selectedValue.startsWith("chats/") ||
+          selectedValue.startsWith("settings/");
+        deleteButton.disabled = isProtectedFile;
+      }
+    }
+    setupBackupListHandlers(modal) {
+      const downloadButton = modal.querySelector("#download-backup-btn");
+      const restoreButton = modal.querySelector("#restore-backup-btn");
+      const deleteButton = modal.querySelector("#delete-backup-btn");
+      const backupList = modal.querySelector("#backup-files");
+      if (downloadButton) {
+        downloadButton.addEventListener("click", async () => {
+          const key = backupList.value;
+          if (!key) {
+            alert("Please select a backup to download");
+            return;
+          }
+          try {
+            downloadButton.disabled = true;
+            downloadButton.textContent = "Downloading...";
+            const backup = await this.s3Service.download(key);
+            if (backup) {
+              await this.handleBackupDownload(backup, key);
+              downloadButton.textContent = "Downloaded!";
+            }
+          } catch (error) {
+            console.error("Failed to download backup:", error);
+            alert("Failed to download backup: " + error.message);
+            downloadButton.textContent = "Failed";
+          } finally {
+            setTimeout(() => {
+              downloadButton.textContent = "Download";
+              downloadButton.disabled = false;
+              this.updateBackupButtonStates(modal);
+            }, 2000);
+          }
+        });
+      }
+      if (restoreButton) {
+        restoreButton.addEventListener("click", async () => {
+          const key = backupList.value;
+          if (!key) {
+            alert("Please select a backup to restore");
+            return;
+          }
+          if (
+            confirm(
+              "Are you sure you want to restore this backup? This will overwrite your current data."
+            )
+          ) {
+            try {
+              restoreButton.disabled = true;
+              restoreButton.textContent = "Restoring...";
+              const success = await this.backupService.restoreFromBackup(key);
+              if (success) {
+                alert("Backup restored successfully! Page will reload.");
+                location.reload();
+              }
+            } catch (error) {
+              console.error("Failed to restore backup:", error);
+              alert("Failed to restore backup: " + error.message);
+              restoreButton.textContent = "Failed";
+              setTimeout(() => {
+                restoreButton.textContent = "Restore";
+                restoreButton.disabled = false;
+                this.updateBackupButtonStates(modal);
+              }, 2000);
+            }
+          }
+        });
+      }
+      if (deleteButton) {
+        deleteButton.addEventListener("click", async () => {
+          const key = backupList.value;
+          if (!key) {
+            alert("Please select a backup to delete");
+            return;
+          }
+          if (
+            confirm(
+              "Are you sure you want to delete this backup? This cannot be undone."
+            )
+          ) {
+            try {
+              deleteButton.disabled = true;
+              deleteButton.textContent = "Deleting...";
+              await this.s3Service.delete(key);
+              await this.loadBackupList(modal);
+              deleteButton.textContent = "Deleted!";
+              setTimeout(() => {
+                deleteButton.textContent = "Delete";
+                this.updateBackupButtonStates(modal);
+              }, 2000);
+            } catch (error) {
+              console.error("Failed to delete backup:", error);
+              alert("Failed to delete backup: " + error.message);
+              deleteButton.textContent = "Failed";
+              setTimeout(() => {
+                deleteButton.textContent = "Delete";
+                deleteButton.disabled = false;
+                this.updateBackupButtonStates(modal);
+              }, 2000);
+            }
+          }
+        });
+      }
+    }
+    async handleBackupDownload(backupData, key) {
+      try {
+        let content;
+        if (key.endsWith(".zip")) {
+          const JSZip = (
+            await import(
+              "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"
+            )
+          ).default;
+          const zip = await JSZip.loadAsync(backupData);
+          const jsonFile = Object.keys(zip.files).find((f) =>
+            f.endsWith(".json")
+          );
+          if (!jsonFile) {
+            throw new Error("No JSON file found in backup");
+          }
+          const fileContent = await zip.file(jsonFile).async("uint8array");
+          const decryptedContent = await this.cryptoService.decrypt(
+            fileContent
+          );
+          content = JSON.stringify(decryptedContent, null, 2);
+        } else {
+          const decryptedContent = await this.cryptoService.decrypt(backupData);
+          content = JSON.stringify(decryptedContent, null, 2);
+        }
+        this.downloadFile(key.replace(".zip", ".json"), content);
+      } catch (error) {
+        console.error("Failed to process backup:", error);
+        const blob = new Blob([backupData], {
+          type: "application/octet-stream",
+        });
+        this.downloadFile(key, blob);
+      }
+    }
+    downloadFile(filename, content) {
+      let blob;
+      if (content instanceof Blob) {
+        blob = content;
+      } else if (typeof content === "string") {
+        blob = new Blob([content], { type: "application/json" });
+      } else {
+        blob = new Blob([JSON.stringify(content, null, 2)], {
+          type: "application/json",
+        });
+      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+    formatFileSize(bytes) {
+      if (bytes === 0) return "0 B";
+      const k = 1024;
+      const sizes = ["B", "KB", "MB", "GB"];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
     }
     closeModal(overlay) {
       if (overlay) overlay.remove();
     }
     async saveSettings(overlay) {
-      const config = {
+      const newConfig = {
         bucketName: document.getElementById("aws-bucket").value.trim(),
         region: document.getElementById("aws-region").value.trim(),
         accessKey: document.getElementById("aws-access-key").value.trim(),
         secretKey: document.getElementById("aws-secret-key").value.trim(),
         endpoint: document.getElementById("aws-endpoint").value.trim(),
-        encryptionKey: document.getElementById("encryption-key").value.trim(),
+        syncMode: document.querySelector('input[name="sync-mode"]:checked')
+          .value,
         syncInterval:
           parseInt(document.getElementById("sync-interval").value) || 15,
+        encryptionKey: document.getElementById("encryption-key").value.trim(),
       };
+      const exclusions = document.getElementById("sync-exclusions").value;
+      localStorage.setItem("sync-exclusions", exclusions);
       if (
-        !config.bucketName ||
-        !config.region ||
-        !config.accessKey ||
-        !config.secretKey ||
-        !config.encryptionKey
+        !newConfig.bucketName ||
+        !newConfig.region ||
+        !newConfig.accessKey ||
+        !newConfig.secretKey ||
+        !newConfig.encryptionKey
       ) {
-        alert("Please fill in all required fields.");
+        alert("Please fill in all required AWS settings");
         return;
       }
-      Object.keys(config).forEach((key) => this.config.set(key, config[key]));
+      if (newConfig.syncInterval < 15) {
+        alert("Sync interval must be at least 15 seconds");
+        return;
+      }
+      const oldMode = this.config.get("syncMode");
+      Object.keys(newConfig).forEach((key) =>
+        this.config.set(key, newConfig[key])
+      );
       this.config.save();
       try {
         await this.s3Service.initialize();
-        await this.syncOrchestrator.performFullSync();
+        if (newConfig.syncMode === "sync") {
+          await this.syncOrchestrator.performFullSync();
+        } else if (newConfig.syncMode === "backup") {
+          await this.syncOrchestrator.syncToCloud();
+        }
         this.startAutoSync();
         this.updateSyncStatus("success");
         this.closeModal(overlay);
@@ -948,6 +1391,11 @@ if (window.typingMindCloudSync) {
         this.logger.log("error", "Failed to save configuration", error.message);
         alert("Failed to initialize sync. Please check your configuration.");
       }
+    }
+    startAutoSync() {
+      if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
+      this.autoSyncInterval = this.syncOrchestrator.startAutoSync();
+      this.logger.log("info", "Auto-sync started");
     }
     async createSnapshot() {
       const name = prompt("Enter snapshot name:");
@@ -961,47 +1409,389 @@ if (window.typingMindCloudSync) {
         }
       }
     }
-    async restoreBackup() {
-      try {
-        const backupList = await this.backupService.loadBackupList();
-        if (backupList.length === 0) {
-          alert("No backups found.");
-          return;
-        }
-        const backupNames = backupList.map(
-          (backup, index) =>
-            `${index + 1}. ${backup.name} (${new Date(
-              backup.modified
-            ).toLocaleString()})`
-        );
-        const selection = prompt(
-          `Select backup to restore:\n${backupNames.join(
-            "\n"
-          )}\n\nEnter number (1-${backupList.length}):`
-        );
-        const selectedIndex = parseInt(selection) - 1;
-        if (selectedIndex >= 0 && selectedIndex < backupList.length) {
-          if (confirm("This will overwrite your current data. Are you sure?")) {
-            await this.backupService.restoreFromBackup(
-              backupList[selectedIndex].key
-            );
-            alert("Backup restored successfully! Page will reload.");
-            location.reload();
-          }
-        } else {
-          alert("Invalid selection.");
-        }
-      } catch (error) {
-        this.logger.log("error", "Failed to restore backup", error.message);
-        alert("Failed to restore backup: " + error.message);
+  }
+
+  const styleSheet = document.createElement("style");
+  styleSheet.textContent = `
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      z-index: 99999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      overflow-y: auto;
+      animation: fadeIn 0.2s ease-out;
+    }
+    #sync-status-dot {
+      position: absolute;
+      top: -0.15rem;
+      right: -0.6rem;
+      width: 0.625rem;
+      height: 0.625rem;
+      border-radius: 9999px;
+    }
+    .cloud-sync-modal {
+      display: inline-block;
+      width: 100%;
+      background-color: rgb(9, 9, 11);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      text-align: left;
+      box-shadow: 0 0 15px rgba(255, 255, 255, 0.1), 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      transform: translateY(0);
+      transition: all 0.3s ease-in-out;
+      max-width: 32rem;
+      overflow: hidden;
+      animation: slideIn 0.3s ease-out;
+      position: relative;
+      z-index: 100000;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    [class*="hint--"] {
+      position: relative;
+      display: inline-block;
+    }
+    [class*="hint--"]::before,
+    [class*="hint--"]::after {
+      position: absolute;
+      transform: translate3d(0, 0, 0);
+      visibility: hidden;
+      opacity: 0;
+      z-index: 100000;
+      pointer-events: none;
+      transition: 0.3s ease;
+      transition-delay: 0ms;
+    }
+    [class*="hint--"]::before {
+      content: '';
+      position: absolute;
+      background: transparent;
+      border: 6px solid transparent;
+      z-index: 100000;
+    }
+    [class*="hint--"]::after {
+      content: attr(aria-label);
+      background: #383838;
+      color: white;
+      padding: 8px 10px;
+      font-size: 12px;
+      line-height: 16px;
+      white-space: pre-wrap;
+      box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.3);
+      max-width: 400px !important;
+      min-width: 200px !important;
+      width: auto !important;
+      border-radius: 4px;
+    }
+    .hint--top::after,
+    .hint--top-right::after,
+    .hint--top-left::after,
+    .hint--bottom::after,
+    .hint--bottom-right::after,
+    .hint--bottom-left::after {
+      max-width: 400px !important;
+      min-width: 200px !important;
+      width: auto !important;
+    }
+    [class*="hint--"]:hover::before,
+    [class*="hint--"]:hover::after {
+      visibility: visible;
+      opacity: 1;
+    }
+    .hint--top::before {
+      border-top-color: #383838;
+      margin-bottom: -12px;
+    }
+    .hint--top::after {
+      margin-bottom: -6px;
+    }
+    .hint--top::before,
+    .hint--top::after {
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+    .hint--top-right::before {
+      border-top-color: #383838;
+      margin-bottom: -12px;
+    }
+    .hint--top-right::after {
+      margin-bottom: -6px;
+    }
+    .hint--top-right::before,
+    .hint--top-right::after {
+      bottom: 100%;
+      left: 0;
+    }
+    .hint--top-left::before {
+      border-top-color: #383838;
+      margin-bottom: -12px;
+    }
+    .hint--top-left::after {
+      margin-bottom: -6px;
+    }
+    .hint--top-left::before,
+    .hint--top-left::after {
+      bottom: 100%;
+      right: 0;
+    }
+    .hint--bottom::before {
+      border-bottom-color: #383838;
+      margin-top: -12px;
+    }
+    .hint--bottom::after {
+      margin-top: -6px;
+    }
+    .hint--bottom::before,
+    .hint--bottom::after {
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+    .hint--bottom-right::before {
+      border-bottom-color: #383838;
+      margin-top: -12px;
+    }
+    .hint--bottom-right::after {
+      margin-top: -6px;
+    }
+    .hint--bottom-right::before,
+    .hint--bottom-right::after {
+      top: 100%;
+      left: 0;
+    }
+    .hint--bottom-left::before {
+      border-bottom-color: #383838;
+      margin-top: -12px;
+    }
+    .hint--bottom-left::after {
+      margin-top: -6px;
+    }
+    .hint--bottom-left::before,
+    .hint--bottom-left::after {
+      top: 100%;
+      right: 0;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes slideIn {
+      from { 
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to { 
+        opacity: 1;
+        transform: translateY(0);
       }
     }
-    startAutoSync() {
-      if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
-      this.autoSyncInterval = this.syncOrchestrator.startAutoSync();
-      this.logger.log("info", "Auto-sync started");
+    .modal-header {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 0.75rem;
     }
-  }
+    .modal-title {
+      font-size: 1.25rem;
+      font-weight: bold;
+      text-align: center;
+      color: white;
+    }
+    .modal-section {
+      margin-top: 1rem;
+      background-color: rgb(39, 39, 42);
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      border: 1px solid rgb(63, 63, 70);
+    }
+    .modal-section-title {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: rgb(161, 161, 170);
+      margin-bottom: 0.25rem;
+    }
+    .form-group {
+      margin-bottom: 0.75rem;
+    }
+    .form-group label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: rgb(161, 161, 170);
+      margin-bottom: 0.25rem;
+    }
+    .form-group input,
+    .form-group select {
+      width: 100%;
+      padding: 0.375rem 0.5rem;
+      border: 1px solid rgb(63, 63, 70);
+      border-radius: 0.375rem;
+      background-color: rgb(39, 39, 42);
+      color: white;
+      font-size: 0.875rem;
+      line-height: 1.25rem;
+      outline: none;
+    }
+    .form-group input:focus,
+    .form-group select:focus {
+      border-color: rgb(59, 130, 246);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    }
+    .button-group {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.375rem 0.75rem;
+      border: none;
+      border-radius: 0.375rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      line-height: 1.25rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .button-primary {
+      background-color: rgb(37, 99, 235);
+      color: white;
+    }
+    .button-primary:hover {
+      background-color: rgb(29, 78, 216);
+    }
+    .button-secondary {
+      background-color: rgb(82, 82, 91);
+      color: white;
+    }
+    .button-secondary:hover {
+      background-color: rgb(63, 63, 70);
+    }
+    .button:disabled {
+      background-color: rgb(82, 82, 91);
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      padding: 0.75rem;
+      background-color: rgb(39, 39, 42);
+      border-radius: 0.5rem;
+      border: 1px solid rgb(63, 63, 70);
+    }
+    .backup-list {
+      max-height: 300px;
+      overflow-y: auto;
+      margin-top: 0.5rem;
+      border: 1px solid rgb(63, 63, 70);
+      border-radius: 0.375rem;
+      background-color: rgb(24, 24, 27);
+    }
+    .backup-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem;
+      border-bottom: 1px solid rgb(63, 63, 70);
+      transition: background-color 0.2s;
+    }
+    .backup-item:hover {
+      background-color: rgb(39, 39, 42);
+    }
+    .backup-item:last-child {
+      border-bottom: none;
+    }
+    .backup-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .backup-name {
+      font-weight: 500;
+      color: rgb(244, 244, 245);
+      margin-bottom: 0.25rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .backup-type {
+      display: inline-block;
+      padding: 0.125rem 0.375rem;
+      margin-right: 0.5rem;
+      border-radius: 0.25rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background-color: rgb(59, 130, 246);
+      color: white;
+    }
+    .backup-item.snapshot .backup-type {
+      background-color: rgb(16, 185, 129);
+    }
+    .backup-item.daily .backup-type {
+      background-color: rgb(245, 158, 11);
+    }
+    .backup-item.time .backup-type {
+      background-color: rgb(99, 102, 241);
+    }
+    .backup-date {
+      font-size: 0.875rem;
+      color: rgb(161, 161, 170);
+    }
+    .backup-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-left: 1rem;
+    }
+    .backup-action {
+      padding: 0.25rem 0.5rem;
+      border: none;
+      border-radius: 0.25rem;
+      font-size: 0.75rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      color: white;
+      min-width: 4rem;
+      text-align: center;
+    }
+    .restore-btn {
+      background-color: rgb(16, 185, 129);
+    }
+    .restore-btn:hover:not(:disabled) {
+      background-color: rgb(5, 150, 105);
+    }
+    .download-btn {
+      background-color: rgb(59, 130, 246);
+    }
+    .download-btn:hover:not(:disabled) {
+      background-color: rgb(37, 99, 235);
+    }
+    .delete-btn {
+      background-color: rgb(239, 68, 68);
+    }
+    .delete-btn:hover:not(:disabled) {
+      background-color: rgb(220, 38, 38);
+    }
+    .backup-action:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      background-color: rgb(82, 82, 91);
+    }
+  `;
+  document.head.appendChild(styleSheet);
 
   const app = new CloudSyncApp();
   app.initialize();
