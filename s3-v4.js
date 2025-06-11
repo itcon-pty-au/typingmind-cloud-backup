@@ -594,12 +594,28 @@ if (window.typingMindCloudSync) {
       try {
         this.logger.log("start", "Starting sync to cloud");
         const { changedItems } = await this.detectChanges();
+
+        const debugEnabled =
+          new URLSearchParams(window.location.search).get("log") === "true";
+        if (debugEnabled) {
+          this.logger.log(
+            "info",
+            `🔍 syncToCloud detectChanges result: ${changedItems.length} items`
+          );
+          if (changedItems.length > 0) {
+            changedItems.forEach((item) => {
+              this.logger.log(
+                "info",
+                `  📝 Found change: ${item.id} (${item.type}) - modified=${item.modified}, synced=${item.synced}`
+              );
+            });
+          }
+        }
+
         const itemsToSync = changedItems.filter(
           (item) => item.modified > item.synced
         );
 
-        const debugEnabled =
-          new URLSearchParams(window.location.search).get("log") === "true";
         if (debugEnabled && changedItems.length > 0) {
           this.logger.log(
             "info",
