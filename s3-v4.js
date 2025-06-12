@@ -328,6 +328,15 @@ if (window.typingMindCloudSync) {
       return false;
     }
     createTombstone(itemId, type, source = "unknown") {
+      const orchestrator = window.cloudSyncApp?.syncOrchestrator;
+      if (!orchestrator) {
+        this.logger.log(
+          "error",
+          "❌ Cannot create tombstone: SyncOrchestrator not found."
+        );
+        return null;
+      }
+
       const timestamp = Date.now();
       const tombstone = {
         deleted: timestamp,
@@ -337,111 +346,42 @@ if (window.typingMindCloudSync) {
         tombstoneVersion: 1,
       };
 
-      this.logger.log("start", "🪦 Creating tombstone", {
+      this.logger.log("start", "🪦 Creating tombstone in metadata", {
         itemId: itemId,
         type: type,
         source: source,
-        timestamp: new Date(timestamp).toISOString(),
       });
 
-      const existingTombstone = this.getTombstoneFromStorage(itemId);
-      if (existingTombstone) {
-        tombstone.tombstoneVersion =
-          (existingTombstone.tombstoneVersion || 0) + 1;
-        this.logger.log("info", "📈 Incrementing existing tombstone version", {
-          itemId: itemId,
-          oldVersion: existingTombstone.tombstoneVersion || 0,
-          newVersion: tombstone.tombstoneVersion,
-        });
-      }
-
-      this.logger.log("info", "💾 Saving tombstone to localStorage", {
-        itemId: itemId,
-        storageKey: `tcs_tombstone_${itemId}`,
-        tombstone: tombstone,
-      });
-
-      this.saveTombstoneToStorage(itemId, tombstone);
-      this.logger.log("success", "✅ Tombstone saved to localStorage", {
-        itemId: itemId,
-        version: tombstone.tombstoneVersion,
-      });
-
-      // Update sync orchestrator metadata
-      if (window.cloudSyncApp && window.cloudSyncApp.syncOrchestrator) {
-        const metadata = window.cloudSyncApp.syncOrchestrator.metadata;
-        if (metadata && metadata.items) {
-          this.logger.log("info", "📊 Updating sync orchestrator metadata", {
-            itemId: itemId,
-            hadExistingMetadata: !!metadata.items[itemId],
-          });
-
-          metadata.items[itemId] = {
-            ...tombstone,
-            synced: 0,
-          };
-          window.cloudSyncApp.syncOrchestrator.saveMetadata();
-
-          this.logger.log("success", "✅ Updated sync orchestrator metadata", {
-            itemId: itemId,
-          });
-        } else {
-          this.logger.log(
-            "warning",
-            "⚠️ Sync orchestrator metadata not available",
-            {
-              hasOrchestrator: !!window.cloudSyncApp.syncOrchestrator,
-              hasMetadata: !!(
-                window.cloudSyncApp.syncOrchestrator &&
-                window.cloudSyncApp.syncOrchestrator.metadata
-              ),
-              hasItems: !!(
-                window.cloudSyncApp.syncOrchestrator &&
-                window.cloudSyncApp.syncOrchestrator.metadata &&
-                window.cloudSyncApp.syncOrchestrator.metadata.items
-              ),
-            }
-          );
-        }
-      } else {
+      const existingItem = orchestrator.metadata.items[itemId];
+      if (existingItem && existingItem.deleted) {
+        tombstone.tombstoneVersion = (existingItem.tombstoneVersion || 0) + 1;
         this.logger.log(
-          "warning",
-          "⚠️ CloudSyncApp not available for metadata update",
+          "info",
+          "📈 Incrementing existing tombstone version in metadata",
           {
-            hasCloudSyncApp: !!window.cloudSyncApp,
-            hasSyncOrchestrator: !!(
-              window.cloudSyncApp && window.cloudSyncApp.syncOrchestrator
-            ),
+            newVersion: tombstone.tombstoneVersion,
           }
         );
       }
 
-      // Queue sync operation
+      orchestrator.metadata.items[itemId] = {
+        ...tombstone,
+        synced: 0,
+      };
+      orchestrator.saveMetadata();
+
+      this.logger.log("success", "✅ Tombstone created in metadata", {
+        itemId: itemId,
+        version: tombstone.tombstoneVersion,
+      });
+
       if (this.operationQueue) {
-        this.logger.log("info", "📤 Queueing tombstone sync operation", {
-          itemId: itemId,
-          operationName: `tombstone-sync-${itemId}`,
-        });
         this.operationQueue.add(
           `tombstone-sync-${itemId}`,
           () => this.syncTombstone(itemId),
           "high"
         );
-      } else {
-        this.logger.log(
-          "warning",
-          "⚠️ Operation queue not available for tombstone sync",
-          {
-            itemId: itemId,
-          }
-        );
       }
-
-      this.logger.log("success", "🎯 Tombstone creation completed", {
-        itemId: itemId,
-        version: tombstone.tombstoneVersion,
-        source: source,
-      });
 
       return tombstone;
     }
@@ -605,16 +545,14 @@ if (window.typingMindCloudSync) {
           if (!currentItemIds.has(itemId)) {
             missingCount++;
 
-            // Check if we already have a tombstone for this item
-            const existingTombstone = this.getTombstoneFromStorage(itemId);
-            if (existingTombstone) {
+            const orchestrator = window.cloudSyncApp?.syncOrchestrator;
+            const existingMetadata = orchestrator?.metadata?.items?.[itemId];
+
+            if (existingMetadata && existingMetadata.deleted) {
               this.logger.log(
                 "info",
-                "🪦 Item has existing tombstone, removing from tracking",
-                {
-                  itemId: itemId,
-                  tombstone: existingTombstone,
-                }
+                "🪦 Item already marked as deleted in metadata, removing from tracking",
+                { itemId: itemId }
               );
               this.knownItems.delete(itemId);
               this.potentialDeletions.delete(itemId);
@@ -1135,12 +1073,13 @@ if (window.typingMindCloudSync) {
         }
       }
       for (const [itemId, metadata] of Object.entries(this.metadata.items)) {
-        if (metadata.deleted && metadata.deleted > metadata.synced) {
+        if (metadata.deleted && metadata.deleted > (metadata.synced || 0)) {
           changedItems.push({
             id: itemId,
             type: metadata.type,
             deleted: metadata.deleted,
-            reason: "deleted",
+            tombstoneVersion: metadata.tombstoneVersion || 1,
+            reason: "tombstone",
           });
         }
       }
@@ -2043,7 +1982,7 @@ if (window.typingMindCloudSync) {
     }
 
     async checkAndPerformDailyBackup() {
-      const lastBackupStr = localStorage.getItem("last-daily-backup");
+      const lastBackupStr = localStorage.getItem("tcs_last-daily-backup");
       const now = new Date();
       const currentDateStr = `${now.getFullYear()}${String(
         now.getMonth() + 1
@@ -2052,7 +1991,7 @@ if (window.typingMindCloudSync) {
       if (!lastBackupStr || lastBackupStr !== currentDateStr) {
         this.logger.log("info", "Starting daily backup...");
         await this.performDailyBackup();
-        localStorage.setItem("last-daily-backup", currentDateStr);
+        localStorage.setItem("tcs_last-daily-backup", currentDateStr);
         this.logger.log("success", "Daily backup completed");
       } else {
         this.logger.log("info", "Daily backup already performed today");
