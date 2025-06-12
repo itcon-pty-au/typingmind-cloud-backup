@@ -187,7 +187,7 @@ if (window.typingMindCloudSync) {
             ) {
               items.set(key, {
                 id: key,
-                data: { id: key, ...value },
+                data: { ...value, id: key },
                 type: "idb",
               });
               includedIDB++;
