@@ -981,6 +981,20 @@ if (window.typingMindCloudSync) {
       try {
         this.logger.log("start", "Starting sync from cloud");
         const cloudMetadata = await this.getCloudMetadata();
+
+        const debugEnabled =
+          new URLSearchParams(window.location.search).get("log") === "true";
+        if (debugEnabled && cloudMetadata.items) {
+          const cloudItems = Object.keys(cloudMetadata.items);
+          const cloudDeleted = cloudItems.filter(
+            (id) => cloudMetadata.items[id].deleted
+          ).length;
+          const cloudActive = cloudItems.length - cloudDeleted;
+          console.log(
+            `📊 Cloud Metadata Stats: Total=${cloudItems.length}, Active=${cloudActive}, Deleted=${cloudDeleted}`
+          );
+        }
+
         const lastCloudSync = this.getLastCloudSync();
         const cloudLastSync = cloudMetadata.lastSync || 0;
         const hasCloudChanges = cloudLastSync > lastCloudSync;
@@ -1118,6 +1132,20 @@ if (window.typingMindCloudSync) {
       }
     }
     async performFullSync() {
+      const debugEnabled =
+        new URLSearchParams(window.location.search).get("log") === "true";
+
+      if (debugEnabled) {
+        const localItems = Object.keys(this.metadata.items || {});
+        const localDeleted = localItems.filter(
+          (id) => this.metadata.items[id].deleted
+        ).length;
+        const localActive = localItems.length - localDeleted;
+        console.log(
+          `📊 Local Metadata Stats: Total=${localItems.length}, Active=${localActive}, Deleted=${localDeleted}`
+        );
+      }
+
       await this.syncFromCloud();
       await this.syncToCloud();
 
