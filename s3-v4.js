@@ -66,6 +66,7 @@ if (window.typingMindCloudSync) {
         "referrer",
         "TM_useLastVerifiedToken",
         "TM_useStateUpdateHistory",
+        "TM_useInstalledPlugins",
         "INSTANCE_ID",
       ];
       return [...systemExclusions, ...userExclusions];
@@ -2368,7 +2369,7 @@ if (window.typingMindCloudSync) {
       if (document.querySelector('[data-element-id="workspace-tab-cloudsync"]'))
         return;
       const style = document.createElement("style");
-      style.textContent = `#sync-status-dot { position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; border-radius: 50%; background-color: #6b7280; display: none; z-index: 10; }`;
+      style.textContent = `#sync-status-dot { position: absolute; top: 2px; right: 0px; width: 8px; height: 8px; border-radius: 50%; background-color: #6b7280; display: none; z-index: 10; }`;
       document.head.appendChild(style);
       const button = document.createElement("button");
       button.setAttribute("data-element-id", "workspace-tab-cloudsync");
