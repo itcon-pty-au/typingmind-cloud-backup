@@ -152,7 +152,8 @@ if (window.typingMindCloudSync) {
       this.dbPromise = null;
       this.deletionMonitor = null;
       this.knownItems = new Map();
-      this.maxKnownItems = 1000;
+      this.potentialDeletions = new Map();
+      this.maxKnownItems = 5000;
     }
     async getDB() {
       if (!this.dbPromise) {
@@ -586,7 +587,6 @@ if (window.typingMindCloudSync) {
 
         const currentItems = await this.getAllItems();
         const currentItemIds = new Set(currentItems.map((item) => item.id));
-        const potentialDeletions = new Map();
 
         this.logger.log("info", "📊 Current vs Known comparison", {
           currentItemsCount: currentItems.length,
@@ -617,12 +617,14 @@ if (window.typingMindCloudSync) {
                 }
               );
               this.knownItems.delete(itemId);
+              this.potentialDeletions.delete(itemId);
               continue;
             }
 
             // Track potential deletion
-            const itemMissingCount = (potentialDeletions.get(itemId) || 0) + 1;
-            potentialDeletions.set(itemId, itemMissingCount);
+            const itemMissingCount =
+              (this.potentialDeletions.get(itemId) || 0) + 1;
+            this.potentialDeletions.set(itemId, itemMissingCount);
 
             this.logger.log("warning", "❗ Item appears to be missing", {
               itemId: itemId,
@@ -647,6 +649,12 @@ if (window.typingMindCloudSync) {
 
               this.createTombstone(itemId, itemInfo.type, "monitor-detected");
               this.knownItems.delete(itemId);
+              this.potentialDeletions.delete(itemId);
+            }
+          } else {
+            // Item is present, remove from potential deletions if it was there
+            if (this.potentialDeletions.has(itemId)) {
+              this.potentialDeletions.delete(itemId);
             }
           }
         }
@@ -687,12 +695,12 @@ if (window.typingMindCloudSync) {
         if (missingCount > 0) {
           this.logger.log("warning", "⚠️ Deletion check summary", {
             totalMissing: missingCount,
-            potentialDeletions: Array.from(potentialDeletions.entries()).map(
-              ([id, count]) => ({ id, count })
-            ),
-            confirmedDeletions: Array.from(potentialDeletions.entries()).filter(
-              ([id, count]) => count >= 3
-            ).length,
+            potentialDeletions: Array.from(
+              this.potentialDeletions.entries()
+            ).map(([id, count]) => ({ id, count })),
+            confirmedDeletions: Array.from(
+              this.potentialDeletions.entries()
+            ).filter(([id, count]) => count >= 3).length,
           });
         } else {
           this.logger.log("info", "✅ No missing items detected");
@@ -754,6 +762,7 @@ if (window.typingMindCloudSync) {
     cleanup() {
       this.stopDeletionMonitoring();
       this.knownItems.clear();
+      this.potentialDeletions.clear();
       if (this.dbPromise) {
         this.dbPromise
           .then((db) => {
