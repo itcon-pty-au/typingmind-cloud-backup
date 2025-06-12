@@ -66,7 +66,6 @@ if (window.typingMindCloudSync) {
         "referrer",
         "TM_useLastVerifiedToken",
         "TM_useStateUpdateHistory",
-        "TM_useInstalledPlugins",
         "INSTANCE_ID",
       ];
       return [...systemExclusions, ...userExclusions];
