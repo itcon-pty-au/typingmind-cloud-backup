@@ -166,6 +166,11 @@ if (window.typingMindCloudSync) {
     }
     async getAllItems() {
       const items = new Map();
+
+      this.logger.log("start", "📊 Getting all items for deletion check", {
+        timestamp: new Date().toISOString(),
+      });
+
       const db = await this.getDB();
       const transaction = db.transaction(["keyval"], "readonly");
       const store = transaction.objectStore("keyval");
@@ -228,6 +233,28 @@ if (window.typingMindCloudSync) {
         );
         console.log(`📊 Total items to sync: ${items.size} (IDB + LS)`);
       }
+
+      const chatItems = Array.from(items.keys()).filter((id) =>
+        id.startsWith("CHAT_")
+      );
+      const otherItems = Array.from(items.keys()).filter(
+        (id) => !id.startsWith("CHAT_")
+      );
+
+      this.logger.log("success", "📋 Retrieved all items for deletion check", {
+        totalItems: items.size,
+        idbStats: {
+          total: totalIDB,
+          included: includedIDB,
+          excluded: excludedIDB,
+        },
+        lsStats: { total: totalLS, included: includedLS, excluded: excludedLS },
+        chatCount: chatItems.length,
+        otherCount: otherItems.length,
+        sampleChatItems: chatItems.slice(0, 5),
+        sampleOtherItems: otherItems.slice(0, 5),
+      });
+
       return Array.from(items.values());
     }
     async getItem(itemId, type) {
@@ -309,59 +336,178 @@ if (window.typingMindCloudSync) {
         tombstoneVersion: 1,
       };
 
+      this.logger.log("start", "🪦 Creating tombstone", {
+        itemId: itemId,
+        type: type,
+        source: source,
+        timestamp: new Date(timestamp).toISOString(),
+      });
+
       const existingTombstone = this.getTombstoneFromStorage(itemId);
       if (existingTombstone) {
         tombstone.tombstoneVersion =
           (existingTombstone.tombstoneVersion || 0) + 1;
+        this.logger.log("info", "📈 Incrementing existing tombstone version", {
+          itemId: itemId,
+          oldVersion: existingTombstone.tombstoneVersion || 0,
+          newVersion: tombstone.tombstoneVersion,
+        });
       }
 
-      this.saveTombstoneToStorage(itemId, tombstone);
-      this.logger.log(
-        "info",
-        `🪦 Created tombstone for key "${itemId}" (v${tombstone.tombstoneVersion})`
-      );
+      this.logger.log("info", "💾 Saving tombstone to localStorage", {
+        itemId: itemId,
+        storageKey: `tcs_tombstone_${itemId}`,
+        tombstone: tombstone,
+      });
 
+      this.saveTombstoneToStorage(itemId, tombstone);
+      this.logger.log("success", "✅ Tombstone saved to localStorage", {
+        itemId: itemId,
+        version: tombstone.tombstoneVersion,
+      });
+
+      // Update sync orchestrator metadata
       if (window.cloudSyncApp && window.cloudSyncApp.syncOrchestrator) {
         const metadata = window.cloudSyncApp.syncOrchestrator.metadata;
         if (metadata && metadata.items) {
+          this.logger.log("info", "📊 Updating sync orchestrator metadata", {
+            itemId: itemId,
+            hadExistingMetadata: !!metadata.items[itemId],
+          });
+
           metadata.items[itemId] = {
             ...tombstone,
             synced: 0,
           };
           window.cloudSyncApp.syncOrchestrator.saveMetadata();
+
+          this.logger.log("success", "✅ Updated sync orchestrator metadata", {
+            itemId: itemId,
+          });
+        } else {
+          this.logger.log(
+            "warning",
+            "⚠️ Sync orchestrator metadata not available",
+            {
+              hasOrchestrator: !!window.cloudSyncApp.syncOrchestrator,
+              hasMetadata: !!(
+                window.cloudSyncApp.syncOrchestrator &&
+                window.cloudSyncApp.syncOrchestrator.metadata
+              ),
+              hasItems: !!(
+                window.cloudSyncApp.syncOrchestrator &&
+                window.cloudSyncApp.syncOrchestrator.metadata &&
+                window.cloudSyncApp.syncOrchestrator.metadata.items
+              ),
+            }
+          );
         }
+      } else {
+        this.logger.log(
+          "warning",
+          "⚠️ CloudSyncApp not available for metadata update",
+          {
+            hasCloudSyncApp: !!window.cloudSyncApp,
+            hasSyncOrchestrator: !!(
+              window.cloudSyncApp && window.cloudSyncApp.syncOrchestrator
+            ),
+          }
+        );
       }
 
+      // Queue sync operation
       if (this.operationQueue) {
+        this.logger.log("info", "📤 Queueing tombstone sync operation", {
+          itemId: itemId,
+          operationName: `tombstone-sync-${itemId}`,
+        });
         this.operationQueue.add(
           `tombstone-sync-${itemId}`,
           () => this.syncTombstone(itemId),
           "high"
         );
+      } else {
+        this.logger.log(
+          "warning",
+          "⚠️ Operation queue not available for tombstone sync",
+          {
+            itemId: itemId,
+          }
+        );
       }
+
+      this.logger.log("success", "🎯 Tombstone creation completed", {
+        itemId: itemId,
+        version: tombstone.tombstoneVersion,
+        source: source,
+      });
 
       return tombstone;
     }
     getTombstoneFromStorage(itemId) {
       try {
-        const stored = localStorage.getItem(`tcs_tombstone_${itemId}`);
-        return stored ? JSON.parse(stored) : null;
-      } catch {
+        const storageKey = `tcs_tombstone_${itemId}`;
+        this.logger.log("info", "🔍 Checking for existing tombstone", {
+          itemId: itemId,
+          storageKey: storageKey,
+        });
+
+        const stored = localStorage.getItem(storageKey);
+        if (stored) {
+          const tombstone = JSON.parse(stored);
+          this.logger.log("success", "📥 Found existing tombstone", {
+            itemId: itemId,
+            tombstone: tombstone,
+          });
+          return tombstone;
+        } else {
+          this.logger.log("info", "❌ No existing tombstone found", {
+            itemId: itemId,
+            storageKey: storageKey,
+          });
+          return null;
+        }
+      } catch (error) {
+        this.logger.log("error", "❌ Error reading tombstone from storage", {
+          itemId: itemId,
+          error: error.message,
+        });
         return null;
       }
     }
     saveTombstoneToStorage(itemId, tombstone) {
       try {
-        localStorage.setItem(
-          `tcs_tombstone_${itemId}`,
-          JSON.stringify(tombstone)
-        );
+        const storageKey = `tcs_tombstone_${itemId}`;
+        this.logger.log("start", "💾 Saving tombstone to localStorage", {
+          itemId: itemId,
+          storageKey: storageKey,
+          tombstone: tombstone,
+        });
+
+        localStorage.setItem(storageKey, JSON.stringify(tombstone));
+
+        // Verify it was saved
+        const verification = localStorage.getItem(storageKey);
+        if (verification) {
+          this.logger.log(
+            "success",
+            "✅ Tombstone successfully saved and verified",
+            {
+              itemId: itemId,
+              storageKey: storageKey,
+            }
+          );
+        } else {
+          this.logger.log("error", "❌ Tombstone save verification failed", {
+            itemId: itemId,
+            storageKey: storageKey,
+          });
+        }
       } catch (error) {
-        this.logger.log(
-          "error",
-          `Failed to save tombstone for ${itemId}`,
-          error
-        );
+        this.logger.log("error", "❌ Failed to save tombstone to storage", {
+          itemId: itemId,
+          error: error.message,
+        });
       }
     }
     getAllTombstones() {
@@ -383,19 +529,32 @@ if (window.typingMindCloudSync) {
     startDeletionMonitoring() {
       if (this.deletionMonitor) {
         clearInterval(this.deletionMonitor);
+        this.logger.log("info", "🔄 Clearing existing deletion monitor");
       }
+
+      this.logger.log("start", "🔍 Starting deletion monitoring setup", {
+        monitorInterval: "5000ms",
+        requiredMissingCount: 3,
+        maxKnownItems: this.maxKnownItems,
+      });
 
       this.initializeKnownItems();
 
       this.deletionMonitor = setInterval(() => {
+        this.logger.log("info", "⏰ Deletion monitor interval fired");
         this.checkForDeletions();
       }, 5000);
 
-      this.logger.log("info", "🔍 Started deletion monitoring");
+      this.logger.log("success", "✅ Deletion monitoring started successfully");
     }
     async initializeKnownItems() {
       const items = await this.getAllItems();
       this.knownItems.clear();
+
+      this.logger.log("info", "🔧 Initializing deletion monitoring", {
+        totalItemsFound: items.length,
+        maxKnownItems: this.maxKnownItems,
+      });
 
       items.forEach((item) => {
         this.knownItems.set(item.id, {
@@ -405,39 +564,95 @@ if (window.typingMindCloudSync) {
         });
       });
 
-      this.logger.log(
-        "info",
-        `📋 Initialized monitoring for ${this.knownItems.size} items`
-      );
+      // Log sample of what we're tracking
+      const sampleItems = Array.from(this.knownItems.keys()).slice(0, 10);
+      this.logger.log("info", "📋 Initialized monitoring", {
+        totalTracked: this.knownItems.size,
+        sampleItems: sampleItems,
+        chatItems: Array.from(this.knownItems.keys()).filter((id) =>
+          id.startsWith("CHAT_")
+        ).length,
+        otherItems: Array.from(this.knownItems.keys()).filter(
+          (id) => !id.startsWith("CHAT_")
+        ).length,
+      });
     }
     async checkForDeletions() {
       try {
+        this.logger.log("info", "🔍 Starting deletion check", {
+          knownItemsCount: this.knownItems.size,
+          timestamp: new Date().toISOString(),
+        });
+
         const currentItems = await this.getAllItems();
         const currentItemIds = new Set(currentItems.map((item) => item.id));
         const potentialDeletions = new Map();
 
+        this.logger.log("info", "📊 Current vs Known comparison", {
+          currentItemsCount: currentItems.length,
+          knownItemsCount: this.knownItems.size,
+          currentChatCount: Array.from(currentItemIds).filter((id) =>
+            id.startsWith("CHAT_")
+          ).length,
+          knownChatCount: Array.from(this.knownItems.keys()).filter((id) =>
+            id.startsWith("CHAT_")
+          ).length,
+        });
+
+        // Check for missing items
+        let missingCount = 0;
         for (const [itemId, itemInfo] of this.knownItems.entries()) {
           if (!currentItemIds.has(itemId)) {
+            missingCount++;
+
+            // Check if we already have a tombstone for this item
             const existingTombstone = this.getTombstoneFromStorage(itemId);
             if (existingTombstone) {
+              this.logger.log(
+                "info",
+                "🪦 Item has existing tombstone, removing from tracking",
+                {
+                  itemId: itemId,
+                  tombstone: existingTombstone,
+                }
+              );
               this.knownItems.delete(itemId);
               continue;
             }
 
+            // Track potential deletion
             const missingCount = (potentialDeletions.get(itemId) || 0) + 1;
             potentialDeletions.set(itemId, missingCount);
 
+            this.logger.log("warning", "❗ Item appears to be missing", {
+              itemId: itemId,
+              type: itemInfo.type,
+              missingCount: missingCount,
+              requiredCount: 3,
+              detectedAt: new Date(itemInfo.detectedAt).toISOString(),
+              ageMs: Date.now() - itemInfo.detectedAt,
+            });
+
             if (missingCount >= 3) {
               this.logger.log(
-                "info",
-                `🗑️ Confirmed deletion of ${itemId}, creating tombstone`
+                "error",
+                "🗑️ CONFIRMED DELETION - Creating tombstone",
+                {
+                  itemId: itemId,
+                  type: itemInfo.type,
+                  missingCount: missingCount,
+                  detectedAt: new Date(itemInfo.detectedAt).toISOString(),
+                }
               );
+
               this.createTombstone(itemId, itemInfo.type, "monitor-detected");
               this.knownItems.delete(itemId);
             }
           }
         }
 
+        // Add new items to tracking
+        let newItemsAdded = 0;
         currentItems.forEach((item) => {
           if (!this.knownItems.has(item.id)) {
             if (this.knownItems.size >= this.maxKnownItems) {
@@ -445,7 +660,11 @@ if (window.typingMindCloudSync) {
               this.knownItems.delete(oldestEntry[0]);
               this.logger.log(
                 "warning",
-                `📊 Removed oldest item from monitoring (limit: ${this.maxKnownItems})`
+                "📊 Removed oldest item from monitoring",
+                {
+                  removedItem: oldestEntry[0],
+                  limit: this.maxKnownItems,
+                }
               );
             }
 
@@ -454,14 +673,36 @@ if (window.typingMindCloudSync) {
               detectedAt: Date.now(),
               confirmCount: 1,
             });
+            newItemsAdded++;
           }
         });
+
+        if (newItemsAdded > 0) {
+          this.logger.log("info", "➕ Added new items to monitoring", {
+            newItemsCount: newItemsAdded,
+            totalTracked: this.knownItems.size,
+          });
+        }
+
+        if (missingCount > 0) {
+          this.logger.log("warning", "⚠️ Deletion check summary", {
+            totalMissing: missingCount,
+            potentialDeletions: Array.from(potentialDeletions.entries()).map(
+              ([id, count]) => ({ id, count })
+            ),
+            confirmedDeletions: Array.from(potentialDeletions.entries()).filter(
+              ([id, count]) => count >= 3
+            ).length,
+          });
+        } else {
+          this.logger.log("info", "✅ No missing items detected");
+        }
 
         if (this.knownItems.size > this.maxKnownItems * 1.1) {
           this.trimKnownItems();
         }
       } catch (error) {
-        this.logger.log("error", "Error during deletion monitoring", error);
+        this.logger.log("error", "❌ Error during deletion monitoring", error);
       }
     }
     trimKnownItems() {
