@@ -60,7 +60,7 @@ if (window.typingMindCloudSync) {
         "tcs_last-cloud-sync",
         "tcs_sync-exclusions",
         "tcs_cloud-metadata",
-        "tcs_isMigrated",
+        "tcs_localMigrated",
         "tcs_migrationBackup",
         "tcs_last-tombstone-cleanup",
         "referrer",
@@ -3002,10 +3002,11 @@ if (window.typingMindCloudSync) {
       }
     }
     async performV2toV3Migration() {
-      if (localStorage.getItem("tcs_isMigrated") === "true") {
+      const localMigrationFlag = "tcs_localMigrated";
+      if (localStorage.getItem(localMigrationFlag) === "true") {
         this.logger.log(
           "info",
-          "V2 to V3 migration already completed, skipping"
+          "Local V2 to V3 migration already completed, skipping"
         );
         return;
       }
@@ -3021,28 +3022,24 @@ if (window.typingMindCloudSync) {
         "last-cloud-sync",
         "sync-mode",
       ];
-
       const hasV2Keys = v2Keys.some(
         (key) => localStorage.getItem(key) !== null
       );
-
       if (!hasV2Keys) {
         this.logger.log(
           "info",
           "No v2 keys found, skipping migration (new V3 installation)"
         );
-        localStorage.setItem("tcs_isMigrated", "true");
+        localStorage.setItem(localMigrationFlag, "true");
         return;
       }
-
       this.logger.log("start", "V2 keys detected, starting V2 to V3 migration");
-
       try {
         await this.migrateStorageKeys();
         this.config.config = this.config.loadConfig();
         this.logger.log("info", "Reloaded configuration with migrated keys");
         await this.cleanupAndFreshSync();
-        localStorage.setItem("tcs_isMigrated", "true");
+        localStorage.setItem(localMigrationFlag, "true");
         this.logger.log("success", "V2 to V3 migration completed successfully");
       } catch (error) {
         this.logger.log("error", "V2 to V3 migration failed", error.message);
@@ -3101,7 +3098,6 @@ if (window.typingMindCloudSync) {
         "encryption-key",
         "sync-interval",
       ];
-
       let removedCount = 0;
       keysToRemove.forEach((key) => {
         if (localStorage.getItem(key) !== null) {
@@ -3109,22 +3105,28 @@ if (window.typingMindCloudSync) {
           removedCount++;
         }
       });
-
       if (removedCount > 0) {
         this.logger.log(
           "success",
           `Cleaned up ${removedCount} obsolete keys from localStorage`
         );
       }
-
       if (this.config.isConfigured()) {
         try {
+          await this.s3Service.initialize();
+          const needsCloudCleanup = await this.checkIfCloudNeedsV2Cleanup();
+          if (!needsCloudCleanup) {
+            this.logger.log(
+              "info",
+              "Cloud already in V3 format or clean, skipping cloud cleanup"
+            );
+            await this.syncOrchestrator.performFullSync();
+            return;
+          }
           this.logger.log(
             "info",
-            "Cleaning cloud v2 metadata and performing fresh sync"
+            "V2 data detected in cloud, performing cleanup and fresh sync"
           );
-
-          await this.s3Service.initialize();
           try {
             await this.s3Service.delete("metadata.json");
             this.logger.log("info", "Removed old cloud metadata.json");
@@ -3192,6 +3194,46 @@ if (window.typingMindCloudSync) {
         this.logger.log("info", "AWS not configured, skipping cloud cleanup");
       }
     }
+    async checkIfCloudNeedsV2Cleanup() {
+      try {
+        const v2Folders = ["chats/", "settings/"];
+        for (const folder of v2Folders) {
+          const items = await this.s3Service.list(folder);
+          if (items.length > 0) {
+            this.logger.log("info", `Found V2 data in ${folder}`);
+            return true;
+          }
+        }
+        try {
+          const metadata = await this.s3Service.download("metadata.json", true);
+          if (
+            metadata &&
+            metadata.chats &&
+            typeof metadata.chats === "object"
+          ) {
+            this.logger.log("info", "Found V2 metadata.json format");
+            return true;
+          }
+        } catch (error) {
+          if (error.code !== "NoSuchKey" && error.statusCode !== 404) {
+            this.logger.log(
+              "warning",
+              "Error checking metadata.json",
+              error.message
+            );
+          }
+        }
+        this.logger.log("info", "No V2 data found in cloud");
+        return false;
+      } catch (error) {
+        this.logger.log(
+          "warning",
+          "Error checking for V2 cloud data",
+          error.message
+        );
+        return false;
+      }
+    }
     startAutoSync() {
       if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
 
@@ -3211,6 +3253,67 @@ if (window.typingMindCloudSync) {
       }, interval);
 
       this.logger.log("info", "Auto-sync started");
+    }
+    cleanupOldTombstones() {
+      const now = Date.now();
+      const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
+      let cleanupCount = 0;
+
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith("tcs_tombstone_")) {
+          try {
+            const tombstone = JSON.parse(localStorage.getItem(key));
+            if (
+              tombstone.deleted &&
+              now - tombstone.deleted > tombstoneRetentionPeriod
+            ) {
+              localStorage.removeItem(key);
+              cleanupCount++;
+            }
+          } catch {
+            localStorage.removeItem(key);
+            cleanupCount++;
+          }
+        }
+      }
+
+      for (const [itemId, metadata] of Object.entries(this.metadata.items)) {
+        if (
+          metadata.deleted &&
+          now - metadata.deleted > tombstoneRetentionPeriod
+        ) {
+          delete this.metadata.items[itemId];
+          cleanupCount++;
+        }
+      }
+
+      if (cleanupCount > 0) {
+        this.saveMetadata();
+        this.logger.log("info", `🧹 Cleaned up ${cleanupCount} old tombstones`);
+      }
+
+      return cleanupCount;
+    }
+    async getCloudMetadata() {
+      try {
+        const cloudMetadata = await this.s3Service.download(
+          "metadata.json",
+          true
+        );
+        if (!cloudMetadata || typeof cloudMetadata !== "object") {
+          return { lastSync: 0, items: {} };
+        }
+        if (!cloudMetadata.items) {
+          cloudMetadata.items = {};
+        }
+        return cloudMetadata;
+      } catch (error) {
+        if (error.code === "NoSuchKey" || error.statusCode === 404) {
+          return { lastSync: 0, items: {} };
+        }
+        throw error;
+      }
     }
     cleanup() {
       this.logger.log("info", "🧹 Starting comprehensive cleanup");
