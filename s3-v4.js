@@ -1472,9 +1472,8 @@ if (window.typingMindCloudSync) {
             index,
             filename: `${baseFilename}-chunk-${index
               .toString()
-              .padStart(3, "0")}.json`,
+              .padStart(3, "0")}.zip`,
             itemCount: chunk.length,
-            types: [...new Set(chunk.map((item) => item.type))],
           })),
         };
 
@@ -1488,7 +1487,7 @@ if (window.typingMindCloudSync) {
         for (let i = 0; i < chunks.length; i++) {
           const chunkFilename = `${baseFilename}-chunk-${i
             .toString()
-            .padStart(3, "0")}.json`;
+            .padStart(3, "0")}.zip`;
           const chunkData = {
             chunkIndex: i,
             totalChunks: chunks.length,
@@ -1504,7 +1503,7 @@ if (window.typingMindCloudSync) {
           );
 
           try {
-            await this.s3Service.upload(chunkFilename, chunkData);
+            await this.createCompressedBackup(chunkFilename, chunkData);
           } catch (error) {
             this.logger.log(
               "error",
@@ -1691,7 +1690,7 @@ if (window.typingMindCloudSync) {
         for (let i = 0; i < chunks.length; i++) {
           const chunkFilename = `${baseFilename}-chunk-${i
             .toString()
-            .padStart(3, "0")}.json`;
+            .padStart(3, "0")}.zip`;
           const chunkData = {
             chunkIndex: i,
             totalChunks: chunks.length,
@@ -1703,7 +1702,7 @@ if (window.typingMindCloudSync) {
             "info",
             `Uploading daily backup chunk ${i + 1}/${chunks.length}`
           );
-          await this.s3Service.upload(chunkFilename, chunkData);
+          await this.createCompressedBackup(chunkFilename, chunkData);
         }
 
         this.logger.log(
@@ -1889,7 +1888,17 @@ if (window.typingMindCloudSync) {
         );
 
         try {
-          const chunkData = await this.s3Service.download(chunkInfo.filename);
+          let chunkData;
+          if (chunkInfo.filename.endsWith(".zip")) {
+            // New ZIP chunk format
+            chunkData = await this.restoreFromZipBackup(
+              chunkInfo.filename,
+              cryptoService
+            );
+          } else {
+            // Legacy JSON chunk format
+            chunkData = await this.s3Service.download(chunkInfo.filename);
+          }
 
           // Process items from this chunk
           if (chunkData.items) {
