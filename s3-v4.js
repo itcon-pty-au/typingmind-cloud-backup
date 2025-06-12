@@ -207,15 +207,15 @@ if (window.typingMindCloudSync) {
           excludedLS++;
         }
       }
-      if (debugEnabled) {
-        console.log(
-          `📊 IndexedDB Stats: Total=${totalIDB}, Included=${includedIDB}, Excluded=${excludedIDB}`
-        );
-        console.log(
-          `📊 localStorage Stats: Total=${totalLS}, Included=${includedLS}, Excluded=${excludedLS}`
-        );
-        console.log(`📊 Total items to sync: ${items.size} (IDB + LS)`);
-      }
+      // if (debugEnabled) {
+      //   console.log(
+      //     `📊 IndexedDB Stats: Total=${totalIDB}, Included=${includedIDB}, Excluded=${excludedIDB}`
+      //   );
+      //   console.log(
+      //     `📊 localStorage Stats: Total=${totalLS}, Included=${includedLS}, Excluded=${excludedLS}`
+      //   );
+      //   console.log(`📊 Total items to sync: ${items.size} (IDB + LS)`);
+      // }
       return Array.from(items.values());
     }
     async getItem(itemId, type) {
@@ -2203,10 +2203,7 @@ if (window.typingMindCloudSync) {
       this.modalCleanupCallbacks = [];
     }
     async initialize() {
-      this.logger.log(
-        "start",
-        "Initializing Cloud Sync V4 with Enhanced Tombstone Support"
-      );
+      this.logger.log("start", "Initializing Cloud Sync V3");
       await this.performV2toV3Migration();
       await this.waitForDOM();
       this.insertSyncButton();
