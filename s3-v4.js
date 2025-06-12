@@ -1769,48 +1769,53 @@ if (window.typingMindCloudSync) {
 
         for (const obj of objects) {
           if (!obj.Key.includes("/")) {
-            if (obj.Key.endsWith("-metadata.json")) {
-              try {
-                const metadata = await this.s3Service.download(obj.Key, true);
-                if (metadata.format === "chunked") {
-                  const backupType = this.getBackupType(obj.Key);
-                  backups.push({
-                    key: obj.Key,
-                    name: obj.Key.replace("-metadata.json", ""),
-                    displayName: this.formatBackupDisplayName(
-                      obj.Key,
-                      metadata
-                    ),
-                    size: metadata.estimatedSize || obj.Size,
-                    modified: obj.LastModified,
-                    format: "chunked",
-                    chunks: metadata.totalChunks,
-                    type: backupType,
-                    sortOrder: backupType === "snapshot" ? 1 : 2,
-                  });
+            const isValidBackupFile =
+              obj.Key.startsWith("typingmind-backup-") ||
+              obj.Key.startsWith("s-");
+
+            if (isValidBackupFile) {
+              if (obj.Key.endsWith("-metadata.json")) {
+                try {
+                  const metadata = await this.s3Service.download(obj.Key, true);
+                  if (metadata.format === "chunked") {
+                    const backupType = this.getBackupType(obj.Key);
+                    backups.push({
+                      key: obj.Key,
+                      name: obj.Key.replace("-metadata.json", ""),
+                      displayName: this.formatBackupDisplayName(
+                        obj.Key,
+                        metadata
+                      ),
+                      size: metadata.estimatedSize || obj.Size,
+                      modified: obj.LastModified,
+                      format: "chunked",
+                      chunks: metadata.totalChunks,
+                      type: backupType,
+                      sortOrder: backupType === "snapshot" ? 1 : 2,
+                    });
+                  }
+                } catch (error) {
+                  this.logger.log(
+                    "warning",
+                    `Failed to read metadata for ${obj.Key}`
+                  );
                 }
-              } catch (error) {
-                this.logger.log(
-                  "warning",
-                  `Failed to read metadata for ${obj.Key}`
-                );
+              } else if (
+                obj.Key.match(/\.(zip|json)$/) &&
+                !obj.Key.includes("-chunk-")
+              ) {
+                const backupType = this.getBackupType(obj.Key);
+                backups.push({
+                  key: obj.Key,
+                  name: obj.Key.replace(/\.(zip|json)$/, ""),
+                  displayName: this.formatBackupDisplayName(obj.Key),
+                  size: obj.Size,
+                  modified: obj.LastModified,
+                  format: "simple",
+                  type: backupType,
+                  sortOrder: backupType === "snapshot" ? 1 : 2,
+                });
               }
-            } else if (
-              obj.Key.match(/\.(zip|json)$/) &&
-              !obj.Key.includes("-chunk-") &&
-              obj.Key !== "metadata.json"
-            ) {
-              const backupType = this.getBackupType(obj.Key);
-              backups.push({
-                key: obj.Key,
-                name: obj.Key.replace(/\.(zip|json)$/, ""),
-                displayName: this.formatBackupDisplayName(obj.Key),
-                size: obj.Size,
-                modified: obj.LastModified,
-                format: "simple",
-                type: backupType,
-                sortOrder: backupType === "snapshot" ? 1 : 2,
-              });
             }
           }
         }
@@ -1931,6 +1936,11 @@ if (window.typingMindCloudSync) {
 
       await this.restoreData(decryptedData);
       this.logger.log("success", "Simple backup restored successfully");
+
+      setTimeout(() => {
+        window.location.reload();
+      }, 3000);
+
       return true;
     }
 
@@ -1991,7 +2001,6 @@ if (window.typingMindCloudSync) {
         indexedDB: {},
       };
 
-      // Download and process each chunk
       for (let i = 0; i < metadata.totalChunks; i++) {
         const chunkInfo = metadata.chunkList[i];
         this.logger.log(
@@ -2002,17 +2011,14 @@ if (window.typingMindCloudSync) {
         try {
           let chunkData;
           if (chunkInfo.filename.endsWith(".zip")) {
-            // New ZIP chunk format
             chunkData = await this.restoreFromZipBackup(
               chunkInfo.filename,
               cryptoService
             );
           } else {
-            // Legacy JSON chunk format
             chunkData = await this.s3Service.download(chunkInfo.filename);
           }
 
-          // Process items from this chunk
           if (chunkData.items) {
             for (const item of chunkData.items) {
               if (item.type === "idb" && item.data && item.data.id) {
@@ -2038,26 +2044,80 @@ if (window.typingMindCloudSync) {
         "success",
         `Chunked backup restored successfully (${metadata.totalChunks} chunks)`
       );
+
+      setTimeout(() => {
+        window.location.reload();
+      }, 3000);
+
       return true;
     }
 
     async restoreData(data) {
       this.logger.log("info", "Restoring data to local storage");
+
+      if (!data || typeof data !== "object") {
+        throw new Error("Invalid restore data: data must be an object");
+      }
+
+      if (!data.localStorage && !data.indexedDB) {
+        throw new Error(
+          "Invalid restore data: missing localStorage and indexedDB sections"
+        );
+      }
+
+      this.logger.log(
+        "warning",
+        "⚠️ CRITICAL: This restore will overwrite ALL local data. Page will reload after restore."
+      );
+
       const promises = [];
 
-      if (data.indexedDB) {
+      if (data.indexedDB && typeof data.indexedDB === "object") {
         Object.entries(data.indexedDB).forEach(([key, itemData]) => {
-          promises.push(this.dataService.saveItem(itemData, "idb"));
+          if (key && itemData !== undefined && itemData !== null) {
+            const restoreItem =
+              typeof itemData === "object"
+                ? { ...itemData, id: key }
+                : { id: key, value: itemData };
+            promises.push(this.dataService.saveItem(restoreItem, "idb"));
+            this.logger.log("info", `🔄 Restoring IndexedDB item: ${key}`);
+          } else {
+            this.logger.log(
+              "warning",
+              `Skipping invalid IndexedDB item: ${key}`
+            );
+          }
         });
       }
 
-      if (data.localStorage) {
+      if (data.localStorage && typeof data.localStorage === "object") {
         Object.entries(data.localStorage).forEach(([key, value]) => {
-          promises.push(this.dataService.saveItem({ key, value }, "ls"));
+          if (key && value !== undefined && value !== null) {
+            promises.push(this.dataService.saveItem({ key, value }, "ls"));
+            this.logger.log("info", `🔄 Restoring localStorage item: ${key}`);
+          } else {
+            this.logger.log(
+              "warning",
+              `Skipping invalid localStorage item: ${key}`
+            );
+          }
         });
       }
 
       await Promise.all(promises);
+
+      this.logger.log(
+        "info",
+        "✅ Data restore completed. Clearing sync metadata to force fresh sync."
+      );
+
+      localStorage.removeItem("tcs_cloud-metadata");
+      localStorage.removeItem("tcs_last-cloud-sync");
+
+      this.logger.log(
+        "success",
+        "Restore completed successfully. Page will reload in 3 seconds."
+      );
     }
 
     async cleanupOldBackups() {
@@ -2877,7 +2937,38 @@ if (window.typingMindCloudSync) {
     }
     async createSnapshot() {
       const name = prompt("Enter snapshot name:");
-      if (name) {
+      if (!name) return;
+
+      const modal = document.querySelector(".cloud-sync-modal");
+      const snapshotButton = modal?.querySelector("#create-snapshot");
+
+      if (snapshotButton) {
+        const originalText = snapshotButton.textContent;
+        snapshotButton.disabled = true;
+        snapshotButton.textContent = "In Progress...";
+
+        try {
+          await this.backupService.createSnapshot(name);
+          snapshotButton.textContent = "Success!";
+
+          await this.loadBackupList(modal);
+
+          setTimeout(() => {
+            snapshotButton.textContent = originalText;
+            snapshotButton.disabled = false;
+          }, 2000);
+
+          alert("Snapshot created successfully!");
+        } catch (error) {
+          this.logger.log("error", "Failed to create snapshot", error.message);
+          snapshotButton.textContent = "Failed";
+          setTimeout(() => {
+            snapshotButton.textContent = originalText;
+            snapshotButton.disabled = false;
+          }, 2000);
+          alert("Failed to create snapshot: " + error.message);
+        }
+      } else {
         try {
           await this.backupService.createSnapshot(name);
           alert("Snapshot created successfully!");
