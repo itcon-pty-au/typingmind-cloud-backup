@@ -1157,7 +1157,30 @@ if (window.typingMindCloudSync) {
       }
 
       await this.syncFromCloud();
-      await this.syncToCloud();
+
+      const cloudMetadata = await this.getCloudMetadata();
+      const localMetadataEmpty =
+        Object.keys(this.metadata.items || {}).length === 0;
+      const cloudMetadataEmpty =
+        Object.keys(cloudMetadata.items || {}).length === 0;
+
+      if (localMetadataEmpty && cloudMetadataEmpty) {
+        const allItems = await this.dataService.getAllItems();
+        if (allItems.length > 0) {
+          this.logger.log(
+            "info",
+            `🚀 Fresh setup detected: ${allItems.length} local items found with empty metadata. Triggering initial sync.`
+          );
+          await this.createInitialSync();
+        } else {
+          this.logger.log(
+            "info",
+            "Fresh setup with no local data - nothing to sync"
+          );
+        }
+      } else {
+        await this.syncToCloud();
+      }
 
       const now = Date.now();
       const lastCleanup = localStorage.getItem("tcs_last-tombstone-cleanup");
