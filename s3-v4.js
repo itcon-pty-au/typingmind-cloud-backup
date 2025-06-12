@@ -249,12 +249,12 @@ if (window.typingMindCloudSync) {
       }
       return null;
     }
-    async saveItem(item, type) {
+    async saveItem(item, type, itemKey = null) {
       if (type === "idb") {
         const db = await this.getDB();
         const transaction = db.transaction(["keyval"], "readwrite");
         const store = transaction.objectStore("keyval");
-        const itemId = item.id;
+        const itemId = itemKey || item.id;
         const itemData = { ...item };
         delete itemData.id;
         return new Promise((resolve) => {
@@ -1079,7 +1079,7 @@ if (window.typingMindCloudSync) {
             } else {
               const data = await this.s3Service.download(`items/${key}.json`);
               if (data) {
-                await this.dataService.saveItem(data, cloudItem.type);
+                await this.dataService.saveItem(data, cloudItem.type, key);
                 this.metadata.items[key] = {
                   synced: Date.now(),
                   type: cloudItem.type,
