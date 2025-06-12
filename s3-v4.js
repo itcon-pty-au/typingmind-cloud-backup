@@ -621,26 +621,26 @@ if (window.typingMindCloudSync) {
             }
 
             // Track potential deletion
-            const missingCount = (potentialDeletions.get(itemId) || 0) + 1;
-            potentialDeletions.set(itemId, missingCount);
+            const itemMissingCount = (potentialDeletions.get(itemId) || 0) + 1;
+            potentialDeletions.set(itemId, itemMissingCount);
 
             this.logger.log("warning", "❗ Item appears to be missing", {
               itemId: itemId,
               type: itemInfo.type,
-              missingCount: missingCount,
+              missingCount: itemMissingCount,
               requiredCount: 3,
               detectedAt: new Date(itemInfo.detectedAt).toISOString(),
               ageMs: Date.now() - itemInfo.detectedAt,
             });
 
-            if (missingCount >= 3) {
+            if (itemMissingCount >= 3) {
               this.logger.log(
                 "error",
                 "🗑️ CONFIRMED DELETION - Creating tombstone",
                 {
                   itemId: itemId,
                   type: itemInfo.type,
-                  missingCount: missingCount,
+                  missingCount: itemMissingCount,
                   detectedAt: new Date(itemInfo.detectedAt).toISOString(),
                 }
               );
