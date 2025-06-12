@@ -318,8 +318,19 @@ if (window.typingMindCloudSync) {
       this.saveTombstoneToStorage(itemId, tombstone);
       this.logger.log(
         "info",
-        `🪦 Created tombstone for ${itemId} (v${tombstone.tombstoneVersion})`
+        `🪦 Created tombstone for key "${itemId}" (v${tombstone.tombstoneVersion})`
       );
+
+      if (window.cloudSyncApp && window.cloudSyncApp.syncOrchestrator) {
+        const metadata = window.cloudSyncApp.syncOrchestrator.metadata;
+        if (metadata && metadata.items) {
+          metadata.items[itemId] = {
+            ...tombstone,
+            synced: 0,
+          };
+          window.cloudSyncApp.syncOrchestrator.saveMetadata();
+        }
+      }
 
       if (this.operationQueue) {
         this.operationQueue.add(
@@ -918,7 +929,7 @@ if (window.typingMindCloudSync) {
               cloudMetadata.items[item.id] = { ...tombstoneData };
               this.logger.log(
                 "info",
-                `🗑️ Synced tombstone for ${item.id} to cloud (v${tombstoneData.tombstoneVersion})`
+                `🗑️ Synced tombstone for key "${item.id}" to cloud (v${tombstoneData.tombstoneVersion})`
               );
             } else {
               const data = await this.dataService.getItem(item.id, item.type);
@@ -932,12 +943,13 @@ if (window.typingMindCloudSync) {
                 cloudMetadata.items[item.id] = {
                   ...this.metadata.items[item.id],
                 };
+                this.logger.log("info", `Synced key "${item.id}" to cloud`);
               }
             }
           } catch (error) {
             this.logger.log(
               "error",
-              `Failed to sync item ${item.id}: ${
+              `Failed to sync key "${item.id}": ${
                 error.message || error.code || "Unknown error"
               }`
             );
@@ -979,7 +991,10 @@ if (window.typingMindCloudSync) {
       }
     }
     async retrySyncTombstone(item) {
-      this.logger.log("info", `🔄 Retrying tombstone sync for ${item.id}`);
+      this.logger.log(
+        "info",
+        `🔄 Retrying tombstone sync for key "${item.id}"`
+      );
       const cloudMetadata = await this.getCloudMetadata();
       const timestamp = Date.now();
       const tombstoneData = {
@@ -995,7 +1010,7 @@ if (window.typingMindCloudSync) {
       this.saveMetadata();
       this.logger.log(
         "success",
-        `✅ Retry tombstone sync completed for ${item.id}`
+        `✅ Retry tombstone sync completed for key "${item.id}"`
       );
     }
     async syncFromCloud() {
@@ -1063,7 +1078,7 @@ if (window.typingMindCloudSync) {
             if (cloudItem.deleted) {
               this.logger.log(
                 "info",
-                `🗑️ Processing cloud tombstone for ${key} (v${
+                `🗑️ Processing cloud tombstone for key "${key}" (v${
                   cloudItem.tombstoneVersion || 1
                 })`
               );
@@ -1076,6 +1091,7 @@ if (window.typingMindCloudSync) {
               };
               this.dataService.saveTombstoneToStorage(key, tombstoneData);
               this.metadata.items[key] = { ...cloudItem };
+              this.logger.log("info", `Synced key "${key}" from cloud`);
             } else {
               const data = await this.s3Service.download(`items/${key}.json`);
               if (data) {
@@ -1085,6 +1101,7 @@ if (window.typingMindCloudSync) {
                   type: cloudItem.type,
                   size: cloudItem.size || this.getItemSize(data),
                 };
+                this.logger.log("info", `Synced key "${key}" from cloud`);
               }
             }
           }
