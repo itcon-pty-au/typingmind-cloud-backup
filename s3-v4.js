@@ -58,6 +58,8 @@ if (window.typingMindCloudSync) {
         "tcs_aws_endpoint",
         "tcs_encryptionkey",
         "tcs_last-cloud-sync",
+        "tcs_last-daily-backup",
+        "tcs_backup-size",
         "tcs_sync-exclusions",
         "tcs_cloud-metadata",
         "tcs_localMigrated",
