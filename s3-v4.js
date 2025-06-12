@@ -876,7 +876,7 @@ if (window.typingMindCloudSync) {
       }
       this.syncInProgress = true;
       try {
-        this.logger.log("start", "Starting sync to cloud");
+        //this.logger.log("start", "Starting sync to cloud");
         const { changedItems } = await this.detectChanges();
         const cloudMetadata = await this.getCloudMetadata();
         if (changedItems.length === 0) {
@@ -989,7 +989,7 @@ if (window.typingMindCloudSync) {
       }
       this.syncInProgress = true;
       try {
-        this.logger.log("start", "Starting sync from cloud");
+        //this.logger.log("start", "Starting sync from cloud");
         const cloudMetadata = await this.getCloudMetadata();
 
         const debugEnabled =
