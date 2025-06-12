@@ -1144,9 +1144,9 @@ if (window.typingMindCloudSync) {
       }
     }
     async performFullSync() {
+      await this.initializeLocalMetadata();
       const debugEnabled =
         new URLSearchParams(window.location.search).get("log") === "true";
-
       if (debugEnabled) {
         const localItems = Object.keys(this.metadata.items || {});
         const localDeleted = localItems.filter(
@@ -1157,15 +1157,12 @@ if (window.typingMindCloudSync) {
           `📊 Local Metadata Stats: Total=${localItems.length}, Active=${localActive}, Deleted=${localDeleted}`
         );
       }
-
       await this.syncFromCloud();
-
       const cloudMetadata = await this.getCloudMetadata();
       const localMetadataEmpty =
         Object.keys(this.metadata.items || {}).length === 0;
       const cloudMetadataEmpty =
         Object.keys(cloudMetadata.items || {}).length === 0;
-
       if (localMetadataEmpty && cloudMetadataEmpty) {
         const allItems = await this.dataService.getAllItems();
         if (allItems.length > 0) {
@@ -1183,23 +1180,70 @@ if (window.typingMindCloudSync) {
       } else {
         await this.syncToCloud();
       }
-
       const now = Date.now();
       const lastCleanup = localStorage.getItem("tcs_last-tombstone-cleanup");
       const cleanupInterval = 24 * 60 * 60 * 1000;
-
       if (!lastCleanup || now - parseInt(lastCleanup) > cleanupInterval) {
         this.logger.log("info", "🧹 Starting periodic tombstone cleanup");
         const localCleaned = this.cleanupOldTombstones();
         const cloudCleaned = await this.cleanupCloudTombstones();
         localStorage.setItem("tcs_last-tombstone-cleanup", now.toString());
-
         if (localCleaned > 0 || cloudCleaned > 0) {
           this.logger.log(
             "success",
             `Tombstone cleanup completed: ${localCleaned} local, ${cloudCleaned} cloud`
           );
         }
+      }
+    }
+    async initializeLocalMetadata() {
+      const isEmptyMetadata =
+        Object.keys(this.metadata.items || {}).length === 0;
+      if (!isEmptyMetadata) {
+        this.logger.log(
+          "info",
+          "Local metadata already exists, skipping initialization"
+        );
+        return;
+      }
+      this.logger.log(
+        "start",
+        "🔧 Initializing local metadata from database contents"
+      );
+      const allItems = await this.dataService.getAllItems();
+      const tombstones = this.dataService.getAllTombstones();
+      let itemCount = 0;
+      let tombstoneCount = 0;
+      for (const item of allItems) {
+        if (item.id && item.data) {
+          this.metadata.items[item.id] = {
+            synced: 0,
+            type: item.type,
+            size: this.getItemSize(item.data),
+          };
+          itemCount++;
+        }
+      }
+      for (const [itemId, tombstone] of tombstones.entries()) {
+        if (!this.metadata.items[itemId]) {
+          this.metadata.items[itemId] = {
+            deleted: tombstone.deleted,
+            deletedAt: tombstone.deletedAt || tombstone.deleted,
+            type: tombstone.type,
+            tombstoneVersion: tombstone.tombstoneVersion || 1,
+            synced: 0,
+          };
+          tombstoneCount++;
+        }
+      }
+      if (itemCount > 0 || tombstoneCount > 0) {
+        this.saveMetadata();
+        this.logger.log(
+          "success",
+          `✅ Local metadata initialized: ${itemCount} items, ${tombstoneCount} tombstones`
+        );
+      } else {
+        this.logger.log("info", "No local items found to initialize metadata");
       }
     }
     async cleanupCloudTombstones() {
