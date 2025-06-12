@@ -61,7 +61,7 @@ if (window.typingMindCloudSync) {
         "tcs_last-daily-backup",
         "tcs_backup-size",
         "tcs_sync-exclusions",
-        "tcs_cloud-metadata",
+        "tcs_local-metadata",
         "tcs_localMigrated",
         "tcs_migrationBackup",
         "tcs_last-tombstone-cleanup",
@@ -757,12 +757,12 @@ if (window.typingMindCloudSync) {
       this.autoSyncInterval = null;
     }
     loadMetadata() {
-      const stored = localStorage.getItem("tcs_cloud-metadata");
+      const stored = localStorage.getItem("tcs_local-metadata");
       const result = stored ? JSON.parse(stored) : { lastSync: 0, items: {} };
       return result;
     }
     saveMetadata() {
-      localStorage.setItem("tcs_cloud-metadata", JSON.stringify(this.metadata));
+      localStorage.setItem("tcs_local-metadata", JSON.stringify(this.metadata));
     }
     getLastCloudSync() {
       const stored = localStorage.getItem("tcs_last-cloud-sync");
@@ -1244,6 +1244,92 @@ if (window.typingMindCloudSync) {
         );
       } else {
         this.logger.log("info", "No local items found to initialize metadata");
+      }
+      if (this.config.isConfigured()) {
+        try {
+          this.logger.log(
+            "info",
+            "🔍 Checking cloud for missing items to restore"
+          );
+          const cloudMetadata = await this.getCloudMetadata();
+          let restoredCount = 0;
+          for (const [cloudItemId, cloudItem] of Object.entries(
+            cloudMetadata.items || {}
+          )) {
+            if (!cloudItem.deleted && !this.metadata.items[cloudItemId]) {
+              try {
+                const data = await this.s3Service.download(
+                  `items/${cloudItemId}.json`
+                );
+                if (data) {
+                  await this.dataService.saveItem(data, cloudItem.type);
+                  this.metadata.items[cloudItemId] = {
+                    synced: Date.now(),
+                    type: cloudItem.type,
+                    size: cloudItem.size || this.getItemSize(data),
+                  };
+                  restoredCount++;
+                  this.logger.log(
+                    "info",
+                    `📥 Restored missing item: ${cloudItemId}`
+                  );
+                }
+              } catch (error) {
+                this.logger.log(
+                  "warning",
+                  `Failed to restore item ${cloudItemId}: ${error.message}`
+                );
+              }
+            } else if (cloudItem.deleted && !this.metadata.items[cloudItemId]) {
+              try {
+                await this.dataService.performDelete(
+                  cloudItemId,
+                  cloudItem.type
+                );
+                const tombstoneData = {
+                  deleted: cloudItem.deleted,
+                  deletedAt: cloudItem.deletedAt || cloudItem.deleted,
+                  type: cloudItem.type,
+                  tombstoneVersion: cloudItem.tombstoneVersion || 1,
+                  synced: Date.now(),
+                };
+                this.dataService.saveTombstoneToStorage(
+                  cloudItemId,
+                  tombstoneData
+                );
+                this.metadata.items[cloudItemId] = tombstoneData;
+                restoredCount++;
+                this.logger.log(
+                  "info",
+                  `🗑️ Applied missing tombstone: ${cloudItemId}`
+                );
+              } catch (error) {
+                this.logger.log(
+                  "warning",
+                  `Failed to apply tombstone ${cloudItemId}: ${error.message}`
+                );
+              }
+            }
+          }
+          if (restoredCount > 0) {
+            this.saveMetadata();
+            this.logger.log(
+              "success",
+              `🔄 Restored ${restoredCount} missing items and tombstones from cloud`
+            );
+          } else {
+            this.logger.log(
+              "info",
+              "No missing items found in cloud to restore"
+            );
+          }
+        } catch (error) {
+          this.logger.log(
+            "warning",
+            "Could not check cloud for missing items",
+            error.message
+          );
+        }
       }
     }
     async cleanupCloudTombstones() {
