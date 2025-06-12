@@ -30,7 +30,12 @@ if (window.typingMindCloudSync) {
       };
       const stored = {};
       Object.keys(defaults).forEach((key) => {
-        const storageKey = `tcs_aws_${key.toLowerCase()}`;
+        let storageKey;
+        if (key === "encryptionKey") {
+          storageKey = "tcs_encryptionkey";
+        } else {
+          storageKey = `tcs_aws_${key.toLowerCase()}`;
+        }
         const value = localStorage.getItem(storageKey);
         stored[key] =
           key === "syncInterval" ? parseInt(value) || 15 : value || "";
@@ -73,7 +78,12 @@ if (window.typingMindCloudSync) {
     }
     save() {
       Object.keys(this.config).forEach((key) => {
-        const storageKey = `tcs_aws_${key.toLowerCase()}`;
+        let storageKey;
+        if (key === "encryptionKey") {
+          storageKey = "tcs_encryptionkey";
+        } else {
+          storageKey = `tcs_aws_${key.toLowerCase()}`;
+        }
         localStorage.setItem(storageKey, this.config[key].toString());
       });
     }
@@ -1758,46 +1768,50 @@ if (window.typingMindCloudSync) {
         const backups = [];
 
         for (const obj of objects) {
-          if (obj.Key.endsWith("-metadata.json")) {
-            try {
-              const metadata = await this.s3Service.download(obj.Key, true);
-              if (metadata.format === "chunked") {
-                const backupType = this.getBackupType(obj.Key);
-                backups.push({
-                  key: obj.Key,
-                  name: obj.Key.replace("-metadata.json", ""),
-                  displayName: this.formatBackupDisplayName(obj.Key, metadata),
-                  size: metadata.estimatedSize || obj.Size,
-                  modified: obj.LastModified,
-                  format: "chunked",
-                  chunks: metadata.totalChunks,
-                  type: backupType,
-                  sortOrder: backupType === "snapshot" ? 1 : 2,
-                });
+          if (!obj.Key.includes("/")) {
+            if (obj.Key.endsWith("-metadata.json")) {
+              try {
+                const metadata = await this.s3Service.download(obj.Key, true);
+                if (metadata.format === "chunked") {
+                  const backupType = this.getBackupType(obj.Key);
+                  backups.push({
+                    key: obj.Key,
+                    name: obj.Key.replace("-metadata.json", ""),
+                    displayName: this.formatBackupDisplayName(
+                      obj.Key,
+                      metadata
+                    ),
+                    size: metadata.estimatedSize || obj.Size,
+                    modified: obj.LastModified,
+                    format: "chunked",
+                    chunks: metadata.totalChunks,
+                    type: backupType,
+                    sortOrder: backupType === "snapshot" ? 1 : 2,
+                  });
+                }
+              } catch (error) {
+                this.logger.log(
+                  "warning",
+                  `Failed to read metadata for ${obj.Key}`
+                );
               }
-            } catch (error) {
-              this.logger.log(
-                "warning",
-                `Failed to read metadata for ${obj.Key}`
-              );
+            } else if (
+              obj.Key.match(/\.(zip|json)$/) &&
+              !obj.Key.includes("-chunk-") &&
+              obj.Key !== "metadata.json"
+            ) {
+              const backupType = this.getBackupType(obj.Key);
+              backups.push({
+                key: obj.Key,
+                name: obj.Key.replace(/\.(zip|json)$/, ""),
+                displayName: this.formatBackupDisplayName(obj.Key),
+                size: obj.Size,
+                modified: obj.LastModified,
+                format: "simple",
+                type: backupType,
+                sortOrder: backupType === "snapshot" ? 1 : 2,
+              });
             }
-          } else if (
-            obj.Key.match(/\.(zip|json)$/) &&
-            !obj.Key.includes("-chunk-") &&
-            !obj.Key.startsWith("items/") &&
-            obj.Key !== "metadata.json"
-          ) {
-            const backupType = this.getBackupType(obj.Key);
-            backups.push({
-              key: obj.Key,
-              name: obj.Key.replace(/\.(zip|json)$/, ""),
-              displayName: this.formatBackupDisplayName(obj.Key),
-              size: obj.Size,
-              modified: obj.LastModified,
-              format: "simple",
-              type: backupType,
-              sortOrder: backupType === "snapshot" ? 1 : 2,
-            });
           }
         }
 
