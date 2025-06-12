@@ -808,6 +808,13 @@ if (window.typingMindCloudSync) {
                   size: currentSize,
                   reason: "size",
                 });
+              } else if (!existingItem.synced || existingItem.synced === 0) {
+                changedItems.push({
+                  id: key,
+                  type: "idb",
+                  size: currentSize,
+                  reason: "never-synced",
+                });
               }
             }
             cursor.continue();
@@ -836,6 +843,13 @@ if (window.typingMindCloudSync) {
               type: "ls",
               size: currentSize,
               reason: "size",
+            });
+          } else if (!existingItem.synced || existingItem.synced === 0) {
+            changedItems.push({
+              id: key,
+              type: "ls",
+              size: currentSize,
+              reason: "never-synced",
             });
           }
         }
