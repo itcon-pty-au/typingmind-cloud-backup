@@ -1728,21 +1728,23 @@ if (window.typingMindCloudSync) {
       try {
         const objects = await this.s3Service.list("");
         const backups = [];
-        const chunkedBackups = new Map();
 
         for (const obj of objects) {
           if (obj.Key.endsWith("-metadata.json")) {
-            // This is a chunked backup metadata file
             try {
               const metadata = await this.s3Service.download(obj.Key, true);
               if (metadata.format === "chunked") {
+                const backupType = this.getBackupType(obj.Key);
                 backups.push({
                   key: obj.Key,
                   name: obj.Key.replace("-metadata.json", ""),
+                  displayName: this.formatBackupDisplayName(obj.Key, metadata),
                   size: metadata.estimatedSize || obj.Size,
                   modified: obj.LastModified,
                   format: "chunked",
                   chunks: metadata.totalChunks,
+                  type: backupType,
+                  sortOrder: backupType === "snapshot" ? 1 : 2,
                 });
               }
             } catch (error) {
@@ -1753,26 +1755,94 @@ if (window.typingMindCloudSync) {
             }
           } else if (
             obj.Key.match(/\.(zip|json)$/) &&
-            !obj.Key.includes("-chunk-")
+            !obj.Key.includes("-chunk-") &&
+            !obj.Key.startsWith("items/") &&
+            obj.Key !== "metadata.json"
           ) {
-            // Regular backup file (not a chunk)
+            const backupType = this.getBackupType(obj.Key);
             backups.push({
               key: obj.Key,
               name: obj.Key.replace(/\.(zip|json)$/, ""),
+              displayName: this.formatBackupDisplayName(obj.Key),
               size: obj.Size,
               modified: obj.LastModified,
               format: "simple",
+              type: backupType,
+              sortOrder: backupType === "snapshot" ? 1 : 2,
             });
           }
         }
 
-        return backups.sort(
-          (a, b) => new Date(b.modified) - new Date(a.modified)
-        );
+        return backups.sort((a, b) => {
+          if (a.sortOrder !== b.sortOrder) {
+            return a.sortOrder - b.sortOrder;
+          }
+          return new Date(b.modified) - new Date(a.modified);
+        });
       } catch (error) {
         this.logger.log("error", "Failed to load backup list", error.message);
         return [];
       }
+    }
+
+    getBackupType(filename) {
+      if (filename.startsWith("s-")) {
+        return "snapshot";
+      } else if (filename.startsWith("typingmind-backup-")) {
+        return "daily";
+      }
+      return "unknown";
+    }
+
+    formatBackupDisplayName(filename, metadata = null) {
+      const type = this.getBackupType(filename);
+      const isChunked = metadata && metadata.format === "chunked";
+
+      if (type === "snapshot") {
+        const cleanName = filename
+          .replace(/^s-/, "")
+          .replace(/-\d{8}T\d{6}.*$/, "")
+          .replace("-metadata.json", "")
+          .replace(/\.(zip|json)$/, "");
+        const timestamp = filename.match(/-(\d{8}T\d{6})/);
+        let displayName = `📸 Snapshot: ${cleanName}`;
+        if (timestamp) {
+          const dateStr = timestamp[1];
+          const date = new Date(
+            dateStr.slice(0, 4) +
+              "-" +
+              dateStr.slice(4, 6) +
+              "-" +
+              dateStr.slice(6, 8) +
+              "T" +
+              dateStr.slice(9, 11) +
+              ":" +
+              dateStr.slice(11, 13) +
+              ":" +
+              dateStr.slice(13, 15)
+          );
+          displayName += ` (${date.toLocaleDateString()})`;
+        }
+        return displayName;
+      } else if (type === "daily") {
+        const dateMatch = filename.match(/typingmind-backup-(\d{8})/);
+        if (dateMatch) {
+          const dateStr = dateMatch[1];
+          const date = new Date(
+            dateStr.slice(0, 4) +
+              "-" +
+              dateStr.slice(4, 6) +
+              "-" +
+              dateStr.slice(6, 8)
+          );
+          return `🗓️ Daily Backup (${date.toLocaleDateString()})`;
+        }
+        return "🗓️ Daily Backup";
+      }
+
+      return filename
+        .replace(/\.(zip|json)$/, "")
+        .replace("-metadata.json", "");
     }
 
     async restoreFromBackup(key, cryptoService) {
@@ -2438,7 +2508,9 @@ if (window.typingMindCloudSync) {
             const date = new Date(backup.modified).toLocaleString();
             const formatLabel =
               backup.format === "chunked" ? ` [${backup.chunks} chunks]` : "";
-            option.text = `${backup.name} - ${size}${formatLabel} (${date})`;
+            option.text = `${
+              backup.displayName || backup.name
+            } - ${size}${formatLabel} (${date})`;
             backupList.appendChild(option);
           });
         }
@@ -3161,5 +3233,24 @@ if (window.typingMindCloudSync) {
       };
     }
     return {};
+  };
+
+  window.estimateBackupSize = async () => {
+    if (app && app.backupService) {
+      const size = await app.backupService.estimateDataSize();
+      const chunkLimit = app.backupService.chunkSizeLimit;
+      const willUseChunks = size > chunkLimit;
+      return {
+        estimatedSize: size,
+        formattedSize: app.backupService.formatFileSize(size),
+        chunkLimit: chunkLimit,
+        formattedChunkLimit: app.backupService.formatFileSize(chunkLimit),
+        willUseChunks: willUseChunks,
+        backupMethod: willUseChunks ? "chunked" : "simple",
+        compressionNote:
+          "Size shown is before ZIP compression (expect ~70% reduction)",
+      };
+    }
+    return { error: "Backup service not available" };
   };
 }
