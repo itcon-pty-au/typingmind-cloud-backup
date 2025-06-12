@@ -187,7 +187,7 @@ if (window.typingMindCloudSync) {
             ) {
               items.set(key, {
                 id: key,
-                data: { ...value, id: key },
+                data: value,
                 type: "idb",
               });
               includedIDB++;
@@ -219,15 +219,15 @@ if (window.typingMindCloudSync) {
           excludedLS++;
         }
       }
-      // if (debugEnabled) {
-      //   console.log(
-      //     `📊 IndexedDB Stats: Total=${totalIDB}, Included=${includedIDB}, Excluded=${excludedIDB}`
-      //   );
-      //   console.log(
-      //     `📊 localStorage Stats: Total=${totalLS}, Included=${includedLS}, Excluded=${excludedLS}`
-      //   );
-      //   console.log(`📊 Total items to sync: ${items.size} (IDB + LS)`);
-      // }
+      if (debugEnabled) {
+        console.log(
+          `📊 IndexedDB Stats: Total=${totalIDB}, Included=${includedIDB}, Excluded=${excludedIDB}`
+        );
+        console.log(
+          `📊 localStorage Stats: Total=${totalLS}, Included=${includedLS}, Excluded=${excludedLS}`
+        );
+        console.log(`📊 Total items to sync: ${items.size} (IDB + LS)`);
+      }
       return Array.from(items.values());
     }
     async getItem(itemId, type) {
