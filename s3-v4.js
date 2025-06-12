@@ -998,6 +998,7 @@ if (window.typingMindCloudSync) {
                   id: key,
                   type: "idb",
                   size: currentSize,
+                  lastModified: now,
                   reason: "new",
                 });
               } else if (currentSize !== existingItem.size) {
@@ -1005,13 +1006,18 @@ if (window.typingMindCloudSync) {
                   id: key,
                   type: "idb",
                   size: currentSize,
+                  lastModified: now,
                   reason: "size",
                 });
-              } else if (!existingItem.synced || existingItem.synced === 0) {
+              } else if (
+                !existingItem.synced ||
+                (existingItem.lastModified || 0) > existingItem.synced
+              ) {
                 changedItems.push({
                   id: key,
                   type: "idb",
                   size: currentSize,
+                  lastModified: existingItem.lastModified || now,
                   reason: "never-synced",
                 });
               }
@@ -1034,6 +1040,7 @@ if (window.typingMindCloudSync) {
               id: key,
               type: "ls",
               size: currentSize,
+              lastModified: now,
               reason: "new",
             });
           } else if (currentSize !== existingItem.size) {
@@ -1041,13 +1048,18 @@ if (window.typingMindCloudSync) {
               id: key,
               type: "ls",
               size: currentSize,
+              lastModified: now,
               reason: "size",
             });
-          } else if (!existingItem.synced || existingItem.synced === 0) {
+          } else if (
+            !existingItem.synced ||
+            (existingItem.lastModified || 0) > existingItem.synced
+          ) {
             changedItems.push({
               id: key,
               type: "ls",
               size: currentSize,
+              lastModified: existingItem.lastModified || now,
               reason: "never-synced",
             });
           }
@@ -1128,6 +1140,7 @@ if (window.typingMindCloudSync) {
                   synced: Date.now(),
                   type: item.type,
                   size: item.size,
+                  lastModified: item.lastModified,
                 };
                 cloudMetadata.items[item.id] = {
                   ...this.metadata.items[item.id],
@@ -1253,7 +1266,11 @@ if (window.typingMindCloudSync) {
               const localVersion = localTombstone?.tombstoneVersion || 0;
               return cloudVersion > localVersion;
             }
-            return !localItem || cloudItem.synced > (localItem?.synced || 0);
+            return (
+              !localItem ||
+              (cloudItem.lastModified || cloudItem.synced) >
+                (localItem?.synced || 0)
+            );
           }
         );
         if (itemsToDownload.length > 0) {
@@ -1289,6 +1306,7 @@ if (window.typingMindCloudSync) {
                   synced: Date.now(),
                   type: cloudItem.type,
                   size: cloudItem.size || this.getItemSize(data),
+                  lastModified: cloudItem.lastModified || cloudItem.synced,
                 };
                 this.logger.log("info", `Synced key "${key}" from cloud`);
               }
@@ -1338,6 +1356,7 @@ if (window.typingMindCloudSync) {
                 synced: Date.now(),
                 type: item.type,
                 size: item.size || this.getItemSize(data),
+                lastModified: item.lastModified,
               };
               cloudMetadata.items[item.id] = {
                 ...this.metadata.items[item.id],
@@ -1440,6 +1459,7 @@ if (window.typingMindCloudSync) {
             synced: 0,
             type: item.type,
             size: this.getItemSize(item.data),
+            lastModified: 0,
           };
           itemCount++;
         }
@@ -1487,6 +1507,7 @@ if (window.typingMindCloudSync) {
                     synced: Date.now(),
                     type: cloudItem.type,
                     size: cloudItem.size || this.getItemSize(data),
+                    lastModified: cloudItem.lastModified || cloudItem.synced,
                   };
                   restoredCount++;
                   this.logger.log(
