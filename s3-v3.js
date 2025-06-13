@@ -154,6 +154,7 @@ if (window.typingMindCloudSync) {
       this.knownItems = new Map();
       this.potentialDeletions = new Map();
       this.maxKnownItems = 5000;
+      this.lastStaleCleanup = 0;
     }
     async getDB() {
       if (!this.dbPromise) {
@@ -259,6 +260,42 @@ if (window.typingMindCloudSync) {
 
       return Array.from(items.values());
     }
+
+    async getAllItemKeys() {
+      const itemKeys = new Set();
+
+      // Use openKeyCursor() for performance - only fetches keys, not values
+      const db = await this.getDB();
+      const transaction = db.transaction(["keyval"], "readonly");
+      const store = transaction.objectStore("keyval");
+
+      await new Promise((resolve) => {
+        const request = store.openKeyCursor();
+        request.onsuccess = (event) => {
+          const cursor = event.target.result;
+          if (cursor) {
+            const key = cursor.key;
+            if (typeof key === "string" && !this.config.shouldExclude(key)) {
+              itemKeys.add(key);
+            }
+            cursor.continue();
+          } else {
+            resolve();
+          }
+        };
+        request.onerror = () => resolve();
+      });
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && !this.config.shouldExclude(key)) {
+          itemKeys.add(key);
+        }
+      }
+
+      return itemKeys;
+    }
+
     async getItem(itemId, type) {
       if (type === "idb") {
         const db = await this.getDB();
@@ -525,11 +562,20 @@ if (window.typingMindCloudSync) {
           timestamp: new Date().toISOString(),
         });
 
-        const currentItems = await this.getAllItems();
-        const currentItemIds = new Set(currentItems.map((item) => item.id));
+        const now = Date.now();
+        if (!this.lastStaleCleanup) {
+          this.lastStaleCleanup = now;
+        }
+
+        if (now - this.lastStaleCleanup > 60 * 60 * 1000) {
+          this.clearStaleTrackingData();
+          this.lastStaleCleanup = now;
+        }
+
+        const currentItemIds = await this.getAllItemKeys();
 
         this.logger.log("info", "📊 Current vs Known comparison", {
-          currentItemsCount: currentItems.length,
+          currentItemsCount: currentItemIds.size,
           knownItemsCount: this.knownItems.size,
           currentChatCount: Array.from(currentItemIds).filter((id) =>
             id.startsWith("CHAT_")
@@ -599,8 +645,8 @@ if (window.typingMindCloudSync) {
 
         // Add new items to tracking
         let newItemsAdded = 0;
-        currentItems.forEach((item) => {
-          if (!this.knownItems.has(item.id)) {
+        for (const itemId of currentItemIds) {
+          if (!this.knownItems.has(itemId)) {
             if (this.knownItems.size >= this.maxKnownItems) {
               const oldestEntry = this.knownItems.entries().next().value;
               this.knownItems.delete(oldestEntry[0]);
@@ -614,14 +660,24 @@ if (window.typingMindCloudSync) {
               );
             }
 
-            this.knownItems.set(item.id, {
-              type: item.type,
+            // Determine type based on item ID patterns (most items are IDB)
+            const itemType =
+              itemId.startsWith("CHAT_") ||
+              itemId.startsWith("MODEL_") ||
+              itemId.startsWith("PROMPT_")
+                ? "idb"
+                : localStorage.getItem(itemId) !== null
+                ? "ls"
+                : "idb";
+
+            this.knownItems.set(itemId, {
+              type: itemType,
               detectedAt: Date.now(),
               confirmCount: 1,
             });
             newItemsAdded++;
           }
-        });
+        }
 
         if (newItemsAdded > 0) {
           this.logger.log("info", "➕ Added new items to monitoring", {
@@ -647,6 +703,34 @@ if (window.typingMindCloudSync) {
         if (this.knownItems.size > this.maxKnownItems * 1.1) {
           this.trimKnownItems();
         }
+
+        if (this.knownItems.size > 1000 && this.potentialDeletions.size === 0) {
+          const stabilityThreshold = 10 * 60 * 1000;
+          const oldestEntry = Array.from(this.knownItems.values()).sort(
+            (a, b) => a.detectedAt - b.detectedAt
+          )[0];
+
+          if (
+            oldestEntry &&
+            now - oldestEntry.detectedAt > stabilityThreshold
+          ) {
+            const halfSize = Math.floor(this.knownItems.size / 2);
+            const entries = Array.from(this.knownItems.entries()).sort(
+              (a, b) => a[1].detectedAt - b[1].detectedAt
+            );
+
+            for (let i = 0; i < halfSize; i++) {
+              this.knownItems.delete(entries[i][0]);
+            }
+
+            this.logger.log(
+              "info",
+              `🧹 Reduced stable tracking set from ${
+                this.knownItems.size + halfSize
+              } to ${this.knownItems.size} items`
+            );
+          }
+        }
       } catch (error) {
         this.logger.log("error", "❌ Error during deletion monitoring", error);
       }
@@ -658,12 +742,42 @@ if (window.typingMindCloudSync) {
       const toRemove = entries.slice(0, entries.length - this.maxKnownItems);
       toRemove.forEach(([itemId]) => {
         this.knownItems.delete(itemId);
+        this.potentialDeletions.delete(itemId);
       });
 
       this.logger.log(
         "info",
         `🧹 Trimmed knownItems from ${entries.length} to ${this.knownItems.size}`
       );
+    }
+
+    clearStaleTrackingData() {
+      const now = Date.now();
+      const staleThreshold = 24 * 60 * 60 * 1000;
+
+      let removedKnown = 0;
+      let removedPotential = 0;
+
+      for (const [itemId, itemInfo] of this.knownItems.entries()) {
+        if (now - itemInfo.detectedAt > staleThreshold) {
+          this.knownItems.delete(itemId);
+          removedKnown++;
+        }
+      }
+
+      for (const [itemId] of this.potentialDeletions.entries()) {
+        if (!this.knownItems.has(itemId)) {
+          this.potentialDeletions.delete(itemId);
+          removedPotential++;
+        }
+      }
+
+      if (removedKnown > 0 || removedPotential > 0) {
+        this.logger.log(
+          "info",
+          `🧹 Cleared ${removedKnown} stale known items and ${removedPotential} orphaned potential deletions`
+        );
+      }
     }
     stopDeletionMonitoring() {
       if (this.deletionMonitor) {
@@ -701,6 +815,7 @@ if (window.typingMindCloudSync) {
       this.stopDeletionMonitoring();
       this.knownItems.clear();
       this.potentialDeletions.clear();
+      this.lastStaleCleanup = 0;
       if (this.dbPromise) {
         this.dbPromise
           .then((db) => {
@@ -722,8 +837,15 @@ if (window.typingMindCloudSync) {
       this.config = configManager;
       this.keyCache = new Map();
       this.maxCacheSize = 10;
+      this.lastCacheCleanup = 0;
     }
     async deriveKey(password) {
+      const now = Date.now();
+      if (now - this.lastCacheCleanup > 30 * 60 * 1000) {
+        this.cleanupKeyCache();
+        this.lastCacheCleanup = now;
+      }
+
       if (this.keyCache.has(password)) return this.keyCache.get(password);
 
       if (this.keyCache.size >= this.maxCacheSize) {
@@ -742,6 +864,20 @@ if (window.typingMindCloudSync) {
       );
       this.keyCache.set(password, key);
       return key;
+    }
+
+    cleanupKeyCache() {
+      if (this.keyCache.size > this.maxCacheSize / 2) {
+        const keysToRemove = Math.floor(this.keyCache.size / 2);
+        const keyIterator = this.keyCache.keys();
+
+        for (let i = 0; i < keysToRemove; i++) {
+          const oldestKey = keyIterator.next().value;
+          if (oldestKey) {
+            this.keyCache.delete(oldestKey);
+          }
+        }
+      }
     }
     async encrypt(data) {
       const encryptionKey = this.config.get("encryptionKey");
@@ -774,6 +910,7 @@ if (window.typingMindCloudSync) {
     }
     cleanup() {
       this.keyCache.clear();
+      this.lastCacheCleanup = 0;
       this.config = null;
     }
   }
@@ -2567,9 +2704,17 @@ if (window.typingMindCloudSync) {
       this.maxRetries = 3;
       this.activeTimeouts = new Set();
       this.maxQueueSize = 100;
+      this.lastCleanup = 0;
     }
 
     add(operationId, operation, priority = "normal") {
+      const now = Date.now();
+
+      if (now - this.lastCleanup > 10 * 60 * 1000) {
+        this.cleanupStaleOperations(now);
+        this.lastCleanup = now;
+      }
+
       if (this.queue.has(operationId)) {
         this.logger.log("skip", `Operation ${operationId} already queued`);
         return;
@@ -2589,11 +2734,33 @@ if (window.typingMindCloudSync) {
         operation,
         priority,
         retries: 0,
-        addedAt: Date.now(),
+        addedAt: now,
       });
 
       this.logger.log("info", `📋 Queued operation: ${operationId}`);
       this.process();
+    }
+
+    cleanupStaleOperations(now) {
+      const staleThreshold = 60 * 60 * 1000;
+      let removedCount = 0;
+
+      for (const [operationId, operation] of this.queue.entries()) {
+        if (
+          now - operation.addedAt > staleThreshold &&
+          operation.retries >= this.maxRetries
+        ) {
+          this.queue.delete(operationId);
+          removedCount++;
+        }
+      }
+
+      if (removedCount > 0) {
+        this.logger.log(
+          "info",
+          `🧹 Cleaned up ${removedCount} stale operations from queue`
+        );
+      }
     }
 
     async process() {
@@ -2662,6 +2829,7 @@ if (window.typingMindCloudSync) {
 
     cleanup() {
       this.clear();
+      this.lastCleanup = 0;
       this.logger = null;
     }
   }
