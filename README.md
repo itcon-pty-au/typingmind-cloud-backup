@@ -207,25 +207,6 @@ For troubleshooting, enable detailed logging:
 2. **Runtime Logging**: Toggle "Console Logging" in the config modal
 3. Check browser console for detailed sync information
 
-### Common Issues
-
-**New Chats Disappearing**:
-
-- Ensure only one device is active at a time
-- Check that sync interval isn't too short
-- Use longer sync intervals (60+ seconds) for heavy usage
-
-**Configuration Issues**:
-
-- Verify all required fields are filled
-- Check bucket permissions and CORS settings
-- Test with NoSync mode first if having sync issues
-
-**Large Data Issues**:
-
-- V3 automatically handles large datasets with chunked backups
-- Monitor console logs for compression ratios and chunk information
-
 ## ☁️ Cloud Storage Setup
 
 ### AWS S3 Setup
