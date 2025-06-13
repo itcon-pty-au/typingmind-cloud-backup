@@ -1,62 +1,234 @@
-<div align="center">💗 <a href="https://buymeacoffee.com/itcon">If you found this useful, please consider buying me a coffee</a> 💗<br/><br/></div>
+<div align="center">💗 <a href="https://buymeacoffee.com/itcon">Countless hours of family time was sacrificed during the coding of this extension. If you found this useful, please consider donating so that I can take my family out for a beautiful dinner.</a> 💗<br/><br/></div>
 
-# TypingMind Cloud Sync
+# TypingMind Cloud Sync V3
 
-## Features
-- Extension to enable automatic backup & restore of app data [entire Typingmind data] to AWS S3/S3 compatible cloud services. (Full backup, not incremental)
-- Manual export/import of data to and from cloud.
-- The entire typingmind data will be stored in S3 as a single JSON file. This file is overwritten each time a backup is written to S3.
-- Automatically (subject to data loss prevention rules) restores the latest backup version from S3 to your TypingMind instance when you load the app (provided a backup exists).
-- Enables automatic backing up of your TypingMind data to S3 throughout the session as per the configured backup interval.
-- Last 30 days 'backup of backup' for a stress free experience. Apart from the single backup file, the extension now creates a daily 'no-touch' zipped backup of the main backup file. In case the main backup file gets corrupted, you can restore it using the previous day's backup.
-- Snapshot lets you backup the current typingmind data to the cloud when you need it. This is a 'no-touch' zipped backup that will permanently exist in the cloud till you choose to delete it.
-- A 'T-15 rolling snapshot' keeps a zipped snapshot of the typingmind instance from 15 minutes ago. This gives you a recent version of the backup that you can manually revert to in case of an unintended corruption of the main backup file. However, note that this is a rolling backup that gets overwritten every 15 minutes.
-- Allows you to view all the backups in the cloud and lets you download it (decrypts before download) or restore from the UI itself. The snapshot backups can be deleted from the UI as well.
-- The backup interval is now configurable (Minimum of 15 seconds).
-- All backups are now encrypted! The backup system uses AES-GCM encryption with a 256-bit key derived using PBKDF2. All data is encrypted client-side before being uploaded to S3. The encryption key is derived from a user-provided password using 100,000 PBKDF2 iterations with SHA-256, providing strong protection for sensitive data.
-- The system includes several safeguards to prevent unintended data loss.
-    - Cloud-vs-local data size comparison with customizable tolerance during import
-    - Cloud-vs-local data size comparison with customizable tolerance during export
-    - User confirmation if Cloud backup is smaller than the local data
-    - User confirmation prompts with detailed information when significant differences are detected
-- Live sync status floating panel in UI
-    - Load the page with '?syncstatus=false' appended to the URL to hide it permanently, add '?syncstatus=true' and load the app to re-enable it.
-    - ✨ Double tap/click on the export/import icons (arrow) to run adhoc export and import.
-    - ✨ New toggle switch to easily change the extensions mode - Backup/Sync.
-- Comprehensive logging system (Activate in config modal or add '?log=true' to start console logging from page load itself)
-- Now you can choose whether the extension runs in Sync mode (default, ideal if you use typingmind in multiple devices) or in Backup mode (No automatic imports from cloud to app will take place in this mode)
-  
-## Using this extension
-WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXPORT" before setting up the extension.
-1. Logout of Typingmind. This disables the native sync. The app works perfectly fine when logged out as well.
-2. Load "https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js" into Menu > Preferences > Extension in Typingmind.
-3. Once the extension is installed, a new Backup button will be added to the menu. Clicking on this will bring up the S3 backup configuration form.
-4. Provide the AWS details in the configuration form. [These are stored locally in your browser]
-   - Bucket Name
-   - Region - Give the region where your bucket resides. For Cloudflare R2, give 'auto'
-   - Access Key
-   - Secret Key
-   - S3 Compatible Storage Endpoint - If you are using AWS S3, skip this. For S3 compatible endpoints (Cloudflare, iDrive etc), you should provide a value here.
-   - Backup Interval - Minimum is 15 seconds, default is 60 seconds.
-   - Encryption Key - This is to encrypt your app data before saving to the cloud. Provide a 8 or more character long key. You will need this key for encrypting the backed up data. So ensure you remember this.
-5. The save button checks if there is a backup already in S3, if yes it tries to restores the local app data using the cloud data. There are some rules implemented to prevent unintended corruption of data. In such detections, the extension will prompt you to confirm data import. When you are prompted, you should know which data is the latest... If cloud is having the latest data and you want your local app data to be synced with this cloud data, you click on 'Proceed'. When you do this, you local app data is overwritten with the cloud backup data. Whereas, if you know that the local app data is more recent and should not be overwritten with the cloud data, then click on 'Cancel'. Note that when you click cancel, the local app data will be pushed to the cloud to ensure cloud is in sync. 
-6. Manually refresh the page to reflect the new data. CTRL + F5 if it does not.
-7. Full backup to S3 is performed as per configured Backup interval automatically. Note that the backups in S3 are encrypted using a very strong algorithm. Hence you will not be able to download a file from the cloud and view it. You will need to use the Download button in the config form to download the decrypted version of the backup.
-8. Along with the full backup to S3 - the following activities are also done
-   - A T-15 backup is created once every 15 minutes. This is a rolling backup which is overwritten every 15 min. This is to provide you with a close to real time backup in case your main backup file gets corrupted. In case of an unintended corruption of main backup file, download the latest t-15 backup from the 'Available Backups' section of the extension config form. Unzip it and via the cloud UI, overwrite the main backup file. Then click on 'Import' to import the cloud backup. Your data should now be restored.
-   - A daily 'no-touch' backup for last 30 days to provide you a second level backup in case the main backup file and the T-15 also gets corrupted.
-10. If there is no backup in S3, it is expected that you click on the 'Export' button in the extension configuration form to kickstart the backup process.
-11. You can do on demand cloud backups and restore using the respective buttons in the form - 'Export' and 'Import'. Clicking on Export pushes the local app data to the cloud. Import overwrites the local app data with the cloud data. 
-12. To create a 'no-touch' backup of the app data, you can click on 'Snapshot'. It will create a data snapshot at that particular instance.
-13. Whenever the page is loaded, it pulls the latest backed up version from S3 and refreshes the data. You may need to do a Ctrl + F5 (Force refresh) to make it reflect in the UI.
-14. In the Available backups section, all the available backups in the cloud are listed. You can choose to select any of them and then either
-    - Download
-    - Restore
-    - Delete
+A comprehensive cloud backup and sync extension for TypingMind that automatically backs up and synchronizes your entire TypingMind data with AWS S3 or S3-compatible cloud storage services.
 
-## Troubleshooting
-- Add '?log=true' to the URL to initiate console logging. The log will start right from the beginning.
-- You can also toggle the 'Console Logging' in the Backup & Sync configuration modal. But this starts the logging at that instant, anything that happened before won't be logged. 
+## ✨ Key Features
+
+### 🔄 **Intelligent Sync System**
+
+- **Bidirectional Sync**: Real-time synchronization between your local TypingMind data and cloud storage
+- **Deletion Tracking**: Advanced tombstone system tracks deletions across devices to prevent data loss
+- **Conflict Resolution**: Smart conflict resolution when the same data is modified on multiple devices
+- **Auto-sync**: Configurable automatic sync intervals (minimum 15 seconds)
+
+### 💾 **Advanced Backup Management**
+
+- **Daily Automated Backups**: Automatic compressed daily backups with 30-day retention
+- **On-demand Snapshots**: Create named snapshots of your data anytime
+- **Chunked Backups**: Automatically handles large datasets by splitting into manageable chunks
+- **ZIP Compression**: All backups are compressed using ZIP with high compression ratios
+- **Smart Cleanup**: Automatic cleanup of old backups and tombstones
+
+### 🔒 **Security & Encryption**
+
+- **AES-GCM Encryption**: All data encrypted client-side with 256-bit keys
+- **PBKDF2 Key Derivation**: Strong encryption keys derived from your password
+- **No Plaintext Storage**: Your data is never stored unencrypted in the cloud
+
+### 🛠 **Flexible Configuration**
+
+- **URL Parameters**: Configure via URL for easy setup across devices
+- **NoSync Mode**: Snapshot-only mode when you don't need real-time sync
+- **Auto-configuration**: Automatic setup from URL parameters
+- **Exclusion Lists**: Customize what data to exclude from sync
+
+### 📊 **Monitoring & Debugging**
+
+- **Comprehensive Logging**: Detailed console logging for troubleshooting
+- **Sync Status Indicator**: Visual sync status in the UI
+- **Operation Queue**: Robust operation handling with automatic retries
+- **Memory Management**: Efficient resource usage and cleanup
+
+## 🚀 Installation & Setup
+
+### Prerequisites
+
+⚠️ **Important**: Before installing, export your TypingMind data via "Settings > App Data & Storage > Export" as a backup.
+
+### Step 1: Install the Extension
+
+1. **Logout of TypingMind** (this disables native sync - the app works perfectly when logged out)
+2. Go to **Menu > Preferences > Extensions** in TypingMind
+3. Load this URL: `https://itcon-pty-au.github.io/typingmind-cloud-backup/s3-v3.js`
+
+### Step 2: Configure Cloud Storage
+
+After installation, you'll see a new **Sync** button in the sidebar. Click it to open the configuration modal.
+
+> **First Time Setup**: If you haven't configured the mandatory fields (bucket name, region, access key, secret key, encryption key), the extension will show an alert prompting you to configure these settings. The extension needs these credentials to function.
+
+**Required Fields** (marked with \*):
+
+- **Bucket Name\*** - Your S3 bucket name
+- **Region\*** - AWS region (use 'auto' for Cloudflare R2)
+- **Access Key\*** - Your S3 access key ID
+- **Secret Key\*** - Your S3 secret access key
+- **Encryption Key\*** - Your encryption password (8+ characters)
+
+**Optional Fields**:
+
+- **S3 Endpoint** - For S3-compatible services (leave empty for AWS S3)
+- **Sync Interval** - How often to sync (minimum 15 seconds, default 15)
+- **Exclusions** - Comma-separated list of additional keys to exclude from sync
+
+  > **Note**: System keys (starting with `tcs_`) and sensitive keys are automatically excluded from sync
+
+### Step 3: Quick Setup Options
+
+#### Option A: Manual Configuration
+
+1. Click the **Sync** button
+2. Fill in your cloud storage credentials
+3. Click **Save** - the extension will:
+   - Check if cloud backup exists and restore it if found
+   - Create initial backup if no cloud data exists
+   - Start automatic sync monitoring and daily backups
+
+#### Option B: URL Configuration (Recommended for multiple devices)
+
+Add parameters to your TypingMind URL for automatic setup:
+
+```
+https://your-typingmind-url.com/?bucket=your-bucket&region=us-east-1&accesskey=your-key&secretkey=your-secret&encryptionkey=your-password&config
+```
+
+**Available URL Parameters**:
+
+- `bucket` - S3 bucket name
+- `region` - AWS region
+- `accesskey` - Access key ID
+- `secretkey` - Secret access key
+- `endpoint` - S3 endpoint (for compatible services)
+- `encryptionkey` - Encryption password
+- `syncinterval` - Sync interval in seconds
+- `exclusions` - Comma-separated exclusion list
+- `config` - Auto-open config modal
+- `log` - Enable console logging from startup
+- `nosync` - Enable NoSync mode (snapshots only)
+
+## 🎛 Operating Modes
+
+### Standard Sync Mode (Default)
+
+- Full bidirectional synchronization
+- Automatic deletion tracking
+- Real-time sync across devices
+- Best for users with multiple devices
+
+### NoSync Mode
+
+Add `?nosync` to your URL when you open your typingmind app to enable no-sync mode:
+
+- Disables automatic sync operations
+- Only snapshot functionality available
+- Ideal for users who want manual backup control
+
+## 📱 Using the Extension
+
+### Backup Management
+
+The **Available Backups** section shows all your cloud backups:
+
+**Backup Types**:
+
+- 📸 **Snapshots** - Named backups you created manually
+- 🗓️ **Daily Backups** - Automatic daily backups with date stamps
+- **Simple** - Single file backups ( < 50 MB)
+- **Chunked** - Multi-part backups for large datasets ( > 50 MB)
+
+**Actions**:
+
+- **Download** - Downloads and decrypts backup as JSON
+- **Restore** - Restores backup data to TypingMind (overwrites current data)
+- **Delete** - Removes backup from cloud storage
+
+### Manual Operations
+
+- **Save** - Saves configuration and performs initial sync
+- **Sync Now** - Triggers immediate full synchronization
+- **Snapshot** - Creates named snapshot of current data
+- **Console Logging** - Toggle detailed logging for troubleshooting
+
+### Sync Status Indicator
+
+The sync button shows a colored dot indicating status:
+
+- 🟢 **Green** - Sync successful
+- 🔴 **Red** - Sync error
+- 🟡 **Yellow** - Warning
+- 🔵 **Blue** - Sync in progress
+
+## 🔧 Advanced Features
+
+### Deletion Monitoring
+
+V3 includes sophisticated deletion tracking:
+
+- Monitors for deleted chats, settings, and other data
+- Creates "tombstones" to track deletions across devices
+- Prevents accidental data loss during sync
+- Automatic cleanup of old tombstones after 30 days
+
+### Chunked Backups
+
+For large datasets (>50MB), the system automatically:
+
+- Splits data into manageable chunks
+- Compresses each chunk individually
+- Maintains metadata for reconstruction
+- Enables backup of very large TypingMind instances
+
+### Migration from V2
+
+V3 automatically migrates from V2:
+
+- Converts old configuration keys (e.g., `aws-bucket` → `tcs_aws_bucketname`)
+- Cleans up obsolete cloud data and V2 folder structure
+- Preserves all your existing data
+- Creates fresh metadata structure for better sync tracking
+- No manual migration required - happens automatically on first load
+
+### Error Handling & Recovery
+
+- **Operation Queue**: Failed operations are retried automatically
+- **Exponential Backoff**: Smart retry delays prevent service overload
+- **Graceful Degradation**: Continues working even with partial failures
+- **Comprehensive Logging**: Detailed logs help diagnose issues
+
+## 🐛 Troubleshooting
+
+### Enable Logging
+
+For troubleshooting, enable detailed logging:
+
+1. **Startup Logging**: Add `?log=true` to your URL
+2. **Runtime Logging**: Toggle "Console Logging" in the config modal
+3. Check browser console for detailed sync information
+
+### Common Issues
+
+**New Chats Disappearing**:
+
+- Ensure only one device is active at a time
+- Check that sync interval isn't too short
+- Use longer sync intervals (60+ seconds) for heavy usage
+
+**Configuration Issues**:
+
+- Verify all required fields are filled
+- Check bucket permissions and CORS settings
+- Test with NoSync mode first if having sync issues
+
+**Large Data Issues**:
+
+- V3 automatically handles large datasets with chunked backups
+- Monitor console logs for compression ratios and chunk information
+
+## ☁️ Cloud Storage Setup
+
+### AWS S3 Setup
 
 ## AWS Config
 1. Create a user in Amazon IAM. In permissions option, select "Add user to group" but don't select any group. In next screen, "Create user".
