@@ -15,78 +15,10 @@ if (window.typingMindCloudSync) {
 
   class ConfigManager {
     constructor() {
-      this.encryptionCache = new Map();
-      this.config = null;
+      this.config = this.loadConfig();
       this.exclusions = this.loadExclusions();
-      this.initPromise = this.init();
     }
-    async init() {
-      this.config = await this.loadConfig();
-    }
-    async deriveSimpleKey() {
-      if (this.encryptionCache.has("simpleKey")) {
-        return this.encryptionCache.get("simpleKey");
-      }
-      const keyMaterial = window.location.hostname + "tcs-simple-key-salt";
-      const encoder = new TextEncoder();
-      const keyData = encoder.encode(keyMaterial);
-      const hashBuffer = await crypto.subtle.digest("SHA-256", keyData);
-      const key = await crypto.subtle.importKey(
-        "raw",
-        hashBuffer,
-        { name: "AES-GCM" },
-        false,
-        ["encrypt", "decrypt"]
-      );
-      this.encryptionCache.set("simpleKey", key);
-      return key;
-    }
-    async simpleEncrypt(text) {
-      if (!text) return "";
-      try {
-        const key = await this.deriveSimpleKey();
-        const encoder = new TextEncoder();
-        const data = encoder.encode(text);
-        const iv = crypto.getRandomValues(new Uint8Array(12));
-        const encrypted = await crypto.subtle.encrypt(
-          { name: "AES-GCM", iv },
-          key,
-          data
-        );
-        const result = new Uint8Array(iv.length + encrypted.byteLength);
-        result.set(iv, 0);
-        result.set(new Uint8Array(encrypted), iv.length);
-        return btoa(String.fromCharCode(...result));
-      } catch (error) {
-        console.warn("Simple encryption failed, storing as plain text:", error);
-        return text;
-      }
-    }
-    async simpleDecrypt(encryptedText) {
-      if (!encryptedText) return "";
-      try {
-        const key = await this.deriveSimpleKey();
-        const data = Uint8Array.from(atob(encryptedText), (c) =>
-          c.charCodeAt(0)
-        );
-        const iv = data.slice(0, 12);
-        const encrypted = data.slice(12);
-        const decrypted = await crypto.subtle.decrypt(
-          { name: "AES-GCM", iv },
-          key,
-          encrypted
-        );
-        const decoder = new TextDecoder();
-        return decoder.decode(decrypted);
-      } catch (error) {
-        console.warn(
-          "Simple decryption failed, returning as plain text:",
-          error
-        );
-        return encryptedText;
-      }
-    }
-    async loadConfig() {
+    loadConfig() {
       const defaults = {
         syncInterval: 15,
         bucketName: "",
@@ -97,8 +29,7 @@ if (window.typingMindCloudSync) {
         encryptionKey: "",
       };
       const stored = {};
-
-      for (const key of Object.keys(defaults)) {
+      Object.keys(defaults).forEach((key) => {
         let storageKey;
         if (key === "encryptionKey") {
           storageKey = "tcs_encryptionkey";
@@ -106,16 +37,9 @@ if (window.typingMindCloudSync) {
           storageKey = `tcs_aws_${key.toLowerCase()}`;
         }
         const value = localStorage.getItem(storageKey);
-
-        if (key === "syncInterval") {
-          stored[key] = parseInt(value) || 15;
-        } else if (key === "accessKey" || key === "secretKey") {
-          stored[key] = value ? await this.simpleDecrypt(value) : "";
-        } else {
-          stored[key] = value || "";
-        }
-      }
-
+        stored[key] =
+          key === "syncInterval" ? parseInt(value) || 15 : value || "";
+      });
       return { ...defaults, ...stored };
     }
     loadExclusions() {
@@ -154,24 +78,16 @@ if (window.typingMindCloudSync) {
     set(key, value) {
       this.config[key] = value;
     }
-    async save() {
-      for (const key of Object.keys(this.config)) {
+    save() {
+      Object.keys(this.config).forEach((key) => {
         let storageKey;
         if (key === "encryptionKey") {
           storageKey = "tcs_encryptionkey";
         } else {
           storageKey = `tcs_aws_${key.toLowerCase()}`;
         }
-
-        let valueToStore;
-        if (key === "accessKey" || key === "secretKey") {
-          valueToStore = await this.simpleEncrypt(this.config[key].toString());
-        } else {
-          valueToStore = this.config[key].toString();
-        }
-
-        localStorage.setItem(storageKey, valueToStore);
-      }
+        localStorage.setItem(storageKey, this.config[key].toString());
+      });
     }
     isConfigured() {
       return !!(
@@ -186,11 +102,6 @@ if (window.typingMindCloudSync) {
     }
     reloadExclusions() {
       this.exclusions = this.loadExclusions();
-    }
-    cleanup() {
-      this.encryptionCache.clear();
-      this.config = null;
-      this.exclusions = null;
     }
   }
 
@@ -2974,9 +2885,6 @@ if (window.typingMindCloudSync) {
     async initialize() {
       this.logger.log("start", "Initializing TypingmindCloud Sync V3");
 
-      // Wait for config manager to finish initialization
-      await this.config.initPromise;
-
       // Check for nosync parameter and get URL config
       const urlParams = new URLSearchParams(window.location.search);
       this.noSyncMode =
@@ -3811,7 +3719,7 @@ if (window.typingMindCloudSync) {
       Object.keys(newConfig).forEach((key) =>
         this.config.set(key, newConfig[key])
       );
-      await this.config.save();
+      this.config.save();
 
       if (!this.noSyncMode) {
         this.operationQueue.add(
@@ -3930,7 +3838,7 @@ if (window.typingMindCloudSync) {
       this.logger.log("start", "V2 keys detected, starting V2 to V3 migration");
       try {
         await this.migrateStorageKeys();
-        this.config.config = await this.config.loadConfig();
+        this.config.config = this.config.loadConfig();
         this.logger.log("info", "Reloaded configuration with migrated keys");
         await this.cleanupAndFreshSync();
         localStorage.setItem(localMigrationFlag, "true");
@@ -4216,11 +4124,6 @@ if (window.typingMindCloudSync) {
       }
 
       this.logger.log("success", "✅ Cleanup completed");
-
-      if (this.config) {
-        this.config.cleanup();
-      }
-
       this.config = null;
       this.dataService = null;
       this.cryptoService = null;
