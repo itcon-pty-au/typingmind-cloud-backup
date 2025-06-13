@@ -168,9 +168,9 @@ if (window.typingMindCloudSync) {
     async getAllItems() {
       const items = new Map();
 
-      this.logger.log("start", "📊 Getting all items for deletion check", {
-        timestamp: new Date().toISOString(),
-      });
+      //this.logger.log("start", "📊 Getting all items for deletion check", {
+      //  timestamp: new Date().toISOString(),
+      //});
 
       const db = await this.getDB();
       const transaction = db.transaction(["keyval"], "readonly");
@@ -396,10 +396,10 @@ if (window.typingMindCloudSync) {
         const stored = localStorage.getItem(storageKey);
         if (stored) {
           const tombstone = JSON.parse(stored);
-          this.logger.log("success", "📥 Found existing tombstone", {
-            itemId: itemId,
-            tombstone: tombstone,
-          });
+          // this.logger.log("success", "📥 Found existing tombstone", {
+          //   itemId: itemId,
+          //   tombstone: tombstone,
+          // });
           return tombstone;
         } else {
           // this.logger.log("info", "❌ No existing tombstone found", {
@@ -470,23 +470,23 @@ if (window.typingMindCloudSync) {
     startDeletionMonitoring() {
       if (this.deletionMonitor) {
         clearInterval(this.deletionMonitor);
-        this.logger.log("info", "🔄 Clearing existing deletion monitor");
+        //this.logger.log("info", "🔄 Clearing existing deletion monitor");
       }
 
-      this.logger.log("start", "🔍 Starting deletion monitoring setup", {
-        monitorInterval: "5000ms",
-        requiredMissingCount: 3,
-        maxKnownItems: this.maxKnownItems,
-      });
+      // this.logger.log("start", "🔍 Starting deletion monitoring setup", {
+      //   monitorInterval: "5000ms",
+      //   requiredMissingCount: 3,
+      //   maxKnownItems: this.maxKnownItems,
+      // });
 
       this.initializeKnownItems();
 
       this.deletionMonitor = setInterval(() => {
-        this.logger.log("info", "⏰ Deletion monitor interval fired");
+        //this.logger.log("info", "⏰ Deletion monitor interval fired");
         this.checkForDeletions();
       }, 5000);
 
-      this.logger.log("success", "✅ Deletion monitoring started successfully");
+      //this.logger.log("success", "✅ Deletion monitoring started successfully");
     }
     async initializeKnownItems() {
       const items = await this.getAllItems();
@@ -802,7 +802,7 @@ if (window.typingMindCloudSync) {
       }
       AWS.config.update(s3Config);
       this.client = new AWS.S3();
-      this.logger.log("success", "S3 service initialized");
+      //this.logger.log("success", "S3 service initialized");
     }
     async loadSDK() {
       if (this.sdkLoaded || window.AWS) {
@@ -1440,10 +1440,10 @@ if (window.typingMindCloudSync) {
       const isEmptyMetadata =
         Object.keys(this.metadata.items || {}).length === 0;
       if (!isEmptyMetadata) {
-        this.logger.log(
-          "info",
-          "Local metadata already exists, skipping initialization"
-        );
+        // this.logger.log(
+        //   "info",
+        //   "Local metadata already exists, skipping initialization"
+        // );
         return;
       }
       this.logger.log(
@@ -2015,9 +2015,10 @@ if (window.typingMindCloudSync) {
         await this.performDailyBackup();
         localStorage.setItem("tcs_last-daily-backup", currentDateStr);
         this.logger.log("success", "Daily backup completed");
-      } else {
-        this.logger.log("info", "Daily backup already performed today");
       }
+      //else {
+      //   this.logger.log("info", "Daily backup already performed today");
+      // }
     }
 
     async performDailyBackup() {
@@ -2699,7 +2700,7 @@ if (window.typingMindCloudSync) {
       this.noSyncMode = false;
     }
     async initialize() {
-      this.logger.log("start", "Initializing Cloud Sync V3");
+      this.logger.log("start", "Initializing TypingmindCloud Sync V3");
 
       // Check for nosync parameter and get URL config
       const urlParams = new URLSearchParams(window.location.search);
@@ -2805,10 +2806,10 @@ if (window.typingMindCloudSync) {
         return false;
       }
 
-      this.logger.log(
-        "success",
-        "All mandatory configuration fields are present (localStorage + URL params)"
-      );
+      //this.logger.log(
+      //  "success",
+      //  "All mandatory configuration fields are present (localStorage + URL params)"
+      //);
       return true;
     }
 
@@ -2846,11 +2847,11 @@ if (window.typingMindCloudSync) {
         }
       }
 
-      this.logger.log("info", "URL config parameters detected", {
-        hasParams: hasConfigParams,
-        autoOpen: autoOpen,
-        configKeys: Object.keys(config),
-      });
+      //this.logger.log("info", "URL config parameters detected", {
+      //  hasParams: hasConfigParams,
+      //  autoOpen: autoOpen,
+      //  configKeys: Object.keys(config),
+      //});
 
       return {
         config: config,
@@ -2884,7 +2885,7 @@ if (window.typingMindCloudSync) {
       if (chatButton?.parentNode) {
         chatButton.parentNode.insertBefore(button, chatButton.nextSibling);
       }
-      this.logger.log("success", "Sync button inserted");
+      //this.logger.log("success", "Sync button inserted");
     }
     updateSyncStatus(status = "success") {
       const dot = document.getElementById("sync-status-dot");
@@ -3616,10 +3617,10 @@ if (window.typingMindCloudSync) {
     async performV2toV3Migration() {
       const localMigrationFlag = "tcs_localMigrated";
       if (localStorage.getItem(localMigrationFlag) === "true") {
-        this.logger.log(
-          "info",
-          "Local V2 to V3 migration already completed, skipping"
-        );
+        //this.logger.log(
+        //  "info",
+        //  "Local V2 to V3 migration already completed, skipping"
+        //);
         return;
       }
       const v2Keys = [
