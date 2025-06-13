@@ -68,24 +68,42 @@ if (window.typingMindCloudSync) {
         return encryptedValue;
       }
       try {
-        const key = await this.deriveKey(encryptionKey);
+        const key = await Promise.race([
+          this.deriveKey(encryptionKey),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Key derivation timeout")), 2000)
+          ),
+        ]);
+
         const base64Data = encryptedValue.slice(4);
         const encryptedData = new Uint8Array(
           atob(base64Data)
             .split("")
             .map((char) => char.charCodeAt(0))
         );
+
+        if (encryptedData.length < 12) {
+          throw new Error("Invalid encrypted data format");
+        }
+
         const iv = encryptedData.slice(0, 12);
         const data = encryptedData.slice(12);
-        const decrypted = await crypto.subtle.decrypt(
-          { name: "AES-GCM", iv },
-          key,
-          data
-        );
+
+        const decrypted = await Promise.race([
+          crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, data),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Decryption timeout")), 2000)
+          ),
+        ]);
+
         return new TextDecoder().decode(decrypted);
       } catch (error) {
-        console.warn("Failed to decrypt credential:", error);
-        return encryptedValue;
+        console.warn(
+          "Failed to decrypt credential, using fallback:",
+          error.message
+        );
+        // Return empty string for encrypted data that can't be decrypted
+        return encryptedValue.startsWith("ENC:") ? "" : encryptedValue;
       }
     }
 
@@ -123,9 +141,25 @@ if (window.typingMindCloudSync) {
     }
 
     async initializeConfig() {
-      const encryptionKey = this.config.encryptionKey;
-      if (encryptionKey) {
-        await this.decryptStoredCredentials(this.config, encryptionKey);
+      try {
+        const encryptionKey = this.config.encryptionKey;
+        if (encryptionKey) {
+          console.log("🔑 Initializing encrypted credentials...");
+          await Promise.race([
+            this.decryptStoredCredentials(this.config, encryptionKey),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error("Decryption timeout")), 5000)
+            ),
+          ]);
+          console.log("✅ Credentials decrypted successfully");
+        }
+      } catch (error) {
+        console.warn(
+          "⚠️ Failed to decrypt credentials, falling back to plain text:",
+          error.message
+        );
+        // Fallback: reload config without decryption
+        this.config = this.loadConfig();
       }
     }
 
@@ -3016,8 +3050,24 @@ if (window.typingMindCloudSync) {
     async initialize() {
       this.logger.log("start", "Initializing TypingmindCloud Sync V3");
 
-      // Initialize encrypted config first
-      await this.config.initializeConfig();
+      // Initialize encrypted config first (with timeout protection)
+      try {
+        await Promise.race([
+          this.config.initializeConfig(),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("Config initialization timeout")),
+              3000
+            )
+          ),
+        ]);
+      } catch (error) {
+        console.warn(
+          "⚠️ Config initialization failed or timed out:",
+          error.message
+        );
+        console.log("🔧 Proceeding with standard initialization...");
+      }
 
       // Check for nosync parameter and get URL config
       const urlParams = new URLSearchParams(window.location.search);
