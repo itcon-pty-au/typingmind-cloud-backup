@@ -209,9 +209,7 @@ For troubleshooting, enable detailed logging:
 
 ## ☁️ Cloud Storage Setup
 
-### AWS S3 Setup
-
-## AWS Config
+### AWS Config
 1. Create a user in Amazon IAM. In permissions option, select "Add user to group" but don't select any group. In next screen, "Create user".
 2. Open the user. Create Access Key for the user. In Step 1, select "Other", you can skip Step 2 and directly create Access Key. Copy the Access key and Secret Key and store it securely. You will need this to configure the extension.
 3. Create a bucket with the default settings. Due to security reasons, it is recommended to create a new bucket for Typingmind backup and ensure that no other files are stored in it.
@@ -283,9 +281,9 @@ If you are using typingmind cloud, use the below
 ```
 Update "https://*.hostname.com" with your specific hostname in case you are self hosting Typingmind (e.g. https://chat.yourhostname.com). If you are using Typingmind cloud, hostname should be https://www.typingmind.com. This restricts executing S3 commands from only the specified hostname providing better security.
 
-## S3 compatible storage services setup
-Cloudflare R2 provides S3 compatible API with a generous 10GB free storage per month. Refer [How to setup Cloudflare R2 and use with this extension](https://github.com/itcon-pty-au/typingmind-cloud-backup/blob/main/Cloudflare_R2_HowTo.docx)
-iDrive E2 provides S3 compatible API with a generous 10GB free storage per month. Refer [How to setup iDrive E2 and use with this extension](https://github.com/itcon-pty-au/typingmind-cloud-backup/blob/main/iDrive_E2_HowTo.docx)
+### S3 compatible storage services setup
+Cloudflare R2 provides S3 compatible API with a generous 10GB free storage per month. Refer [How to setup Cloudflare R2 and use with this extension](https://github.com/itcon-pty-au/typingmind-cloud-backup/blob/main/HowTo/Cloudflare_R2_HowTo.docx)
+iDrive E2 provides S3 compatible API with a generous 10GB free storage per month. Refer [How to setup iDrive E2 and use with this extension](https://github.com/itcon-pty-au/typingmind-cloud-backup/blob/main/HowTo/iDrive_E2_HowTo.docx)
 
 ## Troubleshooting
 
@@ -301,7 +299,7 @@ iDrive E2 provides S3 compatible API with a generous 10GB free storage per month
 > - **Resolution**: Make the extension work in **Backup mode** (Not an option if you are using the app on multiple devices), then check the setting "Alert if cloud backup is smaller during import". This will prompt the user for confirmation if the cloud backup size is less than the local backup size. In the above scenario, the prompt will appear. You should click **Cancel** as you are certain that the local data is newer, and it will skip the cloud import.
 
 ## Warning
-The extension stores the storage provider credentials in the browser storage (like the original typingmind app) and this is not a secure method. The only option you have is to minimize damage caused if someone gets access to the credentials. i.e. Provide minimum permissions to the credentials. For Amazon S3, I have provided access policy above. However, for other S3 compatible providers, its up to you to setup proper access policies. 
+The extension encrypts the AWS credentials while its stored in the browser database. However, since the encryption key is still stored in plain text, sophisticated hackers who can get access to your browser data and could theoretically get access to your AWS credentials. So, be sure to provide minimum permissions to the AWS credentials. For Amazon S3, I have provided access policy above. However, for other S3 compatible providers, its up to you to setup proper access policies. 
 
 ## About me
 I am a passionate developer dedicated to creating useful tools that can benefit the community. My goal is to distribute all of my projects as open source, enabling others to learn, contribute, and innovate together. If you appreciate my work and want to support my efforts, feel free to [buy me a coffee](https://buymeacoffee.com/itcon) :heart:!
