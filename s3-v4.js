@@ -107,8 +107,8 @@ if (window.typingMindCloudSync) {
 
   class Logger {
     constructor() {
-      this.enabled =
-        new URLSearchParams(window.location.search).get("log") === "true";
+      const urlParams = new URLSearchParams(window.location.search);
+      this.enabled = urlParams.get("log") === "true" || urlParams.has("log");
       this.icons = {
         info: "ℹ️",
         success: "✅",
@@ -138,7 +138,7 @@ if (window.typingMindCloudSync) {
     setEnabled(enabled) {
       this.enabled = enabled;
       const url = new URL(window.location);
-      if (enabled) url.searchParams.set("log", "true");
+      if (enabled) url.searchParams.set("log", "");
       else url.searchParams.delete("log");
       window.history.replaceState({}, "", url);
     }
@@ -207,8 +207,9 @@ if (window.typingMindCloudSync) {
         };
         request.onerror = () => resolve();
       });
+      const urlParams = new URLSearchParams(window.location.search);
       const debugEnabled =
-        new URLSearchParams(window.location.search).get("log") === "true";
+        urlParams.get("log") === "true" || urlParams.has("log");
       let totalLS = 0;
       let excludedLS = 0;
       let includedLS = 0;
@@ -1384,8 +1385,9 @@ if (window.typingMindCloudSync) {
     }
     async performFullSync() {
       await this.initializeLocalMetadata();
+      const urlParams = new URLSearchParams(window.location.search);
       const debugEnabled =
-        new URLSearchParams(window.location.search).get("log") === "true";
+        urlParams.get("log") === "true" || urlParams.has("log");
       if (debugEnabled) {
         const localItems = Object.keys(this.metadata.items || {});
         const localDeleted = localItems.filter(
@@ -2730,6 +2732,16 @@ if (window.typingMindCloudSync) {
       await this.waitForDOM();
       this.insertSyncButton();
 
+      // Check for URL config parameters and auto-open modal if requested
+      const urlConfig = this.getConfigFromUrlParams();
+      if (urlConfig.autoOpen || urlConfig.hasParams) {
+        this.logger.log(
+          "info",
+          "Auto-opening sync modal due to URL parameters"
+        );
+        setTimeout(() => this.openSyncModal(), 1000);
+      }
+
       // Only start monitoring and syncing if not in nosync mode
       if (!this.noSyncMode) {
         this.dataService.startDeletionMonitoring();
@@ -2784,6 +2796,47 @@ if (window.typingMindCloudSync) {
         "All mandatory configuration fields are present"
       );
       return true;
+    }
+
+    getConfigFromUrlParams() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const config = {};
+      const autoOpen = urlParams.has("config") || urlParams.has("autoconfig");
+
+      // Map URL parameters to config values
+      const paramMap = {
+        bucket: "bucketName",
+        bucketname: "bucketName",
+        region: "region",
+        accesskey: "accessKey",
+        secretkey: "secretKey",
+        endpoint: "endpoint",
+        encryptionkey: "encryptionKey",
+        syncinterval: "syncInterval",
+        exclusions: "exclusions",
+      };
+
+      let hasConfigParams = false;
+
+      for (const [urlParam, configKey] of Object.entries(paramMap)) {
+        const value = urlParams.get(urlParam);
+        if (value !== null) {
+          config[configKey] = value;
+          hasConfigParams = true;
+        }
+      }
+
+      this.logger.log("info", "URL config parameters detected", {
+        hasParams: hasConfigParams,
+        autoOpen: autoOpen,
+        configKeys: Object.keys(config),
+      });
+
+      return {
+        config: config,
+        hasParams: hasConfigParams,
+        autoOpen: autoOpen,
+      };
     }
 
     async waitForDOM() {
@@ -3017,8 +3070,69 @@ if (window.typingMindCloudSync) {
         "#console-logging-toggle"
       );
       consoleLoggingCheckbox.checked = this.logger.enabled;
+
+      // Auto-populate form with URL parameters if present
+      this.populateFormFromUrlParams(modal);
+
       this.loadBackupList(modal);
       this.setupBackupListHandlers(modal);
+    }
+
+    populateFormFromUrlParams(modal) {
+      const urlConfig = this.getConfigFromUrlParams();
+
+      if (!urlConfig.hasParams) {
+        this.logger.log("info", "No URL config parameters to populate");
+        return;
+      }
+
+      this.logger.log(
+        "info",
+        "Populating form with URL parameters",
+        urlConfig.config
+      );
+
+      // Map config keys to form field IDs
+      const fieldMap = {
+        bucketName: "aws-bucket",
+        region: "aws-region",
+        accessKey: "aws-access-key",
+        secretKey: "aws-secret-key",
+        endpoint: "aws-endpoint",
+        encryptionKey: "encryption-key",
+        syncInterval: "sync-interval",
+        exclusions: "sync-exclusions",
+      };
+
+      let populatedCount = 0;
+
+      for (const [configKey, fieldId] of Object.entries(fieldMap)) {
+        const value = urlConfig.config[configKey];
+        if (value !== undefined) {
+          const field = modal.querySelector(`#${fieldId}`);
+          if (field) {
+            field.value = value;
+            populatedCount++;
+            this.logger.log(
+              "info",
+              `Populated field ${fieldId} with URL value`
+            );
+          }
+        }
+      }
+
+      if (populatedCount > 0) {
+        // Show a message to the user that fields were auto-populated
+        const actionMsg = modal.querySelector("#action-msg");
+        if (actionMsg) {
+          actionMsg.textContent = `✨ Auto-populated ${populatedCount} field(s) from URL parameters`;
+          actionMsg.style.color = "#22c55e"; // Green color
+          setTimeout(() => {
+            actionMsg.textContent = "";
+            actionMsg.style.color = "";
+          }, 5000);
+        }
+      }
     }
     handleSyncNow(modal) {
       if (this.noSyncMode) {
