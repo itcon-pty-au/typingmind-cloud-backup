@@ -1,6 +1,6 @@
 <div align="center">💗 <a href="https://buymeacoffee.com/itcon">If you found this useful, please consider buying me a coffee</a> 💗<br/><br/></div>
 
-# TypingMind Cloud Backup Extension
+# TypingMind Cloud Sync
 
 ## Features
 - Extension to enable automatic backup & restore of app data [entire Typingmind data] to AWS S3/S3 compatible cloud services. (Full backup, not incremental)
