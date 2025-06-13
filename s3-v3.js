@@ -129,7 +129,7 @@ if (window.typingMindCloudSync) {
       if (!this.enabled) return;
       const timestamp = new Date().toLocaleTimeString();
       const icon = this.icons[type] || "ℹ️";
-      const syncPrefix = syncId ? `[${syncId}]` : "";
+      const syncPrefix = syncId ? `[${syncId}]` : "[NO-ID]";
       const logMessage = `[${timestamp}] ${syncPrefix} ${icon} ${message}`;
 
       switch (type) {
@@ -355,7 +355,7 @@ if (window.typingMindCloudSync) {
 
       this.logger.log(
         "start",
-        "Creating tombstone in metadata",
+        "🪦 Creating tombstone in metadata",
         {
           itemId: itemId,
           type: type,
@@ -385,7 +385,7 @@ if (window.typingMindCloudSync) {
 
       this.logger.log(
         "success",
-        "Tombstone created in metadata",
+        "✅ Tombstone created in metadata",
         {
           itemId: itemId,
           version: tombstone.tombstoneVersion,
@@ -528,7 +528,7 @@ if (window.typingMindCloudSync) {
       try {
         this.logger.log(
           "info",
-          "Starting deletion check",
+          "🔍 Starting deletion check",
           {
             knownItemsCount: this.knownItems.size,
             timestamp: new Date().toISOString(),
@@ -539,7 +539,7 @@ if (window.typingMindCloudSync) {
         const currentItems = await this.getAllItems(syncId);
         const currentItemIds = new Set(currentItems.map((item) => item.id));
 
-        this.logger.log("info", "Current vs Known comparison", {
+        this.logger.log("info", "📊 Current vs Known comparison", {
           currentItemsCount: currentItems.length,
           knownItemsCount: this.knownItems.size,
           currentChatCount: Array.from(currentItemIds).filter((id) =>
@@ -650,7 +650,7 @@ if (window.typingMindCloudSync) {
         if (missingCount > 0) {
           this.logger.log(
             "warning",
-            "Deletion check summary",
+            "⚠️ Deletion check summary",
             {
               totalMissing: missingCount,
               potentialDeletions: Array.from(
@@ -700,7 +700,10 @@ if (window.typingMindCloudSync) {
       if (window.cloudSyncApp && window.cloudSyncApp.syncOrchestrator) {
         try {
           await window.cloudSyncApp.syncOrchestrator.syncToCloud();
-          this.logger.log("success", `Tombstone sync completed for ${itemId}`);
+          this.logger.log(
+            "success",
+            `✅ Tombstone sync completed for ${itemId}`
+          );
         } catch (error) {
           this.logger.log(
             "error",
@@ -1011,15 +1014,6 @@ if (window.typingMindCloudSync) {
               !this.config.shouldExclude(key)
             ) {
               const existingItem = this.metadata.items[key];
-              const hasTombstone =
-                existingItem?.deleted ||
-                this.dataService.getTombstoneFromStorage(key);
-
-              if (hasTombstone) {
-                cursor.continue();
-                return;
-              }
-
               const currentSize = this.getItemSize(value);
               if (!existingItem) {
                 changedItems.push({
@@ -1062,14 +1056,6 @@ if (window.typingMindCloudSync) {
         if (key && !this.config.shouldExclude(key)) {
           const value = localStorage.getItem(key);
           const existingItem = this.metadata.items[key];
-          const hasTombstone =
-            existingItem?.deleted ||
-            this.dataService.getTombstoneFromStorage(key);
-
-          if (hasTombstone) {
-            continue;
-          }
-
           const currentSize = this.getItemSize(value);
           if (!existingItem) {
             changedItems.push({
@@ -1321,21 +1307,11 @@ if (window.typingMindCloudSync) {
             const localItem = this.metadata.items[key];
             const localTombstone =
               this.dataService.getTombstoneFromStorage(key);
-
             if (cloudItem.deleted) {
               const cloudVersion = cloudItem.tombstoneVersion || 1;
               const localVersion = localTombstone?.tombstoneVersion || 0;
-              const localMetadataVersion = localItem?.tombstoneVersion || 0;
-              return (
-                cloudVersion > Math.max(localVersion, localMetadataVersion)
-              );
+              return cloudVersion > localVersion;
             }
-
-            // If both local and cloud are deleted, don't overwrite
-            if (localItem?.deleted && cloudItem.deleted) {
-              return false;
-            }
-
             return (
               !localItem ||
               (cloudItem.lastModified || cloudItem.synced) >
@@ -1457,7 +1433,7 @@ if (window.typingMindCloudSync) {
 
       this.logger.log(
         "start",
-        "Starting full sync operation",
+        "🔄 Starting full sync operation",
         null,
         this.currentSyncId
       );
@@ -1518,7 +1494,7 @@ if (window.typingMindCloudSync) {
 
       this.logger.log(
         "success",
-        "Full sync operation completed",
+        "✅ Full sync operation completed",
         null,
         this.currentSyncId
       );
@@ -2794,9 +2770,9 @@ if (window.typingMindCloudSync) {
           this.logger.log("info", `⚡ Executing: ${nextOp.id}`);
           await nextOp.operation();
           this.queue.delete(nextOp.id);
-          this.logger.log("success", `Completed: ${nextOp.id}`);
+          this.logger.log("success", `✅ Completed: ${nextOp.id}`);
         } catch (error) {
-          this.logger.log("error", `Failed: ${nextOp.id}`, error.message);
+          this.logger.log("error", `❌ Failed: ${nextOp.id}`, error.message);
 
           if (nextOp.retries < this.maxRetries) {
             nextOp.retries++;
