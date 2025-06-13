@@ -355,7 +355,7 @@ if (window.typingMindCloudSync) {
 
       this.logger.log(
         "start",
-        "🪦 Creating tombstone in metadata",
+        "Creating tombstone in metadata",
         {
           itemId: itemId,
           type: type,
@@ -385,7 +385,7 @@ if (window.typingMindCloudSync) {
 
       this.logger.log(
         "success",
-        "✅ Tombstone created in metadata",
+        "Tombstone created in metadata",
         {
           itemId: itemId,
           version: tombstone.tombstoneVersion,
@@ -539,7 +539,7 @@ if (window.typingMindCloudSync) {
         const currentItems = await this.getAllItems(syncId);
         const currentItemIds = new Set(currentItems.map((item) => item.id));
 
-        this.logger.log("info", "📊 Current vs Known comparison", {
+        this.logger.log("info", "Current vs Known comparison", {
           currentItemsCount: currentItems.length,
           knownItemsCount: this.knownItems.size,
           currentChatCount: Array.from(currentItemIds).filter((id) =>
@@ -650,7 +650,7 @@ if (window.typingMindCloudSync) {
         if (missingCount > 0) {
           this.logger.log(
             "warning",
-            "⚠️ Deletion check summary",
+            "Deletion check summary",
             {
               totalMissing: missingCount,
               potentialDeletions: Array.from(
@@ -700,10 +700,7 @@ if (window.typingMindCloudSync) {
       if (window.cloudSyncApp && window.cloudSyncApp.syncOrchestrator) {
         try {
           await window.cloudSyncApp.syncOrchestrator.syncToCloud();
-          this.logger.log(
-            "success",
-            `✅ Tombstone sync completed for ${itemId}`
-          );
+          this.logger.log("success", `Tombstone sync completed for ${itemId}`);
         } catch (error) {
           this.logger.log(
             "error",
@@ -2797,9 +2794,9 @@ if (window.typingMindCloudSync) {
           this.logger.log("info", `⚡ Executing: ${nextOp.id}`);
           await nextOp.operation();
           this.queue.delete(nextOp.id);
-          this.logger.log("success", `✅ Completed: ${nextOp.id}`);
+          this.logger.log("success", `Completed: ${nextOp.id}`);
         } catch (error) {
-          this.logger.log("error", `❌ Failed: ${nextOp.id}`, error.message);
+          this.logger.log("error", `Failed: ${nextOp.id}`, error.message);
 
           if (nextOp.retries < this.maxRetries) {
             nextOp.retries++;
