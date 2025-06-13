@@ -388,10 +388,10 @@ if (window.typingMindCloudSync) {
     getTombstoneFromStorage(itemId) {
       try {
         const storageKey = `tcs_tombstone_${itemId}`;
-        this.logger.log("info", "🔍 Checking for existing tombstone", {
-          itemId: itemId,
-          storageKey: storageKey,
-        });
+        // this.logger.log("info", "🔍 Checking for existing tombstone", {
+        //   itemId: itemId,
+        //   storageKey: storageKey,
+        // });
 
         const stored = localStorage.getItem(storageKey);
         if (stored) {
@@ -402,10 +402,10 @@ if (window.typingMindCloudSync) {
           });
           return tombstone;
         } else {
-          this.logger.log("info", "❌ No existing tombstone found", {
-            itemId: itemId,
-            storageKey: storageKey,
-          });
+          // this.logger.log("info", "❌ No existing tombstone found", {
+          //   itemId: itemId,
+          //   storageKey: storageKey,
+          // });
           return null;
         }
       } catch (error) {
@@ -419,11 +419,11 @@ if (window.typingMindCloudSync) {
     saveTombstoneToStorage(itemId, tombstone) {
       try {
         const storageKey = `tcs_tombstone_${itemId}`;
-        this.logger.log("start", "💾 Saving tombstone to localStorage", {
-          itemId: itemId,
-          storageKey: storageKey,
-          tombstone: tombstone,
-        });
+        // this.logger.log("start", "💾 Saving tombstone to localStorage", {
+        //   itemId: itemId,
+        //   storageKey: storageKey,
+        //   tombstone: tombstone,
+        // });
 
         localStorage.setItem(storageKey, JSON.stringify(tombstone));
 
