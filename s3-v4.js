@@ -2699,37 +2699,93 @@ if (window.typingMindCloudSync) {
       this.autoSyncInterval = null;
       this.eventListeners = [];
       this.modalCleanupCallbacks = [];
+      this.noSyncMode = false;
     }
     async initialize() {
       this.logger.log("start", "Initializing Cloud Sync V3");
+
+      // Check for nosync parameter
+      const urlParams = new URLSearchParams(window.location.search);
+      this.noSyncMode =
+        urlParams.get("nosync") === "true" || urlParams.has("nosync");
+
+      if (this.noSyncMode) {
+        this.logger.log(
+          "info",
+          "🚫 NoSync mode enabled - only snapshot functionality available"
+        );
+      }
+
+      // Check for mandatory configuration if not in nosync mode
+      if (!this.noSyncMode && !this.checkMandatoryConfig()) {
+        alert(
+          "⚠️ Cloud Sync Configuration Required\n\nPlease configure the following mandatory fields in the sync settings:\n• AWS Bucket Name\n• AWS Region\n• AWS Access Key\n• AWS Secret Key\n• Encryption Key\n\nClick on the Sync button to open settings, then reload the page after configuration."
+        );
+        await this.waitForDOM();
+        this.insertSyncButton();
+        return;
+      }
+
       await this.performV2toV3Migration();
       await this.waitForDOM();
       this.insertSyncButton();
 
-      this.dataService.startDeletionMonitoring();
+      // Only start monitoring and syncing if not in nosync mode
+      if (!this.noSyncMode) {
+        this.dataService.startDeletionMonitoring();
 
-      if (this.config.isConfigured()) {
-        try {
-          await this.s3Service.initialize();
-          await this.backupService.checkAndPerformDailyBackup();
-          await this.syncOrchestrator.performFullSync();
-          this.startAutoSync();
-          this.updateSyncStatus("success");
+        if (this.config.isConfigured()) {
+          try {
+            await this.s3Service.initialize();
+            await this.backupService.checkAndPerformDailyBackup();
+            await this.syncOrchestrator.performFullSync();
+            this.startAutoSync();
+            this.updateSyncStatus("success");
+            this.logger.log(
+              "success",
+              "Cloud Sync initialized successfully with tombstone monitoring"
+            );
+          } catch (error) {
+            this.logger.log("error", "Initialization failed", error.message);
+            this.updateSyncStatus("error");
+          }
+        } else {
           this.logger.log(
-            "success",
-            "Cloud Sync initialized successfully with tombstone monitoring"
+            "info",
+            "AWS not configured - running in monitoring mode only"
           );
-        } catch (error) {
-          this.logger.log("error", "Initialization failed", error.message);
-          this.updateSyncStatus("error");
         }
       } else {
         this.logger.log(
           "info",
-          "AWS not configured - running in monitoring mode only"
+          "NoSync mode: Monitoring, daily backups, and auto-sync disabled"
         );
       }
     }
+    checkMandatoryConfig() {
+      const requiredFields = [
+        "tcs_aws_bucketname",
+        "tcs_aws_region",
+        "tcs_aws_accesskey",
+        "tcs_aws_secretkey",
+        "tcs_encryptionkey",
+      ];
+
+      for (const field of requiredFields) {
+        const value = localStorage.getItem(field);
+        if (!value || value.trim() === "") {
+          this.logger.log("warning", `Missing mandatory field: ${field}`);
+          return false;
+        }
+      }
+
+      this.logger.log(
+        "success",
+        "All mandatory configuration fields are present"
+      );
+      return true;
+    }
+
     async waitForDOM() {
       if (document.readyState === "loading") {
         return new Promise((resolve) =>
@@ -2786,10 +2842,19 @@ if (window.typingMindCloudSync) {
       this.setupModalEventListeners(modal, overlay);
     }
     getModalHTML() {
+      const modeStatus = this.noSyncMode
+        ? `<div class="mb-3 p-2 bg-orange-600 rounded-lg border border-orange-500">
+             <div class="text-center text-sm font-medium">
+               🚫 NoSync Mode Active - Only snapshot functionality available
+             </div>
+           </div>`
+        : "";
+
       return `<div class="text-white text-left text-sm">
         <div class="flex justify-center items-center mb-3">
           <h3 class="text-center text-xl font-bold text-white">S3 Backup & Sync Settings</h3>
         </div>
+        ${modeStatus}
         <div class="space-y-3">
           <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
             <div class="flex items-center justify-between mb-1">
@@ -2879,8 +2944,10 @@ if (window.typingMindCloudSync) {
               Save
             </button>
             <div class="flex space-x-2">
-              <button id="sync-now" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-500 disabled:cursor-default transition-colors">
-                Sync Now
+              <button id="sync-now" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-500 disabled:cursor-default transition-colors" ${
+                this.noSyncMode ? "disabled" : ""
+              }>
+                ${this.noSyncMode ? "Sync Disabled" : "Sync Now"}
               </button>
               <button id="create-snapshot" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 disabled:cursor-default transition-colors">
                 Snapshot
@@ -2891,7 +2958,11 @@ if (window.typingMindCloudSync) {
             </div>
           </div>
           <div class="text-center mt-4">
-            <span id="last-sync-msg" class="text-zinc-400"></span>
+            <span id="last-sync-msg" class="text-zinc-400">${
+              this.noSyncMode
+                ? "NoSync Mode: Automatic sync operations disabled"
+                : ""
+            }</span>
           </div>
           <div id="action-msg" class="text-center text-zinc-400"></div>
         </div>
@@ -2950,6 +3021,13 @@ if (window.typingMindCloudSync) {
       this.setupBackupListHandlers(modal);
     }
     handleSyncNow(modal) {
+      if (this.noSyncMode) {
+        alert(
+          "⚠️ Sync operations are disabled in NoSync mode.\n\nTo enable sync operations, remove the ?nosync parameter from the URL and reload the page."
+        );
+        return;
+      }
+
       const syncNowButton = modal.querySelector("#sync-now");
       const originalText = syncNowButton.textContent;
       syncNowButton.disabled = true;
@@ -3317,17 +3395,35 @@ if (window.typingMindCloudSync) {
       );
       this.config.save();
 
-      this.operationQueue.add(
-        "save-and-sync",
-        async () => {
-          await this.s3Service.initialize();
-          await this.syncOrchestrator.performFullSync();
-          this.startAutoSync();
-          this.updateSyncStatus("success");
-          this.logger.log("success", "Configuration saved and sync completed");
-        },
-        "high"
-      );
+      if (!this.noSyncMode) {
+        this.operationQueue.add(
+          "save-and-sync",
+          async () => {
+            await this.s3Service.initialize();
+            await this.syncOrchestrator.performFullSync();
+            this.startAutoSync();
+            this.updateSyncStatus("success");
+            this.logger.log(
+              "success",
+              "Configuration saved and sync completed"
+            );
+          },
+          "high"
+        );
+      } else {
+        // In noSync mode, only initialize S3 service for snapshot functionality
+        this.operationQueue.add(
+          "save-config-nosync",
+          async () => {
+            await this.s3Service.initialize();
+            this.logger.log(
+              "success",
+              "Configuration saved (NoSync mode - only snapshot available)"
+            );
+          },
+          "high"
+        );
+      }
 
       this.closeModal(overlay);
     }
