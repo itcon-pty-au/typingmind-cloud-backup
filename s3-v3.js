@@ -15,99 +15,78 @@ if (window.typingMindCloudSync) {
 
   class ConfigManager {
     constructor() {
-      this.config = this.loadConfig();
+      this.encryptionCache = new Map();
+      this.config = null;
       this.exclusions = this.loadExclusions();
-      this.cryptoService = null;
+      this.initPromise = this.init();
     }
-
-    setCryptoService(cryptoService) {
-      this.cryptoService = cryptoService;
+    async init() {
+      this.config = await this.loadConfig();
     }
-
-    async deriveKey(password) {
-      const data = new TextEncoder().encode(password);
-      const hash = await crypto.subtle.digest("SHA-256", data);
+    async deriveSimpleKey() {
+      if (this.encryptionCache.has("simpleKey")) {
+        return this.encryptionCache.get("simpleKey");
+      }
+      const keyMaterial = window.location.hostname + "tcs-simple-key-salt";
+      const encoder = new TextEncoder();
+      const keyData = encoder.encode(keyMaterial);
+      const hashBuffer = await crypto.subtle.digest("SHA-256", keyData);
       const key = await crypto.subtle.importKey(
         "raw",
-        hash,
+        hashBuffer,
         { name: "AES-GCM" },
         false,
         ["encrypt", "decrypt"]
       );
+      this.encryptionCache.set("simpleKey", key);
       return key;
     }
-
-    async encryptCredential(value, encryptionKey) {
-      if (!value || !encryptionKey) return value;
+    async simpleEncrypt(text) {
+      if (!text) return "";
       try {
-        const key = await this.deriveKey(encryptionKey);
-        const encodedData = new TextEncoder().encode(value);
+        const key = await this.deriveSimpleKey();
+        const encoder = new TextEncoder();
+        const data = encoder.encode(text);
         const iv = crypto.getRandomValues(new Uint8Array(12));
         const encrypted = await crypto.subtle.encrypt(
           { name: "AES-GCM", iv },
           key,
-          encodedData
+          data
         );
         const result = new Uint8Array(iv.length + encrypted.byteLength);
         result.set(iv, 0);
         result.set(new Uint8Array(encrypted), iv.length);
-        const base64 = btoa(String.fromCharCode(...result));
-        return `ENC:${base64}`;
+        return btoa(String.fromCharCode(...result));
       } catch (error) {
-        console.warn("Failed to encrypt credential:", error);
-        return value;
+        console.warn("Simple encryption failed, storing as plain text:", error);
+        return text;
       }
     }
-
-    async decryptCredential(encryptedValue, encryptionKey) {
-      if (
-        !encryptedValue ||
-        !encryptedValue.startsWith("ENC:") ||
-        !encryptionKey
-      ) {
-        return encryptedValue;
-      }
+    async simpleDecrypt(encryptedText) {
+      if (!encryptedText) return "";
       try {
-        const key = await Promise.race([
-          this.deriveKey(encryptionKey),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("Key derivation timeout")), 2000)
-          ),
-        ]);
-
-        const base64Data = encryptedValue.slice(4);
-        const encryptedData = new Uint8Array(
-          atob(base64Data)
-            .split("")
-            .map((char) => char.charCodeAt(0))
+        const key = await this.deriveSimpleKey();
+        const data = Uint8Array.from(atob(encryptedText), (c) =>
+          c.charCodeAt(0)
         );
-
-        if (encryptedData.length < 12) {
-          throw new Error("Invalid encrypted data format");
-        }
-
-        const iv = encryptedData.slice(0, 12);
-        const data = encryptedData.slice(12);
-
-        const decrypted = await Promise.race([
-          crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, data),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("Decryption timeout")), 2000)
-          ),
-        ]);
-
-        return new TextDecoder().decode(decrypted);
+        const iv = data.slice(0, 12);
+        const encrypted = data.slice(12);
+        const decrypted = await crypto.subtle.decrypt(
+          { name: "AES-GCM", iv },
+          key,
+          encrypted
+        );
+        const decoder = new TextDecoder();
+        return decoder.decode(decrypted);
       } catch (error) {
         console.warn(
-          "Failed to decrypt credential, using fallback:",
-          error.message
+          "Simple decryption failed, returning as plain text:",
+          error
         );
-        // Return empty string for encrypted data that can't be decrypted
-        return encryptedValue.startsWith("ENC:") ? "" : encryptedValue;
+        return encryptedText;
       }
     }
-
-    loadConfig() {
+    async loadConfig() {
       const defaults = {
         syncInterval: 15,
         bucketName: "",
@@ -119,73 +98,26 @@ if (window.typingMindCloudSync) {
       };
       const stored = {};
 
-      // Load encryption key first (needed to decrypt other values)
-      const encryptionKey = localStorage.getItem("tcs_encryptionkey") || "";
-      stored.encryptionKey = encryptionKey;
-
-      // Load other config values
-      Object.keys(defaults).forEach((key) => {
-        if (key === "encryptionKey") return; // Already loaded above
-
-        let storageKey = `tcs_aws_${key.toLowerCase()}`;
+      for (const key of Object.keys(defaults)) {
+        let storageKey;
+        if (key === "encryptionKey") {
+          storageKey = "tcs_encryptionkey";
+        } else {
+          storageKey = `tcs_aws_${key.toLowerCase()}`;
+        }
         const value = localStorage.getItem(storageKey);
 
         if (key === "syncInterval") {
           stored[key] = parseInt(value) || 15;
+        } else if (key === "accessKey" || key === "secretKey") {
+          stored[key] = value ? await this.simpleDecrypt(value) : "";
         } else {
           stored[key] = value || "";
         }
-      });
+      }
 
       return { ...defaults, ...stored };
     }
-
-    async initializeConfig() {
-      try {
-        const encryptionKey = this.config.encryptionKey;
-        if (encryptionKey) {
-          console.log("🔑 Initializing encrypted credentials...");
-          await Promise.race([
-            this.decryptStoredCredentials(this.config, encryptionKey),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error("Decryption timeout")), 5000)
-            ),
-          ]);
-          console.log("✅ Credentials decrypted successfully");
-        }
-      } catch (error) {
-        console.warn(
-          "⚠️ Failed to decrypt credentials, falling back to plain text:",
-          error.message
-        );
-        // Fallback: reload config without decryption
-        this.config = this.loadConfig();
-      }
-    }
-
-    async decryptStoredCredentials(stored, encryptionKey) {
-      const credentialKeys = [
-        "bucketName",
-        "accessKey",
-        "secretKey",
-        "region",
-        "endpoint",
-      ];
-
-      for (const key of credentialKeys) {
-        if (stored[key]) {
-          const original = stored[key];
-          stored[key] = await this.decryptCredential(
-            stored[key],
-            encryptionKey
-          );
-          if (original.startsWith("ENC:")) {
-            console.log(`🔓 Decrypted ${key}`);
-          }
-        }
-      }
-    }
-
     loadExclusions() {
       const exclusions = localStorage.getItem("tcs_sync-exclusions");
       const userExclusions = exclusions
@@ -223,35 +155,22 @@ if (window.typingMindCloudSync) {
       this.config[key] = value;
     }
     async save() {
-      const encryptionKey = this.config.encryptionKey;
-      const credentialKeys = [
-        "bucketName",
-        "accessKey",
-        "secretKey",
-        "region",
-        "endpoint",
-      ];
-
       for (const key of Object.keys(this.config)) {
         let storageKey;
         if (key === "encryptionKey") {
           storageKey = "tcs_encryptionkey";
-          localStorage.setItem(storageKey, this.config[key].toString());
         } else {
           storageKey = `tcs_aws_${key.toLowerCase()}`;
-
-          // Encrypt credential fields if encryption key is available
-          if (credentialKeys.includes(key) && encryptionKey) {
-            const encryptedValue = await this.encryptCredential(
-              this.config[key].toString(),
-              encryptionKey
-            );
-            localStorage.setItem(storageKey, encryptedValue);
-            console.log(`🔒 Encrypted and saved ${key}`);
-          } else {
-            localStorage.setItem(storageKey, this.config[key].toString());
-          }
         }
+
+        let valueToStore;
+        if (key === "accessKey" || key === "secretKey") {
+          valueToStore = await this.simpleEncrypt(this.config[key].toString());
+        } else {
+          valueToStore = this.config[key].toString();
+        }
+
+        localStorage.setItem(storageKey, valueToStore);
       }
     }
     isConfigured() {
@@ -267,6 +186,11 @@ if (window.typingMindCloudSync) {
     }
     reloadExclusions() {
       this.exclusions = this.loadExclusions();
+    }
+    cleanup() {
+      this.encryptionCache.clear();
+      this.config = null;
+      this.exclusions = null;
     }
   }
 
@@ -3050,24 +2974,8 @@ if (window.typingMindCloudSync) {
     async initialize() {
       this.logger.log("start", "Initializing TypingmindCloud Sync V3");
 
-      // Initialize encrypted config first (with timeout protection)
-      try {
-        await Promise.race([
-          this.config.initializeConfig(),
-          new Promise((_, reject) =>
-            setTimeout(
-              () => reject(new Error("Config initialization timeout")),
-              3000
-            )
-          ),
-        ]);
-      } catch (error) {
-        console.warn(
-          "⚠️ Config initialization failed or timed out:",
-          error.message
-        );
-        console.log("🔧 Proceeding with standard initialization...");
-      }
+      // Wait for config manager to finish initialization
+      await this.config.initPromise;
 
       // Check for nosync parameter and get URL config
       const urlParams = new URLSearchParams(window.location.search);
@@ -3368,7 +3276,7 @@ if (window.typingMindCloudSync) {
                   )}" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
                 </div>
                 <div class="w-1/2">
-                  <label for="encryption-key" class="block text-sm font-medium text-zinc-300">Encryption Key <span class="text-red-400">*</span> <span class="text-xs text-zinc-400">(encrypts backups & AWS credentials)</span></label>
+                  <label for="encryption-key" class="block text-sm font-medium text-zinc-300">Encryption Key <span class="text-red-400">*</span></label>
                   <input id="encryption-key" name="encryption-key" type="password" value="${
                     this.config.get("encryptionKey") || ""
                   }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
@@ -4022,7 +3930,7 @@ if (window.typingMindCloudSync) {
       this.logger.log("start", "V2 keys detected, starting V2 to V3 migration");
       try {
         await this.migrateStorageKeys();
-        this.config.config = this.config.loadConfig();
+        this.config.config = await this.config.loadConfig();
         this.logger.log("info", "Reloaded configuration with migrated keys");
         await this.cleanupAndFreshSync();
         localStorage.setItem(localMigrationFlag, "true");
@@ -4308,6 +4216,11 @@ if (window.typingMindCloudSync) {
       }
 
       this.logger.log("success", "✅ Cleanup completed");
+
+      if (this.config) {
+        this.config.cleanup();
+      }
+
       this.config = null;
       this.dataService = null;
       this.cryptoService = null;
