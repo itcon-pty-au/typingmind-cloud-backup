@@ -65,7 +65,7 @@ After installation, you'll see a new **Sync** button in the sidebar. Click it to
 - **Region\*** - AWS region (use 'auto' for Cloudflare R2)
 - **Access Key\*** - Your S3 access key ID
 - **Secret Key\*** - Your S3 secret access key
-- **Encryption Key\*** - Your encryption password (8+ characters)
+- **Encryption Key\*** - Your encryption password (8+ characters) [⚠️ If you forget this key, there is no way to restore data from the backups created by this extension]
 
 **Optional Fields**:
 
