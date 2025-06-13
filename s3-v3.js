@@ -1,897 +1,25 @@
-// TypingMind Cloud Sync & Backup v2.0.0
-// Combines features from s3.js and YATSE for comprehensive sync and backup
+/* 
+TypingMind Cloud Sync v3 by ITCON, AU
+-------------------------
+Features:
+- Sync typingmind database with S3 bucket
+- Snapshots on demand
+- Automatic daily backups
+- Backup management in Extension config UI
+- Detailed logging in console
+*/
 if (window.typingMindCloudSync) {
-  console.log("TypingMind Cloud Sync script already loaded, skipping");
+  console.log("TypingMind Cloud Sync already loaded");
 } else {
   window.typingMindCloudSync = true;
-  const CONSOLE_TAG = "[Cloud Sync]";
-  const EXTENSION_VERSION = "2.0.0";
-  const EXCLUDED_SETTINGS = [
-    "aws-bucket",
-    "aws-access-key",
-    "aws-secret-key",
-    "aws-region",
-    "aws-endpoint",
-    "encryption-key",
-    "chat-sync-metadata",
-    "sync-mode",
-    "last-cloud-sync",
-    "TM_useDraftContent",
-    "last-daily-backup",
-    "TM_useLastVerifiedToken",
-    "TM_useStateUpdateHistory",
-    "TM_useGlobalChatLoading",
-    "TM_crossTabLastSynced",
-    "TM_useLastOpenedChatID",
-    "INSTANCE_ID",
-    "referrer",
-    "setItem",
-    "TM_useDismissedOnboarding",
-  ];
-  function getUserDefinedExclusions() {
-    const exclusions = localStorage.getItem("sync-exclusions");
-    return exclusions
-      ? exclusions
-          .split(",")
-          .map((item) => item.trim())
-          .filter((item) => item)
-      : [];
-  }
-  function shouldExcludeSetting(key) {
-    const userExclusions = getUserDefinedExclusions();
-    const isExcluded =
-      EXCLUDED_SETTINGS.includes(key) ||
-      userExclusions.includes(key) ||
-      key.startsWith("CHAT_") ||
-      key.startsWith("last-seen-") ||
-      key.startsWith("sync-") ||
-      !isNaN(key);
-    if (isExcluded && userExclusions.includes(key)) {
-      logToConsole(
-        "debug",
-        `Setting excluded by user-defined exclusions: ${key}`
-      );
-    }
-    return isExcluded;
-  }
-  let config = {
-    syncMode: "disabled",
-    syncInterval: 15,
-    bucketName: "",
-    region: "",
-    accessKey: "",
-    secretKey: "",
-    endpoint: "",
-    encryptionKey: "",
-  };
-  let isConsoleLoggingEnabled =
-    new URLSearchParams(window.location.search).get("log") === "true";
-  let localMetadata = {
-    chats: {},
-    settings: {
-      items: {},
-      lastModified: 0,
-      syncedAt: 0,
-    },
-    lastSyncTime: 0,
-  };
-  let persistentDB = null;
-  let dbConnectionPromise = null;
-  let dbConnectionRetries = 0;
-  const MAX_DB_RETRIES = 3;
-  const DB_RETRY_DELAY = 1000;
-  const DB_CONNECTION_TIMEOUT = 10000;
-  let dbHeartbeatInterval = null;
-  let operationState = {
-    isImporting: false,
-    isExporting: false,
-    isPendingSync: false,
-    operationQueue: [],
-    isProcessingQueue: false,
-    lastSyncStatus: null,
-    isCheckingChanges: false,
-    lastError: null,
-    operationStartTime: null,
-    queueProcessingPromise: null,
-    completedOperations: new Set(),
-    operationTimeouts: new Map(),
-    currentlyExecutingOperation: null,
-  };
-  let backupState = {
-    isBackupInProgress: false,
-    lastDailyBackup: null,
-    lastManualSnapshot: null,
-    backupInterval: null,
-    isBackupIntervalRunning: false,
-  };
-  let lastSeenUpdates = {};
-  let cloudFileSize = 0;
-  let localFileSize = 0;
-  let isLocalDataModified = false;
-  let activeIntervals = {
-    sync: null,
-    backup: null,
-    changeCheck: null,
-  };
-  function clearAllIntervals() {
-    if (activeIntervals.sync) {
-      clearInterval(activeIntervals.sync);
-      activeIntervals.sync = null;
-    }
-    if (activeIntervals.backup) {
-      clearInterval(activeIntervals.backup);
-      activeIntervals.backup = null;
-    }
-    if (activeIntervals.changeCheck) {
-      clearInterval(activeIntervals.changeCheck);
-      activeIntervals.changeCheck = null;
-    }
-  }
-  const LOG_ICONS = {
-    info: "ℹ️",
-    success: "✅",
-    warning: "⚠️",
-    error: "❌",
-    start: "🔄",
-    end: "🏁",
-    upload: "⬆️",
-    download: "⬇️",
-    cleanup: "🧹",
-    snapshot: "📸",
-    encrypt: "🔐",
-    decrypt: "🔓",
-    progress: "📊",
-    time: "⏰",
-    wait: "⏳",
-    pause: "⏸️",
-    resume: "▶️",
-    visibility: "👁️",
-    active: "📱",
-    calendar: "📅",
-    tag: "🏷️",
-    stop: "🛑",
-    skip: "⏩",
-  };
-  function logToConsole(type, message, data = null) {
-    if (!isConsoleLoggingEnabled) return;
-    const timestamp = new Date().toLocaleString();
-    const icons = {
-      info: "ℹ️",
-      success: "✅",
-      warning: "⚠️",
-      error: "❌",
-      start: "🔄",
-      end: "🏁",
-      upload: "⬆️",
-      download: "⬇️",
-      cleanup: "🧹",
-      snapshot: "📸",
-      encrypt: "🔐",
-      decrypt: "🔓",
-      progress: "📊",
-      time: "⏰",
-      wait: "⏳",
-      pause: "⏸️",
-      resume: "▶️",
-      visibility: "👁️",
-      active: "📱",
-      calendar: "📅",
-      tag: "🏷️",
-      stop: "🛑",
-      skip: "⏩",
-    };
-    const icon = icons[type] || "ℹ️";
-    const logMessage = `${icon} [${timestamp}] ${message}`;
-    if (/Mobi|Android/i.test(navigator.userAgent)) {
-      const container =
-        document.getElementById("mobile-log-container") ||
-        createMobileLogContainer();
-      const logsContent = container.querySelector("#logs-content");
-      if (logsContent) {
-        const logEntry = document.createElement("div");
-        logEntry.className = "text-sm mb-1 break-words";
-        logEntry.textContent = logMessage;
-        if (data) {
-          const dataEntry = document.createElement("div");
-          dataEntry.className = "text-xs text-gray-500 ml-4 mb-2";
-          dataEntry.textContent = JSON.stringify(data, null, 2);
-          logEntry.appendChild(dataEntry);
-        }
-        const searchContainer = container.querySelector(
-          ".flex.items-center.gap-2"
-        );
-        const searchInput = searchContainer
-          ? searchContainer.querySelector("input")
-          : null;
-        const isSearchActive =
-          searchInput && !searchInput.classList.contains("hidden");
-        if (isSearchActive) {
-          const isReversed =
-            container.getAttribute("data-log-reversed") === "true";
-          if (isReversed) {
-            container.originalLogEntries.unshift(logEntry);
-          } else {
-            container.originalLogEntries.push(logEntry);
-          }
-          const query = searchInput.value.trim();
-          if (query && logMessage.toLowerCase().includes(query.toLowerCase())) {
-            const isReversed =
-              container.getAttribute("data-log-reversed") === "true";
-            if (isReversed) {
-              logsContent.insertBefore(
-                logEntry.cloneNode(true),
-                logsContent.firstChild
-              );
-            } else {
-              logsContent.appendChild(logEntry.cloneNode(true));
-            }
-          }
-        } else {
-          const isReversed =
-            container.getAttribute("data-log-reversed") === "true";
-          if (isReversed) {
-            logsContent.insertBefore(logEntry, logsContent.firstChild);
-          } else {
-            logsContent.appendChild(logEntry);
-          }
-        }
-      }
-    }
-    switch (type) {
-      case "error":
-        console.error(logMessage, data);
-        break;
-      case "warning":
-        console.warn(logMessage, data);
-        break;
-      default:
-        console.log(logMessage, data);
-    }
-  }
-  function createMobileLogContainer() {
-    const container = document.createElement("div");
-    container.id = "mobile-log-container";
-    container.className =
-      "fixed bottom-0 left-0 right-0 bg-black text-white z-[9999]";
-    container.setAttribute("data-log-reversed", "false");
-    container.style.cssText = `
-          height: 200px;
-          max-height: 50vh;
-          display: ${isConsoleLoggingEnabled ? "block" : "none"};
-          resize: vertical;
-          overflow-y: auto;
-      `;
-    const minimizedTag = document.createElement("div");
-    minimizedTag.id = "minimized-log-tag";
-    minimizedTag.className =
-      "fixed bottom-0 right-0 bg-black text-white px-3 py-1 m-2 rounded cursor-pointer z-[9999] hidden";
-    minimizedTag.innerHTML = "📋 Show Logs";
-    let longPressTimer = null;
-    let isDraggingTag = false;
-    let tagStartX = 0;
-    let tagStartY = 0;
-    let tagOffsetX = 0;
-    let tagOffsetY = 0;
-    const savedPosition = localStorage.getItem("mobile-log-tag-position");
-    if (savedPosition) {
-      const pos = JSON.parse(savedPosition);
-      minimizedTag.style.right = "auto";
-      minimizedTag.style.bottom = "auto";
-      minimizedTag.style.left = pos.x + "px";
-      minimizedTag.style.top = pos.y + "px";
-    }
-    function startLongPress(e) {
-      longPressTimer = setTimeout(() => {
-        isDraggingTag = true;
-        minimizedTag.style.opacity = "0.7";
-        const rect = minimizedTag.getBoundingClientRect();
-        const clientX =
-          e.type === "touchstart" ? e.touches[0].clientX : e.clientX;
-        const clientY =
-          e.type === "touchstart" ? e.touches[0].clientY : e.clientY;
-        tagOffsetX = clientX - rect.left;
-        tagOffsetY = clientY - rect.top;
-        document.addEventListener("touchmove", dragTag, { passive: false });
-        document.addEventListener("mousemove", dragTag);
-        document.addEventListener("touchend", endDragTag);
-        document.addEventListener("mouseup", endDragTag);
-      }, 500);
-    }
-    function stopLongPress() {
-      if (longPressTimer) {
-        clearTimeout(longPressTimer);
-        longPressTimer = null;
-      }
-    }
-    function dragTag(e) {
-      if (!isDraggingTag) return;
-      e.preventDefault();
-      const clientX = e.type === "touchmove" ? e.touches[0].clientX : e.clientX;
-      const clientY = e.type === "touchmove" ? e.touches[0].clientY : e.clientY;
-      const newX = clientX - tagOffsetX;
-      const newY = clientY - tagOffsetY;
-      const maxX = window.innerWidth - minimizedTag.offsetWidth;
-      const maxY = window.innerHeight - minimizedTag.offsetHeight;
-      const constrainedX = Math.max(0, Math.min(newX, maxX));
-      const constrainedY = Math.max(0, Math.min(newY, maxY));
-      minimizedTag.style.right = "auto";
-      minimizedTag.style.bottom = "auto";
-      minimizedTag.style.left = constrainedX + "px";
-      minimizedTag.style.top = constrainedY + "px";
-    }
-    function endDragTag() {
-      document.removeEventListener("touchmove", dragTag);
-      document.removeEventListener("mousemove", dragTag);
-      document.removeEventListener("touchend", endDragTag);
-      document.removeEventListener("mouseup", endDragTag);
-      if (isDraggingTag) {
-        isDraggingTag = false;
-        minimizedTag.style.opacity = "1";
-        const rect = minimizedTag.getBoundingClientRect();
-        localStorage.setItem(
-          "mobile-log-tag-position",
-          JSON.stringify({
-            x: rect.left,
-            y: rect.top,
-          })
-        );
-      }
-      stopLongPress();
-    }
-    minimizedTag.addEventListener("touchstart", startLongPress);
-    minimizedTag.addEventListener("mousedown", startLongPress);
-    minimizedTag.addEventListener("touchend", stopLongPress);
-    minimizedTag.addEventListener("mouseup", stopLongPress);
-    minimizedTag.onclick = (e) => {
-      if (!isDraggingTag) {
-        container.style.display = "block";
-        minimizedTag.style.display = "none";
-      }
-    };
-    document.body.appendChild(minimizedTag);
-    const header = document.createElement("div");
-    header.className =
-      "sticky top-0 left-0 right-0 bg-gray-800 p-2 flex justify-between items-center border-b border-gray-700";
-    const searchContainer = document.createElement("div");
-    searchContainer.className = "flex items-center gap-2 flex-1 max-w-xs";
-    const searchIcon = document.createElement("div");
-    searchIcon.className = "text-white text-lg cursor-pointer flex-shrink-0";
-    searchIcon.innerHTML = "🔍";
-    searchIcon.title = "Search logs";
-    const searchInput = document.createElement("input");
-    searchInput.type = "text";
-    searchInput.placeholder = "Search logs...";
-    searchInput.className =
-      "hidden bg-gray-700 text-white px-2 py-1 rounded text-sm flex-1 focus:outline-none focus:ring-1 focus:ring-blue-500";
-    let isSearchActive = false;
-    container.originalLogEntries = [];
-    function toggleSearch() {
-      if (!isSearchActive) {
-        searchInput.classList.remove("hidden");
-        searchIcon.innerHTML = "✕";
-        searchIcon.title = "Clear search";
-        searchInput.focus();
-        isSearchActive = true;
-        const logsContainer = container.querySelector("#logs-content");
-        if (logsContainer) {
-          container.originalLogEntries = Array.from(logsContainer.children);
-        }
-      } else {
-        searchInput.classList.add("hidden");
-        searchIcon.innerHTML = "🔍";
-        searchIcon.title = "Search logs";
-        searchInput.value = "";
-        isSearchActive = false;
-        restoreOriginalLogs();
-      }
-    }
-    function restoreOriginalLogs() {
-      const logsContainer = container.querySelector("#logs-content");
-      if (logsContainer && container.originalLogEntries.length > 0) {
-        logsContainer.innerHTML = "";
-        container.originalLogEntries.forEach((entry) =>
-          logsContainer.appendChild(entry)
-        );
-      }
-    }
-    function performSearch(query) {
-      const logsContainer = container.querySelector("#logs-content");
-      if (!logsContainer || !container.originalLogEntries.length) return;
-      const filteredEntries = container.originalLogEntries.filter((entry) => {
-        const text = entry.textContent || "";
-        return text.toLowerCase().includes(query.toLowerCase());
-      });
-      logsContainer.innerHTML = "";
-      if (filteredEntries.length === 0) {
-        const noResults = document.createElement("div");
-        noResults.className = "text-gray-400 text-sm italic p-2";
-        noResults.textContent = "No matching logs found";
-        logsContainer.appendChild(noResults);
-      } else {
-        filteredEntries.forEach((entry) => {
-          const clonedEntry = entry.cloneNode(true);
-          logsContainer.appendChild(clonedEntry);
-        });
-      }
-    }
-    searchIcon.addEventListener("click", toggleSearch);
-    searchInput.addEventListener("input", (e) => {
-      const query = e.target.value.trim();
-      if (query === "") {
-        restoreOriginalLogs();
-      } else {
-        performSearch(query);
-      }
-    });
-    searchInput.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        toggleSearch();
-      }
-    });
-    searchContainer.appendChild(searchIcon);
-    searchContainer.appendChild(searchInput);
-    const controls = document.createElement("div");
-    controls.className = "flex items-center gap-3";
-    const clearBtn = document.createElement("button");
-    clearBtn.className = "text-white p-2 hover:bg-gray-700 rounded text-sm";
-    clearBtn.textContent = "Clear";
-    clearBtn.onclick = () => {
-      const logsContainer = container.querySelector("#logs-content");
-      if (logsContainer) {
-        logsContainer.innerHTML = "";
-        container.originalLogEntries = [];
-      }
-    };
-    const exportBtn = document.createElement("button");
-    exportBtn.className = "text-white p-2 hover:bg-gray-700 rounded text-sm";
-    exportBtn.textContent = "Export";
-    exportBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const logsContainer = container.querySelector("#logs-content");
-      if (logsContainer && logsContainer.children.length > 0) {
-        const logs = Array.from(logsContainer.children)
-          .map((log) => {
-            const mainText = log.textContent || "";
-            return mainText;
-          })
-          .join("\n");
-        const blob = new Blob([logs], { type: "text/plain" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `typingmind-logs-${new Date()
-          .toISOString()
-          .slice(0, 19)
-          .replace(/:/g, "-")}.txt`;
-        a.style.display = "none";
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => {
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }, 100);
-        const originalText = exportBtn.textContent;
-        exportBtn.textContent = "Done";
-        exportBtn.style.backgroundColor = "#10b981";
-        setTimeout(() => {
-          exportBtn.textContent = originalText;
-          exportBtn.style.backgroundColor = "";
-        }, 2000);
-      }
-    });
-    let isReversed = false;
-    const reverseBtn = document.createElement("button");
-    reverseBtn.className = "text-white p-2 hover:bg-gray-700 rounded text-sm";
-    reverseBtn.innerHTML = "↕️";
-    reverseBtn.title = "Reverse order";
-    reverseBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const logsContainer = container.querySelector("#logs-content");
-      if (logsContainer && logsContainer.children.length > 0) {
-        const logEntries = Array.from(logsContainer.children);
-        logEntries.reverse();
-        logsContainer.innerHTML = "";
-        logEntries.forEach((entry) => logsContainer.appendChild(entry));
-        isReversed = !isReversed;
-        container.setAttribute("data-log-reversed", isReversed.toString());
-        reverseBtn.innerHTML = isReversed ? "🔽" : "🔼";
-        reverseBtn.title = isReversed
-          ? "Latest first (click to reverse)"
-          : "Latest last (click to reverse)";
-      }
-    });
-    const minimizeBtn = document.createElement("button");
-    minimizeBtn.className = "text-white p-2 hover:bg-gray-700 rounded text-sm";
-    minimizeBtn.textContent = "—";
-    minimizeBtn.onclick = () => {
-      container.style.display = "none";
-      minimizedTag.style.display = "block";
-    };
-    const toggleSize = document.createElement("button");
-    toggleSize.className = "text-white p-2 hover:bg-gray-700 rounded";
-    toggleSize.innerHTML = "□";
-    toggleSize.onclick = () => {
-      if (container.style.height === "200px") {
-        container.style.position = "fixed";
-        container.style.top = "0";
-        container.style.left = "0";
-        container.style.right = "0";
-        container.style.bottom = "0";
-        container.style.height = "100vh";
-        container.style.maxHeight = "100vh";
-        container.style.zIndex = "99999";
-        logsContent.style.height = "calc(100vh - 36px)";
-        toggleSize.innerHTML = "▢";
-      } else {
-        container.style.position = "fixed";
-        container.style.top = "auto";
-        container.style.left = "0";
-        container.style.right = "0";
-        container.style.bottom = "0";
-        container.style.height = "200px";
-        container.style.maxHeight = "50vh";
-        logsContent.style.height = "calc(100% - 36px)";
-        toggleSize.innerHTML = "□";
-      }
-    };
-    const closeBtn = document.createElement("button");
-    closeBtn.className = "text-white p-2 hover:bg-gray-700 rounded";
-    closeBtn.innerHTML = "✕";
-    closeBtn.onclick = () => {
-      container.style.display = "none";
-      minimizedTag.style.display = "none";
-      const toggle = document.getElementById("console-logging-toggle");
-      if (toggle) toggle.checked = false;
-      isConsoleLoggingEnabled = false;
-    };
-    controls.appendChild(clearBtn);
-    controls.appendChild(exportBtn);
-    controls.appendChild(reverseBtn);
-    controls.appendChild(minimizeBtn);
-    controls.appendChild(toggleSize);
-    controls.appendChild(closeBtn);
-    const dragHandle = document.createElement("div");
-    dragHandle.className =
-      "absolute -top-1 left-0 right-0 h-1 bg-gray-600 cursor-row-resize";
-    dragHandle.style.cursor = "row-resize";
-    const logsContent = document.createElement("div");
-    logsContent.id = "logs-content";
-    logsContent.className = "p-2 overflow-y-auto";
-    logsContent.style.height = "calc(100% - 36px)";
-    header.appendChild(searchContainer);
-    header.appendChild(controls);
-    container.appendChild(dragHandle);
-    container.appendChild(header);
-    container.appendChild(logsContent);
-    let startY = 0;
-    let startHeight = 0;
-    function initDrag(e) {
-      startY = e.type === "mousedown" ? e.clientY : e.touches[0].clientY;
-      startHeight = parseInt(
-        document.defaultView.getComputedStyle(container).height,
-        10
-      );
-      document.documentElement.addEventListener("mousemove", doDrag);
-      document.documentElement.addEventListener("mouseup", stopDrag);
-      document.documentElement.addEventListener("touchmove", doDrag);
-      document.documentElement.addEventListener("touchend", stopDrag);
-    }
-    function doDrag(e) {
-      const currentY =
-        e.type === "mousemove" ? e.clientY : e.touches[0].clientY;
-      const newHeight = startHeight - (currentY - startY);
-      const minHeight = 100;
-      const maxHeight = window.innerHeight * 0.8;
-      if (newHeight > minHeight && newHeight < maxHeight) {
-        container.style.height = `${newHeight}px`;
-      }
-    }
-    function stopDrag() {
-      document.documentElement.removeEventListener("mousemove", doDrag);
-      document.documentElement.removeEventListener("mouseup", stopDrag);
-      document.documentElement.removeEventListener("touchmove", doDrag);
-      document.documentElement.removeEventListener("touchend", stopDrag);
-    }
-    dragHandle.addEventListener("mousedown", initDrag);
-    dragHandle.addEventListener("touchstart", initDrag);
-    document.body.appendChild(container);
-    return container;
-  }
-  function initializeLoggingState() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const logParam = urlParams.get("log");
-    if (logParam === "true") {
-      isConsoleLoggingEnabled = true;
-      logToConsole(
-        "info",
-        `TypingMind Cloud Sync & Backup v${EXTENSION_VERSION} initializing...`
-      );
-    }
-  }
-  async function performFullInitialization() {
-    try {
-      loadConfiguration();
-      await loadAwsSdk();
-      await loadLocalMetadata();
-      await initializeLastSeenUpdates();
-      await initializeSettingsMonitoring();
-      await setupLocalStorageChangeListener();
-      startSyncInterval();
-      if (config.syncMode === "sync") {
-        await queueOperation("initial-sync", performInitialSync);
-      }
-      if (config.syncMode !== "disabled") {
-        queueOperation(
-          "daily-backup-check",
-          checkAndPerformDailyBackup,
-          [],
-          300000
-        );
-      }
-      setupLocalStorageChangeListener();
-      monitorIndexedDBForDeletions();
-      startPeriodicChangeCheck();
-      //setupVisibilityChangeHandler();
-      try {
-        await cleanupMetadataVersions();
-        // logToConsole(
-        //   "success",
-        //   "Metadata cleanup completed during initialization"
-        // );
-      } catch (cleanupError) {
-        logToConsole(
-          "warning",
-          "Non-critical: Metadata cleanup failed during initialization",
-          cleanupError
-        );
-      }
-      logToConsole("success", "Full initialization completed");
-      logToConsole("cleanup", "Starting tombstone cleanup...");
-      const localCleanupCount = cleanupOldTombstones();
-      const cloudCleanupCount = await cleanupCloudTombstones();
-      if (localCleanupCount > 0 || cloudCleanupCount > 0) {
-        logToConsole("success", "Tombstone cleanup completed", {
-          localTombstonesRemoved: localCleanupCount,
-          cloudTombstonesRemoved: cloudCleanupCount,
-        });
-      }
-      return true;
-    } catch (error) {
-      logToConsole("error", "Error during full initialization:", error);
-      return false;
-    }
-  }
-  let isInitialized = false;
-  async function initializeExtension() {
-    if (isInitialized) {
-      logToConsole(
-        "skip",
-        "Extension already initialized, skipping duplicate initialization"
-      );
-      return;
-    }
-    isInitialized = true;
-    initializeLoggingState();
-    try {
-      await loadAwsSdk();
-      loadConfiguration();
-      insertSyncButton();
-      if (!isAwsConfigured()) {
-        logToConsole(
-          "info",
-          "AWS not configured - minimal initialization completed"
-        );
-        return;
-      }
-      if (config.syncMode === "disabled") {
-        logToConsole(
-          "info",
-          "Disabled mode - skipping cloud operations initialization"
-        );
-        return;
-      }
-      let initialMetadataSaveNeeded = false;
-      let settingsMetadataSaveNeeded = false;
-      initialMetadataSaveNeeded = await loadLocalMetadata();
-      await initializeLastSeenUpdates();
-      settingsMetadataSaveNeeded = await initializeSettingsMonitoring();
-      try {
-        const duplicatesFound = await detectIndexedDBDuplicates();
-        if (duplicatesFound) {
-          await cleanupIndexedDBDuplicates();
-          logToConsole(
-            "success",
-            "IndexedDB duplicate cleanup completed during extension initialization"
-          );
-        } else {
-          logToConsole(
-            "info",
-            "No duplicates found between IndexedDB and localStorage - skipping cleanup"
-          );
-        }
-      } catch (cleanupError) {
-        logToConsole(
-          "warning",
-          "Non-critical: IndexedDB duplicate cleanup failed during extension initialization",
-          cleanupError
-        );
-      }
-      let hashesRecalculated = false;
-      const allLocalChatsForHash = await getAllChatsFromIndexedDB();
-      const localChatsMapForHash = new Map(
-        allLocalChatsForHash.map((chat) => [
-          chat.id.replace(/^CHAT_/, ""),
-          chat,
-        ])
-      );
-      if (localMetadata.chats) {
-        for (const chatId in localMetadata.chats) {
-          const cleanChatId = chatId.replace(/^CHAT_/, "");
-          const chatData = localChatsMapForHash.get(cleanChatId);
-          if (chatData && !localMetadata.chats[chatId].deleted) {
-            try {
-              const newHash = await generateHash(chatData, "chat");
-              if (localMetadata.chats[chatId].hash !== newHash) {
-                localMetadata.chats[chatId].hash = newHash;
-                hashesRecalculated = true;
-              }
-            } catch (hashError) {
-              logToConsole(
-                "error",
-                `Error generating hash for chat ${cleanChatId} during init recalc`,
-                hashError
-              );
-            }
-          } else if (!chatData && !localMetadata.chats[chatId].deleted) {
-            logToConsole(
-              "warning",
-              `Chat ${cleanChatId} found in metadata but not in IndexedDB during hash recalc.`
-            );
-          }
-        }
-      }
-      if (
-        initialMetadataSaveNeeded ||
-        settingsMetadataSaveNeeded ||
-        hashesRecalculated
-      ) {
-        await saveLocalMetadata();
-      }
-      await setupLocalStorageChangeListener();
-      startSyncInterval();
 
-      // Check cloud state FIRST to determine initial action
-      if (config.syncMode === "sync") {
-        const cloudMetadata = await downloadCloudMetadata(); // Get cloud state early
-        const cloudIsEmptyOrNew =
-          !cloudMetadata ||
-          !cloudMetadata.chats ||
-          Object.keys(cloudMetadata.chats).length === 0 ||
-          cloudMetadata.lastSyncTime === 0;
-        const localHasData =
-          localMetadata &&
-          localMetadata.chats &&
-          Object.keys(localMetadata.chats).length > 0;
-
-        if (cloudIsEmptyOrNew && localHasData) {
-          logToConsole(
-            "info",
-            "Cloud is empty/new but local data exists. Performing initial sync/upload."
-          );
-          // Use performInitialSync as it handles this scenario.
-          await queueOperation(
-            "initial-sync-upload",
-            performInitialSync,
-            [],
-            300000
-          );
-        } else if (!cloudIsEmptyOrNew) {
-          logToConsole(
-            "info",
-            "Cloud data found. Performing standard startup sync check."
-          );
-        } else {
-          logToConsole(
-            "info",
-            "Both cloud and local seem empty or new. No initial sync needed immediately."
-          );
-        }
-      }
-      if (config.syncMode !== "disabled") {
-        queueOperation(
-          "daily-backup-check",
-          checkAndPerformDailyBackup,
-          [],
-          300000
-        );
-      }
-      monitorIndexedDBForDeletions();
-      startPeriodicChangeCheck();
-      setupVisibilityChangeHandler();
-      try {
-        await cleanupMetadataVersions();
-        // logToConsole(
-        //   "success",
-        //   "Metadata cleanup completed during initialization"
-        // );
-      } catch (cleanupError) {
-        logToConsole(
-          "warning",
-          "Non-critical: Metadata cleanup failed during initialization",
-          cleanupError
-        );
-      }
-      logToConsole("success", "Full initialization completed");
-      logToConsole("cleanup", "Starting tombstone cleanup...");
-      const localCleanupCount = cleanupOldTombstones();
-      const cloudCleanupCount = await cleanupCloudTombstones();
-      if (localCleanupCount > 0 || cloudCleanupCount > 0) {
-        logToConsole("success", "Tombstone cleanup completed", {
-          localTombstonesRemoved: localCleanupCount,
-          cloudTombstonesRemoved: cloudCleanupCount,
-        });
-      }
-      // setupVisibilityChangeHandler();
-      logToConsole("success", "Initialization completed successfully");
-    } catch (error) {
-      logToConsole("error", "Error initializing extension:", error);
-      throw error;
+  class ConfigManager {
+    constructor() {
+      this.config = this.loadConfig();
+      this.exclusions = this.loadExclusions();
     }
-  }
-  if (document.readyState === "complete") {
-    initializeExtension();
-  } else {
-    window.addEventListener("load", initializeExtension);
-  }
-  function throttle(func, limit) {
-    let inThrottle;
-    return function (...args) {
-      if (!inThrottle) {
-        func.apply(this, args);
-        inThrottle = true;
-        setTimeout(() => (inThrottle = false), limit);
-      }
-    };
-  }
-  async function loadAwsSdk() {
-    if (window.AWS) return;
-    return new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src = "https://sdk.amazonaws.com/js/aws-sdk-2.1048.0.min.js";
-      script.onload = () => {
-        resolve();
-      };
-      script.onerror = () => reject(new Error("Failed to load AWS SDK"));
-      document.head.appendChild(script);
-    });
-  }
-  async function loadJSZip() {
-    if (window.JSZip) return window.JSZip;
-    return new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.src =
-        "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
-      script.onload = () => {
-        resolve(window.JSZip);
-      };
-      script.onerror = () => reject(new Error("Failed to load JSZip"));
-      document.head.appendChild(script);
-    });
-  }
-  async function initializeLastSeenUpdates() {
-    const chats = await getAllChatsFromIndexedDB();
-    for (const chat of chats) {
-      if (!chat.id) continue;
-      lastSeenUpdates[chat.id] = {
-        updatedAt: chat.updatedAt || Date.now(),
-        hash: await generateHash(chat, "chat"),
-      };
-    }
-  }
-  function loadConfiguration() {
-    if (!config) {
-      config = {
-        syncMode: "disabled",
+    loadConfig() {
+      const defaults = {
         syncInterval: 15,
         bucketName: "",
         region: "",
@@ -900,3361 +28,4089 @@ if (window.typingMindCloudSync) {
         endpoint: "",
         encryptionKey: "",
       };
+      const stored = {};
+      Object.keys(defaults).forEach((key) => {
+        let storageKey;
+        if (key === "encryptionKey") {
+          storageKey = "tcs_encryptionkey";
+        } else {
+          storageKey = `tcs_aws_${key.toLowerCase()}`;
+        }
+        const value = localStorage.getItem(storageKey);
+        stored[key] =
+          key === "syncInterval" ? parseInt(value) || 15 : value || "";
+      });
+      return { ...defaults, ...stored };
     }
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlSyncMode = urlParams.get("syncMode");
-    if (urlSyncMode && ["disabled", "backup", "sync"].includes(urlSyncMode)) {
-      localStorage.setItem("sync-mode", urlSyncMode);
-      logToConsole("info", `Sync mode set from URL parameter: ${urlSyncMode}`);
-      urlParams.delete("syncMode");
-      const newUrl =
-        window.location.pathname +
-        (urlParams.toString() ? `?${urlParams.toString()}` : "") +
-        window.location.hash;
-      window.history.replaceState({}, "", newUrl);
+    loadExclusions() {
+      const exclusions = localStorage.getItem("tcs_sync-exclusions");
+      const userExclusions = exclusions
+        ? exclusions
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean)
+        : [];
+      const systemExclusions = [
+        "tcs_aws_bucketname",
+        "tcs_aws_accesskey",
+        "tcs_aws_secretkey",
+        "tcs_aws_region",
+        "tcs_aws_endpoint",
+        "tcs_encryptionkey",
+        "tcs_last-cloud-sync",
+        "tcs_last-daily-backup",
+        "tcs_backup-size",
+        "tcs_sync-exclusions",
+        "tcs_local-metadata",
+        "tcs_localMigrated",
+        "tcs_migrationBackup",
+        "tcs_last-tombstone-cleanup",
+        "referrer",
+        "TM_useLastVerifiedToken",
+        "TM_useStateUpdateHistory",
+        "INSTANCE_ID",
+      ];
+      return [...systemExclusions, ...userExclusions];
     }
-    const storedConfig = {
-      bucketName: localStorage.getItem("aws-bucket"),
-      region: localStorage.getItem("aws-region"),
-      accessKey: localStorage.getItem("aws-access-key"),
-      secretKey: localStorage.getItem("aws-secret-key"),
-      endpoint: localStorage.getItem("aws-endpoint"),
-      syncInterval: parseInt(localStorage.getItem("backup-interval")) || 15,
-      encryptionKey: localStorage.getItem("encryption-key"),
-      syncMode: localStorage.getItem("sync-mode") || "disabled",
-    };
-    config = { ...config, ...storedConfig };
-    config.syncMode = localStorage.getItem("sync-mode") || "disabled";
-    return config;
+    get(key) {
+      return this.config[key];
+    }
+    set(key, value) {
+      this.config[key] = value;
+    }
+    save() {
+      Object.keys(this.config).forEach((key) => {
+        let storageKey;
+        if (key === "encryptionKey") {
+          storageKey = "tcs_encryptionkey";
+        } else {
+          storageKey = `tcs_aws_${key.toLowerCase()}`;
+        }
+        localStorage.setItem(storageKey, this.config[key].toString());
+      });
+    }
+    isConfigured() {
+      return !!(
+        this.config.accessKey &&
+        this.config.secretKey &&
+        this.config.region &&
+        this.config.bucketName
+      );
+    }
+    shouldExclude(key) {
+      return this.exclusions.includes(key) || key.startsWith("tcs_");
+    }
+    reloadExclusions() {
+      this.exclusions = this.loadExclusions();
+    }
   }
-  function saveConfiguration() {
-    localStorage.setItem("aws-bucket", config.bucketName);
-    localStorage.setItem("aws-region", config.region);
-    localStorage.setItem("aws-access-key", config.accessKey);
-    localStorage.setItem("aws-secret-key", config.secretKey);
-    localStorage.setItem("aws-endpoint", config.endpoint);
-    localStorage.setItem("backup-interval", config.syncInterval.toString());
-    localStorage.setItem("encryption-key", config.encryptionKey);
-    localStorage.setItem("sync-mode", config.syncMode);
+
+  class Logger {
+    constructor() {
+      const urlParams = new URLSearchParams(window.location.search);
+      this.enabled = urlParams.get("log") === "true" || urlParams.has("log");
+      this.icons = {
+        info: "ℹ️",
+        success: "✅",
+        warning: "⚠️",
+        error: "❌",
+        start: "🔄",
+        skip: "⏭️",
+      };
+      this.syncIdCounter = 1;
+    }
+    generateSyncId(category = "SYNC") {
+      const timestamp = Date.now().toString().slice(-6);
+      const counter = this.syncIdCounter.toString().padStart(3, "0");
+      this.syncIdCounter++;
+      return `${category}-${counter}-${timestamp}`;
+    }
+    log(type, message, data = null, syncId = null) {
+      if (!this.enabled) return;
+      const timestamp = new Date().toLocaleTimeString();
+      const icon = this.icons[type] || "ℹ️";
+      const syncPrefix = syncId ? `[${syncId}]` : "[NO-ID]";
+      const logMessage = `[${timestamp}] ${syncPrefix} ${icon} ${message}`;
+
+      switch (type) {
+        case "error":
+          console.error(logMessage, data || "");
+          break;
+        case "warning":
+          console.warn(logMessage, data || "");
+          break;
+        default:
+          console.log(logMessage, data || "");
+      }
+    }
+    setEnabled(enabled) {
+      this.enabled = enabled;
+      const url = new URL(window.location);
+      if (enabled) url.searchParams.set("log", "");
+      else url.searchParams.delete("log");
+      window.history.replaceState({}, "", url);
+    }
   }
-  async function loadLocalMetadata() {
-    let metadataInitialized = false;
-    try {
-      const storedMetadata = await getIndexedDBKey("sync-metadata");
-      if (storedMetadata) {
+
+  class DataService {
+    constructor(configManager, logger, operationQueue = null) {
+      this.config = configManager;
+      this.logger = logger;
+      this.operationQueue = operationQueue;
+      this.dbPromise = null;
+      this.knownItems = new Map();
+      this.potentialDeletions = new Map();
+      this.maxKnownItems = 5000;
+      this.currentSyncId = null;
+    }
+    async getDB() {
+      if (!this.dbPromise) {
+        this.dbPromise = new Promise((resolve, reject) => {
+          const request = indexedDB.open("keyval-store");
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(new Error("Failed to open IndexedDB"));
+        });
+      }
+      return this.dbPromise;
+    }
+    async getAllItems(syncId = null) {
+      const items = new Map();
+      this.currentSyncId = syncId;
+
+      const db = await this.getDB();
+      const transaction = db.transaction(["keyval"], "readonly");
+      const store = transaction.objectStore("keyval");
+      let totalIDB = 0;
+      let includedIDB = 0;
+      let excludedIDB = 0;
+      await new Promise((resolve) => {
+        const request = store.openCursor();
+        request.onsuccess = (event) => {
+          const cursor = event.target.result;
+          if (cursor) {
+            const key = cursor.key;
+            const value = cursor.value;
+            totalIDB++;
+            if (
+              typeof key === "string" &&
+              value !== undefined &&
+              !this.config.shouldExclude(key)
+            ) {
+              items.set(key, {
+                id: key,
+                data: value,
+                type: "idb",
+              });
+              includedIDB++;
+            } else {
+              excludedIDB++;
+            }
+            cursor.continue();
+          } else {
+            resolve();
+          }
+        };
+        request.onerror = () => resolve();
+      });
+      const urlParams = new URLSearchParams(window.location.search);
+      const debugEnabled =
+        urlParams.get("log") === "true" || urlParams.has("log");
+      let totalLS = 0;
+      let excludedLS = 0;
+      let includedLS = 0;
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        totalLS++;
+        if (key && !this.config.shouldExclude(key)) {
+          const value = localStorage.getItem(key);
+          if (value !== null) {
+            items.set(key, { id: key, data: { key, value }, type: "ls" });
+            includedLS++;
+          }
+        } else {
+          excludedLS++;
+        }
+      }
+      if (debugEnabled) {
+        console.log(
+          `📊 IndexedDB Stats: Total=${totalIDB}, Included=${includedIDB}, Excluded=${excludedIDB}`
+        );
+        console.log(
+          `📊 localStorage Stats: Total=${totalLS}, Included=${includedLS}, Excluded=${excludedLS}`
+        );
+        console.log(`📊 Total items to sync: ${items.size} (IDB + LS)`);
+      }
+
+      const chatItems = Array.from(items.keys()).filter((id) =>
+        id.startsWith("CHAT_")
+      );
+      const otherItems = Array.from(items.keys()).filter(
+        (id) => !id.startsWith("CHAT_")
+      );
+
+      // this.logger.log("success", "📋 Retrieved all items for deletion check", {
+      //   totalItems: items.size,
+      //   idbStats: {
+      //     total: totalIDB,
+      //     included: includedIDB,
+      //     excluded: excludedIDB,
+      //   },
+      //   lsStats: { total: totalLS, included: includedLS, excluded: excludedLS },
+      //   chatCount: chatItems.length,
+      //   otherCount: otherItems.length,
+      //   sampleChatItems: chatItems.slice(0, 5),
+      //   sampleOtherItems: otherItems.slice(0, 5),
+      // });
+
+      return Array.from(items.values());
+    }
+    async getItem(itemId, type) {
+      if (type === "idb") {
+        const db = await this.getDB();
+        const transaction = db.transaction(["keyval"], "readonly");
+        const store = transaction.objectStore("keyval");
+        return new Promise((resolve) => {
+          const request = store.get(itemId);
+          request.onsuccess = () => {
+            const result = request.result;
+            resolve(result || null);
+          };
+          request.onerror = () => resolve(null);
+        });
+      } else if (type === "ls") {
+        const value = localStorage.getItem(itemId);
+        return value !== null ? { key: itemId, value } : null;
+      }
+      return null;
+    }
+    async saveItem(item, type, itemKey = null) {
+      if (type === "idb") {
+        const db = await this.getDB();
+        const transaction = db.transaction(["keyval"], "readwrite");
+        const store = transaction.objectStore("keyval");
+        const itemId = itemKey || item.id;
+        const itemData = item;
+        return new Promise((resolve) => {
+          const request = store.put(itemData, itemId);
+          request.onsuccess = () => resolve(true);
+          request.onerror = () => resolve(false);
+        });
+      } else if (type === "ls") {
         try {
-          localMetadata = JSON.parse(storedMetadata);
-          const formatLogTimestamp = (ts) =>
-            ts ? new Date(ts).toLocaleString() : ts === 0 ? "0 (Epoch)" : ts;
-          let settingsHashSamples = {};
-          if (localMetadata.settings?.items) {
-            const sampleKeys = Object.keys(localMetadata.settings.items).slice(
-              0,
-              3
-            );
-            if (sampleKeys.length > 0) {
-              settingsHashSamples = sampleKeys.reduce((acc, key) => {
-                acc[key] = localMetadata.settings.items[key]?.hash
-                  ? `${localMetadata.settings.items[key].hash.substring(
-                      0,
-                      8
-                    )}...`
-                  : "none";
-                return acc;
-              }, {});
+          localStorage.setItem(item.key, item.value);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+      return false;
+    }
+    async deleteItem(itemId, type) {
+      const success = await this.performDelete(itemId, type);
+      if (success) {
+        this.createTombstone(itemId, type, "manual-delete");
+      }
+      return success;
+    }
+    async performDelete(itemId, type) {
+      if (type === "idb") {
+        const db = await this.getDB();
+        const transaction = db.transaction(["keyval"], "readwrite");
+        const store = transaction.objectStore("keyval");
+        return new Promise((resolve) => {
+          const request = store.delete(itemId);
+          request.onsuccess = () => resolve(true);
+          request.onerror = () => resolve(false);
+        });
+      } else if (type === "ls") {
+        try {
+          localStorage.removeItem(itemId);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+      return false;
+    }
+    createTombstone(itemId, type, source = "unknown") {
+      const orchestrator = window.cloudSyncApp?.syncOrchestrator;
+      if (!orchestrator) {
+        this.logger.log(
+          "error",
+          "❌ Cannot create tombstone: SyncOrchestrator not found.",
+          null,
+          this.currentSyncId
+        );
+        return null;
+      }
+
+      const timestamp = Date.now();
+      const tombstone = {
+        deleted: timestamp,
+        deletedAt: timestamp,
+        type: type,
+        source: source,
+        tombstoneVersion: 1,
+      };
+
+      this.logger.log(
+        "start",
+        "🪦 Creating tombstone in metadata",
+        {
+          itemId: itemId,
+          type: type,
+          source: source,
+        },
+        this.currentSyncId
+      );
+
+      const existingItem = orchestrator.metadata.items[itemId];
+      if (existingItem && existingItem.deleted) {
+        tombstone.tombstoneVersion = (existingItem.tombstoneVersion || 0) + 1;
+        this.logger.log(
+          "info",
+          "📈 Incrementing existing tombstone version in metadata",
+          {
+            newVersion: tombstone.tombstoneVersion,
+          },
+          this.currentSyncId
+        );
+      }
+
+      orchestrator.metadata.items[itemId] = {
+        ...tombstone,
+        synced: 0,
+      };
+      orchestrator.saveMetadata();
+
+      this.logger.log(
+        "success",
+        "✅ Tombstone created in metadata",
+        {
+          itemId: itemId,
+          version: tombstone.tombstoneVersion,
+        },
+        this.currentSyncId
+      );
+
+      if (this.operationQueue) {
+        this.operationQueue.add(
+          `tombstone-sync-${itemId}`,
+          () => this.syncTombstone(itemId),
+          "high"
+        );
+      }
+
+      return tombstone;
+    }
+    getTombstoneFromStorage(itemId) {
+      try {
+        const storageKey = `tcs_tombstone_${itemId}`;
+        // this.logger.log("info", "🔍 Checking for existing tombstone", {
+        //   itemId: itemId,
+        //   storageKey: storageKey,
+        // });
+
+        const stored = localStorage.getItem(storageKey);
+        if (stored) {
+          const tombstone = JSON.parse(stored);
+          // this.logger.log("success", "📥 Found existing tombstone", {
+          //   itemId: itemId,
+          //   tombstone: tombstone,
+          // });
+          return tombstone;
+        } else {
+          // this.logger.log("info", "❌ No existing tombstone found", {
+          //   itemId: itemId,
+          //   storageKey: storageKey,
+          // });
+          return null;
+        }
+      } catch (error) {
+        this.logger.log("error", "❌ Error reading tombstone from storage", {
+          itemId: itemId,
+          error: error.message,
+        });
+        return null;
+      }
+    }
+    saveTombstoneToStorage(itemId, tombstone) {
+      try {
+        const storageKey = `tcs_tombstone_${itemId}`;
+        // this.logger.log("start", "💾 Saving tombstone to localStorage", {
+        //   itemId: itemId,
+        //   storageKey: storageKey,
+        //   tombstone: tombstone,
+        // });
+
+        localStorage.setItem(storageKey, JSON.stringify(tombstone));
+
+        // Verify it was saved
+        const verification = localStorage.getItem(storageKey);
+        if (verification) {
+          this.logger.log(
+            "success",
+            "✅ Tombstone successfully saved and verified",
+            {
+              itemId: itemId,
+              storageKey: storageKey,
+            }
+          );
+        } else {
+          this.logger.log("error", "❌ Tombstone save verification failed", {
+            itemId: itemId,
+            storageKey: storageKey,
+          });
+        }
+      } catch (error) {
+        this.logger.log("error", "❌ Failed to save tombstone to storage", {
+          itemId: itemId,
+          error: error.message,
+        });
+      }
+    }
+    getAllTombstones() {
+      const tombstones = new Map();
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith("tcs_tombstone_")) {
+          const itemId = key.replace("tcs_tombstone_", "");
+          try {
+            const tombstone = JSON.parse(localStorage.getItem(key));
+            tombstones.set(itemId, tombstone);
+          } catch {
+            continue;
+          }
+        }
+      }
+      return tombstones;
+    }
+    async initializeKnownItems(syncId = null) {
+      const items = await this.getAllItems(syncId);
+      this.knownItems.clear();
+
+      this.logger.log(
+        "info",
+        "🔧 Initializing deletion monitoring",
+        {
+          totalItemsFound: items.length,
+          maxKnownItems: this.maxKnownItems,
+        },
+        syncId
+      );
+
+      items.forEach((item) => {
+        this.knownItems.set(item.id, {
+          type: item.type,
+          detectedAt: Date.now(),
+          confirmCount: 1,
+        });
+      });
+
+      const sampleItems = Array.from(this.knownItems.keys()).slice(0, 10);
+      this.logger.log(
+        "info",
+        "📋 Initialized monitoring",
+        {
+          totalTracked: this.knownItems.size,
+          sampleItems: sampleItems,
+          chatItems: Array.from(this.knownItems.keys()).filter((id) =>
+            id.startsWith("CHAT_")
+          ).length,
+          otherItems: Array.from(this.knownItems.keys()).filter(
+            (id) => !id.startsWith("CHAT_")
+          ).length,
+        },
+        syncId
+      );
+    }
+    async checkForDeletions(syncId = null) {
+      try {
+        this.logger.log(
+          "info",
+          "🔍 Starting deletion check",
+          {
+            knownItemsCount: this.knownItems.size,
+            timestamp: new Date().toISOString(),
+          },
+          syncId
+        );
+
+        const currentItems = await this.getAllItems(syncId);
+        const currentItemIds = new Set(currentItems.map((item) => item.id));
+
+        this.logger.log("info", "📊 Current vs Known comparison", {
+          currentItemsCount: currentItems.length,
+          knownItemsCount: this.knownItems.size,
+          currentChatCount: Array.from(currentItemIds).filter((id) =>
+            id.startsWith("CHAT_")
+          ).length,
+          knownChatCount: Array.from(this.knownItems.keys()).filter((id) =>
+            id.startsWith("CHAT_")
+          ).length,
+        });
+
+        // Check for missing items
+        let missingCount = 0;
+        for (const [itemId, itemInfo] of this.knownItems.entries()) {
+          if (!currentItemIds.has(itemId)) {
+            missingCount++;
+
+            const orchestrator = window.cloudSyncApp?.syncOrchestrator;
+            const existingMetadata = orchestrator?.metadata?.items?.[itemId];
+
+            if (existingMetadata && existingMetadata.deleted) {
+              this.logger.log(
+                "info",
+                "🪦 Item already marked as deleted in metadata, removing from tracking",
+                { itemId: itemId }
+              );
+              this.knownItems.delete(itemId);
+              this.potentialDeletions.delete(itemId);
+              continue;
+            }
+
+            // Track potential deletion
+            const itemMissingCount =
+              (this.potentialDeletions.get(itemId) || 0) + 1;
+            this.potentialDeletions.set(itemId, itemMissingCount);
+
+            this.logger.log("warning", "❗ Item appears to be missing", {
+              itemId: itemId,
+              type: itemInfo.type,
+              missingCount: itemMissingCount,
+              requiredCount: 3,
+              detectedAt: new Date(itemInfo.detectedAt).toISOString(),
+              ageMs: Date.now() - itemInfo.detectedAt,
+            });
+
+            if (itemMissingCount >= 3) {
+              this.logger.log(
+                "error",
+                "🗑️ CONFIRMED DELETION - Creating tombstone",
+                {
+                  itemId: itemId,
+                  type: itemInfo.type,
+                  missingCount: itemMissingCount,
+                  detectedAt: new Date(itemInfo.detectedAt).toISOString(),
+                },
+                syncId
+              );
+
+              this.createTombstone(itemId, itemInfo.type, "monitor-detected");
+              this.knownItems.delete(itemId);
+              this.potentialDeletions.delete(itemId);
+            }
+          } else {
+            // Item is present, remove from potential deletions if it was there
+            if (this.potentialDeletions.has(itemId)) {
+              this.potentialDeletions.delete(itemId);
             }
           }
-          // logToConsole("debug", "Parsed localMetadata:", {
-          //   lastSyncTime: formatLogTimestamp(localMetadata.lastSyncTime),
-          //   hasChats: !!localMetadata.chats,
-          //   chatCount: localMetadata.chats
-          //     ? Object.keys(localMetadata.chats).length
-          //     : 0,
-          //   firstChatSyncedAt:
-          //     localMetadata.chats && Object.keys(localMetadata.chats).length > 0
-          //       ? formatLogTimestamp(
-          //           localMetadata.chats[Object.keys(localMetadata.chats)[0]]
-          //             ?.syncedAt
-          //         )
-          //       : undefined,
-          //   hasSettings: !!localMetadata.settings,
-          //   settingsCount: localMetadata.settings?.items
-          //     ? Object.keys(localMetadata.settings.items).length
-          //     : 0,
-          //   settingsSyncedAt: formatLogTimestamp(
-          //     localMetadata.settings?.syncedAt
-          //   ),
-          //   settingsSamples: settingsHashSamples,
-          // });
-        } catch (parseError) {
-          logToConsole(
-            "error",
-            "Failed to parse stored metadata, initializing from scratch",
-            parseError
+        }
+
+        // Add new items to tracking
+        let newItemsAdded = 0;
+        currentItems.forEach((item) => {
+          if (!this.knownItems.has(item.id)) {
+            if (this.knownItems.size >= this.maxKnownItems) {
+              const oldestEntry = this.knownItems.entries().next().value;
+              this.knownItems.delete(oldestEntry[0]);
+              this.logger.log(
+                "warning",
+                "📊 Removed oldest item from monitoring",
+                {
+                  removedItem: oldestEntry[0],
+                  limit: this.maxKnownItems,
+                }
+              );
+            }
+
+            this.knownItems.set(item.id, {
+              type: item.type,
+              detectedAt: Date.now(),
+              confirmCount: 1,
+            });
+            newItemsAdded++;
+          }
+        });
+
+        if (newItemsAdded > 0) {
+          this.logger.log(
+            "info",
+            "➕ Added new items to monitoring",
+            {
+              newItemsCount: newItemsAdded,
+              totalTracked: this.knownItems.size,
+            },
+            syncId
           );
-          metadataInitialized = await initializeMetadataFromExistingData();
+        }
+
+        if (missingCount > 0) {
+          this.logger.log(
+            "warning",
+            "⚠️ Deletion check summary",
+            {
+              totalMissing: missingCount,
+              potentialDeletions: Array.from(
+                this.potentialDeletions.entries()
+              ).map(([id, count]) => ({ id, count })),
+              confirmedDeletions: Array.from(
+                this.potentialDeletions.entries()
+              ).filter(([id, count]) => count >= 3).length,
+            },
+            syncId
+          );
+        } else {
+          this.logger.log("info", "✅ No missing items detected", null, syncId);
+        }
+
+        if (this.knownItems.size > this.maxKnownItems * 1.1) {
+          this.trimKnownItems(syncId);
+        }
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "❌ Error during deletion monitoring",
+          error,
+          syncId
+        );
+      }
+    }
+    trimKnownItems(syncId = null) {
+      const entries = Array.from(this.knownItems.entries());
+      entries.sort((a, b) => a[1].detectedAt - b[1].detectedAt);
+
+      const toRemove = entries.slice(0, entries.length - this.maxKnownItems);
+      toRemove.forEach(([itemId]) => {
+        this.knownItems.delete(itemId);
+      });
+
+      this.logger.log(
+        "info",
+        `🧹 Trimmed knownItems from ${entries.length} to ${this.knownItems.size}`,
+        null,
+        syncId
+      );
+    }
+    async syncTombstone(itemId) {
+      this.logger.log("info", `🔄 Triggering sync for tombstone ${itemId}`);
+
+      if (window.cloudSyncApp && window.cloudSyncApp.syncOrchestrator) {
+        try {
+          await window.cloudSyncApp.syncOrchestrator.syncToCloud();
+          this.logger.log(
+            "success",
+            `✅ Tombstone sync completed for ${itemId}`
+          );
+        } catch (error) {
+          this.logger.log(
+            "error",
+            `❌ Tombstone sync failed for ${itemId}`,
+            error.message
+          );
+          throw error;
         }
       } else {
-        logToConsole(
-          "info",
-          "No stored metadata found, initializing from existing data."
-        );
-        metadataInitialized = await initializeMetadataFromExistingData();
-      }
-    } catch (error) {
-      logToConsole("error", "Failed to load local metadata:", error);
-      try {
-        logToConsole(
+        this.logger.log(
           "warning",
-          "Attempting to recover by initializing fresh metadata."
+          `⚠️ Sync orchestrator not available for ${itemId}`
         );
-        metadataInitialized = await initializeMetadataFromExistingData();
-        logToConsole(
+      }
+    }
+    cleanup() {
+      this.knownItems.clear();
+      this.potentialDeletions.clear();
+      if (this.dbPromise) {
+        this.dbPromise
+          .then((db) => {
+            if (db && db.close) {
+              db.close();
+            }
+          })
+          .catch(() => {});
+      }
+      this.dbPromise = null;
+      this.config = null;
+      this.logger = null;
+      this.operationQueue = null;
+    }
+  }
+
+  class CryptoService {
+    constructor(configManager) {
+      this.config = configManager;
+      this.keyCache = new Map();
+      this.maxCacheSize = 10;
+    }
+    async deriveKey(password) {
+      if (this.keyCache.has(password)) return this.keyCache.get(password);
+
+      if (this.keyCache.size >= this.maxCacheSize) {
+        const firstKey = this.keyCache.keys().next().value;
+        this.keyCache.delete(firstKey);
+      }
+
+      const data = new TextEncoder().encode(password);
+      const hash = await crypto.subtle.digest("SHA-256", data);
+      const key = await crypto.subtle.importKey(
+        "raw",
+        hash,
+        { name: "AES-GCM" },
+        false,
+        ["encrypt", "decrypt"]
+      );
+      this.keyCache.set(password, key);
+      return key;
+    }
+    async encrypt(data) {
+      const encryptionKey = this.config.get("encryptionKey");
+      if (!encryptionKey) throw new Error("No encryption key configured");
+      const key = await this.deriveKey(encryptionKey);
+      const encodedData = new TextEncoder().encode(JSON.stringify(data));
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const encrypted = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv },
+        key,
+        encodedData
+      );
+      const result = new Uint8Array(iv.length + encrypted.byteLength);
+      result.set(iv, 0);
+      result.set(new Uint8Array(encrypted), iv.length);
+      return result;
+    }
+    async decrypt(encryptedData) {
+      const encryptionKey = this.config.get("encryptionKey");
+      if (!encryptionKey) throw new Error("No encryption key configured");
+      const key = await this.deriveKey(encryptionKey);
+      const iv = encryptedData.slice(0, 12);
+      const data = encryptedData.slice(12);
+      const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv },
+        key,
+        data
+      );
+      return JSON.parse(new TextDecoder().decode(decrypted));
+    }
+    cleanup() {
+      this.keyCache.clear();
+      this.config = null;
+    }
+  }
+
+  class S3Service {
+    constructor(configManager, cryptoService, logger) {
+      this.config = configManager;
+      this.crypto = cryptoService;
+      this.logger = logger;
+      this.client = null;
+      this.sdkLoaded = false;
+    }
+    async initialize() {
+      if (!this.config.isConfigured())
+        throw new Error("AWS configuration incomplete");
+      await this.loadSDK();
+      const config = this.config.config;
+      const s3Config = {
+        accessKeyId: config.accessKey,
+        secretAccessKey: config.secretKey,
+        region: config.region,
+      };
+      if (config.endpoint) {
+        s3Config.endpoint = config.endpoint;
+        s3Config.s3ForcePathStyle = true;
+      }
+      AWS.config.update(s3Config);
+      this.client = new AWS.S3();
+      //this.logger.log("success", "S3 service initialized");
+    }
+    async loadSDK() {
+      if (this.sdkLoaded || window.AWS) {
+        this.sdkLoaded = true;
+        return;
+      }
+      return new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "https://sdk.amazonaws.com/js/aws-sdk-2.1691.0.min.js";
+        script.onload = () => {
+          this.sdkLoaded = true;
+          resolve();
+        };
+        script.onerror = () => reject(new Error("Failed to load AWS SDK"));
+        document.head.appendChild(script);
+      });
+    }
+    async withRetry(operation, maxRetries = 3) {
+      let lastError;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          return await operation();
+        } catch (error) {
+          lastError = error;
+          if (error.code === "NoSuchKey" || error.statusCode === 404)
+            throw error;
+          if (attempt === maxRetries) break;
+          const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
+          this.logger.log(
+            "warning",
+            `Retry ${attempt + 1}/${maxRetries} in ${delay}ms - Error: ${
+              error.message || error.code || "Unknown error"
+            }`
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+      throw lastError;
+    }
+    async upload(key, data, isMetadata = false) {
+      return this.withRetry(async () => {
+        try {
+          const body = isMetadata
+            ? JSON.stringify(data)
+            : await this.crypto.encrypt(data);
+          const result = await this.client
+            .upload({
+              Bucket: this.config.get("bucketName"),
+              Key: key,
+              Body: body,
+              ContentType: isMetadata
+                ? "application/json"
+                : "application/octet-stream",
+            })
+            .promise();
+          this.logger.log("success", `Uploaded ${key}`);
+          return result;
+        } catch (error) {
+          this.logger.log(
+            "error",
+            `Failed to upload ${key}: ${
+              error.message || error.code || "Unknown error"
+            }`
+          );
+          throw error;
+        }
+      });
+    }
+
+    async uploadRaw(key, data) {
+      return this.withRetry(async () => {
+        try {
+          const result = await this.client
+            .upload({
+              Bucket: this.config.get("bucketName"),
+              Key: key,
+              Body: data,
+              ContentType: key.endsWith(".zip")
+                ? "application/zip"
+                : "application/octet-stream",
+            })
+            .promise();
+          this.logger.log("success", `Uploaded raw ${key}`);
+          return result;
+        } catch (error) {
+          this.logger.log(
+            "error",
+            `Failed to upload raw ${key}: ${
+              error.message || error.code || "Unknown error"
+            }`
+          );
+          throw error;
+        }
+      });
+    }
+    async download(key, isMetadata = false) {
+      return this.withRetry(async () => {
+        const result = await this.client
+          .getObject({ Bucket: this.config.get("bucketName"), Key: key })
+          .promise();
+        const data = isMetadata
+          ? JSON.parse(result.Body.toString())
+          : await this.crypto.decrypt(new Uint8Array(result.Body));
+        return data;
+      });
+    }
+    async downloadRaw(key) {
+      return this.withRetry(async () => {
+        const result = await this.client
+          .getObject({ Bucket: this.config.get("bucketName"), Key: key })
+          .promise();
+        return new Uint8Array(result.Body);
+      });
+    }
+    async delete(key) {
+      return this.withRetry(async () => {
+        await this.client
+          .deleteObject({ Bucket: this.config.get("bucketName"), Key: key })
+          .promise();
+        this.logger.log("success", `Deleted ${key}`);
+      });
+    }
+    async list(prefix = "") {
+      return this.withRetry(async () => {
+        const result = await this.client
+          .listObjectsV2({
+            Bucket: this.config.get("bucketName"),
+            Prefix: prefix,
+          })
+          .promise();
+        return result.Contents || [];
+      });
+    }
+  }
+
+  class SyncOrchestrator {
+    constructor(
+      configManager,
+      dataService,
+      s3Service,
+      logger,
+      operationQueue = null
+    ) {
+      this.config = configManager;
+      this.dataService = dataService;
+      this.s3Service = s3Service;
+      this.logger = logger;
+      this.operationQueue = operationQueue;
+      this.metadata = this.loadMetadata();
+      this.syncInProgress = false;
+      this.autoSyncInterval = null;
+      this.currentSyncId = null;
+    }
+    loadMetadata() {
+      const stored = localStorage.getItem("tcs_local-metadata");
+      const result = stored ? JSON.parse(stored) : { lastSync: 0, items: {} };
+      return result;
+    }
+    saveMetadata() {
+      localStorage.setItem("tcs_local-metadata", JSON.stringify(this.metadata));
+    }
+    getLastCloudSync() {
+      const stored = localStorage.getItem("tcs_last-cloud-sync");
+      return stored ? parseInt(stored) : 0;
+    }
+    setLastCloudSync(timestamp) {
+      localStorage.setItem("tcs_last-cloud-sync", timestamp.toString());
+    }
+    getItemSize(data) {
+      return JSON.stringify(data).length;
+    }
+    async detectChanges() {
+      const changedItems = [];
+      const now = Date.now();
+      const db = await this.dataService.getDB();
+      const transaction = db.transaction(["keyval"], "readonly");
+      const store = transaction.objectStore("keyval");
+      await new Promise((resolve) => {
+        const request = store.openCursor();
+        request.onsuccess = (event) => {
+          const cursor = event.target.result;
+          if (cursor) {
+            const key = cursor.key;
+            const value = cursor.value;
+            if (
+              typeof key === "string" &&
+              value !== undefined &&
+              !this.config.shouldExclude(key)
+            ) {
+              const existingItem = this.metadata.items[key];
+              const currentSize = this.getItemSize(value);
+              if (!existingItem) {
+                changedItems.push({
+                  id: key,
+                  type: "idb",
+                  size: currentSize,
+                  lastModified: now,
+                  reason: "new",
+                });
+              } else if (currentSize !== existingItem.size) {
+                changedItems.push({
+                  id: key,
+                  type: "idb",
+                  size: currentSize,
+                  lastModified: now,
+                  reason: "size",
+                });
+              } else if (
+                !existingItem.synced ||
+                (existingItem.lastModified || 0) > existingItem.synced
+              ) {
+                changedItems.push({
+                  id: key,
+                  type: "idb",
+                  size: currentSize,
+                  lastModified: existingItem.lastModified || now,
+                  reason: "never-synced",
+                });
+              }
+            }
+            cursor.continue();
+          } else {
+            resolve();
+          }
+        };
+        request.onerror = () => resolve();
+      });
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && !this.config.shouldExclude(key)) {
+          const value = localStorage.getItem(key);
+          const existingItem = this.metadata.items[key];
+          const currentSize = this.getItemSize(value);
+          if (!existingItem) {
+            changedItems.push({
+              id: key,
+              type: "ls",
+              size: currentSize,
+              lastModified: now,
+              reason: "new",
+            });
+          } else if (currentSize !== existingItem.size) {
+            changedItems.push({
+              id: key,
+              type: "ls",
+              size: currentSize,
+              lastModified: now,
+              reason: "size",
+            });
+          } else if (
+            !existingItem.synced ||
+            (existingItem.lastModified || 0) > existingItem.synced
+          ) {
+            changedItems.push({
+              id: key,
+              type: "ls",
+              size: currentSize,
+              lastModified: existingItem.lastModified || now,
+              reason: "never-synced",
+            });
+          }
+        }
+      }
+      const tombstones = this.dataService.getAllTombstones();
+      for (const [itemId, tombstone] of tombstones.entries()) {
+        const existingItem = this.metadata.items[itemId];
+        const needsSync =
+          !existingItem ||
+          !existingItem.deleted ||
+          existingItem.deleted < tombstone.deleted ||
+          (existingItem.tombstoneVersion || 0) <
+            (tombstone.tombstoneVersion || 1);
+        if (needsSync) {
+          changedItems.push({
+            id: itemId,
+            type: tombstone.type,
+            deleted: tombstone.deleted,
+            tombstoneVersion: tombstone.tombstoneVersion,
+            reason: "tombstone",
+          });
+        }
+      }
+      for (const [itemId, metadata] of Object.entries(this.metadata.items)) {
+        if (metadata.deleted && metadata.deleted > (metadata.synced || 0)) {
+          changedItems.push({
+            id: itemId,
+            type: metadata.type,
+            deleted: metadata.deleted,
+            tombstoneVersion: metadata.tombstoneVersion || 1,
+            reason: "tombstone",
+          });
+        }
+      }
+      return { changedItems, hasChanges: changedItems.length > 0 };
+    }
+    async syncToCloud() {
+      if (this.syncInProgress) {
+        this.logger.log(
+          "skip",
+          "Sync already in progress",
+          null,
+          this.currentSyncId
+        );
+        return;
+      }
+      this.syncInProgress = true;
+      try {
+        this.logger.log(
+          "start",
+          "Starting sync to cloud",
+          null,
+          this.currentSyncId
+        );
+        const { changedItems } = await this.detectChanges();
+        const cloudMetadata = await this.getCloudMetadata();
+        if (changedItems.length === 0) {
+          this.logger.log(
+            "info",
+            "No items to sync to cloud",
+            null,
+            this.currentSyncId
+          );
+          return;
+        }
+        this.logger.log(
+          "info",
+          `Syncing ${changedItems.length} items to cloud`,
+          null,
+          this.currentSyncId
+        );
+        const uploadPromises = changedItems.map(async (item) => {
+          try {
+            if (item.deleted || item.reason === "tombstone") {
+              const timestamp = Date.now();
+              const tombstoneData = {
+                deleted: item.deleted || timestamp,
+                deletedAt: item.deleted || timestamp,
+                type: item.type,
+                tombstoneVersion: item.tombstoneVersion || 1,
+                synced: timestamp,
+              };
+              this.metadata.items[item.id] = tombstoneData;
+              cloudMetadata.items[item.id] = { ...tombstoneData };
+              this.logger.log(
+                "info",
+                `🗑️ Synced tombstone for key "${item.id}" to cloud (v${tombstoneData.tombstoneVersion})`
+              );
+            } else {
+              const data = await this.dataService.getItem(item.id, item.type);
+              if (data) {
+                await this.s3Service.upload(`items/${item.id}.json`, data);
+                this.metadata.items[item.id] = {
+                  synced: Date.now(),
+                  type: item.type,
+                  size: item.size,
+                  lastModified: item.lastModified,
+                };
+                cloudMetadata.items[item.id] = {
+                  ...this.metadata.items[item.id],
+                };
+                this.logger.log("info", `Synced key "${item.id}" to cloud`);
+              }
+            }
+          } catch (error) {
+            this.logger.log(
+              "error",
+              `Failed to sync key "${item.id}": ${
+                error.message || error.code || "Unknown error"
+              }`
+            );
+            if (
+              this.operationQueue &&
+              (item.deleted || item.reason === "tombstone")
+            ) {
+              this.operationQueue.add(
+                `retry-tombstone-${item.id}`,
+                () => this.retrySyncTombstone(item),
+                "high"
+              );
+            }
+            throw error;
+          }
+        });
+        await Promise.allSettled(uploadPromises);
+        cloudMetadata.lastSync = Date.now();
+        await this.s3Service.upload("metadata.json", cloudMetadata, true);
+        this.metadata.lastSync = cloudMetadata.lastSync;
+        this.setLastCloudSync(cloudMetadata.lastSync);
+        this.saveMetadata();
+        this.logger.log(
           "success",
-          "Successfully initialized fresh metadata after load error."
+          `Sync to cloud completed - ${changedItems.length} items synced`,
+          null,
+          this.currentSyncId
         );
-      } catch (initError) {
-        logToConsole(
+      } catch (error) {
+        this.logger.log(
           "error",
-          "Failed to initialize fresh metadata after load error:",
-          initError
+          "Failed to sync to cloud",
+          error.message,
+          this.currentSyncId
+        );
+        if (this.operationQueue) {
+          this.operationQueue.add(
+            "retry-sync-to-cloud",
+            () => this.syncToCloud(),
+            "normal"
+          );
+        }
+        throw error;
+      } finally {
+        this.syncInProgress = false;
+      }
+    }
+    async retrySyncTombstone(item) {
+      this.logger.log(
+        "info",
+        `🔄 Retrying tombstone sync for key "${item.id}"`
+      );
+      const cloudMetadata = await this.getCloudMetadata();
+      const timestamp = Date.now();
+      const tombstoneData = {
+        deleted: item.deleted || timestamp,
+        deletedAt: item.deleted || timestamp,
+        type: item.type,
+        tombstoneVersion: item.tombstoneVersion || 1,
+        synced: timestamp,
+      };
+      this.metadata.items[item.id] = tombstoneData;
+      cloudMetadata.items[item.id] = { ...tombstoneData };
+      await this.s3Service.upload("metadata.json", cloudMetadata, true);
+      this.saveMetadata();
+      this.logger.log(
+        "success",
+        `✅ Retry tombstone sync completed for key "${item.id}"`
+      );
+    }
+    async syncFromCloud() {
+      if (this.syncInProgress) {
+        this.logger.log("skip", "Sync already in progress");
+        return;
+      }
+      this.syncInProgress = true;
+      try {
+        //this.logger.log("start", "Starting sync from cloud");
+        const cloudMetadata = await this.getCloudMetadata();
+
+        const debugEnabled =
+          new URLSearchParams(window.location.search).get("log") === "true";
+        if (debugEnabled && cloudMetadata.items) {
+          const cloudItems = Object.keys(cloudMetadata.items);
+          const cloudDeleted = cloudItems.filter(
+            (id) => cloudMetadata.items[id].deleted
+          ).length;
+          const cloudActive = cloudItems.length - cloudDeleted;
+          console.log(
+            `📊 Cloud Metadata Stats: Total=${cloudItems.length}, Active=${cloudActive}, Deleted=${cloudDeleted}`
+          );
+        }
+
+        const lastCloudSync = this.getLastCloudSync();
+        const cloudLastSync = cloudMetadata.lastSync || 0;
+        const hasCloudChanges = cloudLastSync > lastCloudSync;
+        if (!hasCloudChanges) {
+          this.logger.log(
+            "info",
+            "No cloud changes detected - skipping item downloads"
+          );
+          this.metadata.lastSync = Date.now();
+          this.setLastCloudSync(cloudLastSync);
+          this.saveMetadata();
+          this.logger.log("success", "Sync from cloud completed (no changes)");
+          return;
+        }
+        this.logger.log(
+          "info",
+          `Cloud changes detected - proceeding with full sync`
+        );
+        const itemsToDownload = Object.entries(cloudMetadata.items).filter(
+          ([key, cloudItem]) => {
+            const localItem = this.metadata.items[key];
+            const localTombstone =
+              this.dataService.getTombstoneFromStorage(key);
+            if (cloudItem.deleted) {
+              const cloudVersion = cloudItem.tombstoneVersion || 1;
+              const localVersion = localTombstone?.tombstoneVersion || 0;
+              return cloudVersion > localVersion;
+            }
+            return (
+              !localItem ||
+              (cloudItem.lastModified || cloudItem.synced) >
+                (localItem?.synced || 0)
+            );
+          }
+        );
+        if (itemsToDownload.length > 0) {
+          this.logger.log(
+            "info",
+            `Processing ${itemsToDownload.length} items from cloud`
+          );
+        }
+        const downloadPromises = itemsToDownload.map(
+          async ([key, cloudItem]) => {
+            if (cloudItem.deleted) {
+              this.logger.log(
+                "info",
+                `🗑️ Processing cloud tombstone for key "${key}" (v${
+                  cloudItem.tombstoneVersion || 1
+                })`
+              );
+              await this.dataService.performDelete(key, cloudItem.type);
+              const tombstoneData = {
+                deleted: cloudItem.deleted,
+                deletedAt: cloudItem.deletedAt || cloudItem.deleted,
+                type: cloudItem.type,
+                tombstoneVersion: cloudItem.tombstoneVersion || 1,
+              };
+              this.dataService.saveTombstoneToStorage(key, tombstoneData);
+              this.metadata.items[key] = { ...cloudItem };
+              this.logger.log("info", `Synced key "${key}" from cloud`);
+            } else {
+              const data = await this.s3Service.download(`items/${key}.json`);
+              if (data) {
+                await this.dataService.saveItem(data, cloudItem.type, key);
+                this.metadata.items[key] = {
+                  synced: Date.now(),
+                  type: cloudItem.type,
+                  size: cloudItem.size || this.getItemSize(data),
+                  lastModified: cloudItem.lastModified || cloudItem.synced,
+                };
+                this.logger.log("info", `Synced key "${key}" from cloud`);
+              }
+            }
+          }
+        );
+        await Promise.allSettled(downloadPromises);
+        this.metadata.lastSync = Date.now();
+        this.setLastCloudSync(cloudLastSync);
+        this.saveMetadata();
+        this.logger.log("success", "Sync from cloud completed");
+      } catch (error) {
+        this.logger.log("error", "Failed to sync from cloud", error.message);
+        throw error;
+      } finally {
+        this.syncInProgress = false;
+      }
+    }
+    async createInitialSync() {
+      this.logger.log("start", "Creating initial sync");
+      try {
+        const { changedItems } = await this.detectChanges();
+        const cloudMetadata = {
+          lastSync: Date.now(),
+          items: {},
+        };
+        const uploadPromises = changedItems.map(async (item) => {
+          if (item.deleted || item.reason === "tombstone") {
+            const tombstoneData = {
+              deleted: item.deleted || Date.now(),
+              deletedAt: item.deleted || Date.now(),
+              type: item.type,
+              tombstoneVersion: item.tombstoneVersion || 1,
+              synced: Date.now(),
+            };
+            this.metadata.items[item.id] = tombstoneData;
+            cloudMetadata.items[item.id] = { ...tombstoneData };
+            this.logger.log(
+              "info",
+              `🗑️ Added tombstone for ${item.id} to initial sync`
+            );
+          } else {
+            const data = await this.dataService.getItem(item.id, item.type);
+            if (data) {
+              await this.s3Service.upload(`items/${item.id}.json`, data);
+              this.metadata.items[item.id] = {
+                synced: Date.now(),
+                type: item.type,
+                size: item.size || this.getItemSize(data),
+                lastModified: item.lastModified,
+              };
+              cloudMetadata.items[item.id] = {
+                ...this.metadata.items[item.id],
+              };
+            }
+          }
+        });
+        await Promise.allSettled(uploadPromises);
+        await this.s3Service.upload("metadata.json", cloudMetadata, true);
+        this.metadata.lastSync = cloudMetadata.lastSync;
+        this.setLastCloudSync(cloudMetadata.lastSync);
+        this.saveMetadata();
+        this.logger.log(
+          "success",
+          `Initial sync completed - ${changedItems.length} items uploaded`
+        );
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "Failed to create initial sync",
+          error.message
         );
         throw error;
       }
     }
-    return metadataInitialized;
-  }
-  async function initializeMetadataFromExistingData() {
-    const chats = await getAllChatsFromIndexedDB();
-    localMetadata = {
-      chats: {},
-      settings: {
-        items: {},
-        lastModified: Date.now(),
-        syncedAt: 0,
-      },
-      lastSyncTime: 0,
-    };
-    for (const chat of chats) {
-      if (!chat.id) continue;
-      localMetadata.chats[chat.id] = {
-        updatedAt: chat.updatedAt || Date.now(),
-        hash: await generateHash(chat, "chat"),
-        syncedAt: 0,
-        isDeleted: false,
-      };
-    }
-    for (const key of Object.keys(localStorage)) {
-      if (shouldExcludeSetting(key)) continue;
-      const value = localStorage.getItem(key);
-      if (value !== null) {
-        const hash = await generateContentHash(value);
-        localMetadata.settings.items[key] = {
-          hash: hash,
-          lastModified: Date.now(),
-          syncedAt: 0,
-          source: "localStorage",
-          deleted: false,
-        };
-      }
-    }
-    try {
-      const db = await openIndexedDB();
-      const transaction = db.transaction("keyval", "readonly");
-      const store = transaction.objectStore("keyval");
-      const keys = await new Promise((resolve, reject) => {
-        const request = store.getAllKeys();
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-      });
-      for (const key of keys) {
-        if (shouldExcludeSetting(key)) continue;
-        const value = await getIndexedDBValue(key);
-        if (value !== undefined) {
-          const valueToHash =
-            typeof value === "object" ? JSON.stringify(value) : value;
-          const hash = await generateContentHash(valueToHash);
-          localMetadata.settings.items[key] = {
-            hash: hash,
-            lastModified: Date.now(),
-            syncedAt: 0,
-            source: "indexeddb",
-            deleted: false,
-          };
-        }
-      }
-    } catch (error) {
-      logToConsole(
-        "warning",
-        "Could not initialize IndexedDB settings metadata",
-        error
-      );
-    }
-    logToConsole("success", "Metadata initialized from existing data", {
-      chatsInitialized: Object.keys(localMetadata.chats).length,
-      settingsInitialized: Object.keys(localMetadata.settings.items).length,
-    });
-    return true;
-  }
-  async function saveLocalMetadata() {
-    try {
-      const metadataToSave = JSON.stringify(localMetadata);
-      logToConsole("debug", "Saving local metadata", {
-        settingsCount: Object.keys(localMetadata.settings?.items || {}).length,
-        chatsCount: Object.keys(localMetadata.chats || {}).length,
-        lastModified: localMetadata.settings?.lastModified
-          ? new Date(localMetadata.settings.lastModified).toISOString()
-          : "unknown",
-        syncedAt: localMetadata.settings?.syncedAt
-          ? new Date(localMetadata.settings.syncedAt).toISOString()
-          : "unknown",
-        metadataSize: metadataToSave.length,
-      });
-      // if (localMetadata.settings?.items) {
-      //   const sampleKeys = Object.keys(localMetadata.settings.items).slice(0, 3);
-      //   if (sampleKeys.length > 0) {
-      //     logToConsole(
-      //       "debug",
-      //       "Sample hashes being saved:",
-      //       sampleKeys.reduce((acc, key) => {
-      //         acc[key] = localMetadata.settings.items[key]?.hash
-      //           ? `${localMetadata.settings.items[key].hash.substring(
-      //               0,
-      //               8
-      //             )}...`
-      //           : "none";
-      //         return acc;
-      //       }, {})
-      //     );
-      //   }
-      // }
-      const formatLogTimestamp = (ts) =>
-        ts ? new Date(ts).toLocaleString() : ts === 0 ? "0 (Epoch)" : ts;
-      await setIndexedDBKey("sync-metadata", metadataToSave);
-      const verifyMetadata = await getIndexedDBKey("sync-metadata");
-      if (!verifyMetadata) {
-        throw new Error(
-          "Metadata save verification failed: No data returned from read verification"
-        );
-      }
-      try {
-        const parsedVerify = JSON.parse(verifyMetadata);
-        const sampleKey = Object.keys(localMetadata.settings?.items || {})[0];
+    async performFullSync(syncId = null) {
+      this.currentSyncId = syncId || this.logger.generateSyncId("AUTO");
 
-        if (
-          sampleKey &&
-          parsedVerify?.settings?.items?.[sampleKey]?.hash !==
-            localMetadata.settings?.items?.[sampleKey]?.hash
-        ) {
-          // logToConsole("warning", "Metadata verification found hash mismatch", {
-          //   key: sampleKey,
-          //   expectedHash: localMetadata.settings?.items?.[sampleKey]?.hash
-          //     ? `${localMetadata.settings.items[sampleKey].hash.substring(
-          //         0,
-          //         8
-          //       )}...`
-          //     : "none",
-          //   savedHash: parsedVerify?.settings?.items?.[sampleKey]?.hash
-          //     ? `${parsedVerify.settings.items[sampleKey].hash.substring(
-          //         0,
-          //         8
-          //       )}...`
-          //     : "none",
-          // });
-        }
-        // else {
-        //   logToConsole(
-        //     "success",
-        //     "Local metadata saved and verified in IndexedDB"
-        //   );
-        // }
-      } catch (parseError) {
-        logToConsole(
-          "warning",
-          "Error parsing verification metadata",
-          parseError
-        );
-      }
-    } catch (error) {
-      logToConsole("error", "Failed to save local metadata:", error);
-      throw error;
-    }
-  }
-  async function generateHash(content, type = "generic") {
-    let str;
-    if (type === "chat" && content.id) {
-      let messagesToProcess = content.messages || [];
-      const stableChat = {
-        folderID: content.folderID || null,
-        messages: messagesToProcess
-          .map((msg) => {
-            if (!msg || typeof msg !== "object") return msg;
-            const stableMsg = {};
-            Object.keys(msg)
-              .sort()
-              .forEach((key) => {
-                stableMsg[key] = msg[key];
-              });
-            return stableMsg;
-          })
-          .sort((a, b) => {
-            if (a?.timestamp && b?.timestamp) {
-              if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
-            }
-            if (a?.index !== undefined && b?.index !== undefined) {
-              if (a.index !== b.index) return a.index - b.index;
-            }
-            const stringifyStable = (obj) =>
-              JSON.stringify(obj, Object.keys(obj || {}).sort());
-            return stringifyStable(a).localeCompare(stringifyStable(b));
-          }),
-        title: content.title || content.chatTitle || "",
-      };
-      str = JSON.stringify(stableChat, Object.keys(stableChat).sort());
-    } else {
-      str = typeof content === "string" ? content : JSON.stringify(content);
-    }
-    const msgBuffer = new TextEncoder().encode(str);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-  }
-  async function setupLocalStorageChangeListener() {
-    window.addEventListener("storage", (e) => {
-      if (!e.key || shouldExcludeSetting(e.key)) {
-        return;
-      }
-      logToConsole("info", `LocalStorage change detected: ${e.key}`);
-      throttledCheckSyncStatus();
-    });
-    const originalSetItem = localStorage.setItem;
-    Object.defineProperty(localStorage, "setItem", {
-      value: function (key, value) {
-        const oldValue = localStorage.getItem(key);
-        originalSetItem.apply(this, arguments);
-        if (!shouldExcludeSetting(key) && oldValue !== value) {
-          logToConsole(
-            "info",
-            `LocalStorage programmatic change detected: ${key}`
-          );
-          throttledCheckSyncStatus();
-        }
-      },
-      writable: true,
-      configurable: true,
-      enumerable: false,
-    });
-  }
-  async function getPersistentDB() {
-    if (persistentDB) {
-      try {
-        const transaction = persistentDB.transaction(["keyval"], "readonly");
-        return persistentDB;
-      } catch (error) {
-        logToConsole(
-          "warning",
-          "Existing IndexedDB connection is stale, reconnecting"
-        );
-        await cleanupDBConnection();
-      }
-    }
-    if (dbConnectionPromise) {
-      try {
-        return await dbConnectionPromise;
-      } catch (error) {
-        dbConnectionPromise = null;
-      }
-    }
-    dbConnectionPromise = (async () => {
-      try {
-        persistentDB = await Promise.race([
-          openIndexedDB(),
-          new Promise((_, reject) =>
-            setTimeout(
-              () => reject(new Error("IndexedDB connection timeout")),
-              DB_CONNECTION_TIMEOUT
-            )
-          ),
-        ]);
-        setupDBConnectionMonitoring();
-        dbConnectionRetries = 0;
-        return persistentDB;
-      } catch (error) {
-        dbConnectionPromise = null;
-        dbConnectionRetries++;
-        if (dbConnectionRetries < MAX_DB_RETRIES) {
-          const delay = Math.min(
-            DB_RETRY_DELAY * Math.pow(2, dbConnectionRetries - 1) +
-              Math.random() * 1000,
-            5000
-          );
-          logToConsole(
-            "warning",
-            `IndexedDB connection attempt ${dbConnectionRetries} failed, retrying in ${Math.round(
-              delay / 1000
-            )}s`,
-            error
-          );
-          await new Promise((resolve) => setTimeout(resolve, delay));
-          return getPersistentDB();
-        }
-        logToConsole(
-          "error",
-          "Max IndexedDB connection retries reached",
-          error
-        );
-        throw new Error(
-          `Failed to establish IndexedDB connection after ${MAX_DB_RETRIES} attempts: ${error.message}`
-        );
-      }
-    })();
-    return dbConnectionPromise;
-  }
-  function setupDBConnectionMonitoring() {
-    if (dbHeartbeatInterval) {
-      clearInterval(dbHeartbeatInterval);
-    }
-    dbHeartbeatInterval = setInterval(async () => {
-      if (!persistentDB) return;
-      try {
-        const transaction = persistentDB.transaction(["keyval"], "readonly");
-        const store = transaction.objectStore("keyval");
-        await new Promise((resolve, reject) => {
-          const request = store.count();
-          request.onsuccess = resolve;
-          request.onerror = reject;
-        });
-      } catch (error) {
-        logToConsole(
-          "warning",
-          "IndexedDB connection health check failed",
-          error
-        );
-        await cleanupDBConnection();
-      }
-    }, 30000);
-  }
-  async function cleanupDBConnection() {
-    try {
-      if (dbHeartbeatInterval) {
-        clearInterval(dbHeartbeatInterval);
-        dbHeartbeatInterval = null;
-      }
-      if (persistentDB) {
-        persistentDB.close();
-        persistentDB = null;
-      }
-      dbConnectionPromise = null;
-      logToConsole("info", "Cleaned up stale IndexedDB connection");
-    } catch (error) {
-      logToConsole("error", "Error cleaning up IndexedDB connection", error);
-    }
-  }
-  function openIndexedDB() {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open("keyval-store", 1);
-      request.onerror = () => {
-        reject(
-          new Error(
-            `Failed to open IndexedDB: ${
-              request.error?.message || "Unknown error"
-            }`
-          )
-        );
-      };
-      request.onsuccess = (event) => {
-        const db = event.target.result;
-        db.onerror = (event) => {
-          logToConsole("error", "IndexedDB error:", event.target.error);
-          cleanupDBConnection();
-        };
-        db.onclose = () => {
-          logToConsole("info", "IndexedDB connection closed");
-          cleanupDBConnection();
-        };
-        db.onversionchange = () => {
-          logToConsole("info", "IndexedDB version changed, closing connection");
-          cleanupDBConnection();
-        };
-        resolve(db);
-      };
-      request.onupgradeneeded = (event) => {
-        const db = event.target.result;
-        if (!db.objectStoreNames.contains("keyval")) {
-          db.createObjectStore("keyval");
-        }
-      };
-      setTimeout(() => {
-        if (!persistentDB) {
-          reject(new Error("IndexedDB open request timed out"));
-        }
-      }, DB_CONNECTION_TIMEOUT);
-    });
-  }
-  async function getAllChatsFromIndexedDB() {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open("keyval-store", 1);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = (event) => {
-        const db = event.target.result;
-        const transaction = db.transaction(["keyval"], "readonly");
-        const store = transaction.objectStore("keyval");
-        const chats = [];
-        store.getAllKeys().onsuccess = (keyEvent) => {
-          const keys = keyEvent.target.result;
-          const chatKeys = keys.filter((key) => key.startsWith("CHAT_"));
-          if (chatKeys.length === 0) {
-            resolve([]);
-            return;
-          }
-          store.getAll().onsuccess = (valueEvent) => {
-            const values = valueEvent.target.result;
-            for (let i = 0; i < keys.length; i++) {
-              const key = keys[i];
-              if (key.startsWith("CHAT_")) {
-                const chat = values[i];
-                if (!chat.id) {
-                  chat.id = key.startsWith("CHAT_") ? key.slice(5) : key;
-                }
-                chats.push(chat);
-              }
-            }
-            resolve(chats);
-          };
-        };
-        transaction.oncomplete = () => {
-          db.close();
-        };
-      };
-      request.onupgradeneeded = (event) => {
-        const db = event.target.result;
-        if (!db.objectStoreNames.contains("keyval")) {
-          db.createObjectStore("keyval");
-        }
-      };
-    });
-  }
-  async function getChatFromIndexedDB(chatId) {
-    return new Promise((resolve, reject) => {
-      const key = chatId.startsWith("CHAT_") ? chatId : `CHAT_${chatId}`;
-      const request = indexedDB.open("keyval-store", 1);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = (event) => {
-        const db = event.target.result;
-        const transaction = db.transaction(["keyval"], "readonly");
-        const store = transaction.objectStore("keyval");
-        const getRequest = store.get(key);
-        getRequest.onsuccess = () => {
-          let fetchedChat = getRequest.result;
-          logToConsole(
-            "debug",
-            `Chat fetched from IndexedDB (getChatFromIndexedDB): ${key}`,
-            {
-              hasChat: !!fetchedChat,
-              hasMessages: !!fetchedChat?.messages,
-              messagesLength: fetchedChat?.messages?.length,
-            }
-          );
-          fetchedChat = standardizeChatMessages(fetchedChat);
-          resolve(fetchedChat);
-        };
-        getRequest.onerror = () => {
-          reject(getRequest.error);
-        };
-      };
-    });
-  }
-  async function getIndexedDBKey(key) {
-    const db = await openIndexedDB();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction("keyval", "readonly");
-      const store = transaction.objectStore("keyval");
-      const request = store.get(key);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-    });
-  }
-  async function setIndexedDBKey(key, value) {
-    const db = await openIndexedDB();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction("keyval", "readwrite");
-      const store = transaction.objectStore("keyval");
-      const request = store.put(value, key);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-    });
-  }
-  function monitorIndexedDBForDeletions() {
-    let knownChats = new Map();
-    const MIN_CHAT_AGE_MS = 60 * 1000;
-    const REQUIRED_MISSING_DETECTIONS = 2;
-    let potentialDeletions = new Map();
-    getAllChatsFromIndexedDB().then((chats) => {
-      const now = Date.now();
-      chats.forEach((chat) => {
-        if (chat.id) {
-          knownChats.set(chat.id, {
-            detectedAt: now,
-            confirmedCount: 3,
-          });
-        }
-      });
-      logToConsole(
-        "info",
-        `Initialized deletion monitor with ${knownChats.size} chats`
+      this.logger.log(
+        "start",
+        "🔄 Starting full sync operation",
+        null,
+        this.currentSyncId
       );
-    });
-    setInterval(async () => {
-      if (document.hidden) return;
-      try {
-        const now = Date.now();
-        const currentChats = await getAllChatsFromIndexedDB();
-        const currentChatIds = new Set(currentChats.map((chat) => chat.id));
-        for (const chatId of currentChatIds) {
-          if (knownChats.has(chatId)) {
-            const chatInfo = knownChats.get(chatId);
-            chatInfo.confirmedCount = Math.min(chatInfo.confirmedCount + 1, 5);
-            if (potentialDeletions.has(chatId)) {
-              potentialDeletions.delete(chatId);
-            }
-          } else {
-            knownChats.set(chatId, {
-              detectedAt: now,
-              confirmedCount: 1,
-            });
-            /*
-              updateChatMetadata(chatId, true)
-                .then(() => {
-                  if (config.syncMode === "sync" || config.syncMode === "backup") {
-                    queueOperation(`new-chat-sync-${chatId}`, () =>
-                      uploadChatToCloud(chatId)
-                    );
-                  }
-                })
-                .catch((error) => {
-                  logToConsole(
-                    "error",
-                    `Error updating metadata for new chat ${chatId}:`,
-                    error
-                  );
-                });
-              */
-          }
-        }
-        for (const [chatId, chatInfo] of knownChats.entries()) {
-          if (!currentChatIds.has(chatId)) {
-            const isEstablishedChat =
-              chatInfo.confirmedCount >= 2 &&
-              now - chatInfo.detectedAt > MIN_CHAT_AGE_MS;
-            if (isEstablishedChat) {
-              const missingCount = (potentialDeletions.get(chatId) || 0) + 1;
-              potentialDeletions.set(chatId, missingCount);
-              if (missingCount >= REQUIRED_MISSING_DETECTIONS) {
-                if (
-                  localMetadata.chats[chatId] &&
-                  localMetadata.chats[chatId].deleted === true
-                ) {
-                  knownChats.delete(chatId);
-                  potentialDeletions.delete(chatId);
-                  continue;
-                }
-                logToConsole(
-                  "cleanup",
-                  `Confirmed deletion of chat ${chatId} (missing ${missingCount} times), creating tombstone`
-                );
-                localMetadata.chats[chatId] = {
-                  deleted: true,
-                  deletedAt: Date.now(),
-                  lastModified: Date.now(),
-                  syncedAt: 0,
-                  tombstoneVersion: 1,
-                  deletionSource: "indexeddb-monitor",
-                };
-                saveLocalMetadata();
-                if (
-                  config.syncMode === "sync" ||
-                  config.syncMode === "backup"
-                ) {
-                  logToConsole(
-                    "cleanup",
-                    `Queueing deletion from cloud for chat ${chatId}`
-                  );
-                  queueOperation(`delete-chat-${chatId}`, () =>
-                    deleteChatFromCloud(chatId)
-                  );
-                }
-                knownChats.delete(chatId);
-                potentialDeletions.delete(chatId);
-              } else {
-                logToConsole(
-                  "info",
-                  `Chat ${chatId} appears to be missing (${missingCount}/${REQUIRED_MISSING_DETECTIONS} checks), waiting for confirmation`
-                );
-              }
-            } else {
-              if (potentialDeletions.has(chatId)) {
-                const missingCount = potentialDeletions.get(chatId) + 1;
-                if (missingCount > 5) {
-                  knownChats.delete(chatId);
-                  potentialDeletions.delete(chatId);
-                  logToConsole(
-                    "info",
-                    `Removed tracking for unstable new chat ${chatId}`
-                  );
-                } else {
-                  potentialDeletions.set(chatId, missingCount);
-                }
-              } else {
-                potentialDeletions.set(chatId, 1);
-              }
-            }
-          }
-        }
-      } catch (error) {
-        logToConsole("error", "Error in deletion monitor", error);
+
+      // Step 1: Initialize deletion monitoring if not done
+      if (this.dataService.knownItems.size === 0) {
+        await this.dataService.initializeKnownItems(this.currentSyncId);
       }
-    }, 10000);
-  }
-  async function saveChatToIndexedDB(chat, syncTimestamp = null) {
-    return new Promise((resolve, reject) => {
-      if (!chat || !chat.id) {
-        reject(
-          new Error("Cannot save chat: chat object or chat.id is undefined")
+
+      // Step 2: Check for deletions first (consolidated with sync)
+      await this.dataService.checkForDeletions(this.currentSyncId);
+
+      // Step 3: Initialize local metadata
+      await this.initializeLocalMetadata();
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const debugEnabled =
+        urlParams.get("log") === "true" || urlParams.has("log");
+      if (debugEnabled) {
+        const localItems = Object.keys(this.metadata.items || {});
+        const localDeleted = localItems.filter(
+          (id) => this.metadata.items[id].deleted
+        ).length;
+        const localActive = localItems.length - localDeleted;
+        console.log(
+          `📊 Local Metadata Stats: Total=${localItems.length}, Active=${localActive}, Deleted=${localDeleted}`
         );
-        return;
       }
-      const key = chat.id.startsWith("CHAT_") ? chat.id : `CHAT_${chat.id}`;
-      const request = indexedDB.open("keyval-store", 1);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = (event) => {
-        const db = event.target.result;
-        const transaction = db.transaction(["keyval"], "readwrite");
-        const store = transaction.objectStore("keyval");
-        if (chat.id.startsWith("CHAT_") && key !== chat.id) {
-          chat.id = chat.id.slice(5);
-        }
-        chat.updatedAt = Date.now();
-        const putRequest = store.put(chat, key);
-        putRequest.onsuccess = () => {
-          logToConsole("success", `Saved chat ${chat.id} to IndexedDB`);
-          const isCloudOriginated = !!syncTimestamp;
-          updateChatMetadata(
-            chat.id,
-            !isCloudOriginated,
-            false,
-            syncTimestamp,
-            chat
-          )
-            .then(() => resolve())
-            .catch(reject);
-        };
-        putRequest.onerror = () => reject(putRequest.error);
-      };
-      request.onupgradeneeded = (event) => {
-        const db = event.target.result;
-        if (!db.objectStoreNames.contains("keyval")) {
-          db.createObjectStore("keyval");
-        }
-      };
-    });
-  }
-  async function deleteChatFromIndexedDB(chatId) {
-    return new Promise((resolve, reject) => {
-      if (!chatId) {
-        reject(new Error("Cannot delete chat: chatId is undefined"));
-        return;
-      }
-      const key =
-        typeof chatId === "string" && chatId.startsWith("CHAT_")
-          ? chatId
-          : `CHAT_${chatId}`;
-      const request = indexedDB.open("keyval-store", 1);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = (event) => {
-        const db = event.target.result;
-        const transaction = db.transaction(["keyval"], "readwrite");
-        const store = transaction.objectStore("keyval");
-        const deleteRequest = store.delete(key);
-        deleteRequest.onsuccess = () => {
-          logToConsole("success", `Deleted chat ${chatId} from IndexedDB`);
-          resolve();
-        };
-        deleteRequest.onerror = () => reject(deleteRequest.error);
-      };
-    });
-  }
-  function initializeS3Client() {
-    if (
-      !config.accessKey ||
-      !config.secretKey ||
-      !config.region ||
-      !config.bucketName
-    ) {
-      throw new Error("AWS configuration is incomplete");
-    }
-    const s3Config = {
-      accessKeyId: config.accessKey,
-      secretAccessKey: config.secretKey,
-      region: config.region,
-    };
-    if (config.endpoint) {
-      s3Config.endpoint = config.endpoint;
-      s3Config.s3ForcePathStyle = true;
-    }
-    return new AWS.S3(s3Config);
-  }
-  async function listS3Objects(prefix = "") {
-    const s3 = initializeS3Client();
-    try {
-      const params = {
-        Bucket: config.bucketName,
-        Prefix: prefix,
-      };
-      const response = await s3.listObjectsV2(params).promise();
-      const objects = response.Contents || [];
-      const objectsWithMetadata = await Promise.all(
-        objects.map(async (obj) => {
-          try {
-            const headParams = {
-              Bucket: config.bucketName,
-              Key: obj.Key,
-            };
-            const headResponse = await s3.headObject(headParams).promise();
-            return {
-              ...obj,
-              key: obj.Key,
-              metadata: headResponse.Metadata || {},
-            };
-          } catch (error) {
-            logToConsole(
-              "error",
-              `Failed to get metadata for ${obj.Key}:`,
-              error
-            );
-            return {
-              ...obj,
-              key: obj.Key,
-              metadata: {},
-            };
-          }
-        })
-      );
-      return objectsWithMetadata;
-    } catch (error) {
-      logToConsole("error", "Failed to list S3 objects:", error);
-      throw error;
-    }
-  }
-  async function uploadToS3(key, data, metadata) {
-    const s3 = initializeS3Client();
-    try {
-      let contentType = "application/octet-stream";
-      if (key.endsWith(".json")) {
-        contentType = "application/json";
-      } else if (key.endsWith(".zip")) {
-        contentType = "application/zip";
-      }
-      const params = {
-        Bucket: config.bucketName,
-        Key: key,
-        Body: data,
-        ContentType: contentType,
-        ServerSideEncryption: "AES256",
-        Metadata: metadata,
-      };
-      if (key === "metadata.json") {
-        params.CacheControl = "no-cache, no-store, must-revalidate";
-      }
-      if (data.byteLength > 5 * 1024 * 1024) {
-        await cleanupIncompleteMultipartUploads();
-        const uploadId = await startMultipartUpload(key);
-        const partSize = 5 * 1024 * 1024;
-        const parts = [];
-        for (let i = 0; i < data.byteLength; i += partSize) {
-          const end = Math.min(i + partSize, data.byteLength);
-          const chunk = data.slice(i, end);
-          const partNumber = Math.floor(i / partSize) + 1;
-          const part = await uploadPart(key, uploadId, partNumber, chunk);
-          parts.push(part);
-          const progress = Math.min(
-            100,
-            Math.round((end / data.byteLength) * 100)
-          );
-        }
-        await completeMultipartUpload(key, uploadId, parts);
-      } else {
-        await s3.putObject(params).promise();
-      }
-      logToConsole("success", `Successfully uploaded to S3: ${key}`);
-    } catch (error) {
-      logToConsole("error", `Failed to upload to S3: ${key}`, error);
-      throw error;
-    }
-  }
-  async function downloadFromS3(key) {
-    const s3 = initializeS3Client();
-    try {
-      const params = {
-        Bucket: config.bucketName,
-        Key: key,
-      };
-      const response = await s3.getObject(params).promise();
-      const cleanMetadata = {};
-      for (const [key, value] of Object.entries(response.Metadata || {})) {
-        const cleanKey = key.replace("x-amz-meta-", "");
-        cleanMetadata[cleanKey] = value;
-      }
-      if (key === "metadata.json") {
-        return {
-          data: response.Body,
-          metadata: cleanMetadata,
-        };
-      }
-      return {
-        data: response.Body,
-        metadata: cleanMetadata,
-      };
-    } catch (error) {
-      if (error.code === "NoSuchKey") {
-        logToConsole("info", `Object not found in S3: ${key}`);
-        return null;
-      }
-      logToConsole("error", `Failed to download from S3: ${key}`, error);
-      throw error;
-    }
-  }
-  async function deleteFromS3(key) {
-    const s3 = initializeS3Client();
-    try {
-      const params = {
-        Bucket: config.bucketName,
-        Key: key,
-      };
-      await s3.deleteObject(params).promise();
-      logToConsole("success", `Successfully deleted from S3: ${key}`);
-    } catch (error) {
-      logToConsole("error", `Failed to delete from S3: ${key}`, error);
-      throw error;
-    }
-  }
-  async function startMultipartUpload(key) {
-    const s3 = initializeS3Client();
-    try {
-      let contentType = "application/octet-stream";
-      if (key.endsWith(".json")) {
-        contentType = "application/json";
-      } else if (key.endsWith(".zip")) {
-        contentType = "application/zip";
-      }
-      const params = {
-        Bucket: config.bucketName,
-        Key: key,
-        ContentType: contentType,
-        ServerSideEncryption: "AES256",
-      };
-      const response = await s3.createMultipartUpload(params).promise();
-      return response.UploadId;
-    } catch (error) {
-      logToConsole("error", "Failed to start multipart upload:", error);
-      throw error;
-    }
-  }
-  async function uploadPart(key, uploadId, partNumber, data) {
-    const s3 = initializeS3Client();
-    const maxRetries = 3;
-    const baseDelay = 1000;
-    let retryCount = 0;
-    let lastError = null;
-    let uploadSuccess = false;
-    while (!uploadSuccess && retryCount <= maxRetries) {
-      try {
-        const params = {
-          Bucket: config.bucketName,
-          Key: key,
-          UploadId: uploadId,
-          PartNumber: partNumber,
-          Body: data,
-        };
-        if (retryCount > 0) {
-          logToConsole(
+
+      // Step 4: Sync operations
+      await this.syncFromCloud();
+      const cloudMetadata = await this.getCloudMetadata();
+      const localMetadataEmpty =
+        Object.keys(this.metadata.items || {}).length === 0;
+      const cloudMetadataEmpty =
+        Object.keys(cloudMetadata.items || {}).length === 0;
+      if (localMetadataEmpty && cloudMetadataEmpty) {
+        const allItems = await this.dataService.getAllItems(this.currentSyncId);
+        if (allItems.length > 0) {
+          this.logger.log(
             "info",
-            `Retrying upload part ${partNumber} (attempt ${retryCount + 1}/${
-              maxRetries + 1
-            })`
+            `🚀 Fresh setup detected: ${allItems.length} local items found with empty metadata. Triggering initial sync.`,
+            null,
+            this.currentSyncId
           );
-        }
-        const response = await s3.uploadPart(params).promise();
-        uploadSuccess = true;
-        return {
-          ETag: response.ETag,
-          PartNumber: partNumber,
-        };
-      } catch (error) {
-        lastError = error;
-        retryCount++;
-        logToConsole(
-          "error",
-          `Error uploading part ${partNumber} (attempt ${retryCount}/${
-            maxRetries + 1
-          }):`,
-          error
-        );
-        if (retryCount > maxRetries) {
-          logToConsole(
-            "error",
-            `All retries failed for part ${partNumber}, aborting multipart upload`
-          );
-          try {
-            await abortMultipartUpload(key, uploadId);
-          } catch (abortError) {
-            logToConsole(
-              "error",
-              "Error aborting multipart upload:",
-              abortError
-            );
-          }
-          throw new Error(
-            `Failed to upload part ${partNumber} after ${
-              maxRetries + 1
-            } attempts: ${lastError.message}`
-          );
-        }
-        const delay = Math.min(
-          baseDelay * Math.pow(2, retryCount - 1) + Math.random() * 1000,
-          30000
-        );
-        logToConsole(
-          "info",
-          `Retrying part ${partNumber} in ${Math.round(delay / 1000)} seconds`
-        );
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-    }
-  }
-  async function completeMultipartUpload(key, uploadId, parts) {
-    const s3 = initializeS3Client();
-    try {
-      const params = {
-        Bucket: config.bucketName,
-        Key: key,
-        UploadId: uploadId,
-        MultipartUpload: {
-          Parts: parts,
-        },
-      };
-      await s3.completeMultipartUpload(params).promise();
-      logToConsole("success", "Multipart upload completed successfully");
-    } catch (error) {
-      logToConsole("error", "Failed to complete multipart upload:", error);
-      throw error;
-    }
-  }
-  async function abortMultipartUpload(key, uploadId) {
-    const s3 = initializeS3Client();
-    try {
-      const params = {
-        Bucket: config.bucketName,
-        Key: key,
-        UploadId: uploadId,
-      };
-      await s3.abortMultipartUpload(params).promise();
-      logToConsole("warning", "Multipart upload aborted");
-    } catch (error) {
-      logToConsole("error", "Failed to abort multipart upload:", error);
-      throw error;
-    }
-  }
-  async function cleanupIncompleteMultipartUploads() {
-    const s3 = initializeS3Client();
-    try {
-      const multipartUploads = await s3
-        .listMultipartUploads({
-          Bucket: config.bucketName,
-        })
-        .promise();
-      if (multipartUploads.Uploads && multipartUploads.Uploads.length > 0) {
-        logToConsole(
-          "cleanup",
-          `Found ${multipartUploads.Uploads.length} incomplete multipart uploads`
-        );
-        for (const upload of multipartUploads.Uploads) {
-          const uploadAge = Date.now() - new Date(upload.Initiated).getTime();
-          const fiveMinutes = 5 * 60 * 1000;
-          if (uploadAge > fiveMinutes) {
-            try {
-              await s3
-                .abortMultipartUpload({
-                  Bucket: config.bucketName,
-                  Key: upload.Key,
-                  UploadId: upload.UploadId,
-                })
-                .promise();
-              logToConsole(
-                "success",
-                `Aborted incomplete upload for ${upload.Key} (${Math.round(
-                  uploadAge / 1000 / 60
-                )}min old)`
-              );
-            } catch (error) {
-              logToConsole(
-                "error",
-                `Failed to abort upload for ${upload.Key}:`,
-                error
-              );
-            }
-          } else {
-            logToConsole(
-              "skip",
-              `Skipping recent upload for ${upload.Key} (${Math.round(
-                uploadAge / 1000
-              )}s old)`
-            );
-          }
-        }
-      } else {
-      }
-    } catch (error) {
-      logToConsole("error", "Error cleaning up multipart uploads:", error);
-    }
-  }
-  async function deriveKey(password) {
-    const encoder = new TextEncoder();
-    const keyMaterial = await window.crypto.subtle.importKey(
-      "raw",
-      encoder.encode(password),
-      { name: "PBKDF2" },
-      false,
-      ["deriveBits", "deriveKey"]
-    );
-    const key = await window.crypto.subtle.deriveKey(
-      {
-        name: "PBKDF2",
-        salt: encoder.encode("typingmind-backup-salt"),
-        iterations: 100000,
-        hash: "SHA-256",
-      },
-      keyMaterial,
-      { name: "AES-GCM", length: 256 },
-      true,
-      ["encrypt", "decrypt"]
-    );
-    return key;
-  }
-  async function safeStringify(data) {
-    try {
-      if (typeof data === "string") {
-        return data;
-      }
-      const chunkSize = 50000;
-      let result = "{";
-      const keys = Object.keys(data);
-      for (let i = 0; i < keys.length; i++) {
-        const key = keys[i];
-        let value = data[key];
-        if (value === undefined) {
-          value = null;
-        }
-        if (i > 0) result += ",";
-        result += `"${key}":`;
-        if (typeof value === "object" && value !== null) {
-          if (Array.isArray(value)) {
-            result += "[";
-            for (let j = 0; j < value.length; j++) {
-              if (j > 0) result += ",";
-              let arrayValue = value[j];
-              if (arrayValue === undefined) {
-                arrayValue = null;
-              }
-              result += JSON.stringify(arrayValue);
-              if (result.length > chunkSize) {
-                await new Promise((resolve) => setTimeout(resolve, 0));
-              }
-            }
-            result += "]";
-          } else {
-            const objKeys = Object.keys(value);
-            result += "{";
-            for (let j = 0; j < objKeys.length; j++) {
-              const objKey = objKeys[j];
-              if (j > 0) result += ",";
-              let objValue = value[objKey];
-              if (objValue === undefined) {
-                objValue = null;
-              }
-              result += `"${objKey}":${JSON.stringify(objValue)}`;
-              if (result.length > chunkSize) {
-                await new Promise((resolve) => setTimeout(resolve, 0));
-              }
-            }
-            result += "}";
-          }
+          await this.createInitialSync();
         } else {
-          result += JSON.stringify(value);
+          this.logger.log(
+            "info",
+            "Fresh setup with no local data - nothing to sync",
+            null,
+            this.currentSyncId
+          );
         }
-        if (result.length > chunkSize) {
-          await new Promise((resolve) => setTimeout(resolve, 0));
+      } else {
+        await this.syncToCloud();
+      }
+
+      this.logger.log(
+        "success",
+        "✅ Full sync operation completed",
+        null,
+        this.currentSyncId
+      );
+    }
+    async initializeLocalMetadata() {
+      const isEmptyMetadata =
+        Object.keys(this.metadata.items || {}).length === 0;
+      if (!isEmptyMetadata) {
+        // this.logger.log(
+        //   "info",
+        //   "Local metadata already exists, skipping initialization"
+        // );
+        return;
+      }
+      this.logger.log(
+        "start",
+        "🔧 Initializing local metadata from database contents"
+      );
+      const allItems = await this.dataService.getAllItems();
+      const tombstones = this.dataService.getAllTombstones();
+      let itemCount = 0;
+      let tombstoneCount = 0;
+      for (const item of allItems) {
+        if (item.id && item.data) {
+          this.metadata.items[item.id] = {
+            synced: 0,
+            type: item.type,
+            size: this.getItemSize(item.data),
+            lastModified: 0,
+          };
+          itemCount++;
         }
       }
-      result += "}";
-      return result;
-    } catch (error) {
-      logToConsole(
-        "warning",
-        "Safe stringify failed, falling back to regular JSON.stringify",
-        error
-      );
-      return JSON.stringify(data, (key, value) =>
-        value === undefined ? null : value
-      );
-    }
-  }
-  async function encryptData(data) {
-    const encryptionKey = localStorage.getItem("encryption-key");
-    if (!encryptionKey) {
-      logToConsole("warning", "No encryption key found");
-      throw new Error("Encryption key not configured");
-    }
-    try {
-      const key = await deriveKey(encryptionKey);
-      const enc = new TextEncoder();
-      const iv = window.crypto.getRandomValues(new Uint8Array(12));
-      const jsonString = await safeStringify(data);
-      const encodedData = enc.encode(jsonString);
-      const encryptedContent = await window.crypto.subtle.encrypt(
-        {
-          name: "AES-GCM",
-          iv: iv,
-        },
-        key,
-        encodedData
-      );
-      const marker = new TextEncoder().encode("ENCRYPTED:");
-      const combinedData = new Uint8Array(
-        marker.length + iv.length + encryptedContent.byteLength
-      );
-      combinedData.set(marker);
-      combinedData.set(iv, marker.length);
-      combinedData.set(
-        new Uint8Array(encryptedContent),
-        marker.length + iv.length
-      );
-      return combinedData;
-    } catch (error) {
-      logToConsole("error", "Encryption failed:", error);
-      throw error;
-    }
-  }
-  async function decryptData(data) {
-    const marker = "ENCRYPTED:";
-    const dataString = new TextDecoder().decode(data.slice(0, marker.length));
-    const bucketName = localStorage.getItem("aws-bucket");
-    logToConsole("tag", "Checking encryption marker:", {
-      expectedMarker: marker,
-      foundMarker: dataString,
-      isEncrypted: dataString === marker,
-    });
-    if (dataString !== marker) {
-      logToConsole("info", "Data is not encrypted, returning as-is");
-      return JSON.parse(new TextDecoder().decode(data));
-    }
-    if (!bucketName) {
-      logToConsole("info", "Backup not configured, skipping decryption");
-      throw new Error("Backup not configured");
-    }
-    const encryptionKey = localStorage.getItem("encryption-key");
-    if (!encryptionKey) {
-      logToConsole("error", "Encrypted data found but no key provided");
-      if (backupIntervalRunning) {
-        clearInterval(backupInterval);
-        backupIntervalRunning = false;
+      for (const [itemId, tombstone] of tombstones.entries()) {
+        if (!this.metadata.items[itemId]) {
+          this.metadata.items[itemId] = {
+            deleted: tombstone.deleted,
+            deletedAt: tombstone.deletedAt || tombstone.deleted,
+            type: tombstone.type,
+            tombstoneVersion: tombstone.tombstoneVersion || 1,
+            synced: 0,
+          };
+          tombstoneCount++;
+        }
       }
-      wasImportSuccessful = false;
-      await showCustomAlert(
-        "Please configure your encryption key in the backup settings before proceeding.",
-        "Configuration Required"
-      );
-      throw new Error("Encryption key not configured");
+      if (itemCount > 0 || tombstoneCount > 0) {
+        this.saveMetadata();
+        this.logger.log(
+          "success",
+          `✅ Local metadata initialized: ${itemCount} items, ${tombstoneCount} tombstones`
+        );
+      } else {
+        this.logger.log("info", "No local items found to initialize metadata");
+      }
+      if (this.config.isConfigured()) {
+        try {
+          this.logger.log(
+            "info",
+            "🔍 Checking cloud for missing items to restore"
+          );
+          const cloudMetadata = await this.getCloudMetadata();
+          let restoredCount = 0;
+          for (const [cloudItemId, cloudItem] of Object.entries(
+            cloudMetadata.items || {}
+          )) {
+            if (!cloudItem.deleted && !this.metadata.items[cloudItemId]) {
+              try {
+                const data = await this.s3Service.download(
+                  `items/${cloudItemId}.json`
+                );
+                if (data) {
+                  await this.dataService.saveItem(data, cloudItem.type);
+                  this.metadata.items[cloudItemId] = {
+                    synced: Date.now(),
+                    type: cloudItem.type,
+                    size: cloudItem.size || this.getItemSize(data),
+                    lastModified: cloudItem.lastModified || cloudItem.synced,
+                  };
+                  restoredCount++;
+                  this.logger.log(
+                    "info",
+                    `📥 Restored missing item: ${cloudItemId}`
+                  );
+                }
+              } catch (error) {
+                this.logger.log(
+                  "warning",
+                  `Failed to restore item ${cloudItemId}: ${error.message}`
+                );
+              }
+            } else if (cloudItem.deleted && !this.metadata.items[cloudItemId]) {
+              try {
+                await this.dataService.performDelete(
+                  cloudItemId,
+                  cloudItem.type
+                );
+                const tombstoneData = {
+                  deleted: cloudItem.deleted,
+                  deletedAt: cloudItem.deletedAt || cloudItem.deleted,
+                  type: cloudItem.type,
+                  tombstoneVersion: cloudItem.tombstoneVersion || 1,
+                  synced: Date.now(),
+                };
+                this.dataService.saveTombstoneToStorage(
+                  cloudItemId,
+                  tombstoneData
+                );
+                this.metadata.items[cloudItemId] = tombstoneData;
+                restoredCount++;
+                this.logger.log(
+                  "info",
+                  `🗑️ Applied missing tombstone: ${cloudItemId}`
+                );
+              } catch (error) {
+                this.logger.log(
+                  "warning",
+                  `Failed to apply tombstone ${cloudItemId}: ${error.message}`
+                );
+              }
+            }
+          }
+          if (restoredCount > 0) {
+            this.saveMetadata();
+            this.logger.log(
+              "success",
+              `🔄 Restored ${restoredCount} missing items and tombstones from cloud`
+            );
+          } else {
+            this.logger.log(
+              "info",
+              "No missing items found in cloud to restore"
+            );
+          }
+        } catch (error) {
+          this.logger.log(
+            "warning",
+            "Could not check cloud for missing items",
+            error.message
+          );
+        }
+      }
     }
-    try {
-      const key = await deriveKey(encryptionKey);
-      const iv = data.slice(marker.length, marker.length + 12);
-      const encryptedData = data.slice(marker.length + 12);
-      const decryptedContent = await window.crypto.subtle.decrypt(
-        {
-          name: "AES-GCM",
-          iv: iv,
-        },
-        key,
-        encryptedData
-      );
-      const decryptedText = new TextDecoder().decode(decryptedContent);
-      logToConsole("success", "Decryption successful");
-      return decryptedText;
-    } catch (error) {
-      logToConsole("error", "Decryption failed:", error);
-      throw new Error(
-        "Failed to decrypt backup. Please check your encryption key."
-      );
+    async cleanupCloudTombstones() {
+      try {
+        const cloudMetadata = await this.getCloudMetadata();
+        const now = Date.now();
+        const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
+        let cleanupCount = 0;
+
+        if (cloudMetadata.items) {
+          for (const [itemId, metadata] of Object.entries(
+            cloudMetadata.items
+          )) {
+            if (
+              metadata.deleted &&
+              now - metadata.deleted > tombstoneRetentionPeriod
+            ) {
+              delete cloudMetadata.items[itemId];
+              cleanupCount++;
+            }
+          }
+
+          if (cleanupCount > 0) {
+            await this.s3Service.upload("metadata.json", cloudMetadata, true);
+            this.logger.log(
+              "info",
+              `🧹 Cleaned up ${cleanupCount} old cloud tombstones`
+            );
+          }
+        }
+
+        return cleanupCount;
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "Error cleaning up cloud tombstones",
+          error.message
+        );
+        return 0;
+      }
+    }
+    startAutoSync() {
+      if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
+
+      const interval = Math.max(this.config.get("syncInterval") * 1000, 15000);
+
+      this.autoSyncInterval = setInterval(async () => {
+        if (this.config.isConfigured() && !this.syncInProgress) {
+          try {
+            await this.performFullSync();
+          } catch (error) {
+            this.logger.log("error", "Auto-sync failed", error.message);
+          }
+        }
+      }, interval);
+
+      this.logger.log("info", "Auto-sync started");
+    }
+    async getCloudMetadata() {
+      try {
+        const cloudMetadata = await this.s3Service.download(
+          "metadata.json",
+          true
+        );
+        if (!cloudMetadata || typeof cloudMetadata !== "object") {
+          return { lastSync: 0, items: {} };
+        }
+        if (!cloudMetadata.items) {
+          cloudMetadata.items = {};
+        }
+        return cloudMetadata;
+      } catch (error) {
+        if (error.code === "NoSuchKey" || error.statusCode === 404) {
+          return { lastSync: 0, items: {} };
+        }
+        throw error;
+      }
+    }
+    cleanup() {
+      if (this.autoSyncInterval) {
+        clearInterval(this.autoSyncInterval);
+        this.autoSyncInterval = null;
+      }
+      this.syncInProgress = false;
+      this.config = null;
+      this.dataService = null;
+      this.s3Service = null;
+      this.logger = null;
+      this.operationQueue = null;
+      this.metadata = null;
     }
   }
-  function startBackupIntervals() {
-    startSyncInterval();
-  }
-  async function checkAndPerformDailyBackup() {
-    try {
-      const lastBackupStr = localStorage.getItem("last-daily-backup");
+
+  class BackupService {
+    constructor(dataService, s3Service, logger) {
+      this.dataService = dataService;
+      this.s3Service = s3Service;
+      this.logger = logger;
+      this.chunkSizeLimit = 50 * 1024 * 1024;
+      this.jsZipLoaded = false;
+      this.currentSyncId = null;
+    }
+
+    async loadJSZip() {
+      if (this.jsZipLoaded || window.JSZip) {
+        this.jsZipLoaded = true;
+        return window.JSZip;
+      }
+
+      return new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src =
+          "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+        script.onload = () => {
+          this.jsZipLoaded = true;
+          this.logger.log("success", "JSZip library loaded successfully");
+          resolve(window.JSZip);
+        };
+        script.onerror = () => {
+          this.logger.log("error", "Failed to load JSZip library");
+          reject(new Error("Failed to load JSZip library"));
+        };
+        document.head.appendChild(script);
+      });
+    }
+
+    async createCompressedBackup(filename, data) {
+      try {
+        const JSZip = await this.loadJSZip();
+
+        // Encrypt the data first
+        const encryptedData = await this.s3Service.crypto.encrypt(data);
+
+        // Create ZIP with high compression
+        const zip = new JSZip();
+        const jsonFileName = filename.replace(".zip", ".json");
+        zip.file(jsonFileName, encryptedData, {
+          compression: "DEFLATE",
+          compressionOptions: { level: 9 },
+          binary: true,
+        });
+
+        // Generate compressed blob
+        const compressedContent = await zip.generateAsync({ type: "blob" });
+
+        if (compressedContent.size < 100) {
+          throw new Error(
+            "Backup file is too small or empty. Upload cancelled."
+          );
+        }
+
+        // Convert to Uint8Array for S3 upload
+        const arrayBuffer = await compressedContent.arrayBuffer();
+        const compressedData = new Uint8Array(arrayBuffer);
+
+        // Upload raw compressed data (not through crypto again)
+        await this.s3Service.uploadRaw(filename, compressedData);
+
+        this.logger.log(
+          "info",
+          `Compression: ${this.formatFileSize(
+            JSON.stringify(data).length
+          )} → ${this.formatFileSize(compressedContent.size)} ` +
+            `(${Math.round(
+              (1 - compressedContent.size / JSON.stringify(data).length) * 100
+            )}% reduction)`
+        );
+
+        return true;
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "Failed to create compressed backup",
+          error.message
+        );
+        throw error;
+      }
+    }
+
+    async estimateDataSize() {
+      try {
+        const items = await this.dataService.getAllItems();
+        let totalSize = 0;
+
+        items.forEach((item) => {
+          try {
+            const itemStr = JSON.stringify(item.data);
+            totalSize += itemStr.length * 2; // Rough estimate with overhead
+          } catch (error) {
+            this.logger.log(
+              "warning",
+              `Skipping item ${item.id} in size estimation: ${error.message}`
+            );
+          }
+        });
+
+        return totalSize;
+      } catch (error) {
+        this.logger.log("error", "Failed to estimate data size", error.message);
+        return 0;
+      }
+    }
+
+    async createSnapshot(name) {
+      this.logger.log("start", `Creating snapshot: ${name}`);
+
+      const estimatedSize = await this.estimateDataSize();
+      this.logger.log(
+        "info",
+        `Estimated data size: ${this.formatFileSize(estimatedSize)}`
+      );
+
+      if (estimatedSize > this.chunkSizeLimit) {
+        return await this.createChunkedSnapshot(name, estimatedSize);
+      } else {
+        return await this.createSimpleSnapshot(name);
+      }
+    }
+
+    async createSimpleSnapshot(name) {
+      this.logger.log("info", "Using simple snapshot method for small dataset");
+      const timestamp = new Date()
+        .toISOString()
+        .replace(/[-:]/g, "")
+        .replace(/\..+/, "");
+      const filename = `s-${name.replace(
+        /[^a-zA-Z0-9]/g,
+        "-"
+      )}-${timestamp}.zip`;
+
+      const allItems = await this.dataService.getAllItems();
+
+      const indexedDBData = {};
+      allItems
+        .filter((item) => item.type === "idb")
+        .forEach((item) => {
+          if (item.data) {
+            indexedDBData[item.id] = item.data;
+          }
+        });
+
+      const localStorageData = {};
+      allItems
+        .filter((item) => item.type === "ls")
+        .forEach((item) => {
+          localStorageData[item.data.key] = item.data.value;
+        });
+
+      const snapshot = {
+        localStorage: localStorageData,
+        indexedDB: indexedDBData,
+        created: Date.now(),
+        name,
+        format: "simple",
+      };
+
+      await this.createCompressedBackup(filename, snapshot);
+      this.logger.log("success", `Simple snapshot created: ${filename}`);
+      return true;
+    }
+
+    async createChunkedSnapshot(name, estimatedSize) {
+      this.logger.log(
+        "info",
+        `Using chunked snapshot method for large dataset (${this.formatFileSize(
+          estimatedSize
+        )})`
+      );
+
+      const timestamp = new Date()
+        .toISOString()
+        .replace(/[-:]/g, "")
+        .replace(/\..+/, "");
+      const baseFilename = `s-${name.replace(
+        /[^a-zA-Z0-9]/g,
+        "-"
+      )}-${timestamp}`;
+
+      try {
+        const allItems = await this.dataService.getAllItems();
+        const chunks = await this.createDataChunks(allItems);
+
+        this.logger.log("info", `Created ${chunks.length} chunks for upload`);
+
+        // Upload metadata first
+        const metadata = {
+          format: "chunked",
+          created: Date.now(),
+          name,
+          totalChunks: chunks.length,
+          estimatedSize,
+          chunkList: chunks.map((chunk, index) => ({
+            index,
+            filename: `${baseFilename}-chunk-${index
+              .toString()
+              .padStart(3, "0")}.zip`,
+            itemCount: chunk.length,
+          })),
+        };
+
+        await this.s3Service.upload(
+          `${baseFilename}-metadata.json`,
+          metadata,
+          true
+        );
+
+        // Upload chunks with progress tracking
+        for (let i = 0; i < chunks.length; i++) {
+          const chunkFilename = `${baseFilename}-chunk-${i
+            .toString()
+            .padStart(3, "0")}.zip`;
+          const chunkData = {
+            chunkIndex: i,
+            totalChunks: chunks.length,
+            items: chunks[i],
+            created: Date.now(),
+          };
+
+          this.logger.log(
+            "info",
+            `Uploading chunk ${i + 1}/${chunks.length} (${
+              chunks[i].length
+            } items)`
+          );
+
+          try {
+            await this.createCompressedBackup(chunkFilename, chunkData);
+          } catch (error) {
+            this.logger.log(
+              "error",
+              `Failed to upload chunk ${i + 1}: ${error.message}`
+            );
+            throw new Error(
+              `Chunked snapshot failed at chunk ${i + 1}/${chunks.length}`
+            );
+          }
+        }
+
+        this.logger.log(
+          "success",
+          `Chunked snapshot created: ${baseFilename} (${chunks.length} chunks)`
+        );
+        return true;
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "Chunked snapshot creation failed",
+          error.message
+        );
+        throw error;
+      }
+    }
+
+    async createDataChunks(allItems) {
+      const chunks = [];
+      let currentChunk = [];
+      let currentChunkSize = 0;
+
+      for (const item of allItems) {
+        try {
+          const itemStr = JSON.stringify(item);
+          const itemSize = itemStr.length * 2; // Rough size estimate
+
+          // If adding this item would exceed chunk size, start new chunk
+          if (
+            currentChunkSize + itemSize > this.chunkSizeLimit &&
+            currentChunk.length > 0
+          ) {
+            chunks.push([...currentChunk]);
+            currentChunk = [];
+            currentChunkSize = 0;
+          }
+
+          currentChunk.push(item);
+          currentChunkSize += itemSize;
+        } catch (error) {
+          this.logger.log(
+            "warning",
+            `Skipping problematic item ${item.id}: ${error.message}`
+          );
+        }
+      }
+
+      // Add the last chunk if it has items
+      if (currentChunk.length > 0) {
+        chunks.push(currentChunk);
+      }
+
+      return chunks;
+    }
+
+    async checkAndPerformDailyBackup(syncId = null) {
+      this.currentSyncId = syncId || this.logger.generateSyncId("DAILY");
+
+      const lastBackupStr = localStorage.getItem("tcs_last-daily-backup");
       const now = new Date();
       const currentDateStr = `${now.getFullYear()}${String(
         now.getMonth() + 1
       ).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+
       if (!lastBackupStr || lastBackupStr !== currentDateStr) {
-        logToConsole("info", "Starting daily backup...");
-        await performDailyBackup();
-        localStorage.setItem("last-daily-backup", currentDateStr);
-        logToConsole("success", "Daily backup completed");
+        this.logger.log(
+          "info",
+          "Starting daily backup...",
+          null,
+          this.currentSyncId
+        );
+        await this.performDailyBackup();
+        localStorage.setItem("tcs_last-daily-backup", currentDateStr);
+        this.logger.log(
+          "success",
+          "Daily backup completed",
+          null,
+          this.currentSyncId
+        );
+
+        // Perform tombstone cleanup after daily backup
+        this.logger.log(
+          "info",
+          "🧹 Starting tombstone cleanup after daily backup",
+          null,
+          this.currentSyncId
+        );
+        const localCleaned = this.cleanupOldTombstones();
+        const cloudCleaned = await this.cleanupCloudTombstones();
+        localStorage.setItem(
+          "tcs_last-tombstone-cleanup",
+          Date.now().toString()
+        );
+        if (localCleaned > 0 || cloudCleaned > 0) {
+          this.logger.log(
+            "success",
+            `Tombstone cleanup completed: ${localCleaned} local, ${cloudCleaned} cloud`,
+            null,
+            this.currentSyncId
+          );
+        }
       } else {
-        logToConsole("skip", "Daily backup already performed today");
+        this.logger.log(
+          "info",
+          "Daily backup already performed today",
+          null,
+          this.currentSyncId
+        );
       }
-    } catch (error) {
-      logToConsole("error", "Error checking/performing daily backup:", error);
     }
-  }
-  async function performDailyBackup() {
-    backupState.isBackupInProgress = true;
-    try {
-      await loadJSZip();
+
+    async performDailyBackup() {
+      this.logger.log("start", "Starting daily backup");
+
+      const estimatedSize = await this.estimateDataSize();
+      this.logger.log(
+        "info",
+        `Estimated data size: ${this.formatFileSize(estimatedSize)}`
+      );
+
+      if (estimatedSize > this.chunkSizeLimit) {
+        return await this.performChunkedDailyBackup(estimatedSize);
+      } else {
+        return await this.performSimpleDailyBackup();
+      }
+    }
+
+    async performSimpleDailyBackup() {
+      this.logger.log("info", "Using simple daily backup method");
       const today = new Date();
       const dateString = `${today.getFullYear()}${String(
         today.getMonth() + 1
       ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-      const key = `typingmind-backup-${dateString}.zip`;
-      const data = await exportBackupData();
-      const success = await createDailyBackup(key, data);
-      if (success) {
-        await cleanupOldBackups("daily");
-        backupState.lastDailyBackup = Date.now();
-        logToConsole("success", "Daily backup created successfully");
-        return true;
-      } else {
-        logToConsole("error", "Daily backup creation failed");
-        return false;
-      }
-    } catch (error) {
-      logToConsole("error", "Daily backup failed:", error);
-      return false;
-    } finally {
-      backupState.isBackupInProgress = false;
-    }
-  }
-  function exportBackupData() {
-    return new Promise((resolve, reject) => {
-      const exportData = {
-        localStorage: { ...localStorage },
-        indexedDB: {},
-      };
-      logToConsole("info", "Starting data export", {
-        localStorageKeys: Object.keys(exportData.localStorage).length,
-      });
-      const request = indexedDB.open("keyval-store", 1);
-      request.onerror = () => reject(request.error);
-      request.onsuccess = function (event) {
-        const db = event.target.result;
-        const transaction = db.transaction(["keyval"], "readonly");
-        const store = transaction.objectStore("keyval");
-        const collectData = new Promise((resolveData) => {
-          store.getAllKeys().onsuccess = function (keyEvent) {
-            const keys = keyEvent.target.result;
-            logToConsole("info", "IndexedDB keys found", {
-              count: keys.length,
-            });
-            store.getAll().onsuccess = function (valueEvent) {
-              const values = valueEvent.target.result;
-              keys.forEach((key, i) => {
-                exportData.indexedDB[key] = values[i];
-              });
-              resolveData();
-            };
-          };
+      const filename = `typingmind-backup-${dateString}.zip`;
+
+      const allItems = await this.dataService.getAllItems();
+
+      const indexedDBData = {};
+      allItems
+        .filter((item) => item.type === "idb")
+        .forEach((item) => {
+          if (item.data) {
+            indexedDBData[item.id] = item.data;
+          }
         });
-        Promise.all([
-          collectData,
-          new Promise((resolveTransaction) => {
-            transaction.oncomplete = resolveTransaction;
-          }),
-        ])
-          .then(() => {
-            const hasLocalStorageData =
-              Object.keys(exportData.localStorage).length > 0;
-            const hasIndexedDBData =
-              Object.keys(exportData.indexedDB).length > 0;
-            logToConsole("info", "Export data summary", {
-              localStorageKeys: Object.keys(exportData.localStorage).length,
-              indexedDBKeys: Object.keys(exportData.indexedDB).length,
-              hasLocalStorageData,
-              hasIndexedDBData,
-            });
-            if (!hasLocalStorageData && !hasIndexedDBData) {
-              reject(new Error("No data found in localStorage or IndexedDB"));
-              return;
+
+      const localStorageData = {};
+      allItems
+        .filter((item) => item.type === "ls")
+        .forEach((item) => {
+          localStorageData[item.data.key] = item.data.value;
+        });
+
+      const backup = {
+        localStorage: localStorageData,
+        indexedDB: indexedDBData,
+        created: Date.now(),
+        name: "daily-auto",
+        format: "simple",
+      };
+
+      await this.createCompressedBackup(filename, backup);
+      this.logger.log("success", `Simple daily backup completed: ${filename}`);
+      await this.cleanupOldBackups();
+    }
+
+    async performChunkedDailyBackup(estimatedSize) {
+      this.logger.log(
+        "info",
+        `Using chunked daily backup method (${this.formatFileSize(
+          estimatedSize
+        )})`
+      );
+
+      const today = new Date();
+      const dateString = `${today.getFullYear()}${String(
+        today.getMonth() + 1
+      ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+      const baseFilename = `typingmind-backup-${dateString}`;
+
+      try {
+        const allItems = await this.dataService.getAllItems();
+        const chunks = await this.createDataChunks(allItems);
+
+        this.logger.log(
+          "info",
+          `Created ${chunks.length} chunks for daily backup`
+        );
+
+        // Upload metadata
+        const metadata = {
+          format: "chunked",
+          created: Date.now(),
+          name: "daily-auto",
+          type: "daily-backup",
+          totalChunks: chunks.length,
+          estimatedSize,
+          chunkList: chunks.map((chunk, index) => ({
+            index,
+            filename: `${baseFilename}-chunk-${index
+              .toString()
+              .padStart(3, "0")}.json`,
+            itemCount: chunk.length,
+          })),
+        };
+
+        await this.s3Service.upload(
+          `${baseFilename}-metadata.json`,
+          metadata,
+          true
+        );
+
+        // Upload chunks
+        for (let i = 0; i < chunks.length; i++) {
+          const chunkFilename = `${baseFilename}-chunk-${i
+            .toString()
+            .padStart(3, "0")}.zip`;
+          const chunkData = {
+            chunkIndex: i,
+            totalChunks: chunks.length,
+            items: chunks[i],
+            created: Date.now(),
+          };
+
+          this.logger.log(
+            "info",
+            `Uploading daily backup chunk ${i + 1}/${chunks.length}`
+          );
+          await this.createCompressedBackup(chunkFilename, chunkData);
+        }
+
+        this.logger.log(
+          "success",
+          `Chunked daily backup completed: ${baseFilename} (${chunks.length} chunks)`
+        );
+        await this.cleanupOldBackups();
+      } catch (error) {
+        this.logger.log("error", "Chunked daily backup failed", error.message);
+        throw error;
+      }
+    }
+
+    cleanupOldTombstones() {
+      const now = Date.now();
+      const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
+      let cleanupCount = 0;
+
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith("tcs_tombstone_")) {
+          try {
+            const tombstone = JSON.parse(localStorage.getItem(key));
+            if (
+              tombstone.deleted &&
+              now - tombstone.deleted > tombstoneRetentionPeriod
+            ) {
+              localStorage.removeItem(key);
+              cleanupCount++;
             }
-            resolve(exportData);
-          })
-          .catch(reject);
-        transaction.onerror = () => reject(transaction.error);
-      };
-    });
-  }
-  async function createDailyBackup(key, data) {
-    logToConsole("start", `Creating daily backup: ${key}`);
-    try {
-      const JSZip = await loadJSZip();
-      if (!JSZip) {
-        throw new Error("Failed to load JSZip library");
+          } catch {
+            localStorage.removeItem(key);
+            cleanupCount++;
+          }
+        }
       }
-      const encryptionKey = localStorage.getItem("encryption-key");
-      if (!encryptionKey) {
-        logToConsole(
-          "warning",
-          "No encryption key found, backup will not be encrypted"
-        );
-        return false;
+
+      const orchestrator = window.cloudSyncApp?.syncOrchestrator;
+      if (orchestrator?.metadata?.items) {
+        for (const [itemId, metadata] of Object.entries(
+          orchestrator.metadata.items
+        )) {
+          if (
+            metadata.deleted &&
+            now - metadata.deleted > tombstoneRetentionPeriod
+          ) {
+            delete orchestrator.metadata.items[itemId];
+            cleanupCount++;
+          }
+        }
+
+        if (cleanupCount > 0) {
+          orchestrator.saveMetadata();
+          this.logger.log(
+            "info",
+            `🧹 Cleaned up ${cleanupCount} old tombstones`,
+            null,
+            this.currentSyncId
+          );
+        }
       }
-      logToConsole("info", "Encrypting backup data...");
-      const encryptedData = await encryptData(data);
-      const rawSize = Math.round(encryptedData.length * 0.8);
-      logToConsole(
-        "info",
-        `Estimated raw data size: ${formatFileSize(rawSize)}`
-      );
-      const zip = new JSZip();
-      const jsonFileName = key.replace(".zip", ".json");
-      zip.file(jsonFileName, encryptedData, {
-        compression: "DEFLATE",
-        compressionOptions: {
-          level: 9,
-        },
-        binary: true,
-      });
-      const compressedContent = await zip.generateAsync({ type: "blob" });
-      if (compressedContent.size < 100) {
-        throw new Error(
-          "Daily backup file is too small or empty. Upload cancelled."
-        );
-      }
-      const arrayBuffer = await compressedContent.arrayBuffer();
-      const content = new Uint8Array(arrayBuffer);
-      const uploadMetadata = {
-        version: EXTENSION_VERSION,
-        timestamp: String(Date.now()),
-        type: "daily",
-        originalSize: String(rawSize),
-        compressedSize: String(compressedContent.size),
-        encrypted: "true",
-      };
-      await uploadToS3(key, content, uploadMetadata);
-      logToConsole("success", "Daily backup created successfully");
-      return true;
-    } catch (error) {
-      logToConsole("error", "Daily backup creation failed:", error);
-      return false;
+
+      return cleanupCount;
     }
-  }
-  async function createSnapshot(name) {
-    logToConsole("start", "Creating snapshot...");
-    backupState.isBackupInProgress = true;
-    try {
-      logToConsole("info", "Loading JSZip...");
-      await loadJSZip();
-      logToConsole("success", "JSZip loaded successfully");
-      const data = await exportBackupData();
-      const now = new Date();
-      const timestamp =
-        now.getFullYear().toString() +
-        (now.getMonth() + 1).toString().padStart(2, "0") +
-        now.getDate().toString().padStart(2, "0") +
-        now.getHours().toString().padStart(2, "0") +
-        now.getMinutes().toString().padStart(2, "0") +
-        now.getSeconds().toString().padStart(2, "0") +
-        now.getMilliseconds().toString().padStart(3, "0");
-      const key = `s-${name}-${timestamp}.zip`;
-      logToConsole("info", `Creating snapshot with key: ${key}`);
-      const encryptionKey = localStorage.getItem("encryption-key");
-      if (!encryptionKey) {
-        logToConsole(
-          "warning",
-          "No encryption key found, snapshot will not be encrypted"
+
+    async cleanupCloudTombstones() {
+      try {
+        const orchestrator = window.cloudSyncApp?.syncOrchestrator;
+        if (!orchestrator) return 0;
+
+        const cloudMetadata = await orchestrator.getCloudMetadata();
+        const now = Date.now();
+        const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
+        let cleanupCount = 0;
+
+        if (cloudMetadata.items) {
+          for (const [itemId, metadata] of Object.entries(
+            cloudMetadata.items
+          )) {
+            if (
+              metadata.deleted &&
+              now - metadata.deleted > tombstoneRetentionPeriod
+            ) {
+              delete cloudMetadata.items[itemId];
+              cleanupCount++;
+            }
+          }
+
+          if (cleanupCount > 0) {
+            await this.s3Service.upload("metadata.json", cloudMetadata, true);
+            this.logger.log(
+              "info",
+              `🧹 Cleaned up ${cleanupCount} old cloud tombstones`,
+              null,
+              this.currentSyncId
+            );
+          }
+        }
+
+        return cleanupCount;
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "Error cleaning up cloud tombstones",
+          error.message,
+          this.currentSyncId
         );
-        return false;
+        return 0;
       }
-      logToConsole("info", "Encrypting snapshot data...");
-      const encryptedData = await encryptData(data);
-      const rawSize = Math.round(encryptedData.length * 0.8);
-      logToConsole(
-        "info",
-        `Estimated raw data size: ${formatFileSize(rawSize)}`
-      );
-      const zip = new JSZip();
-      const jsonFileName = key.replace(".zip", ".json");
-      zip.file(jsonFileName, encryptedData, {
-        compression: "DEFLATE",
-        compressionOptions: {
-          level: 9,
-        },
-        binary: true,
-      });
-      const compressedContent = await zip.generateAsync({ type: "blob" });
-      if (compressedContent.size < 100) {
-        throw new Error(
-          "Snapshot file is too small or empty. Upload cancelled."
-        );
-      }
-      const arrayBuffer = await compressedContent.arrayBuffer();
-      const content = new Uint8Array(arrayBuffer);
-      const uploadMetadata = {
-        version: EXTENSION_VERSION,
-        timestamp: String(Date.now()),
-        type: "snapshot",
-        originalSize: String(rawSize),
-        compressedSize: String(compressedContent.size),
-        encrypted: "true",
-      };
-      await uploadToS3(key, content, uploadMetadata);
-      backupState.lastManualSnapshot = Date.now();
-      await loadBackupList();
-      logToConsole("success", "Snapshot created successfully");
-      return true;
-    } catch (error) {
-      logToConsole("error", "Snapshot creation failed:", error);
-      return false;
-    } finally {
-      backupState.isBackupInProgress = false;
     }
-  }
-  async function cleanupOldBackups(type) {
-    logToConsole("start", `Cleaning up old ${type} backups...`);
-    try {
-      let prefix;
-      let keepCount;
-      switch (type) {
-        case "daily":
-          prefix = config.dailyBackupPrefix;
-          keepCount = config.keepDailyBackups;
-          break;
-        default:
-          return;
-      }
-      const objects = await listS3Objects(prefix);
-      objects.sort((a, b) => b.LastModified - a.LastModified);
-      for (let i = keepCount; i < objects.length; i++) {
-        await deleteFromS3(objects[i].Key);
-        logToConsole("cleanup", `Deleted old backup: ${objects[i].Key}`);
-      }
-      logToConsole("success", `Cleanup of old ${type} backups completed`);
-    } catch (error) {
-      logToConsole("error", `Failed to clean up old ${type} backups:`, error);
+
+    formatFileSize(bytes) {
+      if (bytes === 0) return "0 B";
+      const k = 1024;
+      const sizes = ["B", "KB", "MB", "GB"];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
     }
-  }
-  async function restoreFromBackup(key) {
-    logToConsole("start", `Starting restore from backup: ${key}`);
-    try {
-      operationState.isImporting = true;
-      const backup = await downloadFromS3(key);
-      if (!backup || !backup.data) {
-        throw new Error("Backup not found or empty");
+
+    async loadBackupList() {
+      try {
+        const objects = await this.s3Service.list("");
+        const backups = [];
+
+        for (const obj of objects) {
+          if (!obj.Key.includes("/")) {
+            const isValidBackupFile =
+              obj.Key.startsWith("typingmind-backup-") ||
+              obj.Key.startsWith("s-");
+
+            if (isValidBackupFile) {
+              if (obj.Key.endsWith("-metadata.json")) {
+                try {
+                  const metadata = await this.s3Service.download(obj.Key, true);
+                  if (metadata.format === "chunked") {
+                    const backupType = this.getBackupType(obj.Key);
+                    backups.push({
+                      key: obj.Key,
+                      name: obj.Key.replace("-metadata.json", ""),
+                      displayName: this.formatBackupDisplayName(
+                        obj.Key,
+                        metadata
+                      ),
+                      size: metadata.estimatedSize || obj.Size,
+                      modified: obj.LastModified,
+                      format: "chunked",
+                      chunks: metadata.totalChunks,
+                      type: backupType,
+                      sortOrder: backupType === "snapshot" ? 1 : 2,
+                    });
+                  }
+                } catch (error) {
+                  this.logger.log(
+                    "warning",
+                    `Failed to read metadata for ${obj.Key}`
+                  );
+                }
+              } else if (
+                obj.Key.match(/\.(zip|json)$/) &&
+                !obj.Key.includes("-chunk-")
+              ) {
+                const backupType = this.getBackupType(obj.Key);
+                backups.push({
+                  key: obj.Key,
+                  name: obj.Key.replace(/\.(zip|json)$/, ""),
+                  displayName: this.formatBackupDisplayName(obj.Key),
+                  size: obj.Size,
+                  modified: obj.LastModified,
+                  format: "simple",
+                  type: backupType,
+                  sortOrder: backupType === "snapshot" ? 1 : 2,
+                });
+              }
+            }
+          }
+        }
+
+        return backups.sort((a, b) => {
+          if (a.sortOrder !== b.sortOrder) {
+            return a.sortOrder - b.sortOrder;
+          }
+          return new Date(b.modified) - new Date(a.modified);
+        });
+      } catch (error) {
+        this.logger.log("error", "Failed to load backup list", error.message);
+        return [];
       }
-      let backupContent;
+    }
+
+    getBackupType(filename) {
+      if (filename.startsWith("s-")) {
+        return "snapshot";
+      } else if (filename.startsWith("typingmind-backup-")) {
+        return "daily";
+      }
+      return "unknown";
+    }
+
+    formatBackupDisplayName(filename, metadata = null) {
+      const type = this.getBackupType(filename);
+      const isChunked = metadata && metadata.format === "chunked";
+
+      if (type === "snapshot") {
+        const cleanName = filename
+          .replace(/^s-/, "")
+          .replace(/-\d{8}T\d{6}.*$/, "")
+          .replace("-metadata.json", "")
+          .replace(/\.(zip|json)$/, "");
+        const timestamp = filename.match(/-(\d{8}T\d{6})/);
+        let displayName = `📸 Snapshot: ${cleanName}`;
+        if (timestamp) {
+          const dateStr = timestamp[1];
+          const date = new Date(
+            dateStr.slice(0, 4) +
+              "-" +
+              dateStr.slice(4, 6) +
+              "-" +
+              dateStr.slice(6, 8) +
+              "T" +
+              dateStr.slice(9, 11) +
+              ":" +
+              dateStr.slice(11, 13) +
+              ":" +
+              dateStr.slice(13, 15)
+          );
+          displayName += ` (${date.toLocaleDateString()})`;
+        }
+        return displayName;
+      } else if (type === "daily") {
+        const dateMatch = filename.match(/typingmind-backup-(\d{8})/);
+        if (dateMatch) {
+          const dateStr = dateMatch[1];
+          const date = new Date(
+            dateStr.slice(0, 4) +
+              "-" +
+              dateStr.slice(4, 6) +
+              "-" +
+              dateStr.slice(6, 8)
+          );
+          return `🗓️ Daily Backup (${date.toLocaleDateString()})`;
+        }
+        return "🗓️ Daily Backup";
+      }
+
+      return filename
+        .replace(/\.(zip|json)$/, "")
+        .replace("-metadata.json", "");
+    }
+
+    async restoreFromBackup(key, cryptoService) {
+      this.logger.log("start", `Restoring from backup: ${key}`);
+
+      try {
+        if (key.endsWith("-metadata.json")) {
+          return await this.restoreFromChunkedBackup(key, cryptoService);
+        } else {
+          return await this.restoreFromSimpleBackup(key, cryptoService);
+        }
+      } catch (error) {
+        this.logger.log("error", "Backup restoration failed", error.message);
+        throw error;
+      }
+    }
+
+    async restoreFromSimpleBackup(key, cryptoService) {
+      this.logger.log("info", "Restoring from simple backup format");
+
+      let backup;
       if (key.endsWith(".zip")) {
-        const JSZip = await loadJSZip();
-        const zip = await JSZip.loadAsync(backup.data);
+        backup = await this.restoreFromZipBackup(key, cryptoService);
+      } else {
+        backup = await this.s3Service.download(key);
+      }
+
+      if (!backup) {
+        throw new Error("Backup not found");
+      }
+
+      let decryptedData;
+      if (backup.data) {
+        decryptedData = await cryptoService.decrypt(backup.data);
+      } else {
+        decryptedData = backup;
+      }
+
+      if (!decryptedData.localStorage && !decryptedData.indexedDB) {
+        throw new Error(
+          "Invalid backup format - missing localStorage and indexedDB data"
+        );
+      }
+
+      await this.restoreData(decryptedData);
+      this.logger.log("success", "Simple backup restored successfully");
+
+      setTimeout(() => {
+        window.location.reload();
+      }, 3000);
+
+      return true;
+    }
+
+    async restoreFromZipBackup(key, cryptoService) {
+      try {
+        const JSZip = await this.loadJSZip();
+
+        // Download raw ZIP data
+        const zipData = await this.s3Service.downloadRaw(key);
+
+        // Load ZIP
+        const zip = await JSZip.loadAsync(zipData);
+
+        // Find JSON file inside ZIP
         const jsonFile = Object.keys(zip.files).find((f) =>
           f.endsWith(".json")
         );
         if (!jsonFile) {
-          throw new Error("No JSON file found in backup");
+          throw new Error("No JSON file found in ZIP backup");
         }
-        backupContent = await zip.file(jsonFile).async("uint8array");
-      } else {
-        backupContent = backup.data;
-      }
-      logToConsole("info", "Decrypting backup content...");
-      const decryptedContent = await decryptData(backupContent);
-      logToConsole("info", "Decrypted content type:", typeof decryptedContent);
-      let parsedContent;
-      try {
-        logToConsole("info", "Attempting to parse decrypted content...");
-        parsedContent = JSON.parse(decryptedContent);
-        logToConsole("info", "Parsed content structure:", {
-          type: typeof parsedContent,
-          hasLocalStorage: !!parsedContent.localStorage,
-          hasIndexedDB: !!parsedContent.indexedDB,
-          localStorageKeys: parsedContent.localStorage
-            ? Object.keys(parsedContent.localStorage).length
-            : 0,
-          indexedDBKeys: parsedContent.indexedDB
-            ? Object.keys(parsedContent.indexedDB).length
-            : 0,
-        });
+
+        // Extract encrypted content
+        const encryptedData = await zip.file(jsonFile).async("uint8array");
+
+        // Decrypt content
+        const decryptedData = await cryptoService.decrypt(encryptedData);
+
+        this.logger.log(
+          "info",
+          "Successfully extracted and decrypted ZIP backup"
+        );
+        return decryptedData;
       } catch (error) {
-        logToConsole("error", "JSON parse error:", error);
-        logToConsole(
+        this.logger.log(
           "error",
-          "Decrypted content preview:",
-          decryptedContent.slice(0, 200)
+          "Failed to restore from ZIP backup",
+          error.message
         );
-        throw new Error(`Failed to parse backup data: ${error.message}`);
+        throw error;
       }
-      if (!parsedContent || typeof parsedContent !== "object") {
-        throw new Error("Invalid backup format: Root content is not an object");
+    }
+
+    async restoreFromChunkedBackup(metadataKey, cryptoService) {
+      this.logger.log("info", "Restoring from chunked backup format");
+
+      const metadata = await this.s3Service.download(metadataKey, true);
+      if (!metadata || metadata.format !== "chunked") {
+        throw new Error("Invalid chunked backup metadata");
       }
-      if (!parsedContent.localStorage && !parsedContent.indexedDB) {
-        throw new Error(
-          "Invalid backup format: Missing both localStorage and indexedDB sections"
+
+      this.logger.log(
+        "info",
+        `Restoring chunked backup: ${metadata.totalChunks} chunks`
+      );
+
+      const allData = {
+        localStorage: {},
+        indexedDB: {},
+      };
+
+      for (let i = 0; i < metadata.totalChunks; i++) {
+        const chunkInfo = metadata.chunkList[i];
+        this.logger.log(
+          "info",
+          `Processing chunk ${i + 1}/${metadata.totalChunks}`
         );
-      }
-      logToConsole("info", "Importing data to storage...");
-      await importDataToStorage(parsedContent);
-      const chats = await getAllChatsFromIndexedDB();
-      for (const chat of chats) {
-        if (!chat.id) {
-          logToConsole("warning", "Found chat without ID, skipping", chat);
-          continue;
+
+        try {
+          let chunkData;
+          if (chunkInfo.filename.endsWith(".zip")) {
+            chunkData = await this.restoreFromZipBackup(
+              chunkInfo.filename,
+              cryptoService
+            );
+          } else {
+            chunkData = await this.s3Service.download(chunkInfo.filename);
+          }
+
+          if (chunkData.items) {
+            for (const item of chunkData.items) {
+              if (item.type === "idb" && item.data) {
+                allData.indexedDB[item.id] = item.data;
+              } else if (item.type === "ls" && item.data) {
+                allData.localStorage[item.data.key] = item.data.value;
+              }
+            }
+          }
+        } catch (error) {
+          this.logger.log(
+            "error",
+            `Failed to process chunk ${i + 1}: ${error.message}`
+          );
+          throw new Error(
+            `Chunked backup restoration failed at chunk ${i + 1}`
+          );
         }
       }
-      const currentTime = new Date().toLocaleString();
-      localStorage.setItem("last-cloud-sync", currentTime);
-      await saveLocalMetadata();
-      operationState.isImporting = false;
-      logToConsole("success", "Backup restored successfully");
+
+      await this.restoreData(allData);
+      this.logger.log(
+        "success",
+        `Chunked backup restored successfully (${metadata.totalChunks} chunks)`
+      );
+
+      setTimeout(() => {
+        window.location.reload();
+      }, 3000);
+
       return true;
-    } catch (error) {
-      logToConsole("error", "Restore failed:", error);
-      operationState.isImporting = false;
-      throw error;
+    }
+
+    async restoreData(data) {
+      this.logger.log("info", "Restoring data to local storage");
+
+      if (!data || typeof data !== "object") {
+        throw new Error("Invalid restore data: data must be an object");
+      }
+
+      if (!data.localStorage && !data.indexedDB) {
+        throw new Error(
+          "Invalid restore data: missing localStorage and indexedDB sections"
+        );
+      }
+
+      this.logger.log(
+        "warning",
+        "⚠️ CRITICAL: This restore will overwrite ALL local data. Page will reload after restore."
+      );
+
+      const promises = [];
+
+      if (data.indexedDB && typeof data.indexedDB === "object") {
+        Object.entries(data.indexedDB).forEach(([key, itemData]) => {
+          if (key && itemData !== undefined && itemData !== null) {
+            promises.push(this.dataService.saveItem(itemData, "idb", key));
+            this.logger.log("info", `🔄 Restoring IndexedDB item: ${key}`);
+          } else {
+            this.logger.log(
+              "warning",
+              `Skipping invalid IndexedDB item: ${key}`
+            );
+          }
+        });
+      }
+
+      if (data.localStorage && typeof data.localStorage === "object") {
+        Object.entries(data.localStorage).forEach(([key, value]) => {
+          if (key && value !== undefined && value !== null) {
+            promises.push(this.dataService.saveItem({ key, value }, "ls"));
+            this.logger.log("info", `🔄 Restoring localStorage item: ${key}`);
+          } else {
+            this.logger.log(
+              "warning",
+              `Skipping invalid localStorage item: ${key}`
+            );
+          }
+        });
+      }
+
+      await Promise.all(promises);
+
+      this.logger.log(
+        "info",
+        "✅ Data restore completed. Clearing sync metadata to force fresh sync."
+      );
+
+      localStorage.removeItem("tcs_cloud-metadata");
+      localStorage.removeItem("tcs_last-cloud-sync");
+
+      this.logger.log(
+        "success",
+        "Restore completed successfully. Page will reload in 3 seconds."
+      );
+    }
+
+    async cleanupOldBackups() {
+      try {
+        const objects = await this.s3Service.list("");
+        const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+        let deletedCount = 0;
+
+        const backupFiles = objects.filter(
+          (obj) =>
+            obj.Key.startsWith("typingmind-backup-") ||
+            obj.Key.startsWith("s-") ||
+            obj.Key.endsWith("-metadata.json") ||
+            obj.Key.includes("-chunk-")
+        );
+
+        for (const obj of backupFiles) {
+          const isOldBackup =
+            new Date(obj.LastModified).getTime() < thirtyDaysAgo;
+
+          if (isOldBackup) {
+            try {
+              await this.s3Service.delete(obj.Key);
+              deletedCount++;
+              this.logger.log("info", `Cleaned up old backup: ${obj.Key}`);
+            } catch (error) {
+              this.logger.log("warning", `Failed to delete backup: ${obj.Key}`);
+            }
+          }
+        }
+
+        if (deletedCount > 0) {
+          this.logger.log(
+            "success",
+            `Cleaned up ${deletedCount} old backup files`
+          );
+        }
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "Failed to cleanup old backups",
+          error.message
+        );
+      }
     }
   }
-  function importDataToStorage(data) {
-    return new Promise((resolve, reject) => {
-      const preserveKeys = [
-        "encryption-key",
+
+  class OperationQueue {
+    constructor(logger) {
+      this.logger = logger;
+      this.queue = new Map();
+      this.processing = false;
+      this.maxRetries = 3;
+      this.activeTimeouts = new Set();
+      this.maxQueueSize = 100;
+    }
+
+    add(operationId, operation, priority = "normal") {
+      if (this.queue.has(operationId)) {
+        this.logger.log("skip", `Operation ${operationId} already queued`);
+        return;
+      }
+
+      if (this.queue.size >= this.maxQueueSize) {
+        this.logger.log(
+          "warning",
+          `Queue full (${this.maxQueueSize}), removing oldest operation`
+        );
+        const oldestKey = this.queue.keys().next().value;
+        this.queue.delete(oldestKey);
+      }
+
+      this.queue.set(operationId, {
+        id: operationId,
+        operation,
+        priority,
+        retries: 0,
+        addedAt: Date.now(),
+      });
+
+      this.logger.log("info", `📋 Queued operation: ${operationId}`);
+      this.process();
+    }
+
+    async process() {
+      if (this.processing || this.queue.size === 0) return;
+
+      this.processing = true;
+
+      while (this.queue.size > 0) {
+        const operations = Array.from(this.queue.values());
+        const highPriority = operations.filter((op) => op.priority === "high");
+        const nextOp =
+          highPriority.length > 0 ? highPriority[0] : operations[0];
+
+        try {
+          this.logger.log("info", `⚡ Executing: ${nextOp.id}`);
+          await nextOp.operation();
+          this.queue.delete(nextOp.id);
+          this.logger.log("success", `✅ Completed: ${nextOp.id}`);
+        } catch (error) {
+          this.logger.log("error", `❌ Failed: ${nextOp.id}`, error.message);
+
+          if (nextOp.retries < this.maxRetries) {
+            nextOp.retries++;
+            const delay = Math.min(1000 * Math.pow(2, nextOp.retries), 10000);
+            this.logger.log(
+              "warning",
+              `🔄 Retrying ${nextOp.id} in ${delay}ms (${nextOp.retries}/${this.maxRetries})`
+            );
+
+            const timeoutId = setTimeout(() => {
+              this.activeTimeouts.delete(timeoutId);
+              if (this.queue.has(nextOp.id)) {
+                this.process();
+              }
+            }, delay);
+            this.activeTimeouts.add(timeoutId);
+            break;
+          } else {
+            this.logger.log("error", `💀 Giving up on: ${nextOp.id}`);
+            this.queue.delete(nextOp.id);
+          }
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      this.processing = false;
+    }
+
+    clear() {
+      this.queue.clear();
+      this.clearTimeouts();
+      this.processing = false;
+    }
+
+    clearTimeouts() {
+      for (const timeoutId of this.activeTimeouts) {
+        clearTimeout(timeoutId);
+      }
+      this.activeTimeouts.clear();
+    }
+
+    size() {
+      return this.queue.size;
+    }
+
+    cleanup() {
+      this.clear();
+      this.logger = null;
+    }
+  }
+
+  class CloudSyncApp {
+    constructor() {
+      this.logger = new Logger();
+      this.config = new ConfigManager();
+      this.operationQueue = new OperationQueue(this.logger);
+      this.dataService = new DataService(
+        this.config,
+        this.logger,
+        this.operationQueue
+      );
+      this.cryptoService = new CryptoService(this.config);
+      this.s3Service = new S3Service(
+        this.config,
+        this.cryptoService,
+        this.logger
+      );
+      this.syncOrchestrator = new SyncOrchestrator(
+        this.config,
+        this.dataService,
+        this.s3Service,
+        this.logger,
+        this.operationQueue
+      );
+      this.backupService = new BackupService(
+        this.dataService,
+        this.s3Service,
+        this.logger
+      );
+      this.autoSyncInterval = null;
+      this.eventListeners = [];
+      this.modalCleanupCallbacks = [];
+      this.noSyncMode = false;
+    }
+    async initialize() {
+      this.logger.log("start", "Initializing TypingmindCloud Sync V3");
+
+      // Check for nosync parameter and get URL config
+      const urlParams = new URLSearchParams(window.location.search);
+      this.noSyncMode =
+        urlParams.get("nosync") === "true" || urlParams.has("nosync");
+      const urlConfig = this.getConfigFromUrlParams();
+
+      if (this.noSyncMode) {
+        this.logger.log(
+          "info",
+          "🚫 NoSync mode enabled - only snapshot functionality available"
+        );
+      }
+
+      // Check for mandatory configuration if not in nosync mode
+      if (!this.noSyncMode && !this.checkMandatoryConfig(urlConfig.config)) {
+        alert(
+          "⚠️ Cloud Sync Configuration Required\n\nPlease configure the following mandatory fields in the sync settings:\n• AWS Bucket Name\n• AWS Region\n• AWS Access Key\n• AWS Secret Key\n• Encryption Key\n\nClick on the Sync button to open settings, then reload the page after configuration."
+        );
+        await this.waitForDOM();
+        this.insertSyncButton();
+        return;
+      }
+
+      await this.performV2toV3Migration();
+      await this.waitForDOM();
+      this.insertSyncButton();
+
+      // Check for URL config parameters and auto-open modal if requested
+      if (urlConfig.autoOpen || urlConfig.hasParams) {
+        this.logger.log(
+          "info",
+          "Auto-opening sync modal due to URL parameters"
+        );
+        setTimeout(() => this.openSyncModal(), 1000);
+      }
+
+      // Only start monitoring and syncing if not in nosync mode
+      if (!this.noSyncMode) {
+        if (this.config.isConfigured()) {
+          try {
+            const initSyncId = this.logger.generateSyncId("INIT");
+            await this.s3Service.initialize();
+
+            // Check and perform daily backup on initialization (once per day)
+            await this.backupService.checkAndPerformDailyBackup(initSyncId);
+
+            // Perform initial full sync (includes deletion monitoring)
+            await this.syncOrchestrator.performFullSync(initSyncId);
+
+            this.startAutoSync();
+            this.updateSyncStatus("success");
+            this.logger.log(
+              "success",
+              "Cloud Sync initialized successfully",
+              null,
+              initSyncId
+            );
+          } catch (error) {
+            this.logger.log("error", "Initialization failed", error.message);
+            this.updateSyncStatus("error");
+          }
+        } else {
+          this.logger.log(
+            "info",
+            "AWS not configured - no sync operations available"
+          );
+        }
+      } else {
+        this.logger.log(
+          "info",
+          "NoSync mode: Monitoring, daily backups, and auto-sync disabled"
+        );
+      }
+    }
+    checkMandatoryConfig(urlConfig = {}) {
+      const requiredFields = [
+        { key: "tcs_aws_bucketname", urlKey: "bucketName" },
+        { key: "tcs_aws_region", urlKey: "region" },
+        { key: "tcs_aws_accesskey", urlKey: "accessKey" },
+        { key: "tcs_aws_secretkey", urlKey: "secretKey" },
+        { key: "tcs_encryptionkey", urlKey: "encryptionKey" },
+      ];
+
+      const missingFields = [];
+
+      for (const field of requiredFields) {
+        const localValue = localStorage.getItem(field.key);
+        const urlValue = urlConfig[field.urlKey];
+
+        if (
+          (!localValue || localValue.trim() === "") &&
+          (!urlValue || urlValue.trim() === "")
+        ) {
+          this.logger.log(
+            "warning",
+            `Missing mandatory field: ${field.key} (not in localStorage or URL params)`
+          );
+          missingFields.push(field.key);
+        }
+      }
+
+      if (missingFields.length > 0) {
+        this.logger.log(
+          "warning",
+          `Missing ${missingFields.length} mandatory fields`,
+          missingFields
+        );
+        return false;
+      }
+
+      //this.logger.log(
+      //  "success",
+      //  "All mandatory configuration fields are present (localStorage + URL params)"
+      //);
+      return true;
+    }
+
+    isSnapshotAvailable() {
+      // Snapshots require S3 configuration to work
+      const urlConfig = this.getConfigFromUrlParams();
+      return this.checkMandatoryConfig(urlConfig.config);
+    }
+
+    getConfigFromUrlParams() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const config = {};
+      const autoOpen = urlParams.has("config") || urlParams.has("autoconfig");
+
+      // Map URL parameters to config values
+      const paramMap = {
+        bucket: "bucketName",
+        bucketname: "bucketName",
+        region: "region",
+        accesskey: "accessKey",
+        secretkey: "secretKey",
+        endpoint: "endpoint",
+        encryptionkey: "encryptionKey",
+        syncinterval: "syncInterval",
+        exclusions: "exclusions",
+      };
+
+      let hasConfigParams = false;
+
+      for (const [urlParam, configKey] of Object.entries(paramMap)) {
+        const value = urlParams.get(urlParam);
+        if (value !== null) {
+          config[configKey] = value;
+          hasConfigParams = true;
+        }
+      }
+
+      //this.logger.log("info", "URL config parameters detected", {
+      //  hasParams: hasConfigParams,
+      //  autoOpen: autoOpen,
+      //  configKeys: Object.keys(config),
+      //});
+
+      return {
+        config: config,
+        hasParams: hasConfigParams,
+        autoOpen: autoOpen,
+      };
+    }
+
+    async waitForDOM() {
+      if (document.readyState === "loading") {
+        return new Promise((resolve) =>
+          document.addEventListener("DOMContentLoaded", resolve)
+        );
+      }
+    }
+    insertSyncButton() {
+      if (document.querySelector('[data-element-id="workspace-tab-cloudsync"]'))
+        return;
+      const style = document.createElement("style");
+      style.textContent = `#sync-status-dot { position: absolute; top: 2px; width: 8px; height: 8px; border-radius: 50%; background-color: #6b7280; display: none; z-index: 10; }`;
+      document.head.appendChild(style);
+      const button = document.createElement("button");
+      button.setAttribute("data-element-id", "workspace-tab-cloudsync");
+      button.className =
+        "min-w-[58px] sm:min-w-0 sm:aspect-auto aspect-square cursor-default h-12 md:h-[50px] flex-col justify-start items-start inline-flex focus:outline-0 focus:text-white w-full relative";
+      button.innerHTML = `<span class="text-white/70 hover:bg-white/20 self-stretch h-12 md:h-[50px] px-0.5 py-1.5 rounded-xl flex-col justify-start items-center gap-1.5 flex transition-colors"><div class="relative"><svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4.5A4.5 4.5 0 0114.5 9M9 13.5A4.5 4.5 0 013.5 9"/><polyline points="9,2.5 9,4.5 11,4.5"/><polyline points="9,15.5 9,13.5 7,13.5"/></g></svg><div id="sync-status-dot"></div></div><span class="font-normal self-stretch text-center text-xs leading-4 md:leading-none">Sync</span></span>`;
+      button.addEventListener("click", () => this.openSyncModal());
+      const chatButton = document.querySelector(
+        'button[data-element-id="workspace-tab-chat"]'
+      );
+      if (chatButton?.parentNode) {
+        chatButton.parentNode.insertBefore(button, chatButton.nextSibling);
+      }
+      //this.logger.log("success", "Sync button inserted");
+    }
+    updateSyncStatus(status = "success") {
+      const dot = document.getElementById("sync-status-dot");
+      if (!dot) return;
+      const colors = {
+        success: "#22c55e",
+        error: "#ef4444",
+        warning: "#eab308",
+        syncing: "#3b82f6",
+      };
+      dot.style.backgroundColor = colors[status] || "#6b7280";
+      dot.style.display = "block";
+    }
+    openSyncModal() {
+      if (document.querySelector(".cloud-sync-modal")) return;
+      this.logger.log("start", "Opening sync modal");
+      this.createModal();
+    }
+    createModal() {
+      const overlay = document.createElement("div");
+      overlay.className = "modal-overlay";
+      overlay.style.cssText = `position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 9999;`;
+      const modal = document.createElement("div");
+      modal.className = "cloud-sync-modal";
+      modal.innerHTML = this.getModalHTML();
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+      this.setupModalEventListeners(modal, overlay);
+    }
+    getModalHTML() {
+      const modeStatus = this.noSyncMode
+        ? `<div class="mb-3 p-2 bg-orange-600 rounded-lg border border-orange-500">
+             <div class="text-center text-sm font-medium">
+               🚫 NoSync Mode Active - Only snapshot functionality available
+             </div>
+           </div>`
+        : "";
+
+      return `<div class="text-white text-left text-sm">
+        <div class="flex justify-center items-center mb-3">
+          <h3 class="text-center text-xl font-bold text-white">S3 Backup & Sync Settings</h3>
+        </div>
+        ${modeStatus}
+        <div class="space-y-3">
+          <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-sm font-medium text-zinc-300">Available Backups</label>
+            </div>
+            <div class="space-y-2">
+              <div class="w-full">
+                <select id="backup-files" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white">
+                  <option value="">Please configure AWS credentials first</option>
+                </select>
+              </div>
+              <div class="flex justify-end space-x-2">
+                <button id="download-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>
+                  Download
+                </button>
+                <button id="restore-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>
+                  Restore
+                </button>
+                <button id="delete-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
+            <div class="space-y-2">
+              <div class="flex space-x-4">
+                <div class="w-2/3">
+                  <label for="aws-bucket" class="block text-sm font-medium text-zinc-300">Bucket Name <span class="text-red-400">*</span></label>
+                  <input id="aws-bucket" name="aws-bucket" type="text" value="${
+                    this.config.get("bucketName") || ""
+                  }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
+                </div>
+                <div class="w-1/3">
+                  <label for="aws-region" class="block text-sm font-medium text-zinc-300">Region <span class="text-red-400">*</span></label>
+                  <input id="aws-region" name="aws-region" type="text" value="${
+                    this.config.get("region") || ""
+                  }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
+                </div>
+              </div>
+              <div>
+                <label for="aws-access-key" class="block text-sm font-medium text-zinc-300">Access Key <span class="text-red-400">*</span></label>
+                <input id="aws-access-key" name="aws-access-key" type="password" value="${
+                  this.config.get("accessKey") || ""
+                }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
+              </div>
+              <div>
+                <label for="aws-secret-key" class="block text-sm font-medium text-zinc-300">Secret Key <span class="text-red-400">*</span></label>
+                <input id="aws-secret-key" name="aws-secret-key" type="password" value="${
+                  this.config.get("secretKey") || ""
+                }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
+              </div>
+              <div>
+                <label for="aws-endpoint" class="block text-sm font-medium text-zinc-300">S3 Compatible Storage Endpoint</label>
+                <input id="aws-endpoint" name="aws-endpoint" type="text" value="${
+                  this.config.get("endpoint") || ""
+                }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off">
+              </div>
+              <div class="flex space-x-4">
+                <div class="w-1/2">
+                  <label for="sync-interval" class="block text-sm font-medium text-zinc-300">Sync Interval</label>
+                  <input id="sync-interval" name="sync-interval" type="number" min="15" value="${this.config.get(
+                    "syncInterval"
+                  )}" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
+                </div>
+                <div class="w-1/2">
+                  <label for="encryption-key" class="block text-sm font-medium text-zinc-300">Encryption Key <span class="text-red-400">*</span></label>
+                  <input id="encryption-key" name="encryption-key" type="password" value="${
+                    this.config.get("encryptionKey") || ""
+                  }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
+                </div>
+              </div>
+              <div>
+                <label for="sync-exclusions" class="block text-sm font-medium text-zinc-300">Exclusions (Comma separated)</label>
+                <input id="sync-exclusions" name="sync-exclusions" type="text" value="${
+                  localStorage.getItem("tcs_sync-exclusions") || ""
+                }" class="z-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" placeholder="e.g., my-setting, another-setting" autocomplete="off">
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center justify-end mb-4 space-x-2">
+            <span class="text-sm text-zinc-400">Console Logging</span>
+            <input type="checkbox" id="console-logging-toggle" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer">
+          </div>
+          <div class="flex justify-between space-x-2 mt-4">
+            <button id="save-settings" class="z-1 inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 disabled:cursor-default transition-colors">
+              Save
+            </button>
+            <div class="flex space-x-2">
+              <button id="sync-now" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-500 disabled:cursor-default transition-colors" ${
+                this.noSyncMode ? "disabled" : ""
+              }>
+                ${this.noSyncMode ? "Sync Disabled" : "Sync Now"}
+              </button>
+              <button id="create-snapshot" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 disabled:cursor-default transition-colors" ${
+                !this.isSnapshotAvailable() ? "disabled" : ""
+              }>
+                Snapshot
+              </button>
+              <button id="close-modal" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+                Close
+              </button>
+            </div>
+          </div>
+          <div class="text-center mt-4">
+            <span id="last-sync-msg" class="text-zinc-400">${
+              this.noSyncMode
+                ? "NoSync Mode: Automatic sync operations disabled"
+                : ""
+            }</span>
+          </div>
+          <div id="action-msg" class="text-center text-zinc-400"></div>
+        </div>
+      </div>`;
+    }
+    setupModalEventListeners(modal, overlay) {
+      const closeModalHandler = () => this.closeModal(overlay);
+      const saveSettingsHandler = () => this.saveSettings(overlay);
+      const createSnapshotHandler = () => this.createSnapshot();
+      const handleSyncNowHandler = () => this.handleSyncNow(modal);
+      const consoleLoggingHandler = (e) =>
+        this.logger.setEnabled(e.target.checked);
+
+      overlay.addEventListener("click", closeModalHandler);
+      modal.addEventListener("click", (e) => e.stopPropagation());
+      modal
+        .querySelector("#close-modal")
+        .addEventListener("click", closeModalHandler);
+      modal
+        .querySelector("#save-settings")
+        .addEventListener("click", saveSettingsHandler);
+      modal
+        .querySelector("#create-snapshot")
+        .addEventListener("click", createSnapshotHandler);
+      modal
+        .querySelector("#sync-now")
+        .addEventListener("click", handleSyncNowHandler);
+      modal
+        .querySelector("#console-logging-toggle")
+        .addEventListener("change", consoleLoggingHandler);
+
+      this.modalCleanupCallbacks.push(() => {
+        overlay.removeEventListener("click", closeModalHandler);
+        modal
+          .querySelector("#close-modal")
+          ?.removeEventListener("click", closeModalHandler);
+        modal
+          .querySelector("#save-settings")
+          ?.removeEventListener("click", saveSettingsHandler);
+        modal
+          .querySelector("#create-snapshot")
+          ?.removeEventListener("click", createSnapshotHandler);
+        modal
+          .querySelector("#sync-now")
+          ?.removeEventListener("click", handleSyncNowHandler);
+        modal
+          .querySelector("#console-logging-toggle")
+          ?.removeEventListener("change", consoleLoggingHandler);
+      });
+
+      const consoleLoggingCheckbox = modal.querySelector(
+        "#console-logging-toggle"
+      );
+      consoleLoggingCheckbox.checked = this.logger.enabled;
+
+      // Auto-populate form with URL parameters if present
+      this.populateFormFromUrlParams(modal);
+
+      this.loadBackupList(modal);
+      this.setupBackupListHandlers(modal);
+    }
+
+    populateFormFromUrlParams(modal) {
+      const urlConfig = this.getConfigFromUrlParams();
+
+      if (!urlConfig.hasParams) {
+        this.logger.log("info", "No URL config parameters to populate");
+        return;
+      }
+
+      this.logger.log(
+        "info",
+        "Populating form with URL parameters",
+        urlConfig.config
+      );
+
+      // Map config keys to form field IDs
+      const fieldMap = {
+        bucketName: "aws-bucket",
+        region: "aws-region",
+        accessKey: "aws-access-key",
+        secretKey: "aws-secret-key",
+        endpoint: "aws-endpoint",
+        encryptionKey: "encryption-key",
+        syncInterval: "sync-interval",
+        exclusions: "sync-exclusions",
+      };
+
+      let populatedCount = 0;
+
+      for (const [configKey, fieldId] of Object.entries(fieldMap)) {
+        const value = urlConfig.config[configKey];
+        if (value !== undefined) {
+          const field = modal.querySelector(`#${fieldId}`);
+          if (field) {
+            field.value = value;
+            populatedCount++;
+            this.logger.log(
+              "info",
+              `Populated field ${fieldId} with URL value`
+            );
+          }
+        }
+      }
+
+      if (populatedCount > 0) {
+        // Show a message to the user that fields were auto-populated
+        const actionMsg = modal.querySelector("#action-msg");
+        if (actionMsg) {
+          actionMsg.textContent = `✨ Auto-populated ${populatedCount} field(s) from URL parameters`;
+          actionMsg.style.color = "#22c55e"; // Green color
+          setTimeout(() => {
+            actionMsg.textContent = "";
+            actionMsg.style.color = "";
+          }, 5000);
+        }
+      }
+    }
+    handleSyncNow(modal) {
+      if (this.noSyncMode) {
+        alert(
+          "⚠️ Sync operations are disabled in NoSync mode.\n\nTo enable sync operations, remove the ?nosync parameter from the URL and reload the page."
+        );
+        return;
+      }
+
+      const syncNowButton = modal.querySelector("#sync-now");
+      const originalText = syncNowButton.textContent;
+      syncNowButton.disabled = true;
+      syncNowButton.textContent = "Working...";
+
+      this.operationQueue.add(
+        "manual-full-sync",
+        async () => {
+          await this.syncOrchestrator.performFullSync();
+        },
+        "high"
+      );
+
+      setTimeout(() => {
+        syncNowButton.textContent = "Done!";
+        setTimeout(() => {
+          syncNowButton.textContent = originalText;
+          syncNowButton.disabled = false;
+        }, 2000);
+      }, 1000);
+    }
+    async loadBackupList(modal) {
+      try {
+        const backupList = modal.querySelector("#backup-files");
+        if (!backupList) return;
+
+        backupList.innerHTML = '<option value="">Loading backups...</option>';
+        backupList.disabled = true;
+
+        if (!this.config.isConfigured()) {
+          backupList.innerHTML =
+            '<option value="">Please configure AWS credentials first</option>';
+          backupList.disabled = false;
+          return;
+        }
+
+        const backups = await this.backupService.loadBackupList();
+        backupList.innerHTML = "";
+        backupList.disabled = false;
+
+        if (backups.length === 0) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.text = "No backups found";
+          backupList.appendChild(option);
+        } else {
+          backups.forEach((backup) => {
+            const option = document.createElement("option");
+            option.value = backup.key;
+            const size = this.formatFileSize(backup.size || 0);
+            const date = new Date(backup.modified).toLocaleString();
+            const formatLabel =
+              backup.format === "chunked" ? ` [${backup.chunks} chunks]` : "";
+            option.text = `${
+              backup.displayName || backup.name
+            } - ${size}${formatLabel} (${date})`;
+            backupList.appendChild(option);
+          });
+        }
+
+        this.updateBackupButtonStates(modal);
+        backupList.addEventListener("change", () =>
+          this.updateBackupButtonStates(modal)
+        );
+      } catch (error) {
+        console.error("Failed to load backup list:", error);
+        if (backupList) {
+          backupList.innerHTML =
+            '<option value="">Error loading backups</option>';
+          backupList.disabled = false;
+        }
+      }
+    }
+    updateBackupButtonStates(modal) {
+      const backupList = modal.querySelector("#backup-files");
+      const selectedValue = backupList.value || "";
+      const downloadButton = modal.querySelector("#download-backup-btn");
+      const restoreButton = modal.querySelector("#restore-backup-btn");
+      const deleteButton = modal.querySelector("#delete-backup-btn");
+
+      const isSnapshot = selectedValue.includes("s-");
+      const isDailyBackup = selectedValue.includes("typingmind-backup-");
+      const isChunkedBackup = selectedValue.endsWith("-metadata.json");
+      const isMetadataFile = selectedValue === "metadata.json";
+      const isItemsFile = selectedValue.startsWith("items/");
+
+      if (downloadButton) {
+        downloadButton.disabled = !selectedValue;
+      }
+
+      if (restoreButton) {
+        const canRestore =
+          selectedValue && (isSnapshot || isDailyBackup || isChunkedBackup);
+        restoreButton.disabled = !canRestore;
+      }
+
+      if (deleteButton) {
+        const isProtectedFile = !selectedValue || isMetadataFile || isItemsFile;
+        deleteButton.disabled = isProtectedFile;
+      }
+    }
+    setupBackupListHandlers(modal) {
+      const downloadButton = modal.querySelector("#download-backup-btn");
+      const restoreButton = modal.querySelector("#restore-backup-btn");
+      const deleteButton = modal.querySelector("#delete-backup-btn");
+      const backupList = modal.querySelector("#backup-files");
+      if (downloadButton) {
+        downloadButton.addEventListener("click", async () => {
+          const key = backupList.value;
+          if (!key) {
+            alert("Please select a backup to download");
+            return;
+          }
+          try {
+            downloadButton.disabled = true;
+            downloadButton.textContent = "Downloading...";
+            const backup = await this.s3Service.downloadRaw(key);
+            if (backup) {
+              await this.handleBackupDownload(backup, key);
+              downloadButton.textContent = "Downloaded!";
+            }
+          } catch (error) {
+            console.error("Failed to download backup:", error);
+            alert("Failed to download backup: " + error.message);
+            downloadButton.textContent = "Failed";
+          } finally {
+            setTimeout(() => {
+              downloadButton.textContent = "Download";
+              downloadButton.disabled = false;
+              this.updateBackupButtonStates(modal);
+            }, 2000);
+          }
+        });
+      }
+      if (restoreButton) {
+        restoreButton.addEventListener("click", async () => {
+          const key = backupList.value;
+          if (!key) {
+            alert("Please select a backup to restore");
+            return;
+          }
+          if (
+            confirm(
+              "Are you sure you want to restore this backup? This will overwrite your current data."
+            )
+          ) {
+            try {
+              restoreButton.disabled = true;
+              restoreButton.textContent = "Restoring...";
+              const success = await this.backupService.restoreFromBackup(
+                key,
+                this.cryptoService
+              );
+              if (success) {
+                alert("Backup restored successfully! Page will reload.");
+                location.reload();
+              }
+            } catch (error) {
+              console.error("Failed to restore backup:", error);
+              alert("Failed to restore backup: " + error.message);
+              restoreButton.textContent = "Failed";
+              setTimeout(() => {
+                restoreButton.textContent = "Restore";
+                restoreButton.disabled = false;
+                this.updateBackupButtonStates(modal);
+              }, 2000);
+            }
+          }
+        });
+      }
+      if (deleteButton) {
+        deleteButton.addEventListener("click", async () => {
+          const key = backupList.value;
+          if (!key) {
+            alert("Please select a backup to delete");
+            return;
+          }
+          if (
+            confirm(
+              "Are you sure you want to delete this backup? This cannot be undone."
+            )
+          ) {
+            try {
+              deleteButton.disabled = true;
+              deleteButton.textContent = "Deleting...";
+              await this.s3Service.delete(key);
+              await this.loadBackupList(modal);
+              deleteButton.textContent = "Deleted!";
+              setTimeout(() => {
+                deleteButton.textContent = "Delete";
+                this.updateBackupButtonStates(modal);
+              }, 2000);
+            } catch (error) {
+              console.error("Failed to delete backup:", error);
+              alert("Failed to delete backup: " + error.message);
+              deleteButton.textContent = "Failed";
+              setTimeout(() => {
+                deleteButton.textContent = "Delete";
+                deleteButton.disabled = false;
+                this.updateBackupButtonStates(modal);
+              }, 2000);
+            }
+          }
+        });
+      }
+    }
+    async handleBackupDownload(backupData, key) {
+      try {
+        let content;
+        if (key.endsWith(".zip")) {
+          try {
+            // Handle ZIP files using JSZip
+            const JSZip = await this.backupService.loadJSZip();
+            const zip = await JSZip.loadAsync(backupData);
+
+            // Find JSON file inside ZIP
+            const jsonFile = Object.keys(zip.files).find((f) =>
+              f.endsWith(".json")
+            );
+            if (!jsonFile) {
+              throw new Error("No JSON file found in ZIP backup");
+            }
+
+            // Extract encrypted content
+            const encryptedData = await zip.file(jsonFile).async("uint8array");
+
+            // Decrypt content
+            const decryptedContent = await this.cryptoService.decrypt(
+              encryptedData
+            );
+            content = JSON.stringify(decryptedContent, null, 2);
+          } catch (zipError) {
+            console.warn(
+              "Failed to process ZIP file, downloading as raw data:",
+              zipError
+            );
+            const blob = new Blob([backupData], { type: "application/zip" });
+            this.downloadFile(key, blob);
+            return;
+          }
+        } else if (
+          key.startsWith("s-") ||
+          key.startsWith("typingmind-backup-")
+        ) {
+          try {
+            const decryptedContent = await this.cryptoService.decrypt(
+              backupData
+            );
+            content = JSON.stringify(decryptedContent, null, 2);
+          } catch (decryptError) {
+            console.warn(
+              "Failed to decrypt backup file, downloading as raw data:",
+              decryptError
+            );
+            const blob = new Blob([backupData], {
+              type: "application/octet-stream",
+            });
+            this.downloadFile(key, blob);
+            return;
+          }
+        } else {
+          if (typeof backupData === "string") {
+            content = backupData;
+          } else {
+            try {
+              const decryptedContent = await this.cryptoService.decrypt(
+                backupData
+              );
+              content = JSON.stringify(decryptedContent, null, 2);
+            } catch (decryptError) {
+              console.warn(
+                "Failed to decrypt file, downloading as raw data:",
+                decryptError
+              );
+              const blob = new Blob([backupData], {
+                type: "application/octet-stream",
+              });
+              this.downloadFile(key, blob);
+              return;
+            }
+          }
+        }
+
+        this.downloadFile(key.replace(".zip", ".json"), content);
+      } catch (error) {
+        console.error("Failed to process backup:", error);
+        const blob = new Blob([backupData], {
+          type: "application/octet-stream",
+        });
+        this.downloadFile(key, blob);
+      }
+    }
+    downloadFile(filename, content) {
+      let blob;
+      if (content instanceof Blob) {
+        blob = content;
+      } else if (typeof content === "string") {
+        blob = new Blob([content], { type: "application/json" });
+      } else {
+        blob = new Blob([JSON.stringify(content, null, 2)], {
+          type: "application/json",
+        });
+      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+    formatFileSize(bytes) {
+      if (bytes === 0) return "0 B";
+      const k = 1024;
+      const sizes = ["B", "KB", "MB", "GB"];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+    }
+    closeModal(overlay) {
+      this.modalCleanupCallbacks.forEach((cleanup) => {
+        try {
+          cleanup();
+        } catch (error) {
+          this.logger.log(
+            "warning",
+            "Error during modal cleanup",
+            error.message
+          );
+        }
+      });
+      this.modalCleanupCallbacks = [];
+      if (overlay) overlay.remove();
+    }
+    async saveSettings(overlay) {
+      const newConfig = {
+        bucketName: document.getElementById("aws-bucket").value.trim(),
+        region: document.getElementById("aws-region").value.trim(),
+        accessKey: document.getElementById("aws-access-key").value.trim(),
+        secretKey: document.getElementById("aws-secret-key").value.trim(),
+        endpoint: document.getElementById("aws-endpoint").value.trim(),
+        syncInterval:
+          parseInt(document.getElementById("sync-interval").value) || 15,
+        encryptionKey: document.getElementById("encryption-key").value.trim(),
+      };
+      const exclusions = document.getElementById("sync-exclusions").value;
+      localStorage.setItem("tcs_sync-exclusions", exclusions);
+      this.config.reloadExclusions();
+      if (
+        !newConfig.bucketName ||
+        !newConfig.region ||
+        !newConfig.accessKey ||
+        !newConfig.secretKey ||
+        !newConfig.encryptionKey
+      ) {
+        alert("Please fill in all required AWS settings");
+        return;
+      }
+      if (newConfig.syncInterval < 15) {
+        alert("Sync interval must be at least 15 seconds");
+        return;
+      }
+      Object.keys(newConfig).forEach((key) =>
+        this.config.set(key, newConfig[key])
+      );
+      this.config.save();
+
+      if (!this.noSyncMode) {
+        this.operationQueue.add(
+          "save-and-sync",
+          async () => {
+            await this.s3Service.initialize();
+            await this.syncOrchestrator.performFullSync();
+            this.startAutoSync();
+            this.updateSyncStatus("success");
+            this.logger.log(
+              "success",
+              "Configuration saved and sync completed"
+            );
+          },
+          "high"
+        );
+      } else {
+        // In noSync mode, only initialize S3 service for snapshot functionality
+        this.operationQueue.add(
+          "save-config-nosync",
+          async () => {
+            await this.s3Service.initialize();
+            this.logger.log(
+              "success",
+              "Configuration saved (NoSync mode - only snapshot available)"
+            );
+          },
+          "high"
+        );
+      }
+
+      this.closeModal(overlay);
+    }
+    async createSnapshot() {
+      if (!this.isSnapshotAvailable()) {
+        alert(
+          "⚠️ Snapshot Unavailable\n\nSnapshots require AWS configuration. Please configure the following mandatory fields:\n• AWS Bucket Name\n• AWS Region\n• AWS Access Key\n• AWS Secret Key\n• Encryption Key"
+        );
+        return;
+      }
+
+      const name = prompt("Enter snapshot name:");
+      if (!name) return;
+
+      const modal = document.querySelector(".cloud-sync-modal");
+      const snapshotButton = modal?.querySelector("#create-snapshot");
+
+      if (snapshotButton) {
+        const originalText = snapshotButton.textContent;
+        snapshotButton.disabled = true;
+        snapshotButton.textContent = "In Progress...";
+
+        try {
+          await this.backupService.createSnapshot(name);
+          snapshotButton.textContent = "Success!";
+
+          await this.loadBackupList(modal);
+
+          setTimeout(() => {
+            snapshotButton.textContent = originalText;
+            snapshotButton.disabled = false;
+          }, 2000);
+
+          alert("Snapshot created successfully!");
+        } catch (error) {
+          this.logger.log("error", "Failed to create snapshot", error.message);
+          snapshotButton.textContent = "Failed";
+          setTimeout(() => {
+            snapshotButton.textContent = originalText;
+            snapshotButton.disabled = false;
+          }, 2000);
+          alert("Failed to create snapshot: " + error.message);
+        }
+      } else {
+        try {
+          await this.backupService.createSnapshot(name);
+          alert("Snapshot created successfully!");
+        } catch (error) {
+          this.logger.log("error", "Failed to create snapshot", error.message);
+          alert("Failed to create snapshot: " + error.message);
+        }
+      }
+    }
+    async performV2toV3Migration() {
+      const localMigrationFlag = "tcs_localMigrated";
+      if (localStorage.getItem(localMigrationFlag) === "true") {
+        //this.logger.log(
+        //  "info",
+        //  "Local V2 to V3 migration already completed, skipping"
+        //);
+        return;
+      }
+      const v2Keys = [
         "aws-bucket",
         "aws-access-key",
         "aws-secret-key",
         "aws-region",
         "aws-endpoint",
-        "backup-interval",
-        "sync-mode",
-        "sync-status-hidden",
-        "sync-status-position",
-        "last-daily-backup",
-        "last-cloud-sync",
+        "encryption-key",
+        "sync-interval",
         "chat-sync-metadata",
+        "last-cloud-sync",
+        "sync-mode",
       ];
-      let settingsRestored = 0;
-      if (data.localStorage) {
-        Object.entries(data.localStorage).forEach(([key, settingData]) => {
-          if (!preserveKeys.includes(key)) {
-            try {
-              const value =
-                typeof settingData === "object" &&
-                settingData.data !== undefined
-                  ? settingData.data
-                  : settingData;
-              const source =
-                typeof settingData === "object" && settingData.source
-                  ? settingData.source
-                  : "localStorage";
-              if (source === "indexeddb") {
-                return;
-              }
-              localStorage.setItem(key, value);
-              settingsRestored++;
-              logToConsole("info", `Restored setting to localStorage: ${key}`);
-            } catch (error) {
-              logToConsole(
-                "error",
-                `Error restoring localStorage setting ${key}:`,
-                error
-              );
-            }
-          }
-        });
-      }
-      if (data.indexedDB) {
-        const request = indexedDB.open("keyval-store");
-        request.onerror = () => reject(request.error);
-        request.onsuccess = function (event) {
-          const db = event.target.result;
-          const transaction = db.transaction(["keyval"], "readwrite");
-          const objectStore = transaction.objectStore("keyval");
-          transaction.oncomplete = () => {
-            logToConsole("success", `Settings restore completed`, {
-              totalRestored: settingsRestored,
-              timestamp: new Date().toISOString(),
-            });
-            resolve();
-          };
-          transaction.onerror = () => reject(transaction.error);
-          const deleteRequest = objectStore.clear();
-          deleteRequest.onsuccess = function () {
-            Object.entries(data.indexedDB).forEach(([key, settingData]) => {
-              if (!preserveKeys.includes(key)) {
-                try {
-                  let value =
-                    typeof settingData === "object" &&
-                    settingData.data !== undefined
-                      ? settingData.data
-                      : settingData;
-                  const source =
-                    typeof settingData === "object" && settingData.source
-                      ? settingData.source
-                      : "indexeddb";
-                  if (source === "localStorage") {
-                    return;
-                  }
-                  if (
-                    typeof value === "string" &&
-                    (value.startsWith("{") || value.startsWith("["))
-                  ) {
-                    try {
-                      value = JSON.parse(value);
-                    } catch (parseError) {
-                      logToConsole(
-                        "warning",
-                        `Failed to parse ${key} as JSON, using as-is`,
-                        parseError
-                      );
-                    }
-                  }
-                  objectStore.put(value, key);
-                  settingsRestored++;
-                  logToConsole("info", `Restored setting to IndexedDB: ${key}`);
-                } catch (error) {
-                  logToConsole(
-                    "error",
-                    `Error restoring IndexedDB setting ${key}:`,
-                    error
-                  );
-                }
-              }
-            });
-          };
-        };
-      } else {
-        logToConsole("success", `Settings restore completed`, {
-          totalRestored: settingsRestored,
-          timestamp: new Date().toISOString(),
-        });
-        resolve();
-      }
-    });
-  }
-  function isAwsConfigured() {
-    return !!(
-      config.accessKey &&
-      config.secretKey &&
-      config.region &&
-      config.bucketName
-    );
-  }
-  function queueOperation(name, operation, dependencies = [], timeout = 30000) {
-    if (config.syncMode === "disabled" && !name.startsWith("manual")) {
-      logToConsole("skip", `Skipping operation ${name} - sync is disabled`);
-      return;
-    }
-    const existingOp = operationState.operationQueue.find(
-      (op) => op.name === name
-    );
-    const isCurrentlyExecuting =
-      operationState.currentlyExecutingOperation === name;
-
-    if (existingOp || isCurrentlyExecuting) {
-      logToConsole("skip", `Skipping duplicate operation: ${name}`, {
-        existingDeps: existingOp.dependencies,
-        newDeps: dependencies,
-        queueLength: operationState.operationQueue.length,
-        stackTrace: new Error().stack.split("\n").slice(2, 5).join("\n"),
-      });
-      return;
-    }
-    dependencies = dependencies.filter(
-      (dep) => !operationState.completedOperations.has(dep)
-    );
-    const operationObject = {
-      name,
-      operation,
-      dependencies,
-      timeout,
-      retryCount: 0,
-      maxRetries: 3,
-      addedAt: Date.now(),
-    };
-    if (dependencies.length === 0) {
-      operationState.operationQueue.unshift(operationObject);
-    } else {
-      operationState.operationQueue.push(operationObject);
-    }
-    if (name.includes("bidirectional")) {
-      logToConsole("info", `Queued ${name}`, {
-        dependencies: dependencies,
-        queuePosition: dependencies.length === 0 ? "immediate" : "waiting",
-        queueLength: operationState.operationQueue.length,
-        completedOps: Array.from(operationState.completedOperations),
-      });
-    }
-    processOperationQueue();
-  }
-  async function processOperationQueue() {
-    if (
-      operationState.isProcessingQueue ||
-      operationState.operationQueue.length === 0
-    ) {
-      return;
-    }
-    if (operationState.queueProcessingPromise) {
-      return operationState.queueProcessingPromise;
-    }
-    operationState.queueProcessingPromise = (async () => {
-      try {
-        operationState.isProcessingQueue = true;
-        while (operationState.operationQueue.length > 0) {
-          const nextOpIndex = operationState.operationQueue.findIndex((op) =>
-            op.dependencies.every((dep) =>
-              operationState.completedOperations.has(dep)
-            )
-          );
-          if (nextOpIndex === -1) {
-            const pendingDeps = new Set(
-              operationState.operationQueue.flatMap((op) => op.dependencies)
-            );
-            const availableDeps = new Set(operationState.completedOperations);
-            const missingDeps = [...pendingDeps].filter(
-              (dep) => !availableDeps.has(dep)
-            );
-            logToConsole(
-              "error",
-              `Dependency cycle or missing dependencies detected. Missing: ${JSON.stringify(
-                missingDeps
-              )}`,
-              {
-                pendingOps: operationState.operationQueue.map((op) => ({
-                  name: op.name,
-                  deps: op.dependencies,
-                })),
-                completedOps: [...availableDeps],
-              }
-            );
-            operationState.operationQueue =
-              operationState.operationQueue.filter((op) => {
-                const opMissingDeps = op.dependencies.filter(
-                  (dep) => !availableDeps.has(dep)
-                );
-                if (opMissingDeps.length > 0) {
-                  logToConsole(
-                    "warning",
-                    `Removing operation '${
-                      op.name
-                    }' due to missing dependencies: ${JSON.stringify(
-                      opMissingDeps
-                    )}`
-                  );
-                  return false;
-                }
-                return true;
-              });
-            if (operationState.operationQueue.length === 0) break;
-            await new Promise((resolve) => setTimeout(resolve, 500));
-            continue;
-          }
-          const nextOperation = operationState.operationQueue[nextOpIndex];
-          const { name, operation, timeout } = nextOperation;
-          operationState.currentlyExecutingOperation = name;
-          operationState.operationQueue.splice(nextOpIndex, 1);
-          try {
-            const timeoutPromise = new Promise((_, reject) => {
-              const timeoutId = setTimeout(() => {
-                reject(
-                  new Error(`Operation ${name} timed out after ${timeout}ms`)
-                );
-              }, timeout);
-              operationState.operationTimeouts.set(name, timeoutId);
-            });
-            logToConsole("info", `Executing operation: ${name}`);
-            await Promise.race([operation(), timeoutPromise]);
-            clearTimeout(operationState.operationTimeouts.get(name));
-            operationState.operationTimeouts.delete(name);
-            operationState.completedOperations.add(name);
-            if (name.includes("bidirectional")) {
-              logToConsole("info", `Completed ${name}`, {
-                completedOps: Array.from(operationState.completedOperations),
-                remainingQueue: operationState.operationQueue.map((op) => ({
-                  name: op.name,
-                  deps: op.dependencies,
-                  canRun: op.dependencies.every((dep) =>
-                    operationState.completedOperations.has(dep)
-                  ),
-                })),
-              });
-            }
-            operationState.currentlyExecutingOperation = null;
-            await new Promise((resolve) => setTimeout(resolve, 100));
-          } catch (error) {
-            if (operationState.operationTimeouts.has(name)) {
-              clearTimeout(operationState.operationTimeouts.get(name));
-              operationState.operationTimeouts.delete(name);
-            }
-            logToConsole("error", `Error executing operation ${name}:`, error);
-            if (nextOperation.retryCount < nextOperation.maxRetries) {
-              nextOperation.retryCount++;
-              const delay = Math.min(
-                1000 * Math.pow(2, nextOperation.retryCount),
-                30000
-              );
-              logToConsole(
-                "info",
-                `Retrying operation ${name} (attempt ${nextOperation.retryCount}/${nextOperation.maxRetries}) in ${delay}ms`
-              );
-              await new Promise((resolve) => setTimeout(resolve, delay));
-              continue;
-            }
-            operationState.operationQueue.splice(nextOpIndex, 1);
-            operationState.currentlyExecutingOperation = null;
-            operationState.completedOperations.delete(name);
-            const dependentOps = operationState.operationQueue.filter((op) =>
-              op.dependencies.includes(name)
-            );
-            if (dependentOps.length > 0) {
-              logToConsole(
-                "warning",
-                `Removing ${dependentOps.length} dependent operations due to failure of '${name}'`
-              );
-              operationState.operationQueue =
-                operationState.operationQueue.filter(
-                  (op) => !op.dependencies.includes(name)
-                );
-            }
-          }
-        }
-      } finally {
-        operationState.isProcessingQueue = false;
-        operationState.queueProcessingPromise = null;
-        for (const [name, timeoutId] of operationState.operationTimeouts) {
-          clearTimeout(timeoutId);
-        }
-        operationState.operationTimeouts.clear();
-        if (operationState.operationQueue.length === 0) {
-          operationState.isImporting = false;
-          operationState.isExporting = false;
-          operationState.isPendingSync = false;
-          operationState.lastError = null;
-          checkSyncStatus();
-        }
-      }
-    })();
-    return operationState.queueProcessingPromise;
-  }
-  let recentCloudObservations = [];
-
-  function trackCloudObservation(settingsCount) {
-    const now = Date.now();
-    recentCloudObservations.push({ timestamp: now, settingsCount });
-    recentCloudObservations = recentCloudObservations.filter(
-      (obs) => now - obs.timestamp < 300000
-    );
-  }
-
-  function detectSuspiciousCloudChange(currentCount) {
-    if (recentCloudObservations.length === 0) return false;
-    const recentObs = recentCloudObservations.filter(
-      (obs) => Date.now() - obs.timestamp < 120000
-    );
-    if (recentObs.length === 0) return false;
-    const maxRecentCount = Math.max(
-      ...recentObs.map((obs) => obs.settingsCount)
-    );
-    return currentCount === 0 && maxRecentCount > 50;
-  }
-
-  async function detectCloudChanges(cloudMetadata) {
-    if (!cloudMetadata || !cloudMetadata.chats)
-      return { hasChanges: false, metadata: cloudMetadata };
-
-    const cloudSettingsCount = cloudMetadata.settings?.items
-      ? Object.keys(cloudMetadata.settings.items).length
-      : 0;
-    trackCloudObservation(cloudSettingsCount);
-
-    logToConsole("debug", "🔍 Checking for cloud changes", {
-      hasCloudSettings: !!cloudMetadata.settings,
-      hasLocalSettings: !!localMetadata.settings,
-      cloudSettingsItems: cloudSettingsCount,
-      localSettingsItems: localMetadata.settings?.items
-        ? Object.keys(localMetadata.settings.items).length
-        : 0,
-    });
-
-    if (cloudMetadata.settings?.items) {
-      logToConsole("debug", "📊 Checking individual settings changes");
-
-      const recentlyModified = Object.entries(cloudMetadata.settings.items)
-        .filter(
-          ([key, meta]) =>
-            !meta.deleted && Date.now() - meta.lastModified < 300000
-        )
-        .sort((a, b) => b[1].lastModified - a[1].lastModified)
-        .slice(0, 5);
-
-      const allModificationTimes = Object.entries(cloudMetadata.settings.items)
-        .filter(([key, meta]) => !meta.deleted)
-        .map(([key, meta]) => ({
-          key,
-          lastModified: meta.lastModified,
-          ageMinutes: Math.round((Date.now() - meta.lastModified) / 60000),
-          timeString: new Date(meta.lastModified).toISOString(),
-        }))
-        .sort((a, b) => b.lastModified - a.lastModified)
-        .slice(0, 5);
-
-      // logToConsole(
-      //   "debug",
-      //   "Most recently modified settings (regardless of age)",
-      //   {
-      //     currentTime: new Date().toISOString(),
-      //     settings: allModificationTimes,
-      //   }
-      // );
-
-      // if (recentlyModified.length > 0) {
-      //   logToConsole(
-      //     "debug",
-      //     "Recently modified settings in cloud (last 5 minutes)",
-      //     {
-      //       count: recentlyModified.length,
-      //       settings: recentlyModified.map(([key, meta]) => ({
-      //         key,
-      //         lastModified: new Date(meta.lastModified).toISOString(),
-      //         hash: meta.hash?.substring(0, 8) + "...",
-      //         ageMinutes: Math.round((Date.now() - meta.lastModified) / 60000),
-      //       })),
-      //     }
-      //   );
-      // } else {
-      //   logToConsole("debug", "No settings found modified in the last 5 minutes");
-      // }
-
-      const settingsEntries = Object.entries(cloudMetadata.settings.items);
-      // logToConsole(
-      //   "debug",
-      //   `Starting to check ${settingsEntries.length} cloud settings individually`
-      // );
-
-      let checkedCount = 0;
-      let changesFound = 0;
-      // let sampleSettings = [];
-
-      for (const [settingKey, cloudSettingMeta] of settingsEntries) {
-        checkedCount++;
-        const localSettingMeta = localMetadata.settings?.items?.[settingKey];
-
-        // if (checkedCount <= 3) {
-        //   sampleSettings.push({
-        //     key: settingKey,
-        //     cloudHash: cloudSettingMeta.hash?.substring(0, 12) + "...",
-        //     localHash: localSettingMeta?.hash?.substring(0, 12) + "...",
-        //     hashMatch: cloudSettingMeta.hash === localSettingMeta?.hash,
-        //     cloudModified: cloudSettingMeta.lastModified
-        //       ? new Date(cloudSettingMeta.lastModified).toISOString()
-        //       : "NONE",
-        //     localSynced: localSettingMeta?.syncedAt
-        //       ? new Date(localSettingMeta.syncedAt).toISOString()
-        //       : "NONE",
-        //   });
-        // }
-
-        if (cloudSettingMeta.deleted === true) {
-          if (
-            !localSettingMeta?.deleted ||
-            cloudSettingMeta.deletedAt > (localSettingMeta?.deletedAt || 0)
-          ) {
-            logToConsole(
-              "debug",
-              `✅ Cloud settings change detected: Newer tombstone for ${settingKey}`
-            );
-            return { hasChanges: true, metadata: cloudMetadata };
-          }
-          continue;
-        }
-
-        const hasLocalMeta = !!localSettingMeta;
-        const hasLocalHash = !!localSettingMeta?.hash;
-        const hasLocalSyncedAt = !!localSettingMeta?.syncedAt;
-        const hashMatch = cloudSettingMeta.hash === localSettingMeta?.hash;
-        const cloudNewer =
-          cloudSettingMeta.lastModified > (localSettingMeta?.syncedAt || 0);
-
-        const mightHaveChange =
-          !hasLocalMeta ||
-          !hasLocalHash ||
-          !hasLocalSyncedAt ||
-          !hashMatch ||
-          cloudNewer;
-
-        if (mightHaveChange) {
-          changesFound++;
-          logToConsole(
-            "info",
-            `🔍 POTENTIAL CHANGE DETECTED for ${settingKey}`,
-            {
-              hasLocalMeta,
-              hasLocalHash,
-              hasLocalSyncedAt,
-              hashMatch,
-              cloudNewer,
-              cloudLastModified: cloudSettingMeta.lastModified
-                ? new Date(cloudSettingMeta.lastModified).toISOString()
-                : "NONE",
-              localSyncedAt: localSettingMeta?.syncedAt
-                ? new Date(localSettingMeta.syncedAt).toISOString()
-                : "NONE",
-              cloudHash: cloudSettingMeta.hash?.substring(0, 12) + "...",
-              localHash: localSettingMeta?.hash?.substring(0, 12) + "...",
-              timeDiff:
-                cloudSettingMeta.lastModified && localSettingMeta?.syncedAt
-                  ? cloudSettingMeta.lastModified - localSettingMeta.syncedAt
-                  : "N/A",
-            }
-          );
-        }
-
-        if (
-          !localSettingMeta ||
-          !localSettingMeta.hash ||
-          !localSettingMeta.syncedAt ||
-          (cloudSettingMeta.hash &&
-            cloudSettingMeta.hash !== localSettingMeta.hash) ||
-          cloudSettingMeta.lastModified > localSettingMeta.syncedAt
-        ) {
-          const reason = !localSettingMeta
-            ? "missing locally"
-            : !localSettingMeta.hash
-            ? "no local hash"
-            : !localSettingMeta.syncedAt
-            ? "never synced"
-            : cloudSettingMeta.hash !== localSettingMeta.hash
-            ? "hash mismatch"
-            : "cloud newer";
-
-          logToConsole(
-            "info",
-            `✅ CONFIRMED Cloud settings change detected: ${settingKey} (${reason})`,
-            {
-              cloudLastModified: cloudSettingMeta.lastModified
-                ? new Date(cloudSettingMeta.lastModified).toISOString()
-                : "NONE",
-              localSyncedAt: localSettingMeta?.syncedAt
-                ? new Date(localSettingMeta.syncedAt).toISOString()
-                : "NONE",
-              cloudHash: cloudSettingMeta.hash,
-              localHash: localSettingMeta?.hash,
-            }
-          );
-          return { hasChanges: true, metadata: cloudMetadata };
-        }
-      }
-
-      logToConsole(
-        "debug",
-        `Finished checking individual settings: ${checkedCount} checked, ${changesFound} potential changes found, 0 confirmed changes`
+      const hasV2Keys = v2Keys.some(
+        (key) => localStorage.getItem(key) !== null
       );
-
-      // if (sampleSettings.length > 0) {
-      //   logToConsole("debug", "Sample settings checked", { sampleSettings });
-      // }
-
-      const timestampMismatches = [];
-      for (const [settingKey, cloudSettingMeta] of settingsEntries.slice(
-        0,
-        10
-      )) {
-        const localSettingMeta = localMetadata.settings?.items?.[settingKey];
-        if (
-          localSettingMeta &&
-          cloudSettingMeta.lastModified &&
-          localSettingMeta.syncedAt
-        ) {
-          const timeDiff =
-            cloudSettingMeta.lastModified - localSettingMeta.syncedAt;
-          if (Math.abs(timeDiff) > 1000) {
-            timestampMismatches.push({
-              key: settingKey,
-              cloudModified: new Date(
-                cloudSettingMeta.lastModified
-              ).toISOString(),
-              localSynced: new Date(localSettingMeta.syncedAt).toISOString(),
-              timeDiff: timeDiff,
-              cloudNewer: timeDiff > 0,
-              hashMatch: cloudSettingMeta.hash === localSettingMeta.hash,
-            });
-          }
-        }
-      }
-
-      // if (timestampMismatches.length > 0) {
-      //   logToConsole("debug", "Found timestamp mismatches in sample", {
-      //     timestampMismatches,
-      //   });
-      // }
-
-      logToConsole("debug", "❌ No individual settings changes detected");
-    } else {
-      logToConsole(
-        "debug",
-        "ℹ️ No cloud settings items found, checking if we have local settings to upload"
-      );
-
-      if (
-        localMetadata.settings?.items &&
-        Object.keys(localMetadata.settings.items).length > 0
-      ) {
-        const localSettingsCount = Object.keys(
-          localMetadata.settings.items
-        ).length;
-
-        const suspiciousChange =
-          detectSuspiciousCloudChange(cloudSettingsCount);
-        const timeSinceLastSync =
-          Date.now() - (localMetadata.lastSyncTime || 0);
-        const recentSync = timeSinceLastSync < 60000;
-
-        if ((recentSync && localSettingsCount > 10) || suspiciousChange) {
-          const reason = suspiciousChange
-            ? `recently observed cloud with ${Math.max(
-                ...recentCloudObservations.map((obs) => obs.settingsCount)
-              )} settings`
-            : `last sync was recent (${Math.round(
-                timeSinceLastSync / 1000
-              )}s ago)`;
-
-          logToConsole(
-            "warning",
-            `Cloud has no settings but local has ${localSettingsCount} and ${reason}. This may be a race condition - waiting 5 seconds before proceeding.`
-          );
-
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-
-          try {
-            const retryMetadata = await downloadCloudMetadata();
-            const retryCloudCount = retryMetadata.settings?.items
-              ? Object.keys(retryMetadata.settings.items).length
-              : 0;
-
-            if (retryCloudCount > 0) {
-              logToConsole(
-                "info",
-                `Race condition avoided - cloud now has ${retryCloudCount} settings after retry`
-              );
-              return await detectCloudChanges(retryMetadata);
-            } else {
-              logToConsole(
-                "warning",
-                `Retry still shows 0 cloud settings. Proceeding with caution - this might be a genuine cloud reset.`
-              );
-            }
-          } catch (retryError) {
-            logToConsole(
-              "warning",
-              "Retry metadata download failed",
-              retryError
-            );
-          }
-        }
-
-        logToConsole(
-          "debug",
-          `✅ Cloud settings change detected: Cloud has no settings but local has ${localSettingsCount}`
+      if (!hasV2Keys) {
+        this.logger.log(
+          "info",
+          "No v2 keys found, skipping migration (new V3 installation)"
         );
-        return { hasChanges: true, metadata: cloudMetadata };
-      }
-    }
-
-    for (const [chatId, cloudChatMeta] of Object.entries(cloudMetadata.chats)) {
-      const localChatMeta = localMetadata.chats[chatId];
-      if (cloudChatMeta.deleted === true) {
-        if (
-          !localChatMeta?.deleted ||
-          cloudChatMeta.deletedAt > (localChatMeta?.deletedAt || 0)
-        ) {
-          logToConsole(
-            "debug",
-            `Cloud change detected: Newer tombstone for ${chatId}`
-          );
-          return { hasChanges: true, metadata: cloudMetadata };
-        }
-        continue;
-      }
-      if (
-        !localChatMeta ||
-        (localChatMeta && !localChatMeta.hash) ||
-        (cloudChatMeta && !cloudChatMeta.hash) ||
-        (localChatMeta &&
-          cloudChatMeta.hash &&
-          localChatMeta.hash &&
-          cloudChatMeta.hash !== localChatMeta.hash)
-      ) {
-        logToConsole(
-          "debug",
-          `Cloud change detected: Hash/existence difference for ${chatId}`
-        );
-        return { hasChanges: true, metadata: cloudMetadata };
-      }
-    }
-    for (const chatId in localMetadata.chats) {
-      if (
-        !cloudMetadata.chats[chatId] &&
-        !localMetadata.chats[chatId].deleted
-      ) {
-        logToConsole(
-          "debug",
-          `Cloud change detected: Chat ${chatId} exists locally but not in cloud.`
-        );
-      }
-    }
-
-    logToConsole("debug", "❌ No cloud changes detected");
-    return { hasChanges: false, metadata: cloudMetadata };
-  }
-
-  async function detectLocalOnlySettings(cloudMetadata) {
-    if (!localMetadata.settings?.items) {
-      return false;
-    }
-
-    if (!cloudMetadata.settings?.items) {
-      logToConsole(
-        "debug",
-        "✅ Local-only settings detected: Cloud has no settings but local has settings"
-      );
-      return true;
-    }
-
-    for (const settingKey of Object.keys(localMetadata.settings.items)) {
-      const localSettingMeta = localMetadata.settings.items[settingKey];
-      if (
-        !localSettingMeta.deleted &&
-        !cloudMetadata.settings.items[settingKey]
-      ) {
-        logToConsole(
-          "debug",
-          `✅ Local-only settings detected: Setting ${settingKey} exists locally but not in cloud`
-        );
-        return true;
-      }
-    }
-
-    logToConsole("debug", "❌ No local-only settings detected");
-    return false;
-  }
-
-  function startSyncInterval() {
-    if (activeIntervals.sync) {
-      clearInterval(activeIntervals.sync);
-      activeIntervals.sync = null;
-    }
-    if (config.syncMode === "disabled") {
-      logToConsole("info", "Sync intervals disabled - manual operations only");
-      return;
-    }
-    activeIntervals.sync = setInterval(async () => {
-      if (document.hidden) return;
-      if (
-        operationState.isImporting ||
-        operationState.isExporting ||
-        operationState.isProcessingQueue
-      ) {
+        localStorage.setItem(localMigrationFlag, "true");
         return;
       }
+      this.logger.log("start", "V2 keys detected, starting V2 to V3 migration");
       try {
-        const hasLocalChanges =
-          (await checkLocalSettingsChanges()) ||
-          Object.values(localMetadata.chats).some(
-            (chat) =>
-              !chat.deleted &&
-              (chat.lastModified > (chat.syncedAt || 0) || !chat.syncedAt)
-          );
-        if (config.syncMode === "sync") {
-          const initialCloudMetadata = await downloadCloudMetadata();
-          const cloudChangesResult = await detectCloudChanges(
-            initialCloudMetadata
-          );
-          const hasCloudChanges = cloudChangesResult.hasChanges;
-          const cloudMetadata = cloudChangesResult.metadata;
-          const hasLocalOnlySettings = await detectLocalOnlySettings(
-            cloudMetadata
-          );
-          logToConsole("debug", "🔄 Sync interval decision", {
-            hasCloudChanges,
-            hasLocalChanges,
-            hasLocalOnlySettings,
-            localSettingsChanges: await checkLocalSettingsChanges(),
-            cloudSettingsItems: cloudMetadata.settings?.items
-              ? Object.keys(cloudMetadata.settings.items).length
-              : 0,
-            localSettingsItems: localMetadata.settings?.items
-              ? Object.keys(localMetadata.settings.items).length
-              : 0,
-            decision:
-              hasCloudChanges && (hasLocalChanges || hasLocalOnlySettings)
-                ? "BIDIRECTIONAL"
-                : hasCloudChanges
-                ? "CLOUD_TO_LOCAL"
-                : hasLocalChanges || hasLocalOnlySettings
-                ? "LOCAL_TO_CLOUD"
-                : "NO_SYNC",
-          });
-          const cloudChatCount = Object.keys(cloudMetadata?.chats || {}).length;
-          const localChatCount = Object.keys(localMetadata.chats || {}).length;
-          if (
-            (cloudChatCount === 0 && localChatCount > 0) ||
-            cloudMetadata.lastSyncTime === 0
-          ) {
-            logToConsole(
+        await this.migrateStorageKeys();
+        this.config.config = this.config.loadConfig();
+        this.logger.log("info", "Reloaded configuration with migrated keys");
+        await this.cleanupAndFreshSync();
+        localStorage.setItem(localMigrationFlag, "true");
+        this.logger.log("success", "V2 to V3 migration completed successfully");
+      } catch (error) {
+        this.logger.log("error", "V2 to V3 migration failed", error.message);
+      }
+    }
+
+    async migrateStorageKeys() {
+      this.logger.log("info", "Migrating v2 storage keys to V3 format");
+      const oldToNewKeyMap = {
+        "aws-bucket": "tcs_aws_bucketname",
+        "aws-access-key": "tcs_aws_accesskey",
+        "aws-secret-key": "tcs_aws_secretkey",
+        "aws-region": "tcs_aws_region",
+        "aws-endpoint": "tcs_aws_endpoint",
+        "encryption-key": "tcs_encryptionkey",
+        "sync-interval": "tcs_syncinterval",
+      };
+      const migrationBackup = {};
+      let migratedCount = 0;
+      Object.entries(oldToNewKeyMap).forEach(([oldKey, newKey]) => {
+        const value = localStorage.getItem(oldKey);
+        if (value) {
+          migrationBackup[oldKey] = value;
+          localStorage.setItem(newKey, value);
+          migratedCount++;
+          this.logger.log("info", `Migrated ${oldKey} → ${newKey}`);
+        }
+      });
+      if (migratedCount > 0) {
+        localStorage.setItem(
+          "tcs_migrationBackup",
+          JSON.stringify(migrationBackup)
+        );
+        this.logger.log(
+          "success",
+          `Successfully migrated ${migratedCount} configuration keys`
+        );
+      } else {
+        this.logger.log("info", "No v2 configuration keys found to migrate");
+      }
+    }
+
+    async cleanupAndFreshSync() {
+      this.logger.log("info", "Cleaning up v2 metadata and obsolete keys");
+      const keysToRemove = [
+        "chat-sync-metadata",
+        "last-cloud-sync",
+        "last-daily-backup",
+        "sync-mode",
+        "sync-exclusions",
+        "aws-bucket",
+        "aws-access-key",
+        "aws-secret-key",
+        "aws-region",
+        "aws-endpoint",
+        "encryption-key",
+        "sync-interval",
+      ];
+      let removedCount = 0;
+      keysToRemove.forEach((key) => {
+        if (localStorage.getItem(key) !== null) {
+          localStorage.removeItem(key);
+          removedCount++;
+        }
+      });
+      if (removedCount > 0) {
+        this.logger.log(
+          "success",
+          `Cleaned up ${removedCount} obsolete keys from localStorage`
+        );
+      }
+      if (this.config.isConfigured()) {
+        try {
+          await this.s3Service.initialize();
+          const needsCloudCleanup = await this.checkIfCloudNeedsV2Cleanup();
+          if (!needsCloudCleanup) {
+            this.logger.log(
               "info",
-              "Cloud is empty/new but we have local chats - syncing to cloud"
+              "Cloud already in V3 format or clean, skipping cloud cleanup"
             );
-            queueOperation("cloud-empty-sync", syncToCloud);
+            await this.syncOrchestrator.performFullSync();
             return;
           }
-          if (hasCloudChanges && (hasLocalChanges || hasLocalOnlySettings)) {
-            logToConsole(
-              "info",
-              "Changes detected on both sides - queuing bidirectional sync"
-            );
-            const syncId = Date.now();
-            const cloudSyncOp = `bidirectional-cloud-sync-${syncId}`;
-            const localSyncOp = `bidirectional-local-sync-${syncId}`;
-            queueOperation(cloudSyncOp, syncFromCloud, [], 300000);
-            queueOperation(localSyncOp, syncToCloud, [cloudSyncOp], 60000);
-            logToConsole("info", "Queued bidirectional sync operations");
-          } else if (hasCloudChanges) {
-            logToConsole("info", "Cloud changes detected - queuing cloud sync");
-            queueOperation("cloud-changes-sync", syncFromCloud);
-          } else if (hasLocalChanges || hasLocalOnlySettings) {
-            logToConsole("info", "Local changes detected - queuing local sync");
-            queueOperation("local-changes-sync", syncToCloud);
-          }
-        } else if (config.syncMode === "backup" && hasLocalChanges) {
-          logToConsole("info", "Local changes detected - backing up to cloud");
-          queueOperation("backup-modified-chats", syncToCloud);
-        }
-      } catch (error) {
-        logToConsole("error", "Error in sync interval:", error);
-      }
-    }, config.syncInterval * 1000);
-    logToConsole("info", `Started sync interval (${config.syncInterval}s)`);
-  }
-  async function performInitialSync() {
-    logToConsole("start", "Performing initial sync...");
-    try {
-      const metadata = await downloadCloudMetadata();
-      const chatCount = Object.keys(metadata.chats || {}).length;
-      const localChatCount = Object.keys(localMetadata.chats || {}).length;
-      const settingsItemsCount = Object.keys(
-        metadata.settings?.items || {}
-      ).length;
-      logToConsole("info", "Initial sync status", {
-        cloudChats: chatCount,
-        localChats: localChatCount,
-        cloudSettingsItems: settingsItemsCount,
-      });
-      if (
-        (chatCount === 0 && localChatCount > 0) ||
-        metadata.lastSyncTime === 0
-      ) {
-        logToConsole(
-          "info",
-          "Creating fresh backup with local data - cloud is empty or newly initialized"
-        );
-        if (!metadata.chats) {
-          metadata.chats = {};
-        }
-        if (!metadata.settings) {
-          metadata.settings = { items: {} };
-        }
-        if (!metadata.settings.items) {
-          metadata.settings.items = {};
-        }
-
-        const chats = await getAllChatsFromIndexedDB();
-        let uploadedCount = 0;
-        for (const chat of chats) {
-          if (!chat.id) continue;
-          const localChatMeta = localMetadata.chats[chat.id];
-          if (!localChatMeta) continue;
-          metadata.chats[chat.id] = {
-            hash: localChatMeta.hash || (await generateHash(chat, "chat")),
-            lastModified: localChatMeta.lastModified || Date.now(),
-            syncedAt: Date.now(),
-            deleted: false,
-          };
-          try {
-            await uploadChatToCloud(chat.id, metadata);
-            uploadedCount++;
-            if (uploadedCount % 10 === 0) {
-              logToConsole(
-                "info",
-                `Upload progress: ${uploadedCount}/${chats.length} chats`
-              );
-            }
-          } catch (error) {
-            logToConsole("error", `Failed to upload chat ${chat.id}:`, error);
-          }
-        }
-
-        // Handle initial settings upload when cloud settings are empty
-        if (settingsItemsCount === 0) {
-          logToConsole(
+          this.logger.log(
             "info",
-            "Cloud settings are empty - performing initial upload of all local settings"
+            "V2 data detected in cloud, performing cleanup and fresh sync"
           );
           try {
-            const settingsUploaded = await syncSettingsToCloud();
-            if (settingsUploaded) {
-              logToConsole(
-                "success",
-                "Successfully uploaded local settings to cloud during initial sync"
+            await this.s3Service.delete("metadata.json");
+            this.logger.log("info", "Removed old cloud metadata.json");
+          } catch (error) {
+            if (error.code !== "NoSuchKey" && error.statusCode !== 404) {
+              this.logger.log(
+                "warning",
+                "Failed to delete old metadata.json",
+                error.message
               );
-            } else {
-              logToConsole(
-                "info",
-                "No local settings to upload during initial sync"
+            }
+          }
+          try {
+            const items = await this.s3Service.list("items/");
+            if (items.length > 0) {
+              const deletePromises = items.map((item) =>
+                this.s3Service.delete(item.Key)
+              );
+              await Promise.allSettled(deletePromises);
+              this.logger.log(
+                "success",
+                `Cleaned up ${items.length} items from cloud`
               );
             }
           } catch (error) {
-            logToConsole(
-              "error",
-              "Failed to upload settings during initial sync:",
-              error
+            this.logger.log(
+              "warning",
+              "Failed to clean items folder",
+              error.message
             );
+          }
+          const v2Folders = ["chats/", "settings/"];
+          for (const folder of v2Folders) {
+            try {
+              const folderItems = await this.s3Service.list(folder);
+              if (folderItems.length > 0) {
+                const deletePromises = folderItems.map((item) =>
+                  this.s3Service.delete(item.Key)
+                );
+                await Promise.allSettled(deletePromises);
+                this.logger.log(
+                  "success",
+                  `Cleaned up ${folderItems.length} items from ${folder}`
+                );
+              }
+            } catch (error) {
+              this.logger.log(
+                "warning",
+                `Failed to clean ${folder}`,
+                error.message
+              );
+            }
+          }
+          this.logger.log("info", "Performing fresh initial sync");
+          await this.syncOrchestrator.createInitialSync();
+          this.logger.log("success", "Fresh sync completed successfully");
+        } catch (error) {
+          this.logger.log(
+            "warning",
+            "Cloud cleanup had issues, but migration will continue",
+            error.message
+          );
+        }
+      } else {
+        this.logger.log("info", "AWS not configured, skipping cloud cleanup");
+      }
+    }
+    async checkIfCloudNeedsV2Cleanup() {
+      try {
+        const v2Folders = ["chats/", "settings/"];
+        for (const folder of v2Folders) {
+          const items = await this.s3Service.list(folder);
+          if (items.length > 0) {
+            this.logger.log("info", `Found V2 data in ${folder}`);
+            return true;
           }
         }
-
-        metadata.lastSyncTime = Date.now();
-        await uploadToS3(
-          "metadata.json",
-          new TextEncoder().encode(JSON.stringify(metadata)),
-          {
-            ContentType: "application/json",
-            ServerSideEncryption: "AES256",
-          }
-        );
-        localMetadata.lastSyncTime = metadata.lastSyncTime;
-        await saveLocalMetadata();
-        logToConsole("success", "Successfully uploaded local chats to cloud", {
-          chatsUploaded: uploadedCount,
-          totalChats: chats.length,
-        });
-        return;
-      }
-
-      // Handle case where cloud has chats but settings are empty
-      if (settingsItemsCount === 0 && chatCount > 0) {
-        logToConsole(
-          "info",
-          "Cloud has chats but settings are empty - performing initial settings upload"
-        );
         try {
-          const settingsUploaded = await syncSettingsToCloud();
-          if (settingsUploaded) {
-            logToConsole(
-              "success",
-              "Successfully uploaded local settings to cloud (cloud had chats but no settings)"
-            );
-          } else {
-            logToConsole(
-              "info",
-              "No local settings to upload (cloud had chats but no settings)"
-            );
+          const metadata = await this.s3Service.download("metadata.json", true);
+          if (
+            metadata &&
+            metadata.chats &&
+            typeof metadata.chats === "object"
+          ) {
+            this.logger.log("info", "Found V2 metadata.json format");
+            return true;
           }
         } catch (error) {
-          logToConsole(
-            "error",
-            "Failed to upload settings when cloud had chats but no settings:",
-            error
-          );
+          if (error.code !== "NoSuchKey" && error.statusCode !== 404) {
+            this.logger.log(
+              "warning",
+              "Error checking metadata.json",
+              error.message
+            );
+          }
         }
-      }
-
-      logToConsole(
-        "info",
-        "Cloud data found and validated - performing normal sync"
-      );
-      await syncFromCloud();
-    } catch (error) {
-      logToConsole("error", "Error during initial sync:", error);
-      throw error;
-    }
-  }
-  async function syncFromCloud() {
-    if (operationState.isImporting || operationState.isExporting) {
-      logToConsole("skip", "Sync already in progress, queueing this sync");
-      operationState.isPendingSync = true;
-      return;
-    }
-    try {
-      operationState.isImporting = true;
-      operationState.isPendingSync = false;
-      logToConsole("start", "Starting sync from cloud...");
-      const syncTimestamp = Date.now();
-      await loadLocalMetadata();
-      const cloudMetadata = await downloadCloudMetadata();
-      if (!cloudMetadata || !cloudMetadata.chats) {
-        logToConsole("info", "No cloud metadata found or invalid format");
-        return;
-      }
-      const cloudChatCount = Object.keys(cloudMetadata.chats).length;
-      const localChatCount = Object.keys(localMetadata.chats || {}).length;
-      if (
-        (cloudChatCount === 0 && localChatCount > 0) ||
-        cloudMetadata.lastSyncTime === 0
-      ) {
-        logToConsole(
-          "info",
-          "Aborting sync from cloud - cloud is empty/new but we have local data"
+        this.logger.log("info", "No V2 data found in cloud");
+        return false;
+      } catch (error) {
+        this.logger.log(
+          "warning",
+          "Error checking for V2 cloud data",
+          error.message
         );
-        queueOperation("cloud-empty-sync", syncToCloud, [], 300000);
-        return;
+        return false;
       }
-      let hasChanges = false;
-      let metadataNeedsSaving = false;
-      let totalChats = Object.keys(cloudMetadata.chats).length;
-      let processedChats = 0;
-      let downloadedChats = 0;
-      let deletedChats = 0;
+    }
+    startAutoSync() {
+      if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
 
-      // Handle individual settings sync
-      const settingsChanged = await syncSettingsFromCloud();
-      if (settingsChanged) {
-        hasChanges = true;
-        metadataNeedsSaving = true;
-        logToConsole("success", "Individual settings sync completed");
-      } else {
-        logToConsole("info", "No settings changes applied from cloud");
-      }
+      const interval = Math.max(this.config.get("syncInterval") * 1000, 15000);
 
-      // Refresh cloud metadata after settings sync to avoid overwriting cleaned metadata
-      const refreshedCloudMetadata = settingsChanged
-        ? await downloadCloudMetadata()
-        : cloudMetadata;
-
-      const currentLocalChats = await getAllChatsFromIndexedDB();
-      const currentLocalChatIds = new Set(
-        currentLocalChats.map((chat) => chat.id)
-      );
-      const cloudChatIds = new Set(Object.keys(refreshedCloudMetadata.chats));
-      for (const [chatId, cloudChatMeta] of Object.entries(
-        refreshedCloudMetadata.chats
-      )) {
-        processedChats++;
-        const localChatMeta = localMetadata.chats[chatId];
-        const chatExistsLocally = currentLocalChatIds.has(chatId);
-        if (cloudChatMeta.deleted === true) {
-          if (
-            localChatMeta &&
-            !localChatMeta.deleted &&
-            localChatMeta.lastModified > cloudChatMeta.deletedAt
-          ) {
-            logToConsole(
-              "info",
-              `Local chat ${chatId} appears to be a restoration - keeping local version`
-            );
-            continue;
-          }
-          if (chatExistsLocally) {
-            logToConsole(
-              "cleanup",
-              `Deleting local chat ${chatId} due to cloud tombstone`
-            );
-            await deleteChatFromIndexedDB(chatId);
-            deletedChats++;
-            hasChanges = true;
-          }
-          const currentMeta = localMetadata.chats[chatId];
-          if (
-            !currentMeta ||
-            !currentMeta.deleted ||
-            currentMeta.deletedAt < cloudChatMeta.deletedAt
-          ) {
-            localMetadata.chats[chatId] = {
-              deleted: true,
-              deletedAt: cloudChatMeta.deletedAt,
-              lastModified: cloudChatMeta.lastModified,
-              syncedAt: syncTimestamp,
-              tombstoneVersion: cloudChatMeta.tombstoneVersion || 1,
-            };
-            metadataNeedsSaving = true;
-          }
-          continue;
-        }
-        if (localChatMeta?.deleted === true) {
-          await deleteChatFromCloud(chatId);
-          continue;
-        }
+      this.autoSyncInterval = setInterval(async () => {
         if (
-          !chatExistsLocally ||
-          !localChatMeta ||
-          (cloudChatMeta.hash &&
-            (!localChatMeta.hash || cloudChatMeta.hash !== localChatMeta.hash))
+          this.config.isConfigured() &&
+          !this.syncOrchestrator.syncInProgress
         ) {
-          let downloadReason = "Unknown";
-          if (!chatExistsLocally) downloadReason = "Chat missing locally";
-          else if (!localChatMeta) downloadReason = "Missing local metadata";
-          else if (!localChatMeta.hash) downloadReason = "Local hash missing";
-          else if (cloudChatMeta.hash !== localChatMeta.hash)
-            downloadReason = "Hash mismatch";
-          logToConsole(
-            "info",
-            `Queueing download for chat ${chatId}. Reason: ${downloadReason}`,
-            {
-              localHash: localChatMeta?.hash,
-              cloudHash: cloudChatMeta?.hash,
-            }
-          );
-          const cloudChat = await downloadChatFromCloud(chatId);
-          if (cloudChat) {
-            let chatToSave = cloudChat;
-            const localChat = await getChatFromIndexedDB(chatId);
-            if (localChat) {
-              chatToSave = await mergeChats(localChat, cloudChat);
-            }
-            await saveChatToIndexedDB(chatToSave, syncTimestamp);
-            hasChanges = true;
-            downloadedChats++;
-            metadataNeedsSaving = true;
-            try {
-              const newHash = await generateHash(chatToSave, "chat");
-              logToConsole(
-                "debug",
-                `Hash calculated for immediate save in syncFromCloud for ${chatId}`,
-                { hash: newHash }
-              );
-              const metaString = await getIndexedDBKey("sync-metadata");
-              let currentLocalMeta = JSON.parse(metaString || "{}");
-              if (!currentLocalMeta.chats) currentLocalMeta.chats = {};
-              if (!currentLocalMeta.chats[chatId])
-                currentLocalMeta.chats[chatId] = {};
-              currentLocalMeta.chats[chatId].hash = cloudChatMeta.hash;
-              currentLocalMeta.chats[chatId].syncedAt = syncTimestamp;
-              currentLocalMeta.chats[chatId].lastModified = syncTimestamp;
-              currentLocalMeta.chats[chatId].deleted = false;
-              delete currentLocalMeta.chats[chatId].deletedAt;
-              delete currentLocalMeta.chats[chatId].tombstoneVersion;
-              await setIndexedDBKey(
-                "sync-metadata",
-                JSON.stringify(currentLocalMeta)
-              );
-              logToConsole(
-                "debug",
-                `Immediately saved metadata for ${chatId} after merge.`
-              );
-              metadataNeedsSaving = false;
-            } catch (metaSaveError) {
-              logToConsole(
-                "error",
-                `Failed immediate metadata save for ${chatId}`,
-                metaSaveError
-              );
-              metadataNeedsSaving = true;
-            }
-            if (!localMetadata.chats[chatId]) {
-              localMetadata.chats[chatId] = {};
-            }
-            const currentMeta = localMetadata.chats[chatId];
-            if (
-              currentMeta.lastModified !== cloudChatMeta.lastModified ||
-              currentMeta.syncedAt !== syncTimestamp ||
-              currentMeta.hash !== cloudChatMeta.hash
-            ) {
-              localMetadata.chats[chatId].lastModified =
-                cloudChatMeta.lastModified;
-              localMetadata.chats[chatId].syncedAt = syncTimestamp;
-              localMetadata.chats[chatId].hash = cloudChatMeta.hash;
-              metadataNeedsSaving = true;
-            }
-          }
-        }
-      }
-      const localOnlyChats = Array.from(currentLocalChatIds).filter(
-        (id) => !cloudChatIds.has(id)
-      );
-      let localChatsProcessed = 0;
-      const totalLocalOnly = localOnlyChats.length;
-      if (totalLocalOnly > 0) {
-        logToConsole("info", `Processing ${totalLocalOnly} local-only chats`);
-      }
-      for (const chatId of localOnlyChats) {
-        localChatsProcessed++;
-        const localChatMeta = localMetadata.chats[chatId];
-        if (localChatMeta?.deleted === true) {
-          continue;
-        }
-        logToConsole("info", `Local chat ${chatId} sync state:`, {
-          hasMetadata: !!localChatMeta,
-          hasLastSyncTime: !!localMetadata.lastSyncTime,
-          lastModified: localChatMeta?.lastModified,
-          lastSynced: localChatMeta?.syncedAt,
-          needsSync:
-            !localChatMeta ||
-            !localMetadata.lastSyncTime ||
-            localChatMeta.lastModified > localChatMeta.syncedAt,
-        });
-        if (
-          !localChatMeta ||
-          !localMetadata.lastSyncTime ||
-          localChatMeta.lastModified > localChatMeta.syncedAt
-        ) {
-          logToConsole("info", `Uploading local chat ${chatId} to cloud`);
           try {
-            await uploadChatToCloud(chatId);
-            hasChanges = true;
+            await this.syncOrchestrator.performFullSync();
           } catch (error) {
-            logToConsole("error", `Error uploading chat ${chatId}:`, error);
+            this.logger.log("error", "Auto-sync failed", error.message);
           }
-          continue;
-        } else {
-          logToConsole(
-            "info",
-            `Chat ${chatId} doesn't need upload - already synced and no changes`
-          );
         }
-      }
-      if (metadataNeedsSaving) {
-        logToConsole(
-          "info",
-          "Saving batched metadata changes from syncFromCloud"
-        );
-        await saveLocalMetadata();
-      }
-      if (hasChanges) {
-        localMetadata.lastSyncTime = syncTimestamp;
-        refreshedCloudMetadata.lastSyncTime = syncTimestamp;
-        await uploadToS3(
+      }, interval);
+
+      this.logger.log("info", "Auto-sync started");
+    }
+    async getCloudMetadata() {
+      try {
+        const cloudMetadata = await this.s3Service.download(
           "metadata.json",
-          new TextEncoder().encode(JSON.stringify(refreshedCloudMetadata)),
-          {
-            ContentType: "application/json",
-            ServerSideEncryption: "AES256",
-          }
+          true
         );
-        await saveLocalMetadata();
-        logToConsole("success", "Sync summary:", {
-          totalChatsProcessed: processedChats,
-          downloaded: downloadedChats,
-          deleted: deletedChats,
-          localProcessed: localChatsProcessed,
-          duration: `${Math.round((Date.now() - syncTimestamp) / 1000)}s`,
-        });
-      } else {
-        logToConsole("info", "No changes detected during sync from cloud");
-        if (metadataNeedsSaving) {
-          await saveLocalMetadata();
+        if (!cloudMetadata || typeof cloudMetadata !== "object") {
+          return { lastSync: 0, items: {} };
         }
-        updateSyncStatusDot("in-sync");
+        if (!cloudMetadata.items) {
+          cloudMetadata.items = {};
+        }
+        return cloudMetadata;
+      } catch (error) {
+        if (error.code === "NoSuchKey" || error.statusCode === 404) {
+          return { lastSync: 0, items: {} };
+        }
+        throw error;
       }
-      operationState.lastError = null;
-      localStorage.setItem("last-cloud-sync", new Date().toLocaleString());
-      logToConsole("success", "Sync completed successfully");
-      operationState.lastSyncStatus = "success";
-      throttledCheckSyncStatus();
-    } catch (error) {
-      logToConsole("error", "Sync failed:", error);
-      operationState.lastError = error;
-      operationState.lastSyncStatus = "error";
-      updateSyncStatusDot("error");
-      throw error;
-    } finally {
-      operationState.isImporting = false;
-      if (operationState.isPendingSync) {
-        operationState.isPendingSync = false;
-        queueOperation("pending-sync", syncFromCloud);
+    }
+    cleanup() {
+      this.logger.log("info", "🧹 Starting comprehensive cleanup");
+
+      if (this.autoSyncInterval) {
+        clearInterval(this.autoSyncInterval);
+        this.autoSyncInterval = null;
       }
-      throttledCheckSyncStatus();
-    }
-  }
-  async function syncToCloud() {
-    if (operationState.isImporting || operationState.isExporting) {
-      logToConsole("skip", "Sync in progress - skipping");
-      return;
-    }
-    logToConsole("start", "Starting sync to cloud...");
-    operationState.isExporting = true;
-    updateSyncStatus();
-    try {
-      const syncTimestamp = Date.now();
-      await loadLocalMetadata();
-      logToConsole("debug", "Loaded metadata after refresh", {
-        chatsCount: Object.keys(localMetadata.chats || {}).length,
-        sampleHash: Object.values(
-          localMetadata.chats || {}
-        )[0]?.hash?.substring(0, 12),
+
+      this.modalCleanupCallbacks.forEach((cleanup) => {
+        try {
+          cleanup();
+        } catch (error) {
+          console.warn("Modal cleanup error:", error);
+        }
       });
-      const cloudMetadata = await downloadCloudMetadata();
-      let hasChanges = false;
-      let uploadedChats = 0;
-      let totalChatsToUpload = 0;
+      this.modalCleanupCallbacks = [];
 
-      // Handle individual settings sync
-      const settingsChanged = await syncSettingsToCloud();
-      if (settingsChanged) {
-        hasChanges = true;
-        logToConsole("success", "Individual settings uploaded to cloud");
-      } else {
-        logToConsole("info", "No settings changes to upload");
+      this.eventListeners.forEach(({ element, event, handler }) => {
+        try {
+          element.removeEventListener(event, handler);
+        } catch (error) {
+          console.warn("Event listener cleanup error:", error);
+        }
+      });
+      this.eventListeners = [];
+
+      const existingModal = document.querySelector(".cloud-sync-modal");
+      if (existingModal) {
+        existingModal.closest(".modal-overlay")?.remove();
       }
 
-      // Refresh cloud metadata after settings sync to avoid overwriting with stale data
-      const refreshedCloudMetadata = settingsChanged
-        ? await downloadCloudMetadata()
-        : cloudMetadata;
+      if (this.operationQueue) {
+        this.operationQueue.cleanup();
+      }
 
-      const chats = await getAllChatsFromIndexedDB();
-      const chatsToUpload = [];
-      for (const chat of chats) {
-        if (!chat.id) continue;
-        const currentLocalMeta = await getIndexedDBKey("sync-metadata").then(
-          (metaStr) => {
-            try {
-              return JSON.parse(metaStr)?.chats?.[chat.id];
-            } catch {
-              return null;
-            }
-          }
-        );
-        const localChatMeta = currentLocalMeta;
-        const cloudChatMeta = refreshedCloudMetadata.chats[chat.id];
-        if (
-          cloudChatMeta?.deleted === true &&
-          (!localChatMeta ||
-            localChatMeta.lastModified <= cloudChatMeta.deletedAt)
-        ) {
-          continue;
-        }
-        if (
-          !cloudChatMeta ||
-          (cloudChatMeta &&
-            cloudChatMeta.hash &&
-            (!localChatMeta ||
-              !localChatMeta.hash ||
-              cloudChatMeta.hash !== localChatMeta.hash)) ||
-          !localChatMeta
-        ) {
-          logToConsole(
-            "info",
-            `syncToCloud: Adding ${chat.id} to upload queue.`
-          );
-          chatsToUpload.push(chat.id);
-        } else if (localChatMeta && localChatMeta.syncedAt === 0) {
-          logToConsole(
-            "debug",
-            `syncToCloud: Chat ${chat.id} hashes match cloud, updating local syncedAt timestamp.`
-          );
-          localMetadata.chats[chat.id].syncedAt = syncTimestamp;
-          localMetadata.chats[chat.id].lastModified = syncTimestamp;
-          hasChanges = true;
-        }
+      if (this.dataService) {
+        this.dataService.cleanup();
       }
-      totalChatsToUpload = chatsToUpload.length;
-      if (totalChatsToUpload > 0) {
-        logToConsole("info", `Found ${totalChatsToUpload} chats to upload`);
-        hasChanges = true;
-        for (const chatId of chatsToUpload) {
-          try {
-            const chatData = await getChatFromIndexedDB(chatId);
-            const encryptedData = await encryptData(chatData);
-            await uploadToS3(`chats/${chatId}.json`, encryptedData, {
-              ContentType: "application/json",
-              ServerSideEncryption: "AES256",
-            });
-            if (!localMetadata.chats[chatId]) {
-              localMetadata.chats[chatId] = {};
-            }
-            const newHash = await generateHash(chatData, "chat");
-            localMetadata.chats[chatId] = {
-              ...localMetadata.chats[chatId],
-              lastModified: chatData.updatedAt || syncTimestamp,
-              syncedAt: syncTimestamp,
-              hash: newHash,
-            };
-            if (!refreshedCloudMetadata.chats)
-              refreshedCloudMetadata.chats = {};
-            refreshedCloudMetadata.chats[chatId] = {
-              lastModified: chatData.updatedAt || syncTimestamp,
-              syncedAt: syncTimestamp,
-              hash: newHash,
-            };
-            lastSeenUpdates[chatId] = {
-              updatedAt: syncTimestamp,
-              hash: newHash,
-            };
-            uploadedChats++;
-            if (
-              uploadedChats % 5 === 0 ||
-              uploadedChats === totalChatsToUpload
-            ) {
-              logToConsole(
-                "info",
-                `Uploaded ${uploadedChats}/${totalChatsToUpload} chats`
-              );
-            }
-            await saveLocalMetadata();
-          } catch (error) {
-            logToConsole("error", `Error uploading chat ${chatId}:`, error);
-            if (localMetadata.chats[chatId]) {
-              localMetadata.chats[chatId].syncedAt = 0;
-              await saveLocalMetadata();
-            }
-          }
-        }
+
+      if (this.cryptoService) {
+        this.cryptoService.cleanup();
       }
-      let deletedChats = 0;
-      for (const [chatId, localChatMeta] of Object.entries(
-        localMetadata.chats
-      )) {
-        if (
-          localChatMeta.deleted === true &&
-          (!refreshedCloudMetadata.chats[chatId]?.deleted ||
-            (refreshedCloudMetadata.chats[chatId]?.deleted === true &&
-              localChatMeta.tombstoneVersion >
-                (refreshedCloudMetadata.chats[chatId]?.tombstoneVersion ||
-                  0))) &&
-          (localChatMeta.syncedAt === 0 ||
-            (refreshedCloudMetadata.chats[chatId]?.tombstoneVersion || 0) <
-              localChatMeta.tombstoneVersion)
-        ) {
-          try {
-            await deleteFromS3(`chats/${chatId}.json`);
-            deletedChats++;
-            refreshedCloudMetadata.chats[chatId] = {
-              deleted: true,
-              deletedAt: syncTimestamp,
-              lastModified: syncTimestamp,
-              syncedAt: syncTimestamp,
-              tombstoneVersion: Math.max(
-                localChatMeta.tombstoneVersion || 1,
-                (refreshedCloudMetadata.chats[chatId]?.tombstoneVersion || 0) +
-                  1
-              ),
-            };
-            localMetadata.chats[chatId] = {
-              ...localMetadata.chats[chatId],
-              syncedAt: syncTimestamp,
-              tombstoneVersion:
-                refreshedCloudMetadata.chats[chatId].tombstoneVersion,
-            };
-            hasChanges = true;
-            await saveLocalMetadata();
-          } catch (error) {
-            logToConsole("error", `Error deleting chat ${chatId}:`, error);
-            if (localMetadata.chats[chatId]) {
-              localMetadata.chats[chatId].syncedAt = 0;
-              await saveLocalMetadata();
-            }
-          }
-        }
+
+      if (this.syncOrchestrator) {
+        this.syncOrchestrator.cleanup();
       }
-      if (hasChanges) {
-        localMetadata.lastSyncTime = syncTimestamp;
-        refreshedCloudMetadata.lastSyncTime = syncTimestamp;
-        await uploadToS3(
-          "metadata.json",
-          new TextEncoder().encode(JSON.stringify(refreshedCloudMetadata)),
-          {
-            ContentType: "application/json",
-            ServerSideEncryption: "AES256",
-          }
-        );
-        await saveLocalMetadata();
-        throttledCheckSyncStatus();
-        logToConsole("success", "Sync to cloud completed with changes", {
-          uploadedChats,
-          deletedChats,
-          totalChatsProcessed: uploadedChats + deletedChats,
-        });
-      } else {
-        logToConsole("info", "No changes detected during sync to cloud");
-        throttledCheckSyncStatus();
-      }
-      operationState.lastError = null;
-    } catch (error) {
-      logToConsole("error", "Sync to cloud failed:", error);
-      operationState.lastError = error;
-      throttledCheckSyncStatus();
-      throw error;
-    } finally {
-      operationState.isExporting = false;
-      throttledCheckSyncStatus();
+
+      this.logger.log("success", "✅ Cleanup completed");
+      this.config = null;
+      this.dataService = null;
+      this.cryptoService = null;
+      this.s3Service = null;
+      this.syncOrchestrator = null;
+      this.backupService = null;
+      this.operationQueue = null;
+      this.logger = null;
     }
   }
-  async function detectChanges(localChats, cloudChats) {
-    const changes = [];
-    const localChatsMap = new Map(localChats.map((chat) => [chat.id, chat]));
-    const cloudChatsMap = new Map(cloudChats.map((chat) => [chat.id, chat]));
-    const processedIds = new Set();
-    for (const [chatId, cloudChat] of cloudChatsMap) {
-      processedIds.add(chatId);
-      const localChat = localChatsMap.get(chatId);
-      if (!localChat) {
-        changes.push({ type: "add", chat: cloudChat });
-      } else {
-        const cloudHash = await generateHash(cloudChat, "chat");
-        const localHash = await generateHash(localChat, "chat");
-        if (cloudHash !== localHash) {
-          if (cloudChat.updatedAt > localChat.updatedAt) {
-            changes.push({ type: "update", chat: cloudChat });
-          }
-        }
-      }
-    }
-    for (const [chatId, localChat] of localChatsMap) {
-      if (!processedIds.has(chatId)) {
-        changes.push({ type: "delete", chatId });
-      }
-    }
-    return changes;
-  }
-  async function updateChatMetadata(
-    chatId,
-    isModified = true,
-    isDeleted = false,
-    syncTimestamp = null,
-    chatObject = null
-  ) {
-    let metadataChanged = false;
-    if (!chatId) {
-      logToConsole("error", "No chat ID provided to updateChatMetadata");
-      return false;
-    }
-    const chat = chatObject;
-    if (!chat && !isDeleted) {
-      logToConsole(
-        "error",
-        "Chat object not provided to updateChatMetadata for non-deletion",
-        chatId
-      );
-      return false;
-    }
-    if (!localMetadata.chats[chatId]) {
-      localMetadata.chats[chatId] = {
-        lastModified: Date.now(),
-        syncedAt: 0,
-        hash: null,
-        deleted: false,
-      };
-      metadataChanged = true;
-    }
-    if (chat) {
-      const currentHash = await generateHash(chat, "chat");
-      const metadata = localMetadata.chats[chatId];
-      const previousHash = metadata.hash;
-      const previousLastModified = metadata.lastModified;
-      const previousSyncedAt = metadata.syncedAt;
-      metadata.lastModified = Date.now();
-      metadata.hash = currentHash;
-      if (syncTimestamp) {
-        metadata.syncedAt = syncTimestamp;
-        metadata.lastModified = syncTimestamp;
-      } else if (isModified) {
-        metadata.syncedAt = 0;
-        metadata.lastModified = Date.now();
-      } else {
-        metadata.lastModified = previousLastModified;
-        metadata.syncedAt = previousSyncedAt;
-      }
-      metadata.hash = currentHash;
-      if (
-        metadata.lastModified !== previousLastModified ||
-        metadata.hash !== previousHash ||
-        metadata.syncedAt !== previousSyncedAt ||
-        metadata.deleted
-      ) {
-        metadataChanged = true;
-      }
-      if (isModified && !syncTimestamp) {
-        if (metadata.syncedAt !== 0) {
-          metadata.syncedAt = 0;
-          metadataChanged = true;
-        }
-        logToConsole(
-          "info",
-          `Queueing upload for locally modified chat ${chatId}`
-        );
-        queueOperation(`chat-changed-${chatId}`, () =>
-          uploadChatToCloud(chatId)
-        );
-      }
-      if (metadata.deleted) {
-        metadata.deleted = false;
-        delete metadata.deletedAt;
-        delete metadata.tombstoneVersion;
-        metadataChanged = true;
-      }
-      lastSeenUpdates[chatId] = {
-        hash: currentHash,
-        timestamp: Date.now(),
-      };
-    } else if (isDeleted) {
-      if (!localMetadata.chats[chatId].deleted) {
-        localMetadata.chats[chatId] = {
-          ...localMetadata.chats[chatId],
-          deleted: true,
-          deletedAt: Date.now(),
-          lastModified: Date.now(),
-          syncedAt: 0,
-        };
-        metadataChanged = true;
-        delete lastSeenUpdates[chatId];
-      }
-    }
-    if (metadataChanged) {
-      throttledCheckSyncStatus();
-    }
-    return metadataChanged;
-  }
-  function setupVisibilityChangeHandler() {
-    document.addEventListener("visibilitychange", () => {
-      const isVisible = document.visibilityState === "visible";
-      logToConsole(
-        "visibility",
-        `Page visibility changed: ${isVisible ? "visible" : "hidden"}`
-      );
-      if (isVisible) {
-        if (config.syncMode === "disabled") {
-          logToConsole(
-            "info",
-            "Cloud operations disabled - skipping visibility change handling"
-          );
-          return;
-        }
-        if (config.syncMode === "sync") {
-          queueOperation("visibility-sync", syncFromCloud);
-        }
-      }
-    });
-  }
-  function insertSyncButton() {
-    const existingButton = document.querySelector(
-      '[data-element-id="workspace-tab-cloudsync"]'
-    );
-    if (existingButton) return;
-    const button = document.createElement("button");
-    button.setAttribute("data-element-id", "workspace-tab-cloudsync");
-    button.className = `min-w-[58px] sm:min-w-0 sm:aspect-auto aspect-square cursor-default h-12 md:h-[50px] flex-col justify-start items-start inline-flex focus:outline-0 focus:text-white w-full relative ${
-      config.syncMode === "disabled" ? "opacity-50" : ""
-    }`;
-    button.innerHTML = `
-      <span class="text-white/70 hover:bg-white/20 self-stretch h-12 md:h-[50px] px-0.5 py-1.5 rounded-xl flex-col justify-start items-center gap-1.5 flex transition-colors">
-        <div class="relative">
-          <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">
-            ${
-              config.syncMode === "disabled"
-                ? `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M9 4.5A4.5 4.5 0 0114.5 9M9 13.5A4.5 4.5 0 013.5 9"/>
-                    <path d="M2 2L16 16"/>
-                   </g>`
-                : config.syncMode === "sync"
-                ? `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M9 4.5A4.5 4.5 0 0114.5 9M9 13.5A4.5 4.5 0 013.5 9"/>
-                    <polyline points="9,2.5 9,4.5 11,4.5"/>
-                    <polyline points="9,15.5 9,13.5 7,13.5"/>
-                   </g>`
-                : `<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M15.75 11.25v3c0 .828-.672 1.5-1.5 1.5h-10.5c-.828 0-1.5-.672-1.5-1.5v-3"/>
-                    <polyline points="12.75,6 9,2.25 5.25,6"/>
-                    <line x1="9" y1="2.25" x2="9" y2="11.25"/>
-                   </g>`
-            }
-          </svg>
-          ${
-            config.syncMode === "sync" ? `<div id="sync-status-dot"></div>` : ""
-          }
-        </div>
-        <span class="font-normal self-stretch text-center text-xs leading-4 md:leading-none ${
-          config.syncMode === "disabled"
-            ? "text-gray-400 dark:text-gray-500"
-            : ""
-        }">${config.syncMode === "sync" ? "Sync" : "Backup"}</span>
-      </span>
-    `;
-    button.addEventListener("click", () => {
-      openSyncModal();
-    });
-    const chatButton = document.querySelector(
-      'button[data-element-id="workspace-tab-chat"]'
-    );
-    if (chatButton && chatButton.parentNode) {
-      chatButton.parentNode.insertBefore(button, chatButton.nextSibling);
-      return;
-    }
-    const buttons = document.querySelectorAll("button");
-    for (const btn of buttons) {
-      if (btn.querySelector("svg")) {
-        btn.parentNode.insertBefore(button, btn.nextSibling);
-        return;
-      }
-    }
-  }
-  function updateSyncStatusDot(status = "success") {
-    const dot = document.getElementById("sync-status-dot");
-    if (!dot) return;
-    if (config.syncMode !== "sync") {
-      dot.style.display = "none";
-      return;
-    }
-    dot.style.display = "block";
-    dot.classList.remove(
-      "bg-green-500",
-      "bg-yellow-500",
-      "bg-red-500",
-      "bg-gray-500"
-    );
-    switch (status) {
-      case "in-sync":
-        dot.style.backgroundColor = "#22c55e";
-        break;
-      case "syncing":
-        dot.style.backgroundColor = "#eab308";
-        break;
-      case "error":
-      case "out-of-sync":
-        dot.style.backgroundColor = "#ef4444";
-        break;
-      default:
-        dot.style.backgroundColor = "#6b7280";
-    }
-  }
-  function updateSyncStatus() {
-    setTimeout(async () => {
-      if (config.syncMode !== "sync") {
-        updateSyncStatusDot("hidden");
-        return;
-      }
-      const status = await checkSyncStatus();
-      switch (status) {
-        case "in-sync":
-          updateSyncStatusDot("in-sync");
-          break;
-        case "syncing":
-          updateSyncStatusDot("syncing");
-          break;
-        case "out-of-sync":
-          updateSyncStatusDot("out-of-sync");
-          break;
-        case "error":
-          updateSyncStatusDot("error");
-          break;
-        default:
-          updateSyncStatusDot("hidden");
-      }
-    }, 100);
-  }
+
   const styleSheet = document.createElement("style");
   styleSheet.textContent = `
     .modal-overlay {
@@ -4265,15 +4121,14 @@ if (window.typingMindCloudSync) {
       bottom: 0;
       background-color: rgba(0, 0, 0, 0.6);
       backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
       z-index: 99999;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 1rem;
       overflow-y: auto;
-      animation: fadeIn 0.2s ease-out;
     }
+    
     #sync-status-dot {
       position: absolute;
       top: -0.15rem;
@@ -4282,3336 +4137,113 @@ if (window.typingMindCloudSync) {
       height: 0.625rem;
       border-radius: 9999px;
     }
+    
     .cloud-sync-modal {
-      display: inline-block;
       width: 100%;
-      background-color: rgb(9, 9, 11);
+      max-width: 32rem;
+      background-color: rgb(39, 39, 42);
+      color: white;
       border-radius: 0.5rem;
       padding: 1rem;
-      text-align: left;
-      box-shadow: 0 0 15px rgba(255, 255, 255, 0.1), 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-      transform: translateY(0);
-      transition: all 0.3s ease-in-out;
-      max-width: 32rem;
-      overflow: hidden;
-      animation: slideIn 0.3s ease-out;
-      position: relative;
-      z-index: 100000;
       border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
     }
-    [class*="hint--"] {
-      position: relative;
-      display: inline-block;
-    }
-    [class*="hint--"]::before,
-    [class*="hint--"]::after {
-      position: absolute;
-      transform: translate3d(0, 0, 0);
-      visibility: hidden;
-      opacity: 0;
-      z-index: 100000;
-      pointer-events: none;
-      transition: 0.3s ease;
-      transition-delay: 0ms;
-    }
-    [class*="hint--"]::before {
-      content: '';
-      position: absolute;
-      background: transparent;
-      border: 6px solid transparent;
-      z-index: 100000;
-    }
-    [class*="hint--"]::after {
-      content: attr(aria-label);
-      background: #383838;
-      color: white;
-      padding: 8px 10px;
-      font-size: 12px;
-      line-height: 16px;
-      white-space: pre-wrap;
-      box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.3);
-      max-width: 400px !important;
-      min-width: 200px !important;
-      width: auto !important;
-      border-radius: 4px;
-    }
-    .hint--top::after,
-    .hint--top-right::after,
-    .hint--top-left::after,
-    .hint--bottom::after,
-    .hint--bottom-right::after,
-    .hint--bottom-left::after {
-      max-width: 400px !important;
-      min-width: 200px !important;
-      width: auto !important;
-    }
-    [class*="hint--"]:hover::before,
-    [class*="hint--"]:hover::after {
-      visibility: visible;
-      opacity: 1;
-    }
-    .hint--top::before {
-      border-top-color: #383838;
-      margin-bottom: -12px;
-    }
-    .hint--top::after {
-      margin-bottom: -6px;
-    }
-    .hint--top::before,
-    .hint--top::after {
-      bottom: 100%;
-      left: 50%;
-      transform: translateX(-50%);
-    }
-    .hint--top-right::before {
-      border-top-color: #383838;
-      margin-bottom: -12px;
-    }
-    .hint--top-right::after {
-      margin-bottom: -6px;
-    }
-    .hint--top-right::before,
-    .hint--top-right::after {
-      bottom: 100%;
-      left: 0;
-    }
-    .hint--top-left::before {
-      border-top-color: #383838;
-      margin-bottom: -12px;
-    }
-    .hint--top-left::after {
-      margin-bottom: -6px;
-    }
-    .hint--top-left::before,
-    .hint--top-left::after {
-      bottom: 100%;
-      right: 0;
-    }
-    .hint--bottom::before {
-      border-bottom-color: #383838;
-      margin-top: -12px;
-    }
-    .hint--bottom::after {
-      margin-top: -6px;
-    }
-    .hint--bottom::before,
-    .hint--bottom::after {
-      top: 100%;
-      left: 50%;
-      transform: translateX(-50%);
-    }
-    .hint--bottom-right::before {
-      border-bottom-color: #383838;
-      margin-top: -12px;
-    }
-    .hint--bottom-right::after {
-      margin-top: -6px;
-    }
-    .hint--bottom-right::before,
-    .hint--bottom-right::after {
-      top: 100%;
-      left: 0;
-    }
-    .hint--bottom-left::before {
-      border-bottom-color: #383838;
-      margin-top: -12px;
-    }
-    .hint--bottom-left::after {
-      margin-top: -6px;
-    }
-    .hint--bottom-left::before,
-    .hint--bottom-left::after {
-      top: 100%;
-      right: 0;
-    }
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-    @keyframes slideIn {
-      from { 
-        opacity: 0;
-        transform: translateY(-20px);
-      }
-      to { 
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-    .modal-header {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      margin-bottom: 0.75rem;
-    }
-    .modal-title {
-      font-size: 1.25rem;
-      font-weight: bold;
-      text-align: center;
+    
+    .cloud-sync-modal input,
+    .cloud-sync-modal select {
+      background-color: rgb(63, 63, 70);
+      border: 1px solid rgb(82, 82, 91);
       color: white;
     }
-    .modal-section {
-      margin-top: 1rem;
-      background-color: rgb(39, 39, 42);
-      padding: 0.75rem;
-      border-radius: 0.5rem;
-      border: 1px solid rgb(63, 63, 70);
-    }
-    .modal-section-title {
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: rgb(161, 161, 170);
-      margin-bottom: 0.25rem;
-    }
-    .form-group {
-      margin-bottom: 0.75rem;
-    }
-    .form-group label {
-      display: block;
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: rgb(161, 161, 170);
-      margin-bottom: 0.25rem;
-    }
-    .form-group input,
-    .form-group select {
-      width: 100%;
-      padding: 0.375rem 0.5rem;
-      border: 1px solid rgb(63, 63, 70);
-      border-radius: 0.375rem;
-      background-color: rgb(39, 39, 42);
-      color: white;
-      font-size: 0.875rem;
-      line-height: 1.25rem;
-      outline: none;
-    }
-    .form-group input:focus,
-    .form-group select:focus {
+    
+    .cloud-sync-modal input:focus,
+    .cloud-sync-modal select:focus {
       border-color: rgb(59, 130, 246);
+      outline: none;
       box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
     }
-    .button-group {
-      display: flex;
-      justify-content: space-between;
-      gap: 0.5rem;
-      margin-top: 1rem;
-    }
-    .button {
-      display: inline-flex;
-      align-items: center;
-      padding: 0.375rem 0.75rem;
-      border: none;
-      border-radius: 0.375rem;
-      font-size: 0.875rem;
-      font-weight: 500;
-      line-height: 1.25rem;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .button-primary {
-      background-color: rgb(37, 99, 235);
-      color: white;
-    }
-    .button-primary:hover {
-      background-color: rgb(29, 78, 216);
-    }
-    .button-secondary {
-      background-color: rgb(82, 82, 91);
-      color: white;
-    }
-    .button-secondary:hover {
-      background-color: rgb(63, 63, 70);
-    }
-    .button:disabled {
+    
+    .cloud-sync-modal button:disabled {
       background-color: rgb(82, 82, 91);
       cursor: not-allowed;
       opacity: 0.5;
     }
-    .status-indicator {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      margin-bottom: 1rem;
-      padding: 0.75rem;
-      background-color: rgb(39, 39, 42);
-      border-radius: 0.5rem;
-      border: 1px solid rgb(63, 63, 70);
+    
+    .cloud-sync-modal .bg-zinc-800 {
+      border: 1px solid rgb(82, 82, 91);
     }
-    .backup-list {
-      max-height: 300px;
-      overflow-y: auto;
-      margin-top: 0.5rem;
-      border: 1px solid rgb(63, 63, 70);
-      border-radius: 0.375rem;
-      background-color: rgb(24, 24, 27);
+    
+    .cloud-sync-modal input[type="checkbox"] {
+      accent-color: rgb(59, 130, 246);
     }
-    .backup-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 0.75rem;
-      border-bottom: 1px solid rgb(63, 63, 70);
-      transition: background-color 0.2s;
-    }
-    .backup-item:hover {
-      background-color: rgb(39, 39, 42);
-    }
-    .backup-item:last-child {
-      border-bottom: none;
-    }
-    .backup-info {
-      flex: 1;
-      min-width: 0;
-    }
-    .backup-name {
-      font-weight: 500;
-      color: rgb(244, 244, 245);
-      margin-bottom: 0.25rem;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .backup-type {
-      display: inline-block;
-      padding: 0.125rem 0.375rem;
-      margin-right: 0.5rem;
-      border-radius: 0.25rem;
-      font-size: 0.75rem;
-      font-weight: 600;
+    
+    .cloud-sync-modal input[type="checkbox"]:checked {
       background-color: rgb(59, 130, 246);
-      color: white;
-    }
-    .backup-item.snapshot .backup-type {
-      background-color: rgb(16, 185, 129);
-    }
-    .backup-item.daily .backup-type {
-      background-color: rgb(245, 158, 11);
-    }
-    .backup-item.time .backup-type {
-      background-color: rgb(99, 102, 241);
-    }
-    .backup-date {
-      font-size: 0.875rem;
-      color: rgb(161, 161, 170);
-    }
-    .backup-actions {
-      display: flex;
-      gap: 0.5rem;
-      margin-left: 1rem;
-    }
-    .backup-action {
-      padding: 0.25rem 0.5rem;
-      border: none;
-      border-radius: 0.25rem;
-      font-size: 0.75rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s;
-      color: white;
-      min-width: 4rem;
-      text-align: center;
-    }
-    .restore-btn {
-      background-color: rgb(16, 185, 129);
-    }
-    .restore-btn:hover:not(:disabled) {
-      background-color: rgb(5, 150, 105);
-    }
-    .download-btn {
-      background-color: rgb(59, 130, 246);
-    }
-    .download-btn:hover:not(:disabled) {
-      background-color: rgb(37, 99, 235);
-    }
-    .delete-btn {
-      background-color: rgb(239, 68, 68);
-    }
-    .delete-btn:hover:not(:disabled) {
-      background-color: rgb(220, 38, 38);
-    }
-    .backup-action:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      background-color: rgb(82, 82, 91);
+      border-color: rgb(59, 130, 246);
     }
   `;
   document.head.appendChild(styleSheet);
-  function openSyncModal() {
-    if (document.querySelector(".cloud-sync-modal")) {
-      logToConsole("skip", "Modal already open - skipping");
-      return;
-    }
-    logToConsole("start", "Opening sync modal...");
-    const overlay = document.createElement("div");
-    overlay.className = "modal-overlay";
-    const modal = document.createElement("div");
-    modal.className = "cloud-sync-modal";
-    modal.innerHTML = `
-    <div class="text-gray-800 dark:text-white text-left text-sm">
-      <div class="flex justify-center items-center mb-3">
-        <h3 class="text-center text-xl font-bold">S3 Backup & Sync Settings</h3>
-        <button class="ml-2 text-blue-600 text-lg hint--bottom-left hint--rounded hint--large" 
-          aria-label="Fill form & Save. If you are using Amazon S3 - fill in S3 Bucket Name, AWS Region, AWS Access Key, AWS Secret Key and Encryption key.&#10;&#10;Initial backup: You will need to click on Export to create your first backup in S3. Thereafter, automatic backups are done to S3 as per Backup Interval if the browser tab is active.&#10;&#10;Restore backup: If S3 already has an existing backup, this extension will automatically pick it and restore the local data.&#10;&#10;&#10;&#10;Snapshot: Creates an instant no-touch backup that will not be overwritten.&#10;&#10;Download: You can select the backup data to be download and click on Download button to download it for local storage.&#10;&#10;Restore: Select the backup you want to restore and Click on Restore. The typingmind data will be restored to the selected backup data/date.">ⓘ</button>
-      </div>
-      <div class="space-y-3">
-        <div class="mt-4 bg-gray-100 dark:bg-zinc-800 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600">
-          <div class="flex items-center justify-between mb-1">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-400">Available Backups</label>
-          </div>
-          <div class="space-y-2">
-            <div class="w-full">
-              <select id="backup-files" class="w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700">
-                <option value="">Please configure AWS credentials first</option>
-              </select>
-            </div>
-            <div class="flex justify-end space-x-2">
-              <button id="download-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
-                Download
-              </button>
-              <button id="restore-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
-                Restore
-              </button>
-              <button id="delete-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-        <div class="mt-4 bg-gray-100 dark:bg-zinc-800 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600">
-          <div class="space-y-2">
-            <div class="flex items-center space-x-4 mb-4">
-              <label class="inline-flex items-center">
-                <input type="radio" name="sync-mode" value="sync" class="form-radio text-blue-600" ${
-                  config.syncMode === "sync" ? "checked" : ""
-                }>
-                <span class="ml-2">Sync</span>
-                <button class="ml-1 text-blue-600 text-lg hint--top-right hint--rounded hint--medium" aria-label="Automatically syncs data between devices. When enabled, data will be imported from cloud on app start.">ⓘ</button>
-              </label>
-              <label class="inline-flex items-center">
-                <input type="radio" name="sync-mode" value="backup" class="form-radio text-blue-600" ${
-                  config.syncMode === "backup" ? "checked" : ""
-                }>
-                <span class="ml-2">Backup</span>
-                <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="Only creates backups. No automatic import from cloud on app start.">ⓘ</button>
-              </label>
-              <label class="inline-flex items-center">
-                <input type="radio" name="sync-mode" value="disabled" class="form-radio text-blue-600" ${
-                  config.syncMode === "disabled" ? "checked" : ""
-                }>
-                <span class="ml-2">Disabled</span>
-                <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="No automatic operations. Manual sync and snapshot operations still work.">ⓘ</button>
-              </label>
-            </div>
-            <div class="flex space-x-4">
-              <div class="w-2/3">
-                <label for="aws-bucket" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Bucket Name <span class="text-red-500">*</span></label>
-                <input id="aws-bucket" name="aws-bucket" type="text" value="${
-                  config.bucketName || ""
-                }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
-              </div>
-              <div class="w-1/3">
-                <label for="aws-region" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Region <span class="text-red-500">*</span></label>
-                <input id="aws-region" name="aws-region" type="text" value="${
-                  config.region || ""
-                }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
-              </div>
-            </div>
-            <div>
-              <label for="aws-access-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Access Key <span class="text-red-500">*</span></label>
-              <input id="aws-access-key" name="aws-access-key" type="password" value="${
-                config.accessKey || ""
-              }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
-            </div>
-            <div>
-              <label for="aws-secret-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Secret Key <span class="text-red-500">*</span></label>
-              <input id="aws-secret-key" name="aws-secret-key" type="password" value="${
-                config.secretKey || ""
-              }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
-            </div>
-            <div>
-              <label for="aws-endpoint" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
-                S3 Compatible Storage Endpoint
-                <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="For Amazon AWS, leave this blank. For S3 compatible cloud services like Cloudflare, iDrive and the likes, populate this.">ⓘ</button>
-              </label>
-              <input id="aws-endpoint" name="aws-endpoint" type="text" value="${
-                config.endpoint || ""
-              }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off">
-            </div>
-            <div class="flex space-x-4">
-              <div class="w-1/2">
-                <label for="sync-interval" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Sync Interval
-                <button class="ml-1 text-blue-600 text-lg hint--top-right hint--rounded hint--medium" aria-label="How often do you want to sync your data to cloud? Minimum 15 seconds">ⓘ</button></label>
-                <input id="sync-interval" name="sync-interval" type="number" min="15" value="${
-                  config.syncInterval
-                }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
-              </div>
-              <div class="w-1/2">
-                <label for="encryption-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
-                  Encryption Key <span class="text-red-500">*</span>
-                  <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="Choose a secure 8+ character string. This is to encrypt the backup file before uploading to cloud. Securely store this somewhere as you will need this to restore backup from cloud.">ⓘ</button>
-                </label>
-                <input id="encryption-key" name="encryption-key" type="password" value="${
-                  config.encryptionKey || ""
-                }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
-              </div>
-            </div>
-            <div>
-              <label for="sync-exclusions" class="block text-sm font-medium text-gray-700 dark:text-gray-400">
-                Exclusions (Comma separated)
-                <button class="ml-1 text-blue-600 text-lg hint--top hint--rounded hint--medium" aria-label="Additional settings to exclude from sync. Enter comma-separated setting names that you want to prevent from syncing between devices.">ⓘ</button>
-              </label>
-              <input id="sync-exclusions" name="sync-exclusions" type="text" value="${
-                localStorage.getItem("sync-exclusions") || ""
-              }" class="z-1 w-full px-2 py-1.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" placeholder="e.g., my-setting, another-setting" autocomplete="off">
-            </div>
-          </div>
-        </div>
-        <div class="flex items-center justify-end mb-4 space-x-2">
-          <span class="text-sm text-gray-600 dark:text-gray-400">
-            Console Logging
-            <button class="ml-1 text-blue-600 text-lg hint--top-left hint--rounded hint--medium" aria-label="Use this to enable detailed logging in Browser console for troubleshooting purpose. Clicking on this button will instantly start logging. However, earlier events will not be logged. You could add ?log=true to the page URL and reload the page to start logging from the beginning of the page load.">ⓘ</button>
-          </span>
-          <input type="checkbox" id="console-logging-toggle" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer">
-        </div>
-        <div class="flex justify-between space-x-2 mt-4">
-          <button id="save-settings" class="z-1 inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors">
-            Save
-          </button>
-          <div class="flex space-x-2">
-            <button id="sync-now" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-default transition-colors">
-              ${config.syncMode === "sync" ? "Sync Now" : "Backup Now"}
-            </button>
-            <button id="create-snapshot" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors">
-              Snapshot
-            </button>
-            <button id="close-modal" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
-              Close
-            </button>
-          </div>
-        </div>
-        <div class="text-center mt-4">
-          <span id="last-sync-msg"></span>
-        </div>
-        <div id="action-msg" class="text-center"></div>
-      </div>
-    </div>
-  `;
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
-    modal.querySelector("#close-modal").addEventListener("click", closeModal);
-    overlay.addEventListener("click", closeModal);
-    modal
-      .querySelector("#save-settings")
-      .addEventListener("click", saveSettings);
-    modal.querySelector("#sync-now").addEventListener("click", () => {
-      const syncNowButton = modal.querySelector("#sync-now");
-      const originalText = syncNowButton.textContent;
-      syncNowButton.disabled = true;
-      syncNowButton.textContent = "Done!";
-      if (config.syncMode === "sync") {
-        queueOperation("manual-sync", syncFromCloud);
-      } else {
-        queueOperation("manual-backup", syncToCloud);
-      }
-      updateSyncStatus();
-      setTimeout(() => {
-        syncNowButton.textContent = originalText;
-        syncNowButton.disabled = false;
-      }, 2000);
-    });
-    modal
-      .querySelector("#create-snapshot")
-      .addEventListener("click", async () => {
-        const snapshotButton = modal.querySelector("#create-snapshot");
-        const name = prompt("Enter snapshot name:");
-        if (name) {
-          snapshotButton.disabled = true;
-          const originalText = snapshotButton.textContent;
-          snapshotButton.textContent = "Working...";
-          try {
-            const success = await createSnapshot(name);
-            if (success) {
-              snapshotButton.textContent = "Completed!";
-              setTimeout(() => {
-                snapshotButton.textContent = originalText;
-              }, 2000);
-            } else {
-              snapshotButton.textContent = "Failed";
-              setTimeout(() => {
-                snapshotButton.textContent = originalText;
-              }, 2000);
-            }
-          } catch (error) {
-            logToConsole("error", "Snapshot button error:", error);
-            snapshotButton.textContent = "Failed";
-            setTimeout(() => {
-              snapshotButton.textContent = originalText;
-            }, 2000);
-          } finally {
-            setTimeout(() => {
-              snapshotButton.disabled = false;
-            }, 2000);
-            updateSyncStatus();
-          }
-        }
-      });
-    const syncModeRadios = modal.querySelectorAll('input[name="sync-mode"]');
-    syncModeRadios.forEach((radio) => {
-      radio.addEventListener("change", function () {
-        const syncNowBtn = modal.querySelector("#sync-now");
-        if (syncNowBtn) {
-          syncNowBtn.textContent =
-            this.value === "sync" ? "Sync Now" : "Backup Now";
-        }
-        const cloudSyncBtn = document.querySelector(
-          '[data-element-id="cloud-sync-button"]'
-        );
-        if (cloudSyncBtn) {
-          const buttonText = cloudSyncBtn.querySelector("span:last-child");
-          if (buttonText) {
-            buttonText.innerText =
-              this.value === "disabled"
-                ? "Cloud"
-                : this.value === "sync"
-                ? "Sync"
-                : "Backup";
-          }
-        }
-      });
-    });
-    const consoleLoggingCheckbox = modal.querySelector(
-      "#console-logging-toggle"
-    );
-    consoleLoggingCheckbox.checked = isConsoleLoggingEnabled;
-    consoleLoggingCheckbox.addEventListener("change", (e) => {
-      isConsoleLoggingEnabled = e.target.checked;
-      updateUrlLoggingParameter(isConsoleLoggingEnabled);
-    });
-    modal.addEventListener("click", (e) => e.stopPropagation());
-    loadBackupList();
-    updateSyncStatus();
-  }
-  function closeModal() {
-    const modal = document.querySelector(".cloud-sync-modal");
-    const overlay = document.querySelector(".modal-overlay");
-    if (modal) modal.remove();
-    if (overlay) overlay.remove();
-    setTimeout(() => {
-      checkSyncStatus().then((status) => {
-        logToConsole("debug", `Updating sync dot after modal close: ${status}`);
-        updateSyncStatusDot(status);
-      });
-    }, 100);
-  }
-  async function saveSettings() {
-    const newConfig = {
-      bucketName: document.getElementById("aws-bucket").value,
-      region: document.getElementById("aws-region").value,
-      accessKey: document.getElementById("aws-access-key").value,
-      secretKey: document.getElementById("aws-secret-key").value,
-      endpoint: document.getElementById("aws-endpoint").value,
-      syncMode: document.querySelector('input[name="sync-mode"]:checked').value,
-      syncInterval: parseInt(document.getElementById("sync-interval").value),
-      encryptionKey: document.getElementById("encryption-key").value,
-    };
-    const exclusions = document.getElementById("sync-exclusions").value;
-    localStorage.setItem("sync-exclusions", exclusions);
-    if (exclusions.trim()) {
-      const exclusionList = exclusions
-        .split(",")
-        .map((item) => item.trim())
-        .filter((item) => item);
-      logToConsole("info", "Sync exclusions updated", {
-        exclusions: exclusionList,
-      });
-    } else {
-      logToConsole("info", "Sync exclusions cleared");
-    }
-    if (
-      !newConfig.bucketName ||
-      !newConfig.region ||
-      !newConfig.accessKey ||
-      !newConfig.secretKey
-    ) {
-      alert("Please fill in all required AWS settings");
-      return;
-    }
-    if (newConfig.syncInterval < 15) {
-      alert("Sync interval must be at least 15 seconds");
-      return;
-    }
-    const oldMode = config.syncMode;
-    config = { ...config, ...newConfig };
-    saveConfiguration();
-    if (oldMode === "disabled" && newConfig.syncMode !== "disabled") {
-      operationState = {
-        isImporting: false,
-        isExporting: false,
-        isPendingSync: false,
-        operationQueue: [],
-        isProcessingQueue: false,
-        lastSyncStatus: null,
-        isCheckingChanges: false,
-        lastError: null,
-        operationStartTime: null,
-        queueProcessingPromise: null,
-        completedOperations: new Set(),
-        operationTimeouts: new Map(),
-      };
-      backupState = {
-        isBackupInProgress: false,
-        lastDailyBackup: null,
-        lastManualSnapshot: null,
-        backupInterval: null,
-        isBackupIntervalRunning: false,
-      };
-      cloudFileSize = 0;
-      localFileSize = 0;
-      isLocalDataModified = false;
-      clearAllIntervals();
-      logToConsole(
-        "info",
-        "State reset completed, proceeding with initialization"
-      );
-    }
-    const buttonText = document.querySelector(
-      "#cloud-sync-button span:last-child"
-    );
-    if (buttonText) {
-      buttonText.innerText =
-        config.syncMode === "disabled"
-          ? "Cloud"
-          : config.syncMode === "sync"
-          ? "Sync"
-          : "Backup";
-    }
-    updateSyncStatus();
-    if (oldMode === "disabled" && newConfig.syncMode !== "disabled") {
+
+  const app = new CloudSyncApp();
+  app.initialize();
+  window.cloudSyncApp = app;
+
+  const cleanupHandler = () => {
+    if (app && app.cleanup) {
       try {
-        await performFullInitialization();
-        logToConsole(
-          "success",
-          "Full initialization completed after mode switch"
-        );
-        if (isAwsConfigured()) {
-          operationState.operationQueue = [];
-          operationState.isProcessingQueue = false;
-          try {
-            const cloudMetadata = await downloadCloudMetadata();
-            const cloudLastSync = cloudMetadata?.lastSyncTime || 0;
-            const localLastSync = localMetadata?.lastSyncTime || 0;
-            const cloudChatCount = Object.keys(
-              cloudMetadata?.chats || {}
-            ).length;
-            const localChatCount = Object.keys(
-              localMetadata?.chats || {}
-            ).length;
-            logToConsole("info", "Comparing metadata for sync direction", {
-              cloudLastSync: new Date(cloudLastSync).toLocaleString(),
-              localLastSync: new Date(localLastSync).toLocaleString(),
-              cloudChats: cloudChatCount,
-              localChats: localChatCount,
-            });
-            if (cloudLastSync > localLastSync && cloudChatCount > 0) {
-              logToConsole(
-                "info",
-                "Cloud has newer data and chats, syncing from cloud"
-              );
-              queueOperation("force-initial-sync", async () => {
-                logToConsole("start", "Performing forced sync from cloud");
-                await syncFromCloud();
-              });
-            } else if (localChatCount > 0) {
-              logToConsole("info", "Local data exists, syncing to cloud");
-              queueOperation("force-initial-sync", async () => {
-                logToConsole("start", "Performing forced sync to cloud");
-                await syncToCloud();
-              });
-            }
-          } catch (error) {
-            logToConsole("error", "Error determining sync direction:", error);
-            queueOperation("force-initial-sync", async () => {
-              logToConsole(
-                "start",
-                "Defaulting to sync from cloud after error"
-              );
-              await syncFromCloud();
-            });
-          }
-        }
+        app.cleanup();
       } catch (error) {
-        logToConsole(
-          "error",
-          "Error during initialization after mode switch:",
-          error
-        );
-        alert(
-          "Error initializing cloud operations. Please check the console for details."
-        );
-      }
-    } else if (isAwsConfigured()) {
-      startSyncInterval();
-      if (config.syncMode === "sync" && oldMode === "backup") {
-        try {
-          const cloudMetadata = await downloadCloudMetadata();
-          const cloudLastSync = cloudMetadata?.lastSyncTime || 0;
-          const localLastSync = localMetadata?.lastSyncTime || 0;
-          const cloudChatCount = Object.keys(cloudMetadata?.chats || {}).length;
-          const localChatCount = Object.keys(localMetadata?.chats || {}).length;
-          logToConsole("info", "Comparing metadata for backup to sync switch", {
-            cloudLastSync: new Date(cloudLastSync).toLocaleString(),
-            localLastSync: new Date(localLastSync).toLocaleString(),
-            cloudChats: cloudChatCount,
-            localChats: localChatCount,
-          });
-          if (cloudChatCount === 0 && localChatCount > 0) {
-            logToConsole("info", "Cloud is empty, syncing local data to cloud");
-            queueOperation("mode-switch-sync", async () => {
-              logToConsole(
-                "start",
-                "Performing sync to cloud after mode switch"
-              );
-              await syncToCloud();
-            });
-          } else if (cloudLastSync > localLastSync) {
-            logToConsole("info", "Cloud has newer data, syncing from cloud");
-            queueOperation("mode-switch-sync", async () => {
-              logToConsole(
-                "start",
-                "Performing sync from cloud after mode switch"
-              );
-              await syncFromCloud();
-            });
-          } else if (localLastSync > cloudLastSync) {
-            logToConsole("info", "Local has newer data, syncing to cloud");
-            queueOperation("mode-switch-sync", async () => {
-              logToConsole(
-                "start",
-                "Performing sync to cloud after mode switch"
-              );
-              await syncToCloud();
-            });
-          } else {
-            if (cloudChatCount > localChatCount) {
-              logToConsole("info", "Cloud has more chats, syncing from cloud");
-              queueOperation("mode-switch-sync", async () => {
-                logToConsole(
-                  "start",
-                  "Performing sync from cloud after mode switch"
-                );
-                await syncFromCloud();
-              });
-            } else {
-              logToConsole(
-                "info",
-                "Local has equal or more chats, syncing to cloud"
-              );
-              queueOperation("mode-switch-sync", async () => {
-                logToConsole(
-                  "start",
-                  "Performing sync to cloud after mode switch"
-                );
-                await syncToCloud();
-              });
-            }
-          }
-        } catch (error) {
-          logToConsole(
-            "error",
-            "Error determining sync direction for mode switch:",
-            error
-          );
-          queueOperation("mode-switch-sync", async () => {
-            logToConsole(
-              "start",
-              "Defaulting to sync from cloud after error in mode switch"
-            );
-            await syncFromCloud();
-          });
-        }
+        console.warn("Cleanup error:", error);
       }
     }
-    closeModal();
-    logToConsole("success", "Settings saved");
-    insertSyncButton();
-    throttledCheckSyncStatus();
-  }
-  function getLastSyncTime() {
-    if (!localMetadata.lastSyncTime) {
-      return "Never";
+  };
+
+  window.addEventListener("beforeunload", cleanupHandler);
+  window.addEventListener("unload", cleanupHandler);
+  window.addEventListener("pagehide", cleanupHandler);
+
+  window.createTombstone = (itemId, type, source = "manual") => {
+    if (app && app.dataService) {
+      return app.dataService.createTombstone(itemId, type, source);
     }
-    const lastSync = new Date(localMetadata.lastSyncTime);
-    const now = new Date();
-    const diff = now - lastSync;
-    if (diff < 60000) {
-      return "Just now";
-    } else if (diff < 3600000) {
-      const minutes = Math.floor(diff / 60000);
-      return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
-    } else if (diff < 86400000) {
-      const hours = Math.floor(diff / 3600000);
-      return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+    return null;
+  };
+
+  window.getTombstones = () => {
+    if (app && app.dataService) {
+      return Array.from(app.dataService.getAllTombstones().entries());
     }
-    return lastSync.toLocaleString(undefined, {
-      year: "numeric",
-      month: "numeric",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    });
-  }
-  async function loadBackupList() {
-    try {
-      const backupList = document.getElementById("backup-files");
-      if (!backupList) return;
-      backupList.innerHTML = '<option value="">Loading backups...</option>';
-      backupList.disabled = true;
-      const bucketName = localStorage.getItem("aws-bucket");
-      const awsAccessKey = localStorage.getItem("aws-access-key");
-      const awsSecretKey = localStorage.getItem("aws-secret-key");
-      if (!bucketName || !awsAccessKey || !awsSecretKey) {
-        backupList.innerHTML =
-          '<option value="">Please configure AWS credentials first</option>';
-        backupList.disabled = false;
-        return;
-      }
-      const backups = await listS3Objects();
-      backupList.innerHTML = "";
-      backupList.disabled = false;
-      const filteredBackups = backups.filter(
-        (backup) => !backup.Key.startsWith("chats/") && backup.Key !== "chats/"
-      );
-      if (filteredBackups.length === 0) {
-        const option = document.createElement("option");
-        option.value = "";
-        option.text = "No backups found";
-        backupList.appendChild(option);
-      } else {
-        const sortedBackups = filteredBackups.sort((a, b) => {
-          const timestampA =
-            a.metadata?.timestamp || a.LastModified?.getTime() || 0;
-          const timestampB =
-            b.metadata?.timestamp || b.LastModified?.getTime() || 0;
-          return timestampB - timestampA;
-        });
-        sortedBackups.forEach((backup) => {
-          const option = document.createElement("option");
-          option.value = backup.Key;
-          const size = formatFileSize(backup.Size || 0);
-          option.text = `${backup.Key} - ${size}`;
-          backupList.appendChild(option);
-        });
-      }
-      updateButtonStates();
-      backupList.addEventListener("change", updateButtonStates);
-      function updateButtonStates() {
-        const selectedValue = backupList.value || "";
-        const downloadButton = document.getElementById("download-backup-btn");
-        const restoreButton = document.getElementById("restore-backup-btn");
-        const deleteButton = document.getElementById("delete-backup-btn");
-        const isSnapshot = selectedValue.startsWith("s-");
-        const isDailyBackup = selectedValue.startsWith("typingmind-backup-");
-        const isChatsFolder = selectedValue === "chats/";
-        const isSettingsFile = selectedValue === "settings.json";
-        const isMetadataFile = selectedValue === "metadata.json";
-        if (downloadButton) {
-          downloadButton.disabled = !selectedValue;
-        }
-        if (restoreButton) {
-          restoreButton.disabled =
-            !selectedValue ||
-            (!isSnapshot && !isDailyBackup && !isSettingsFile);
-        }
-        if (deleteButton) {
-          const isProtectedFile =
-            !selectedValue || isChatsFolder || isSettingsFile || isMetadataFile;
-          deleteButton.disabled = isProtectedFile;
-        }
-      }
-      setupButtonHandlers(backupList);
-    } catch (error) {
-      logToConsole("error", "Failed to load backup list:", error);
-      if (backupList) {
-        backupList.innerHTML =
-          '<option value="">Error loading backups</option>';
-        backupList.disabled = false;
-      }
-    }
-  }
-  function setupButtonHandlers(backupList) {
-    const downloadButton = document.getElementById("download-backup-btn");
-    if (downloadButton) {
-      const newDownloadButton = downloadButton.cloneNode(true);
-      downloadButton.parentNode.replaceChild(newDownloadButton, downloadButton);
-      newDownloadButton.onclick = async () => {
-        const key = backupList.value;
-        if (!key) {
-          alert("Please select a backup to download");
-          return;
-        }
-        try {
-          const backup = await downloadFromS3(key);
-          if (key.endsWith(".zip")) {
-            handleZipDownload(backup, key);
-          } else {
-            handleRegularFileDownload(backup, key);
-          }
-        } catch (error) {
-          logToConsole("error", "Failed to download backup:", error);
-          alert("Failed to download backup: " + error.message);
-        }
+    return [];
+  };
+
+  window.getMemoryStats = () => {
+    if (app) {
+      return {
+        knownItems: app.dataService?.knownItems?.size || 0,
+        operationQueue: app.operationQueue?.size() || 0,
+        eventListeners: app.eventListeners?.length || 0,
+        modalCallbacks: app.modalCleanupCallbacks?.length || 0,
       };
     }
-    const restoreButton = document.getElementById("restore-backup-btn");
-    if (restoreButton) {
-      const newRestoreButton = restoreButton.cloneNode(true);
-      restoreButton.parentNode.replaceChild(newRestoreButton, restoreButton);
-      newRestoreButton.onclick = async () => {
-        const key = backupList.value;
-        if (!key) {
-          alert("Please select a backup to restore");
-          return;
-        }
-        if (key === "settings.json") {
-          if (
-            confirm(
-              "Are you sure you want to restore settings from cloud? This will overwrite your current settings with the backup version."
-            )
-          ) {
-            try {
-              const backup = await downloadFromS3(key);
-              if (!backup || !backup.data) {
-                throw new Error("Settings backup not found or empty");
-              }
-              const decryptedContent = await decryptData(backup.data);
-              const settingsData = JSON.parse(decryptedContent);
-              const cloudMetadata = await downloadCloudMetadata();
-              const preserveKeys = [
-                "aws-bucket",
-                "aws-access-key",
-                "aws-secret-key",
-                "aws-region",
-                "aws-endpoint",
-                "encryption-key",
-                "chat-sync-metadata",
-              ];
-              let settingsRestored = 0;
-              for (const [key, settingData] of Object.entries(settingsData)) {
-                if (!preserveKeys.includes(key)) {
-                  try {
-                    const value = settingData.data;
-                    const source = settingData.source || "localStorage";
-                    if (source === "indexeddb") {
-                      let valueToStore = value;
-                      if (
-                        typeof valueToStore === "string" &&
-                        (valueToStore.startsWith("{") ||
-                          valueToStore.startsWith("["))
-                      ) {
-                        try {
-                          valueToStore = JSON.parse(valueToStore);
-                        } catch (parseError) {
-                          logToConsole(
-                            "warning",
-                            `Failed to parse ${key} as JSON, using as-is`,
-                            parseError
-                          );
-                        }
-                      }
-                      await setIndexedDBKey(key, valueToStore);
-                      logToConsole(
-                        "info",
-                        `Restored setting to IndexedDB: ${key}`
-                      );
-                    } else {
-                      localStorage.setItem(key, value);
-                      logToConsole(
-                        "info",
-                        `Restored setting to localStorage: ${key}`
-                      );
-                    }
-                    settingsRestored++;
-                  } catch (error) {
-                    logToConsole(
-                      "error",
-                      `Error restoring setting ${key}:`,
-                      error
-                    );
-                  }
-                }
-              }
-              if (cloudMetadata.settings) {
-                localMetadata.settings.lastModified =
-                  cloudMetadata.settings.lastModified;
-                localMetadata.settings.syncedAt =
-                  cloudMetadata.settings.syncedAt;
-                await saveLocalMetadata();
-              }
-              logToConsole("success", "Settings restore completed", {
-                totalRestored: settingsRestored,
-                timestamp: new Date().toISOString(),
-              });
-              alert(
-                `Settings restored successfully! (${settingsRestored} settings restored)`
-              );
-            } catch (error) {
-              logToConsole("error", "Failed to restore settings:", error);
-              alert("Failed to restore settings: " + error.message);
-            }
-            return;
-          }
-          return;
-        }
-        if (
-          confirm(
-            "Are you sure you want to restore this backup? This will overwrite your current data."
-          )
-        ) {
-          try {
-            await restoreFromBackup(key);
-            alert("Backup restored successfully!");
-          } catch (error) {
-            logToConsole("error", "Failed to restore backup:", error);
-            alert("Failed to restore backup: " + error.message);
-          }
-        }
+    return {};
+  };
+
+  window.estimateBackupSize = async () => {
+    if (app && app.backupService) {
+      const size = await app.backupService.estimateDataSize();
+      const chunkLimit = app.backupService.chunkSizeLimit;
+      const willUseChunks = size > chunkLimit;
+      return {
+        estimatedSize: size,
+        formattedSize: app.backupService.formatFileSize(size),
+        chunkLimit: chunkLimit,
+        formattedChunkLimit: app.backupService.formatFileSize(chunkLimit),
+        willUseChunks: willUseChunks,
+        backupMethod: willUseChunks ? "chunked" : "simple",
+        compressionNote:
+          "Size shown is before ZIP compression (expect ~70% reduction)",
       };
     }
-    const deleteButton = document.getElementById("delete-backup-btn");
-    if (deleteButton) {
-      const newDeleteButton = deleteButton.cloneNode(true);
-      deleteButton.parentNode.replaceChild(newDeleteButton, deleteButton);
-      newDeleteButton.onclick = async () => {
-        const key = backupList.value;
-        if (!key) {
-          alert("Please select a backup to delete");
-          return;
-        }
-        if (
-          confirm(
-            "Are you sure you want to delete this backup? This cannot be undone."
-          )
-        ) {
-          try {
-            await deleteFromS3(key);
-            await loadBackupList();
-            alert("Backup deleted successfully!");
-          } catch (error) {
-            logToConsole("error", "Failed to delete backup:", error);
-            alert("Failed to delete backup: " + error.message);
-          }
-        }
-      };
-    }
-  }
-  async function handleZipDownload(backup, key) {
-    try {
-      const JSZip = await loadJSZip();
-      const zip = await JSZip.loadAsync(backup.data);
-      const jsonFile = Object.keys(zip.files).find((f) => f.endsWith(".json"));
-      if (!jsonFile) {
-        throw new Error("No JSON file found in backup");
-      }
-      const fileContent = await zip.file(jsonFile).async("uint8array");
-      const decryptedContent = await decryptData(fileContent);
-      const blob = new Blob([JSON.stringify(decryptedContent, null, 2)], {
-        type: "application/json",
-      });
-      downloadFile(key.replace(".zip", ".json"), blob);
-    } catch (error) {
-      logToConsole("error", "Failed to process zip content:", error);
-      throw error;
-    }
-  }
-  async function handleRegularFileDownload(backup, key) {
-    try {
-      const decryptedContent = await decryptData(backup.data);
-      if (key.endsWith(".json")) {
-        const blob = new Blob([JSON.stringify(decryptedContent, null, 2)], {
-          type: "application/json",
-        });
-        downloadFile(key, blob);
-      } else {
-        downloadFile(key, decryptedContent);
-      }
-    } catch (error) {
-      logToConsole("error", "Processing failed, downloading raw data:", error);
-      downloadFile(key, backup.data);
-    }
-  }
-  function formatFileSize(bytes) {
-    if (bytes === 0) return "0 B";
-    const k = 1024;
-    const sizes = ["B", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  }
-  function downloadFile(filename, data) {
-    logToConsole(
-      "info",
-      `Downloading file: ${filename}, data type: ${typeof data}`
-    );
-    let blob;
-    if (data instanceof Blob) {
-      blob = data;
-    } else if (typeof data === "string") {
-      blob = new Blob([data], { type: "text/plain" });
-    } else if (typeof data === "object") {
-      try {
-        const jsonString = JSON.stringify(data, null, 2);
-        blob = new Blob([jsonString], { type: "application/json" });
-      } catch (error) {
-        logToConsole("error", "Failed to stringify object:", error);
-        blob = new Blob([String(data)], { type: "text/plain" });
-      }
-    } else {
-      blob = new Blob([String(data)], { type: "text/plain" });
-    }
-    logToConsole("info", `Download blob size: ${formatFileSize(blob.size)}`);
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }
-  async function getIndexedDBValue(key) {
-    const db = await getPersistentDB();
-    return new Promise((resolve, reject) => {
-      try {
-        const transaction = db.transaction("keyval", "readonly");
-        const store = transaction.objectStore("keyval");
-        const request = store.get(key);
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-      } catch (error) {
-        persistentDB = null;
-        reject(error);
-      }
-    });
-  }
-  async function initializeSettingsMonitoring() {
-    if (!localMetadata.settings) {
-      localMetadata.settings = {
-        items: {},
-        lastModified: Date.now(),
-        syncedAt: 0,
-      };
-    }
-    if (!localMetadata.settings.items) {
-      localMetadata.settings.items = {};
-    }
-
-    const existingSettings = new Set();
-    let orphanedMetadataCount = 0;
-
-    // logToConsole("debug", "Settings monitoring initialization stats", {
-    //   totalMetadataEntries: Object.keys(localMetadata.settings.items).length,
-    //   deletedEntries: Object.values(localMetadata.settings.items).filter(
-    //     (entry) => entry.deleted
-    //   ).length,
-    //   activeEntries: Object.values(localMetadata.settings.items).filter(
-    //     (entry) => !entry.deleted
-    //   ).length,
-    // });
-
-    const db = await openIndexedDB();
-    const transaction = db.transaction("keyval", "readonly");
-    const store = transaction.objectStore("keyval");
-    const keys = await new Promise((resolve, reject) => {
-      const request = store.getAllKeys();
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-    });
-    for (const key of keys) {
-      if (!shouldExcludeSetting(key)) {
-        existingSettings.add(key);
-        const value = await getIndexedDBValue(key);
-        if (value !== undefined) {
-          const hash = await generateContentHash(value);
-          if (
-            !localMetadata.settings.items[key] ||
-            localMetadata.settings.items[key].hash !== hash
-          ) {
-            localMetadata.settings.items[key] = {
-              hash,
-              lastModified: Date.now(),
-              lastSynced: 0,
-              source: "indexeddb",
-            };
-          }
-        }
-      }
-    }
-    for (const key of Object.keys(localStorage)) {
-      if (!shouldExcludeSetting(key)) {
-        existingSettings.add(key);
-        const value = localStorage.getItem(key);
-        if (value !== null) {
-          const hash = await generateContentHash(value);
-          if (
-            !localMetadata.settings.items[key] ||
-            localMetadata.settings.items[key].hash !== hash
-          ) {
-            localMetadata.settings.items[key] = {
-              hash,
-              lastModified: Date.now(),
-              lastSynced: 0,
-              source: "localstorage",
-            };
-          }
-        }
-      }
-    }
-
-    for (const metadataKey of Object.keys(localMetadata.settings.items)) {
-      if (
-        !existingSettings.has(metadataKey) &&
-        !localMetadata.settings.items[metadataKey].deleted
-      ) {
-        logToConsole(
-          "cleanup",
-          `Marking orphaned setting metadata as deleted: ${metadataKey}`
-        );
-        localMetadata.settings.items[metadataKey] = {
-          ...localMetadata.settings.items[metadataKey],
-          deleted: true,
-          deletedAt: Date.now(),
-          lastModified: Date.now(),
-        };
-        orphanedMetadataCount++;
-      }
-    }
-
-    let removedDeletedCount = 0;
-    try {
-      const cloudMetadata = await downloadCloudMetadata();
-      for (const metadataKey of Object.keys(localMetadata.settings.items)) {
-        const metadataEntry = localMetadata.settings.items[metadataKey];
-        if (metadataEntry.deleted) {
-          const cloudSettingMeta = cloudMetadata.settings?.items?.[metadataKey];
-          const cloudHasTombstone =
-            cloudSettingMeta && cloudSettingMeta.deleted === true;
-          const cloudDoesntHaveSetting = !cloudSettingMeta;
-
-          if (cloudHasTombstone || cloudDoesntHaveSetting) {
-            logToConsole(
-              "cleanup",
-              `Removing deleted setting metadata (${
-                cloudHasTombstone ? "cloud has tombstone" : "not in cloud"
-              }): ${metadataKey}`
-            );
-            delete localMetadata.settings.items[metadataKey];
-            removedDeletedCount++;
-          } else {
-            logToConsole(
-              "debug",
-              `Keeping deleted metadata (still exists in cloud): ${metadataKey}`
-            );
-          }
-        }
-      }
-    } catch (error) {
-      logToConsole(
-        "warning",
-        "Could not download cloud metadata for cleanup, skipping deleted metadata cleanup",
-        error
-      );
-    }
-
-    if (orphanedMetadataCount > 0 || removedDeletedCount > 0) {
-      logToConsole(
-        "success",
-        `Cleaned up ${orphanedMetadataCount} orphaned and ${removedDeletedCount} synced deleted setting metadata entries during initialization`
-      );
-      localMetadata.settings.lastModified = Date.now();
-    }
-
-    window.addEventListener("storage", (e) => {
-      if (!e.key || shouldExcludeSetting(e.key)) {
-        return;
-      }
-      queueOperation("settings-sync", () =>
-        handleSettingChange(e.key, e.newValue, "localstorage")
-      );
-    });
-    setInterval(checkIndexedDBChanges, 5000);
-    await saveLocalMetadata();
-    return orphanedMetadataCount > 0;
-  }
-  async function generateContentHash(content) {
-    const str = typeof content === "string" ? content : JSON.stringify(content);
-    // logToConsole(
-    //   "debug",
-    //   `Generating content hash, input type: ${typeof content}, length: ${
-    //     str.length
-    //   }`,
-    //   {
-    //     contentPreview: str.length > 100 ? str.substring(0, 100) + "..." : str,
-    //   }
-    // );
-    const msgBuffer = new TextEncoder().encode(str);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-    // logToConsole(
-    //   "debug",
-    //   `Content hash generated: ${hash.substring(0, 8)}...${hash.substring(
-    //     hash.length - 8
-    //   )}`
-    // );
-    return hash;
-  }
-  async function checkIndexedDBChanges() {
-    let db = null;
-    try {
-      db = await getPersistentDB();
-      const changedKeys = new Set();
-      const transaction = db.transaction("keyval", "readonly");
-      const store = transaction.objectStore("keyval");
-      const keys = await new Promise((resolve, reject) => {
-        const request = store.getAllKeys();
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-      });
-      const localStorageKeys = Object.keys(localStorage);
-      for (const key of keys) {
-        if (!shouldExcludeSetting(key) && !localStorageKeys.includes(key)) {
-          try {
-            const value = await new Promise((resolve, reject) => {
-              const transaction = db.transaction("keyval", "readonly");
-              const store = transaction.objectStore("keyval");
-              const request = store.get(key);
-              request.onerror = () => reject(request.error);
-              request.onsuccess = () => resolve(request.result);
-            });
-            if (value !== undefined) {
-              const hash = await generateContentHash(value);
-              const metadata = localMetadata.settings.items[key];
-              if (!metadata || metadata.hash !== hash) {
-                changedKeys.add(key);
-              }
-            }
-          } catch (error) {
-            logToConsole(
-              "error",
-              `Error checking IndexedDB key ${key}:`,
-              error
-            );
-            continue;
-          }
-        }
-      }
-      if (changedKeys.size > 0) {
-        logToConsole(
-          "info",
-          `Detected changes in ${
-            changedKeys.size
-          } IndexedDB items: ${Array.from(changedKeys).join(", ")}`
-        );
-        for (const key of changedKeys) {
-          queueOperation(`settings-sync-${key}`, async () =>
-            handleSettingChange(key, await getIndexedDBValue(key), "indexeddb")
-          );
-        }
-      }
-    } catch (error) {
-      logToConsole("error", "Error checking IndexedDB changes:", error);
-      persistentDB = null;
-    }
-  }
-  async function handleSettingChange(key, value, source) {
-    if (shouldExcludeSetting(key)) return;
-    try {
-      const existingMetadata = localMetadata.settings.items[key];
-      const timestamp = Date.now();
-
-      if (value === null || value === undefined) {
-        if (existingMetadata && !existingMetadata.deleted) {
-          logToConsole("info", `Setting deleted from ${source}: ${key}`);
-          localMetadata.settings.items[key] = {
-            ...existingMetadata,
-            deleted: true,
-            deletedAt: timestamp,
-            lastModified: timestamp,
-          };
-          localMetadata.settings.lastModified = timestamp;
-          await saveLocalMetadata();
-          throttledCheckSyncStatus();
-          return true;
-        }
-        return false;
-      }
-
-      const newHash = await generateContentHash(value);
-      if (!existingMetadata || existingMetadata.hash !== newHash) {
-        localMetadata.settings.items[key] = {
-          hash: newHash,
-          lastModified: timestamp,
-          syncedAt: 0,
-          source: source,
-          deleted: false,
-        };
-        localMetadata.settings.lastModified = timestamp;
-        await saveLocalMetadata();
-        throttledCheckSyncStatus();
-        logToConsole(
-          "info",
-          `Setting change detected from ${source}: ${key} (hash changed)`,
-          {
-            oldHash: existingMetadata?.hash?.substring(0, 8) + "...",
-            newHash: newHash.substring(0, 8) + "...",
-            timestamp: new Date(timestamp).toISOString(),
-          }
-        );
-        return true;
-      }
-      return false;
-    } catch (error) {
-      logToConsole("error", `Error handling setting change for ${key}`, error);
-      return false;
-    }
-  }
-  async function cleanupMetadataVersions() {
-    try {
-      const s3 = initializeS3Client();
-      const params = {
-        Bucket: config.bucketName,
-        Prefix: "metadata.json",
-      };
-      const versioningStatus = await s3
-        .getBucketVersioning({ Bucket: config.bucketName })
-        .promise();
-      const isVersioningEnabled = versioningStatus.Status === "Enabled";
-      if (!isVersioningEnabled) {
-        logToConsole(
-          "info",
-          "Bucket versioning is not enabled, skipping version cleanup"
-        );
-        return;
-      }
-      const versions = await s3.listObjectVersions(params).promise();
-      let allVersions = [];
-      if (versions.Versions) {
-        allVersions.push(
-          ...versions.Versions.filter(
-            (v) => !v.IsLatest && v.Key === "metadata.json"
-          )
-        );
-      }
-      if (versions.DeleteMarkers) {
-        allVersions.push(
-          ...versions.DeleteMarkers.filter((v) => v.Key === "metadata.json")
-        );
-      }
-      allVersions.sort((a, b) => b.LastModified - a.LastModified);
-      const versionsToDelete = allVersions.slice(1);
-      if (versionsToDelete.length > 0) {
-        const deleteParams = {
-          Bucket: config.bucketName,
-          Delete: {
-            Objects: versionsToDelete.map((version) => ({
-              Key: version.Key,
-              VersionId: version.VersionId,
-            })),
-            Quiet: true,
-          },
-        };
-        await s3.deleteObjects(deleteParams).promise();
-        logToConsole(
-          "success",
-          `Deleted ${versionsToDelete.length} old metadata versions`
-        );
-      }
-      logToConsole("success", "Metadata version cleanup completed");
-    } catch (error) {
-      logToConsole("error", "Error cleaning up metadata versions:", error);
-      throw error;
-    }
-  }
-  async function deleteChatFromCloud(chatId) {
-    logToConsole("cleanup", `Deleting chat ${chatId} from cloud`);
-    try {
-      const s3 = initializeS3Client();
-      const cloudMetadata = await downloadCloudMetadata();
-      const deleteParams = {
-        Bucket: config.bucketName,
-        Key: `chats/${chatId}.json`,
-      };
-      try {
-        await s3.deleteObject(deleteParams).promise();
-        logToConsole(
-          "success",
-          `Successfully deleted from S3: chats/${chatId}.json`
-        );
-      } catch (error) {
-        if (error.code !== "NoSuchKey") {
-          throw error;
-        }
-        logToConsole("info", `Chat file ${chatId} already deleted from S3`);
-      }
-      if (!cloudMetadata.chats) {
-        cloudMetadata.chats = {};
-      }
-      const now = Date.now();
-      cloudMetadata.chats[chatId] = {
-        deleted: true,
-        deletedAt: now,
-        lastModified: now,
-        syncedAt: now,
-        tombstoneVersion:
-          (cloudMetadata.chats[chatId]?.tombstoneVersion || 0) + 1,
-      };
-      await uploadToS3(
-        "metadata.json",
-        new TextEncoder().encode(JSON.stringify(cloudMetadata)),
-        {
-          ContentType: "application/json",
-          ServerSideEncryption: "AES256",
-        }
-      );
-      if (localMetadata.chats) {
-        localMetadata.chats[chatId] = {
-          deleted: true,
-          deletedAt: now,
-          lastModified: now,
-          syncedAt: now,
-          tombstoneVersion: cloudMetadata.chats[chatId].tombstoneVersion,
-        };
-        saveLocalMetadata();
-      }
-      logToConsole("success", `Successfully deleted chat ${chatId} from cloud`);
-      return true;
-    } catch (error) {
-      logToConsole("error", `Error deleting chat ${chatId} from cloud`, error);
-      throw error;
-    }
-  }
-  async function downloadCloudMetadata() {
-    try {
-      const s3 = initializeS3Client();
-      const timestamp = Date.now();
-      const params = {
-        Bucket: config.bucketName,
-        Key: "metadata.json",
-        ResponseCacheControl: "no-cache, no-store, must-revalidate",
-      };
-
-      // logToConsole("debug", "Downloading cloud metadata", {
-      //   timestamp: new Date(timestamp).toISOString(),
-      //   cacheBusting: true,
-      // });
-
-      try {
-        const data = await s3.getObject(params).promise();
-        const content = data.Body;
-        const metadata = JSON.parse(
-          typeof content === "string"
-            ? content
-            : new TextDecoder().decode(content)
-        );
-
-        logToConsole("debug", "Successfully downloaded cloud metadata", {
-          settingsCount: metadata.settings?.items
-            ? Object.keys(metadata.settings.items).length
-            : 0,
-          chatsCount: metadata.chats ? Object.keys(metadata.chats).length : 0,
-          lastSyncTime: metadata.lastSyncTime
-            ? new Date(metadata.lastSyncTime).toISOString()
-            : "none",
-        });
-
-        return metadata;
-      } catch (error) {
-        if (error.code === "NoSuchKey") {
-          logToConsole(
-            "info",
-            "No cloud metadata found, creating initial metadata"
-          );
-          const initialMetadata = {
-            version: "1.0",
-            lastSyncTime: 0,
-            chats: {},
-            settings: {
-              lastModified: 0,
-              syncedAt: 0,
-              items: {},
-            },
-          };
-          try {
-            await uploadToS3(
-              "metadata.json",
-              new TextEncoder().encode(JSON.stringify(initialMetadata)),
-              {
-                ContentType: "application/json",
-                ServerSideEncryption: "AES256",
-              }
-            );
-            logToConsole("success", "Created and uploaded initial metadata");
-            return initialMetadata;
-          } catch (uploadError) {
-            logToConsole(
-              "error",
-              "Failed to create initial metadata",
-              uploadError
-            );
-            throw uploadError;
-          }
-        }
-        throw error;
-      }
-    } catch (error) {
-      if (
-        error.code === "CredentialsError" ||
-        error.message?.includes("credentials")
-      ) {
-        logToConsole(
-          "error",
-          "AWS credentials error - please check your configuration"
-        );
-        throw new Error("AWS credentials not properly configured");
-      }
-      logToConsole("error", "Error downloading cloud metadata", error);
-      throw error;
-    }
-  }
-  async function downloadChatFromCloud(chatId) {
-    logToConsole("download", `Downloading chat ${chatId} from cloud`);
-    try {
-      const s3 = initializeS3Client();
-      const params = {
-        Bucket: config.bucketName,
-        Key: `chats/${chatId}.json`,
-      };
-      try {
-        const data = await s3.getObject(params).promise();
-        const encryptedContent = new Uint8Array(data.Body);
-        const decryptedText = await decryptData(encryptedContent);
-        const sanitizedText = decryptedText
-          .replace(/:\s*undefined\b/g, ": null")
-          .replace(/,\s*undefined\b/g, ", null")
-          .replace(/\[\s*undefined\b/g, "[null")
-          .replace(/undefined\s*,/g, "null,")
-          .replace(/undefined\s*\]/g, "null]");
-        let chatData = JSON.parse(sanitizedText);
-        logToConsole("debug", `Chat parsed from cloud download: ${chatId}`, {
-          hasChat: !!chatData,
-          hasMessages: !!chatData?.messages,
-          messagesLength: chatData?.messages?.length,
-        });
-        if (!chatData.id) {
-          chatData.id = chatId;
-        } else if (chatData.id !== chatId) {
-          logToConsole(
-            "warning",
-            `Chat ID mismatch: ${chatData.id} !== ${chatId}, using key as ID`
-          );
-          chatData.id = chatId;
-        }
-        logToConsole("success", `Downloaded chat ${chatId} from cloud`);
-        return chatData;
-      } catch (error) {
-        if (error.code === "NoSuchKey") {
-          logToConsole("warning", `Chat ${chatId} not found in cloud`);
-          const cloudMetadata = await downloadCloudMetadata();
-          if (
-            cloudMetadata.chats &&
-            cloudMetadata.chats[chatId] &&
-            !cloudMetadata.chats[chatId].deleted
-          ) {
-            cloudMetadata.chats[chatId] = {
-              deleted: true,
-              deletedAt: Date.now(),
-              lastModified: Date.now(),
-              syncedAt: Date.now(),
-              tombstoneVersion:
-                (cloudMetadata.chats[chatId]?.tombstoneVersion || 0) + 1,
-              deletionSource: "file-missing",
-            };
-            await uploadToS3(
-              "metadata.json",
-              new TextEncoder().encode(JSON.stringify(cloudMetadata)),
-              {
-                ContentType: "application/json",
-                ServerSideEncryption: "AES256",
-              }
-            );
-            logToConsole(
-              "info",
-              `Created tombstone for missing chat ${chatId} in cloud metadata`
-            );
-          }
-          return null;
-        }
-        throw error;
-      }
-    } catch (error) {
-      logToConsole("error", `Error downloading chat ${chatId}`, error);
-      throw error;
-    }
-  }
-  async function uploadChatToCloud(
-    chatId,
-    existingCloudMetadata = null,
-    syncTimestamp = null
-  ) {
-    try {
-      operationState.isExporting = true;
-      const s3 = initializeS3Client();
-      const cloudMetadata = await downloadCloudMetadata();
-      logToConsole("info", "Downloaded fresh cloud metadata");
-      if (
-        cloudMetadata.chats &&
-        cloudMetadata.chats[chatId] &&
-        cloudMetadata.chats[chatId].deleted === true
-      ) {
-        const localChatInfo = localMetadata.chats[chatId];
-        const cloudDeletion = cloudMetadata.chats[chatId];
-        if (!localChatInfo || localChatInfo.deleted === true) {
-          logToConsole(
-            "info",
-            `Skipping upload of chat ${chatId} as it has a cloud tombstone`
-          );
-          return false;
-        }
-        if (localChatInfo.lastModified > cloudDeletion.deletedAt) {
-          logToConsole(
-            "info",
-            `Local chat ${chatId} appears to be newer than cloud tombstone, proceeding with upload as restoration`
-          );
-        } else {
-          logToConsole(
-            "info",
-            `Local chat ${chatId} is older than cloud tombstone, will be deleted locally instead`
-          );
-          await deleteChatFromIndexedDB(chatId);
-          return false;
-        }
-      }
-      const chatData = await getChatFromIndexedDB(chatId);
-      if (!chatData) {
-        logToConsole(
-          "warning",
-          `Chat ${chatId} not found in IndexedDB, skipping upload`
-        );
-        return false;
-      }
-      if (!chatData.id) {
-        chatData.id = chatId;
-      } else if (chatData.id.startsWith("CHAT_")) {
-        chatData.id = chatData.id.slice(5);
-      }
-      if (chatData.id !== chatId) {
-        logToConsole(
-          "warning",
-          `Chat ID mismatch: ${chatData.id} !== ${chatId}, fixing before upload`
-        );
-        chatData.id = chatId;
-      }
-      const newHash = await generateHash(chatData, "chat");
-      if (
-        cloudMetadata.chats &&
-        cloudMetadata.chats[chatId] &&
-        cloudMetadata.chats[chatId].hash === newHash &&
-        !cloudMetadata.chats[chatId].deleted
-      ) {
-        logToConsole("info", `Chat ${chatId} hasn't changed, skipping upload`);
-        if (localMetadata.chats[chatId]) {
-          if (localMetadata.chats[chatId].syncedAt !== Date.now()) {
-            localMetadata.chats[chatId].syncedAt = Date.now();
-            localMetadata.chats[chatId].hash = newHash;
-          }
-        }
-        return true;
-      }
-      const encryptedData = await encryptData(chatData);
-      const params = {
-        Bucket: config.bucketName,
-        Key: `chats/${chatId}.json`,
-        Body: encryptedData,
-        ContentType: "application/json",
-        ServerSideEncryption: "AES256",
-      };
-      await s3.putObject(params).promise();
-      logToConsole("success", `Uploaded chat ${chatId} to cloud`, {
-        messageCount: chatData.messages?.length || 0,
-        title: chatData.chatTitle || "(Untitled)",
-        size: encryptedData.length,
-      });
-      if (!localMetadata.chats[chatId]) {
-        localMetadata.chats[chatId] = {};
-      }
-      const now = syncTimestamp || Date.now();
-      const lastModified = chatData.updatedAt || now;
-      localMetadata.chats[chatId].lastModified = lastModified;
-      localMetadata.chats[chatId].syncedAt = now;
-      localMetadata.chats[chatId].hash = newHash;
-      if (localMetadata.chats[chatId].deleted) {
-        delete localMetadata.chats[chatId].deleted;
-        delete localMetadata.chats[chatId].deletedAt;
-        delete localMetadata.chats[chatId].tombstoneVersion;
-        logToConsole("info", `Restored previously deleted chat ${chatId}`);
-      }
-      lastSeenUpdates[chatId] = {
-        updatedAt: now,
-        hash: newHash,
-      };
-      if (!cloudMetadata.chats) cloudMetadata.chats = {};
-      cloudMetadata.chats[chatId] = {
-        lastModified: lastModified,
-        syncedAt: now,
-        hash: newHash,
-      };
-      cloudMetadata.lastSyncTime = now;
-      await uploadToS3(
-        "metadata.json",
-        new TextEncoder().encode(JSON.stringify(cloudMetadata)),
-        {
-          ContentType: "application/json",
-          ServerSideEncryption: "AES256",
-        }
-      );
-      return true;
-    } catch (error) {
-      logToConsole("error", `Error uploading chat ${chatId}`, error);
-      if (localMetadata.chats[chatId]) {
-        localMetadata.chats[chatId].syncedAt = 0;
-        await saveLocalMetadata();
-      }
-      logToConsole("error", `Error uploading chat ${chatId}:`, error);
-      throw error;
-    } finally {
-      operationState.isExporting = false;
-      throttledCheckSyncStatus();
-    }
-  }
-  async function checkSyncStatus() {
-    if (!isAwsConfigured()) {
-      logToConsole(
-        "debug",
-        "checkSyncStatus returning: disabled (AWS not configured)"
-      );
-      return "disabled";
-    }
-    await loadLocalMetadata();
-    try {
-      let chatsOutOfSync = false;
-      const chatIds = Object.keys(localMetadata.chats || {});
-      for (const chatId of chatIds) {
-        const chatMeta = localMetadata.chats[chatId];
-        if (chatMeta.deleted) continue;
-        if (chatMeta.lastModified > (chatMeta.syncedAt || 0)) {
-          chatsOutOfSync = true;
-          logToConsole("debug", "checkSyncStatus: Chat is out of sync", {
-            chatId,
-            lastModified: chatMeta.lastModified,
-            syncedAt: chatMeta.syncedAt,
-          });
-          break;
-        }
-      }
-      if (operationState.isExporting || operationState.isImporting) {
-        return "syncing";
-      } else if (chatsOutOfSync) {
-        return "out-of-sync";
-      } else {
-        return "in-sync";
-      }
-    } catch (error) {
-      console.error("Error checking sync status:", error);
-      logToConsole(
-        "debug",
-        "checkSyncStatus returning: error due to exception"
-      );
-      return "error";
-    }
-  }
-  function updateSyncStatusDot(status) {
-    const dot = document.getElementById("sync-status-dot");
-    if (!dot) return;
-    if (status === "disabled") {
-      dot.style.display = "none";
-      return;
-    } else {
-      dot.style.display = "block";
-    }
-    switch (status) {
-      case "in-sync":
-        dot.style.backgroundColor = "#22c55e";
-        break;
-      case "syncing":
-        dot.style.backgroundColor = "#eab308";
-        break;
-      case "error":
-      case "out-of-sync":
-        dot.style.backgroundColor = "#ef4444";
-        break;
-      default:
-        logToConsole(
-          "debug",
-          `updateSyncStatusDot hit default case for status: ${status}`
-        );
-        dot.style.backgroundColor = "#6b7280";
-    }
-  }
-  function resetOperationStates() {
-    operationState.isImporting = false;
-    operationState.isExporting = false;
-    operationState.isProcessingQueue = false;
-    operationState.isPendingSync = false;
-  }
-  window.addEventListener("unload", resetOperationStates);
-  window.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-      resetOperationStates();
-    }
-  });
-  window.addEventListener("unload", resetOperationStates);
-  window.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-      resetOperationStates();
-    }
-  });
-  async function mergeChats(localChat, cloudChat) {
-    logToConsole("info", "Merging chat versions", {
-      chatId: localChat.id,
-      localMessages: localChat.messages?.length || 0,
-      cloudMessages: cloudChat.messages?.length || 0,
-    });
-    const mergedChat = JSON.parse(JSON.stringify(localChat));
-    if (!mergedChat.messages) mergedChat.messages = [];
-    mergedChat.updatedAt = Math.max(
-      localChat.updatedAt || 0,
-      cloudChat.updatedAt || 0
-    );
-    if (
-      cloudChat.chatTitle &&
-      (!localChat.chatTitle || cloudChat.updatedAt > localChat.updatedAt)
-    ) {
-      mergedChat.chatTitle = cloudChat.chatTitle;
-    }
-    if (!mergedChat.messages) mergedChat.messages = [];
-    const cloudMessagesToMerge = cloudChat.messages || [];
-    const messageMap = new Map();
-    for (const msg of mergedChat.messages) {
-      const msgId = msg.id || JSON.stringify(msg);
-      messageMap.set(msgId, true);
-    }
-    for (const cloudMsg of cloudMessagesToMerge) {
-      const msgId = cloudMsg.id || JSON.stringify(cloudMsg);
-      if (!messageMap.has(msgId)) {
-        mergedChat.messages.push(cloudMsg);
-        messageMap.set(msgId, true);
-      }
-    }
-    mergedChat.messages.sort((a, b) => {
-      if (a.timestamp && b.timestamp) {
-        return a.timestamp - b.timestamp;
-      }
-      if (a.index !== undefined && b.index !== undefined) {
-        return a.index - b.index;
-      }
-      return 0;
-    });
-    mergedChat.messagesArray = mergedChat.messages;
-    logToConsole(
-      "debug",
-      `Ensured messagesArray consistency in mergeChats for ${mergedChat.id}`,
-      {
-        finalMessagesCount: mergedChat.messages?.length,
-        finalMessagesArrayCount: mergedChat.messagesArray?.length,
-      }
-    );
-    logToConsole("success", "Chat merge completed", {
-      messageCount: mergedChat.messages?.length || 0,
-    });
-    if (
-      cloudChat.folderID !== undefined &&
-      (!localChat.folderID || cloudChat.updatedAt > localChat.updatedAt)
-    ) {
-      mergedChat.folderID = cloudChat.folderID;
-      logToConsole(
-        "debug",
-        `Merge selected cloud folderID (${cloudChat.folderID}) for chat ${localChat.id}`
-      );
-    } else if (
-      localChat.folderID !== undefined &&
-      (cloudChat.folderID === undefined ||
-        localChat.updatedAt >= cloudChat.updatedAt)
-    ) {
-      mergedChat.folderID = localChat.folderID;
-      logToConsole(
-        "debug",
-        `Merge selected local folderID (${localChat.folderID}) for chat ${localChat.id}`
-      );
-    } else if (
-      localChat.folderID === undefined &&
-      cloudChat.folderID === undefined
-    ) {
-      // If neither has folderID, ensure it's not present or is null
-      delete mergedChat.folderID; // Or mergedChat.folderID = null;
-      logToConsole(
-        "debug",
-        `Merge resulted in no folderID for chat ${localChat.id}`
-      );
-    }
-
-    return mergedChat;
-  }
-  function cleanupOldTombstones() {
-    const now = Date.now();
-    const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
-    let cleanupCount = 0;
-    for (const [chatId, metadata] of Object.entries(localMetadata.chats)) {
-      if (
-        metadata.deleted &&
-        metadata.deletedAt &&
-        now - metadata.deletedAt > tombstoneRetentionPeriod
-      ) {
-        delete localMetadata.chats[chatId];
-        cleanupCount++;
-      }
-    }
-    if (cleanupCount > 0) {
-      saveLocalMetadata();
-      logToConsole("cleanup", `Removed ${cleanupCount} old tombstone entries`);
-    }
-    return cleanupCount;
-  }
-  async function cleanupCloudTombstones() {
-    try {
-      const cloudMetadata = await downloadCloudMetadata();
-      const now = Date.now();
-      const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
-      let cleanupCount = 0;
-      if (cloudMetadata.chats) {
-        for (const [chatId, metadata] of Object.entries(cloudMetadata.chats)) {
-          if (
-            metadata.deleted &&
-            metadata.deletedAt &&
-            now - metadata.deletedAt > tombstoneRetentionPeriod
-          ) {
-            delete cloudMetadata.chats[chatId];
-            cleanupCount++;
-          }
-        }
-        if (cleanupCount > 0) {
-          await uploadToS3(
-            "metadata.json",
-            new TextEncoder().encode(JSON.stringify(cloudMetadata)),
-            {
-              ContentType: "application/json",
-              ServerSideEncryption: "AES256",
-            }
-          );
-          logToConsole(
-            "cleanup",
-            `Removed ${cleanupCount} old tombstone entries from cloud metadata`
-          );
-        }
-      }
-      return cleanupCount;
-    } catch (error) {
-      logToConsole("error", "Error cleaning up cloud tombstones", error);
-      return 0;
-    }
-  }
-  async function forceSettingsCheck() {
-    if (!localMetadata.settings) {
-      await initializeSettingsMonitoring();
-      return false;
-    }
-
-    let hasChanges = false;
-    let checkedLocalStorage = 0;
-    let checkedIndexedDB = 0;
-    let changesLocalStorage = 0;
-    let changesIndexedDB = 0;
-
-    for (const key of Object.keys(localStorage)) {
-      if (!shouldExcludeSetting(key)) {
-        checkedLocalStorage++;
-        const value = localStorage.getItem(key);
-        if (value !== null) {
-          const changed = await handleSettingChange(key, value, "localstorage");
-          if (changed) {
-            hasChanges = true;
-            changesLocalStorage++;
-          }
-        }
-      }
-    }
-
-    try {
-      const db = await openIndexedDB();
-      const transaction = db.transaction("keyval", "readonly");
-      const store = transaction.objectStore("keyval");
-      const keys = await new Promise((resolve, reject) => {
-        const request = store.getAllKeys();
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-      });
-
-      for (const key of keys) {
-        if (!shouldExcludeSetting(key)) {
-          checkedIndexedDB++;
-          const value = await getIndexedDBValue(key);
-          if (value !== undefined) {
-            const changed = await handleSettingChange(key, value, "indexeddb");
-            if (changed) {
-              hasChanges = true;
-              changesIndexedDB++;
-            }
-          }
-        }
-      }
-    } catch (error) {
-      logToConsole("error", "Error during forced settings check:", error);
-    }
-
-    logToConsole("debug", `Force settings check completed`, {
-      checkedLocalStorage,
-      checkedIndexedDB,
-      changesLocalStorage,
-      changesIndexedDB,
-      hasChanges,
-    });
-
-    if (hasChanges) {
-      logToConsole("info", "Forced settings check detected real changes");
-      await saveLocalMetadata();
-    }
-    return hasChanges;
-  }
-  function startPeriodicChangeCheck() {
-    if (activeIntervals.changeCheck) {
-      clearInterval(activeIntervals.changeCheck);
-      activeIntervals.changeCheck = null;
-    }
-    let settingsCheckCounter = 0;
-    activeIntervals.changeCheck = setInterval(async () => {
-      if (document.hidden) return;
-      let changesDetected = false;
-      const changedChatsLog = [];
-      try {
-        const chats = await getAllChatsFromIndexedDB();
-        for (const chat of chats) {
-          if (!chat.id) continue;
-          if (localMetadata.chats[chat.id]?.deleted === true) {
-            continue;
-          }
-          const currentHash = await generateHash(chat, "chat");
-          const lastSeen = lastSeenUpdates[chat.id];
-          if (
-            !lastSeen ||
-            currentHash !== lastSeen.hash ||
-            (currentHash === lastSeen.hash &&
-              chat.updatedAt > lastSeen.timestamp)
-          ) {
-            lastSeenUpdates[chat.id] = {
-              hash: currentHash,
-              timestamp: chat.updatedAt || Date.now(),
-            };
-            const chatMetadataChanged = await updateChatMetadata(
-              chat.id,
-              true,
-              false,
-              null,
-              chat
-            );
-            if (chatMetadataChanged) {
-              changesDetected = true;
-              changedChatsLog.push(chat.id);
-            }
-          }
-        }
-        settingsCheckCounter++;
-        if (settingsCheckCounter >= 12) {
-          settingsCheckCounter = 0;
-          const settingsChanged = await forceSettingsCheck();
-          if (settingsChanged) {
-            changesDetected = true;
-          }
-        }
-        if (changesDetected) {
-          if (changedChatsLog.length > 0) {
-            logToConsole(
-              "info",
-              "Detected changes in chats during periodic check",
-              {
-                changedChats: changedChatsLog,
-                count: changedChatsLog.length,
-              }
-            );
-          }
-          await saveLocalMetadata();
-        }
-      } catch (error) {
-        logToConsole("error", "Error checking for changes", error);
-      }
-    }, 2500);
-    logToConsole("info", "Started periodic change detection");
-  }
-  const throttledCheckSyncStatus = throttle(async () => {
-    const status = await checkSyncStatus();
-    updateSyncStatusDot(status);
-  }, 1000);
-  function updateUrlLoggingParameter(enableLogging) {
-    const url = new URL(window.location.href);
-    if (enableLogging) {
-      url.searchParams.set("log", "true");
-    } else if (url.searchParams.has("log")) {
-      url.searchParams.delete("log");
-    }
-    window.history.replaceState({}, "", url.toString());
-  }
-  function standardizeChatMessages(chat) {
-    if (!chat) return chat;
-    if (
-      chat.messages &&
-      chat.messages.length > 0 &&
-      (!chat.messagesArray || chat.messagesArray.length === 0)
-    ) {
-      chat.messagesArray = chat.messages;
-    }
-    if (!chat.messagesArray) {
-      logToConsole(
-        "debug",
-        `Standardizing chat ${chat.id}: Initializing empty messagesArray`
-      );
-      chat.messagesArray = [];
-    }
-    return chat;
-  }
-  async function cleanupIndexedDBDuplicates() {
-    const duplicateFlag = localStorage.getItem("sync_duplicateDetected");
-    if (duplicateFlag !== "true") {
-      logToConsole("info", "No duplicate cleanup needed - flag not set");
-      return { cleaned: [], errors: [] };
-    }
-    logToConsole("cleanup", "Starting IndexedDB duplicate cleanup...");
-    let cleanedKeys = [];
-    let errorKeys = [];
-    try {
-      const db = await getPersistentDB();
-      const transaction = db.transaction("keyval", "readwrite");
-      const store = transaction.objectStore("keyval");
-      const indexedDBKeys = await new Promise((resolve, reject) => {
-        const request = store.getAllKeys();
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-      });
-      const localStorageKeys = Object.keys(localStorage);
-      for (const key of indexedDBKeys) {
-        if (localStorageKeys.includes(key)) {
-          try {
-            const deleteTransaction = db.transaction("keyval", "readwrite");
-            const deleteStore = deleteTransaction.objectStore("keyval");
-            await new Promise((resolve, reject) => {
-              const deleteRequest = deleteStore.delete(key);
-              deleteRequest.onerror = () => reject(deleteRequest.error);
-              deleteRequest.onsuccess = () => resolve();
-            });
-            cleanedKeys.push(key);
-            logToConsole(
-              "cleanup",
-              `Removed duplicate key from IndexedDB: ${key}`
-            );
-          } catch (error) {
-            errorKeys.push(key);
-            logToConsole(
-              "error",
-              `Failed to remove duplicate key ${key} from IndexedDB:`,
-              error
-            );
-          }
-        }
-      }
-      if (cleanedKeys.length > 0) {
-        logToConsole(
-          "success",
-          `IndexedDB cleanup completed. Removed ${cleanedKeys.length} duplicate keys:`,
-          cleanedKeys
-        );
-        if (localMetadata.settings && localMetadata.settings.items) {
-          for (const key of cleanedKeys) {
-            if (localMetadata.settings.items[key]) {
-              delete localMetadata.settings.items[key];
-              logToConsole(
-                "cleanup",
-                `Removed ${key} from sync metadata tracking`
-              );
-            }
-          }
-          await saveLocalMetadata();
-        }
-        localStorage.removeItem("sync_duplicateDetected");
-        logToConsole(
-          "success",
-          "Duplicate detection flag cleared - cleanup complete"
-        );
-      } else {
-        logToConsole("info", "No duplicate keys found in IndexedDB");
-        localStorage.removeItem("sync_duplicateDetected");
-      }
-      if (errorKeys.length > 0) {
-        logToConsole(
-          "warning",
-          `Failed to clean ${errorKeys.length} keys:`,
-          errorKeys
-        );
-      }
-    } catch (error) {
-      logToConsole("error", "Error during IndexedDB duplicate cleanup:", error);
-      throw error;
-    }
-    return { cleaned: cleanedKeys, errors: errorKeys };
-  }
-  async function detectIndexedDBDuplicates() {
-    try {
-      const db = await getPersistentDB();
-      const transaction = db.transaction("keyval", "readonly");
-      const store = transaction.objectStore("keyval");
-      const indexedDBKeys = await new Promise((resolve, reject) => {
-        const request = store.getAllKeys();
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
-      });
-      const localStorageKeys = Object.keys(localStorage);
-      const duplicates = indexedDBKeys.filter((key) =>
-        localStorageKeys.includes(key)
-      );
-      if (duplicates.length > 0) {
-        localStorage.setItem("sync_duplicateDetected", "true");
-        logToConsole(
-          "info",
-          `Detected ${duplicates.length} duplicate keys between IndexedDB and localStorage`,
-          duplicates
-        );
-        return true;
-      } else {
-        localStorage.removeItem("sync_duplicateDetected");
-        // logToConsole(
-        //   "info",
-        //   "No duplicates detected between IndexedDB and localStorage"
-        // );
-        return false;
-      }
-    } catch (error) {
-      logToConsole("error", "Error detecting IndexedDB duplicates:", error);
-      return false;
-    }
-  }
-
-  async function uploadSettingToCloud(settingKey, syncTimestamp = null) {
-    try {
-      const now = syncTimestamp || Date.now();
-      const s3 = initializeS3Client();
-      let settingValue;
-      let source = "localStorage";
-      let localStorageValue = localStorage.getItem(settingKey);
-      let indexedDBValue;
-      try {
-        indexedDBValue = await getIndexedDBValue(settingKey);
-      } catch (error) {
-        logToConsole(
-          "warning",
-          `Could not read ${settingKey} from IndexedDB`,
-          error
-        );
-      }
-      const metadata = localMetadata.settings.items[settingKey];
-      if (localStorageValue !== null && indexedDBValue !== undefined) {
-        if (metadata?.source) {
-          source = metadata.source;
-          settingValue =
-            source === "localStorage"
-              ? localStorageValue
-              : typeof indexedDBValue === "object"
-              ? JSON.stringify(indexedDBValue)
-              : indexedDBValue;
-        } else {
-          source = "localStorage";
-          settingValue = localStorageValue;
-        }
-      } else if (localStorageValue !== null) {
-        source = "localStorage";
-        settingValue = localStorageValue;
-      } else if (indexedDBValue !== undefined) {
-        source = "indexeddb";
-        settingValue =
-          typeof indexedDBValue === "object"
-            ? JSON.stringify(indexedDBValue)
-            : indexedDBValue;
-      } else {
-        logToConsole(
-          "warning",
-          `Setting ${settingKey} not found in localStorage or IndexedDB`
-        );
-        return false;
-      }
-
-      const settingData = {
-        key: settingKey,
-        value: settingValue,
-        source: source,
-        lastModified: now,
-        syncedAt: now,
-      };
-
-      logToConsole("upload", `Uploading setting ${settingKey} to cloud`, {
-        source: source,
-        valueLength: settingValue.length,
-        timestamp: new Date(now).toISOString(),
-      });
-
-      const encryptedData = await encryptData(JSON.stringify(settingData));
-
-      await uploadToS3(`settings/${settingKey}.json`, encryptedData, {
-        ContentType: "application/json",
-        ServerSideEncryption: "AES256",
-      });
-
-      // Update local metadata
-      if (!localMetadata.settings.items[settingKey]) {
-        localMetadata.settings.items[settingKey] = {};
-      }
-
-      const hash = await generateContentHash(settingValue);
-      localMetadata.settings.items[settingKey] = {
-        hash: hash,
-        lastModified: now,
-        syncedAt: now,
-        source: source,
-        deleted: false,
-      };
-
-      await saveLocalMetadata();
-
-      logToConsole(
-        "success",
-        `Successfully uploaded setting ${settingKey} to cloud`,
-        {
-          hash: hash,
-          source: source,
-          timestamp: new Date(now).toISOString(),
-        }
-      );
-
-      return true;
-    } catch (error) {
-      logToConsole("error", `Error uploading setting ${settingKey}`, error);
-      throw error;
-    }
-  }
-
-  async function downloadSettingFromCloud(settingKey) {
-    try {
-      const s3 = initializeS3Client();
-
-      logToConsole("download", `Downloading setting ${settingKey} from cloud`);
-
-      const params = {
-        Bucket: config.bucketName,
-        Key: `settings/${settingKey}.json`,
-      };
-
-      try {
-        const data = await s3.getObject(params).promise();
-        const encryptedContent = new Uint8Array(data.Body);
-        const decryptedText = await decryptData(encryptedContent);
-        const settingData = JSON.parse(decryptedText);
-
-        if (!settingData.key || settingData.key !== settingKey) {
-          logToConsole(
-            "warning",
-            `Setting key mismatch: expected ${settingKey}, got ${settingData.key}`
-          );
-          settingData.key = settingKey;
-        }
-
-        logToConsole("success", `Downloaded setting ${settingKey} from cloud`, {
-          source: settingData.source,
-          valueLength: settingData.value?.length || 0,
-          lastModified: settingData.lastModified
-            ? new Date(settingData.lastModified).toISOString()
-            : "unknown",
-        });
-
-        return settingData;
-      } catch (error) {
-        if (error.code === "NoSuchKey") {
-          logToConsole("info", `Setting ${settingKey} not found in cloud`);
-          return null;
-        }
-        throw error;
-      }
-    } catch (error) {
-      logToConsole("error", `Error downloading setting ${settingKey}`, error);
-      throw error;
-    }
-  }
-
-  async function deleteSettingFromCloud(settingKey) {
-    try {
-      const s3 = initializeS3Client();
-
-      logToConsole("cleanup", `Deleting setting ${settingKey} from cloud`);
-
-      await deleteFromS3(`settings/${settingKey}.json`);
-
-      // Update cloud metadata to mark as deleted
-      const cloudMetadata = await downloadCloudMetadata();
-      if (!cloudMetadata.settings) cloudMetadata.settings = { items: {} };
-      if (!cloudMetadata.settings.items) cloudMetadata.settings.items = {};
-
-      cloudMetadata.settings.items[settingKey] = {
-        deleted: true,
-        deletedAt: Date.now(),
-        lastModified: Date.now(),
-        syncedAt: Date.now(),
-        tombstoneVersion:
-          (cloudMetadata.settings.items[settingKey]?.tombstoneVersion || 0) + 1,
-      };
-
-      await uploadToS3(
-        "metadata.json",
-        new TextEncoder().encode(JSON.stringify(cloudMetadata)),
-        {
-          ContentType: "application/json",
-          ServerSideEncryption: "AES256",
-        }
-      );
-
-      logToConsole(
-        "success",
-        `Successfully deleted setting ${settingKey} from cloud`
-      );
-      return true;
-    } catch (error) {
-      logToConsole(
-        "error",
-        `Error deleting setting ${settingKey} from cloud`,
-        error
-      );
-      throw error;
-    }
-  }
-
-  async function syncSettingsToCloud() {
-    logToConsole("start", "Starting individual settings sync to cloud...");
-    try {
-      const syncTimestamp = Date.now();
-      let uploadedCount = 0;
-      let skippedCount = 0;
-      let errorCount = 0;
-      const uploadedSettings = new Map();
-      const cloudMetadata = await downloadCloudMetadata();
-      const isInitialSync =
-        !cloudMetadata.settings?.items ||
-        Object.keys(cloudMetadata.settings.items).length === 0;
-
-      if (isInitialSync) {
-        logToConsole(
-          "info",
-          "Detected empty cloud settings - performing initial upload of all local settings"
-        );
-      }
-
-      let orphanedMetadataCount = 0;
-      if (!isInitialSync && cloudMetadata.settings?.items) {
-        const s3 = initializeS3Client();
-        const settingsToCheck = Object.entries(cloudMetadata.settings.items);
-        const orphanedSettings = [];
-
-        for (const [settingKey, settingMeta] of settingsToCheck) {
-          if (!settingMeta.deleted) {
-            try {
-              const params = {
-                Bucket: config.bucketName,
-                Key: `settings/${settingKey}.json`,
-              };
-              await s3.headObject(params).promise();
-            } catch (error) {
-              if (error.code === "NoSuchKey" || error.code === "NotFound") {
-                orphanedSettings.push(settingKey);
-                logToConsole(
-                  "info",
-                  `Found orphaned metadata for missing setting ${settingKey}`
-                );
-              } else {
-                logToConsole(
-                  "warning",
-                  `Error checking setting file ${settingKey}`,
-                  error
-                );
-              }
-            }
-          }
-        }
-
-        if (orphanedSettings.length > 0) {
-          const totalSettings = settingsToCheck.length;
-          const orphanedPercentage =
-            (orphanedSettings.length / totalSettings) * 100;
-
-          if (orphanedPercentage > 50) {
-            logToConsole(
-              "warning",
-              `Detected ${
-                orphanedSettings.length
-              }/${totalSettings} (${orphanedPercentage.toFixed(
-                1
-              )}%) orphaned settings - this may indicate a sync race condition. Skipping cleanup to prevent data loss.`
-            );
-          } else {
-            for (const settingKey of orphanedSettings) {
-              delete cloudMetadata.settings.items[settingKey];
-              orphanedMetadataCount++;
-            }
-
-            logToConsole(
-              "info",
-              `Cleaned up ${orphanedMetadataCount} orphaned metadata entries - triggering re-upload`
-            );
-            await uploadToS3(
-              "metadata.json",
-              new TextEncoder().encode(JSON.stringify(cloudMetadata)),
-              {
-                ContentType: "application/json",
-                ServerSideEncryption: "AES256",
-              }
-            );
-          }
-        }
-      }
-
-      const processedKeys = new Set();
-      for (const key of Object.keys(localStorage)) {
-        if (shouldExcludeSetting(key) || processedKeys.has(key)) {
-          continue;
-        }
-        processedKeys.add(key);
-        const localMeta = localMetadata.settings.items[key];
-        const settingValue = localStorage.getItem(key);
-        if (settingValue === null) continue;
-        const cloudSettingMeta = cloudMetadata.settings?.items?.[key];
-        const settingExistsInCloud =
-          cloudSettingMeta && !cloudSettingMeta.deleted;
-        const currentHash = await generateContentHash(settingValue);
-        const needsUpload =
-          isInitialSync ||
-          !localMeta ||
-          !localMeta.syncedAt ||
-          !settingExistsInCloud ||
-          localMeta.lastModified > localMeta.syncedAt ||
-          localMeta.hash !== currentHash ||
-          (cloudSettingMeta?.hash && cloudSettingMeta.hash !== currentHash);
-        if (needsUpload) {
-          try {
-            await uploadSettingToCloud(key, syncTimestamp);
-            uploadedCount++;
-            uploadedSettings.set(key, {
-              hash: currentHash,
-              lastModified: localMeta?.lastModified || syncTimestamp,
-              syncedAt: syncTimestamp,
-              source: "localStorage",
-              deleted: false,
-            });
-            logToConsole("debug", `Uploaded setting ${key}`, {
-              reason: isInitialSync
-                ? "initial sync"
-                : !localMeta
-                ? "no local metadata"
-                : !settingExistsInCloud
-                ? "not in cloud"
-                : localMeta.lastModified > localMeta.syncedAt
-                ? "locally modified"
-                : localMeta.hash !== currentHash
-                ? "content changed"
-                : "hash mismatch with cloud",
-              source: "localStorage",
-              cloudExists: !!cloudSettingMeta,
-            });
-          } catch (error) {
-            logToConsole("error", `Failed to upload setting ${key}`, error);
-            errorCount++;
-          }
-        } else {
-          skippedCount++;
-          // logToConsole("debug", `Skipped setting ${key}: already in sync`, {
-          //   lastModified: localMeta.lastModified
-          //     ? new Date(localMeta.lastModified).toISOString()
-          //     : "never",
-          //   syncedAt: localMeta.syncedAt
-          //     ? new Date(localMeta.syncedAt).toISOString()
-          //     : "never",
-          //   hashMatch: localMeta.hash === currentHash,
-          //   existsInCloud: settingExistsInCloud,
-          // });
-        }
-      }
-      try {
-        const db = await openIndexedDB();
-        const transaction = db.transaction("keyval", "readonly");
-        const store = transaction.objectStore("keyval");
-        const keys = await new Promise((resolve, reject) => {
-          const request = store.getAllKeys();
-          request.onerror = () => reject(request.error);
-          request.onsuccess = () => resolve(request.result);
-        });
-        for (const key of keys) {
-          if (shouldExcludeSetting(key) || processedKeys.has(key)) {
-            continue;
-          }
-          processedKeys.add(key);
-          const localMeta = localMetadata.settings.items[key];
-          const settingValue = await getIndexedDBValue(key);
-          if (settingValue === undefined) continue;
-          const valueToHash =
-            typeof settingValue === "object"
-              ? JSON.stringify(settingValue)
-              : settingValue;
-          const currentHash = await generateContentHash(valueToHash);
-          const cloudSettingMeta = cloudMetadata.settings?.items?.[key];
-          const settingExistsInCloud =
-            cloudSettingMeta && !cloudSettingMeta.deleted;
-          const needsUpload =
-            isInitialSync ||
-            !localMeta ||
-            !localMeta.syncedAt ||
-            !settingExistsInCloud ||
-            localMeta.lastModified > localMeta.syncedAt ||
-            localMeta.hash !== currentHash ||
-            (cloudSettingMeta?.hash && cloudSettingMeta.hash !== currentHash);
-          if (needsUpload) {
-            try {
-              await uploadSettingToCloud(key, syncTimestamp);
-              uploadedCount++;
-              uploadedSettings.set(key, {
-                hash: currentHash,
-                lastModified: localMeta?.lastModified || syncTimestamp,
-                syncedAt: syncTimestamp,
-                source: "indexeddb",
-                deleted: false,
-              });
-              logToConsole("debug", `Uploaded IndexedDB setting ${key}`, {
-                reason: isInitialSync
-                  ? "initial sync"
-                  : !localMeta
-                  ? "no local metadata"
-                  : !settingExistsInCloud
-                  ? "not in cloud"
-                  : localMeta.lastModified > localMeta.syncedAt
-                  ? "locally modified"
-                  : localMeta.hash !== currentHash
-                  ? "content changed"
-                  : "hash mismatch with cloud",
-                source: "indexeddb",
-              });
-            } catch (error) {
-              logToConsole(
-                "error",
-                `Failed to upload IndexedDB setting ${key}`,
-                error
-              );
-              errorCount++;
-            }
-          } else {
-            skippedCount++;
-            // logToConsole(
-            //   "debug",
-            //   `Skipped IndexedDB setting ${key}: already in sync`,
-            //   {
-            //     lastModified: localMeta.lastModified
-            //       ? new Date(localMeta.lastModified).toISOString()
-            //       : "never",
-            //     syncedAt: localMeta.syncedAt
-            //       ? new Date(localMeta.syncedAt).toISOString()
-            //       : "never",
-            //     hashMatch: localMeta.hash === currentHash,
-            //     existsInCloud: settingExistsInCloud,
-            //   }
-            // );
-          }
-        }
-      } catch (error) {
-        logToConsole(
-          "error",
-          "Error reading IndexedDB for settings sync",
-          error
-        );
-      }
-      if (uploadedCount > 0) {
-        logToConsole("debug", "Updating cloud metadata after settings upload", {
-          uploadedCount,
-          uploadedSettingsSize: uploadedSettings.size,
-          uploadedSettingsKeys: Array.from(uploadedSettings.keys()).slice(0, 5),
-        });
-
-        const updatedCloudMetadata = await downloadCloudMetadata();
-        // logToConsole("debug", "Downloaded cloud metadata for update", {
-        //   hasSettings: !!updatedCloudMetadata.settings,
-        //   hasSettingsItems: !!updatedCloudMetadata.settings?.items,
-        //   currentSettingsItemsCount: updatedCloudMetadata.settings?.items
-        //     ? Object.keys(updatedCloudMetadata.settings.items).length
-        //     : 0,
-        // });
-
-        if (!updatedCloudMetadata.settings)
-          updatedCloudMetadata.settings = { items: {} };
-        if (!updatedCloudMetadata.settings.items)
-          updatedCloudMetadata.settings.items = {};
-
-        const beforeCount = Object.keys(
-          updatedCloudMetadata.settings.items
-        ).length;
-
-        for (const [settingKey, settingMeta] of uploadedSettings) {
-          updatedCloudMetadata.settings.items[settingKey] = settingMeta;
-          logToConsole(
-            "debug",
-            `Added setting ${settingKey} to cloud metadata`,
-            {
-              hash: settingMeta.hash?.substring(0, 8) + "...",
-              source: settingMeta.source,
-            }
-          );
-        }
-
-        const afterCount = Object.keys(
-          updatedCloudMetadata.settings.items
-        ).length;
-
-        updatedCloudMetadata.settings.lastModified = syncTimestamp;
-        updatedCloudMetadata.settings.syncedAt = syncTimestamp;
-        updatedCloudMetadata.lastSyncTime = Math.max(
-          updatedCloudMetadata.lastSyncTime || 0,
-          syncTimestamp
-        );
-
-        logToConsole("debug", "About to upload updated metadata", {
-          beforeCount,
-          afterCount,
-          settingsAdded: uploadedSettings.size,
-          metadataSize: JSON.stringify(updatedCloudMetadata).length,
-        });
-
-        await uploadToS3(
-          "metadata.json",
-          new TextEncoder().encode(JSON.stringify(updatedCloudMetadata)),
-          {
-            ContentType: "application/json",
-            ServerSideEncryption: "AES256",
-          }
-        );
-
-        // Verify the metadata was saved correctly
-        try {
-          const verifyMetadata = await downloadCloudMetadata();
-          const verifySettingsCount = verifyMetadata.settings?.items
-            ? Object.keys(verifyMetadata.settings.items).length
-            : 0;
-          // logToConsole("debug", "Verified cloud metadata after upload", {
-          //   verifySettingsCount,
-          //   expectedCount: afterCount,
-          //   verificationMatch: verifySettingsCount === afterCount,
-          // });
-        } catch (verifyError) {
-          logToConsole(
-            "error",
-            "Failed to verify metadata upload",
-            verifyError
-          );
-        }
-
-        logToConsole("success", "Updated cloud metadata after settings sync", {
-          settingsAdded: uploadedSettings.size,
-          totalCloudSettings: Object.keys(updatedCloudMetadata.settings.items)
-            .length,
-        });
-      }
-      logToConsole("success", "Individual settings sync to cloud completed", {
-        uploaded: uploadedCount,
-        skipped: skippedCount,
-        errors: errorCount,
-        totalProcessed: processedKeys.size,
-        isInitialSync: isInitialSync,
-        timestamp: new Date(syncTimestamp).toISOString(),
-      });
-      return uploadedCount > 0;
-    } catch (error) {
-      logToConsole("error", "Error during settings sync to cloud", error);
-      throw error;
-    }
-  }
-
-  async function syncSettingsFromCloud() {
-    logToConsole("start", "Starting individual settings sync from cloud...");
-
-    try {
-      const syncTimestamp = Date.now();
-      let downloadedCount = 0;
-      let skippedCount = 0;
-      let appliedCount = 0;
-      let errorCount = 0;
-      let orphanedMetadataCount = 0;
-
-      const cloudMetadata = await downloadCloudMetadata();
-
-      if (!cloudMetadata.settings?.items) {
-        logToConsole("info", "No individual settings found in cloud metadata");
-        return false;
-      }
-
-      logToConsole(
-        "info",
-        `Processing ${
-          Object.keys(cloudMetadata.settings.items).length
-        } settings from cloud`
-      );
-
-      const orphanedSettings = [];
-
-      for (const [settingKey, cloudSettingMeta] of Object.entries(
-        cloudMetadata.settings.items
-      )) {
-        try {
-          const localSettingMeta = localMetadata.settings.items[settingKey];
-
-          // Handle deleted settings
-          if (cloudSettingMeta.deleted === true) {
-            if (localSettingMeta && !localSettingMeta.deleted) {
-              logToConsole(
-                "cleanup",
-                `Deleting local setting ${settingKey} due to cloud tombstone`
-              );
-
-              // Remove from localStorage/IndexedDB
-              if (localSettingMeta.source === "localStorage") {
-                localStorage.removeItem(settingKey);
-              } else if (localSettingMeta.source === "indexeddb") {
-                await setIndexedDBKey(settingKey, undefined);
-              }
-
-              // Update local metadata
-              localMetadata.settings.items[settingKey] = {
-                deleted: true,
-                deletedAt: cloudSettingMeta.deletedAt,
-                lastModified: cloudSettingMeta.lastModified,
-                syncedAt: syncTimestamp,
-                tombstoneVersion: cloudSettingMeta.tombstoneVersion || 1,
-              };
-
-              appliedCount++;
-            }
-            continue;
-          }
-
-          // Skip if local setting is deleted
-          if (localSettingMeta?.deleted === true) {
-            await deleteSettingFromCloud(settingKey);
-
-            localMetadata.settings.items[settingKey] = {
-              ...localSettingMeta,
-              syncedAt: syncTimestamp,
-              lastModified: Date.now(),
-            };
-
-            appliedCount++;
-            logToConsole(
-              "success",
-              `Deleted setting ${settingKey} from cloud and updated local metadata`
-            );
-            continue;
-          }
-
-          // Check if we need to download this setting
-          const needsDownload =
-            !localSettingMeta ||
-            !localSettingMeta.hash ||
-            (!localSettingMeta.syncedAt &&
-              cloudSettingMeta.lastModified >
-                (localSettingMeta.lastModified || 0)) ||
-            (localSettingMeta.syncedAt &&
-              cloudSettingMeta.lastModified > localSettingMeta.syncedAt &&
-              cloudSettingMeta.hash !== localSettingMeta.hash);
-
-          if (needsDownload) {
-            logToConsole(
-              "info",
-              `Downloading setting ${settingKey} from cloud`,
-              {
-                reason: !localSettingMeta
-                  ? "missing locally"
-                  : !localSettingMeta.hash
-                  ? "no local hash"
-                  : !localSettingMeta.syncedAt
-                  ? "never synced"
-                  : cloudSettingMeta.hash !== localSettingMeta.hash
-                  ? "hash mismatch"
-                  : "cloud newer",
-              }
-            );
-
-            const cloudSettingData = await downloadSettingFromCloud(settingKey);
-
-            if (cloudSettingData) {
-              // Apply the setting based on its source
-              if (cloudSettingData.source === "localStorage") {
-                localStorage.setItem(settingKey, cloudSettingData.value);
-              } else if (cloudSettingData.source === "indexeddb") {
-                let valueToStore = cloudSettingData.value;
-
-                // Try to parse JSON if it looks like an object
-                if (
-                  typeof valueToStore === "string" &&
-                  (valueToStore.startsWith("{") || valueToStore.startsWith("["))
-                ) {
-                  try {
-                    valueToStore = JSON.parse(valueToStore);
-                  } catch (e) {
-                    logToConsole(
-                      "warning",
-                      `Could not parse setting ${settingKey} as JSON, storing as string`
-                    );
-                  }
-                }
-
-                await setIndexedDBKey(settingKey, valueToStore);
-              }
-
-              // Update local metadata
-              const hash = await generateContentHash(cloudSettingData.value);
-              localMetadata.settings.items[settingKey] = {
-                hash: hash,
-                lastModified: cloudSettingData.lastModified,
-                syncedAt: syncTimestamp,
-                source: cloudSettingData.source,
-                deleted: false,
-              };
-
-              downloadedCount++;
-              appliedCount++;
-            } else {
-              // Setting file not found in S3 - this is orphaned metadata
-              orphanedSettings.push(settingKey);
-              logToConsole(
-                "info",
-                `Found orphaned metadata for missing setting ${settingKey}`
-              );
-            }
-          } else {
-            skippedCount++;
-            // Hash matches but cloud timestamp may be newer - update local syncedAt to prevent repeated checks
-            if (
-              localSettingMeta &&
-              localSettingMeta.syncedAt &&
-              cloudSettingMeta.lastModified > localSettingMeta.syncedAt &&
-              cloudSettingMeta.hash === localSettingMeta.hash
-            ) {
-              localSettingMeta.syncedAt = cloudSettingMeta.lastModified;
-              logToConsole(
-                "debug",
-                `Updated syncedAt timestamp for ${settingKey} (content unchanged)`,
-                {
-                  newSyncedAt: new Date(
-                    cloudSettingMeta.lastModified
-                  ).toISOString(),
-                  reason: "hash match but cloud newer",
-                }
-              );
-              await saveLocalMetadata();
-            }
-          }
-        } catch (error) {
-          logToConsole(
-            "error",
-            `Error processing setting ${settingKey}`,
-            error
-          );
-          errorCount++;
-        }
-      }
-
-      // Clean up orphaned metadata entries
-      if (orphanedSettings.length > 0) {
-        const totalSettings = Object.keys(cloudMetadata.settings.items).length;
-        const orphanedPercentage =
-          (orphanedSettings.length / totalSettings) * 100;
-
-        if (orphanedPercentage > 50) {
-          logToConsole(
-            "warning",
-            `Detected ${
-              orphanedSettings.length
-            }/${totalSettings} (${orphanedPercentage.toFixed(
-              1
-            )}%) orphaned settings - this may indicate a sync race condition. Skipping cleanup to prevent data loss.`
-          );
-        } else {
-          for (const settingKey of orphanedSettings) {
-            delete cloudMetadata.settings.items[settingKey];
-            orphanedMetadataCount++;
-          }
-
-          logToConsole(
-            "info",
-            `Cleaned up ${orphanedMetadataCount} orphaned metadata entries - uploading updated metadata`
-          );
-
-          await uploadToS3(
-            "metadata.json",
-            new TextEncoder().encode(JSON.stringify(cloudMetadata)),
-            {
-              ContentType: "application/json",
-              ServerSideEncryption: "AES256",
-            }
-          );
-        }
-      }
-
-      // Save updated local metadata
-      if (appliedCount > 0) {
-        await saveLocalMetadata();
-        logToConsole(
-          "success",
-          "Saved updated local metadata after settings sync"
-        );
-      }
-
-      let cleanedDeletedCount = 0;
-      for (const metadataKey of Object.keys(localMetadata.settings.items)) {
-        const metadataEntry = localMetadata.settings.items[metadataKey];
-        if (
-          metadataEntry.deleted &&
-          metadataEntry.syncedAt &&
-          metadataEntry.syncedAt > metadataEntry.deletedAt
-        ) {
-          delete localMetadata.settings.items[metadataKey];
-          cleanedDeletedCount++;
-        }
-      }
-
-      if (cleanedDeletedCount > 0) {
-        logToConsole(
-          "cleanup",
-          `Removed ${cleanedDeletedCount} synced deleted metadata entries after cloud sync`
-        );
-        localMetadata.settings.lastModified = Date.now();
-        await saveLocalMetadata();
-      }
-
-      logToConsole("success", "Individual settings sync from cloud completed", {
-        downloaded: downloadedCount,
-        applied: appliedCount,
-        skipped: skippedCount,
-        orphanedCleaned: orphanedMetadataCount,
-        errors: errorCount,
-        timestamp: new Date(syncTimestamp).toISOString(),
-      });
-
-      return appliedCount > 0 || orphanedMetadataCount > 0;
-    } catch (error) {
-      logToConsole("error", "Error during settings sync from cloud", error);
-      throw error;
-    }
-  }
-
-  async function checkLocalSettingsChanges() {
-    try {
-      let foundChanges = false;
-      let checkedLocalStorage = 0;
-      let checkedIndexedDB = 0;
-
-      for (const key of Object.keys(localStorage)) {
-        if (shouldExcludeSetting(key)) {
-          continue;
-        }
-        checkedLocalStorage++;
-
-        const localMeta = localMetadata.settings?.items?.[key];
-        if (
-          !localMeta ||
-          !localMeta.syncedAt ||
-          localMeta.lastModified > localMeta.syncedAt
-        ) {
-          logToConsole("debug", `Local settings change detected: ${key}`, {
-            hasMetadata: !!localMeta,
-            hasSyncedAt: !!localMeta?.syncedAt,
-            lastModified: localMeta?.lastModified
-              ? new Date(localMeta.lastModified).toISOString()
-              : "NONE",
-            syncedAt: localMeta?.syncedAt
-              ? new Date(localMeta.syncedAt).toISOString()
-              : "NONE",
-          });
-          foundChanges = true;
-        }
-      }
-
-      try {
-        const db = await openIndexedDB();
-        const transaction = db.transaction("keyval", "readonly");
-        const store = transaction.objectStore("keyval");
-        const keys = await new Promise((resolve, reject) => {
-          const request = store.getAllKeys();
-          request.onerror = () => reject(request.error);
-          request.onsuccess = () => resolve(request.result);
-        });
-
-        for (const key of keys) {
-          if (shouldExcludeSetting(key)) {
-            continue;
-          }
-          checkedIndexedDB++;
-
-          const localMeta = localMetadata.settings?.items?.[key];
-
-          if (
-            !localMeta ||
-            !localMeta.syncedAt ||
-            localMeta.lastModified > localMeta.syncedAt
-          ) {
-            logToConsole(
-              "debug",
-              `Local IndexedDB settings change detected: ${key}`,
-              {
-                hasMetadata: !!localMeta,
-                hasSyncedAt: !!localMeta?.syncedAt,
-                lastModified: localMeta?.lastModified
-                  ? new Date(localMeta.lastModified).toISOString()
-                  : "NONE",
-                syncedAt: localMeta?.syncedAt
-                  ? new Date(localMeta.syncedAt).toISOString()
-                  : "NONE",
-              }
-            );
-            foundChanges = true;
-          }
-        }
-      } catch (error) {
-        logToConsole(
-          "error",
-          "Error checking IndexedDB for local settings changes",
-          error
-        );
-      }
-
-      logToConsole("debug", `Local settings check completed`, {
-        checkedLocalStorage,
-        checkedIndexedDB,
-        foundChanges,
-      });
-
-      return foundChanges;
-    } catch (error) {
-      logToConsole("error", "Error checking local settings changes", error);
-      return false;
-    }
-  }
+    return { error: "Backup service not available" };
+  };
 }
