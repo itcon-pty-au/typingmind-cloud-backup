@@ -51,7 +51,7 @@ A comprehensive cloud backup and sync extension for TypingMind that automaticall
 
 1. **Logout of TypingMind** (this disables native sync - the app works perfectly when logged out)
 2. Go to **Menu > Preferences > Extensions** in TypingMind
-3. Load this URL: `https://itcon-pty-au.github.io/typingmind-cloud-backup/s3-v3.js`
+3. Load this URL: `https://itcon-pty-au.github.io/typingmind-cloud-backup/s3-v2.js`
 
 ### Step 2: Configure Cloud Storage
 
