@@ -268,7 +268,7 @@ if (window.typingMindCloudSync) {
           const request = store.get(itemId);
           request.onsuccess = () => {
             const result = request.result;
-            resolve(result ? { id: itemId, ...result } : null);
+            resolve(result || null);
           };
           request.onerror = () => resolve(null);
         });
@@ -284,8 +284,7 @@ if (window.typingMindCloudSync) {
         const transaction = db.transaction(["keyval"], "readwrite");
         const store = transaction.objectStore("keyval");
         const itemId = itemKey || item.id;
-        const itemData = { ...item };
-        delete itemData.id;
+        const itemData = item;
         return new Promise((resolve) => {
           const request = store.put(itemData, itemId);
           request.onsuccess = () => resolve(true);
@@ -1849,8 +1848,8 @@ if (window.typingMindCloudSync) {
       allItems
         .filter((item) => item.type === "idb")
         .forEach((item) => {
-          if (item.data && item.data.id) {
-            indexedDBData[item.data.id] = item.data;
+          if (item.data) {
+            indexedDBData[item.id] = item.data;
           }
         });
 
@@ -2051,8 +2050,8 @@ if (window.typingMindCloudSync) {
       allItems
         .filter((item) => item.type === "idb")
         .forEach((item) => {
-          if (item.data && item.data.id) {
-            indexedDBData[item.data.id] = item.data;
+          if (item.data) {
+            indexedDBData[item.id] = item.data;
           }
         });
 
@@ -2419,8 +2418,8 @@ if (window.typingMindCloudSync) {
 
           if (chunkData.items) {
             for (const item of chunkData.items) {
-              if (item.type === "idb" && item.data && item.data.id) {
-                allData.indexedDB[item.data.id] = item.data;
+              if (item.type === "idb" && item.data) {
+                allData.indexedDB[item.id] = item.data;
               } else if (item.type === "ls" && item.data) {
                 allData.localStorage[item.data.key] = item.data.value;
               }
@@ -2473,11 +2472,7 @@ if (window.typingMindCloudSync) {
       if (data.indexedDB && typeof data.indexedDB === "object") {
         Object.entries(data.indexedDB).forEach(([key, itemData]) => {
           if (key && itemData !== undefined && itemData !== null) {
-            const restoreItem =
-              typeof itemData === "object"
-                ? { ...itemData, id: key }
-                : { id: key, value: itemData };
-            promises.push(this.dataService.saveItem(restoreItem, "idb"));
+            promises.push(this.dataService.saveItem(itemData, "idb", key));
             this.logger.log("info", `🔄 Restoring IndexedDB item: ${key}`);
           } else {
             this.logger.log(
