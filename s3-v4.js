@@ -2706,10 +2706,11 @@ if (window.typingMindCloudSync) {
     async initialize() {
       this.logger.log("start", "Initializing Cloud Sync V3");
 
-      // Check for nosync parameter
+      // Check for nosync parameter and get URL config
       const urlParams = new URLSearchParams(window.location.search);
       this.noSyncMode =
         urlParams.get("nosync") === "true" || urlParams.has("nosync");
+      const urlConfig = this.getConfigFromUrlParams();
 
       if (this.noSyncMode) {
         this.logger.log(
@@ -2719,7 +2720,7 @@ if (window.typingMindCloudSync) {
       }
 
       // Check for mandatory configuration if not in nosync mode
-      if (!this.noSyncMode && !this.checkMandatoryConfig()) {
+      if (!this.noSyncMode && !this.checkMandatoryConfig(urlConfig.config)) {
         alert(
           "⚠️ Cloud Sync Configuration Required\n\nPlease configure the following mandatory fields in the sync settings:\n• AWS Bucket Name\n• AWS Region\n• AWS Access Key\n• AWS Secret Key\n• Encryption Key\n\nClick on the Sync button to open settings, then reload the page after configuration."
         );
@@ -2733,7 +2734,6 @@ if (window.typingMindCloudSync) {
       this.insertSyncButton();
 
       // Check for URL config parameters and auto-open modal if requested
-      const urlConfig = this.getConfigFromUrlParams();
       if (urlConfig.autoOpen || urlConfig.hasParams) {
         this.logger.log(
           "info",
@@ -2774,28 +2774,53 @@ if (window.typingMindCloudSync) {
         );
       }
     }
-    checkMandatoryConfig() {
+    checkMandatoryConfig(urlConfig = {}) {
       const requiredFields = [
-        "tcs_aws_bucketname",
-        "tcs_aws_region",
-        "tcs_aws_accesskey",
-        "tcs_aws_secretkey",
-        "tcs_encryptionkey",
+        { key: "tcs_aws_bucketname", urlKey: "bucketName" },
+        { key: "tcs_aws_region", urlKey: "region" },
+        { key: "tcs_aws_accesskey", urlKey: "accessKey" },
+        { key: "tcs_aws_secretkey", urlKey: "secretKey" },
+        { key: "tcs_encryptionkey", urlKey: "encryptionKey" },
       ];
 
+      const missingFields = [];
+
       for (const field of requiredFields) {
-        const value = localStorage.getItem(field);
-        if (!value || value.trim() === "") {
-          this.logger.log("warning", `Missing mandatory field: ${field}`);
-          return false;
+        const localValue = localStorage.getItem(field.key);
+        const urlValue = urlConfig[field.urlKey];
+
+        if (
+          (!localValue || localValue.trim() === "") &&
+          (!urlValue || urlValue.trim() === "")
+        ) {
+          this.logger.log(
+            "warning",
+            `Missing mandatory field: ${field.key} (not in localStorage or URL params)`
+          );
+          missingFields.push(field.key);
         }
+      }
+
+      if (missingFields.length > 0) {
+        this.logger.log(
+          "warning",
+          `Missing ${missingFields.length} mandatory fields`,
+          missingFields
+        );
+        return false;
       }
 
       this.logger.log(
         "success",
-        "All mandatory configuration fields are present"
+        "All mandatory configuration fields are present (localStorage + URL params)"
       );
       return true;
+    }
+
+    isSnapshotAvailable() {
+      // Snapshots require S3 configuration to work
+      const urlConfig = this.getConfigFromUrlParams();
+      return this.checkMandatoryConfig(urlConfig.config);
     }
 
     getConfigFromUrlParams() {
@@ -3002,7 +3027,9 @@ if (window.typingMindCloudSync) {
               }>
                 ${this.noSyncMode ? "Sync Disabled" : "Sync Now"}
               </button>
-              <button id="create-snapshot" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 disabled:cursor-default transition-colors">
+              <button id="create-snapshot" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 disabled:cursor-default transition-colors" ${
+                !this.isSnapshotAvailable() ? "disabled" : ""
+              }>
                 Snapshot
               </button>
               <button id="close-modal" class="z-1 inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
@@ -3542,6 +3569,13 @@ if (window.typingMindCloudSync) {
       this.closeModal(overlay);
     }
     async createSnapshot() {
+      if (!this.isSnapshotAvailable()) {
+        alert(
+          "⚠️ Snapshot Unavailable\n\nSnapshots require AWS configuration. Please configure the following mandatory fields:\n• AWS Bucket Name\n• AWS Region\n• AWS Access Key\n• AWS Secret Key\n• Encryption Key"
+        );
+        return;
+      }
+
       const name = prompt("Enter snapshot name:");
       if (!name) return;
 
