@@ -3995,42 +3995,87 @@ if (window.typingMindCloudSync) {
         alert("Sync interval must be at least 15 seconds");
         return;
       }
-      Object.keys(newConfig).forEach((key) =>
-        this.config.set(key, newConfig[key])
-      );
-      this.config.save();
-
-      if (!this.noSyncMode) {
-        this.operationQueue.add(
-          "save-and-sync",
-          async () => {
-            await this.s3Service.initialize();
-            await this.syncOrchestrator.performFullSync();
-            this.startAutoSync();
-            this.updateSyncStatus("success");
-            this.logger.log(
-              "success",
-              "Configuration saved and sync completed"
-            );
+      const saveButton = document.getElementById("save-settings");
+      const actionMsg = document.getElementById("action-msg");
+      saveButton.disabled = true;
+      saveButton.textContent = "Verifying...";
+      actionMsg.textContent = "Verifying AWS credentials...";
+      actionMsg.style.color = "#3b82f6";
+      try {
+        const tempConfigManager = {
+          config: { ...this.config.config, ...newConfig },
+          get: function (key) {
+            return this.config[key];
           },
-          "high"
+          isConfigured: () => true,
+        };
+        const tempS3Service = new S3Service(
+          tempConfigManager,
+          this.cryptoService,
+          this.logger
         );
-      } else {
-        // In noSync mode, only initialize S3 service for snapshot functionality
-        this.operationQueue.add(
-          "save-config-nosync",
-          async () => {
-            await this.s3Service.initialize();
-            this.logger.log(
-              "success",
-              "Configuration saved (NoSync mode - only snapshot available)"
-            );
-          },
-          "high"
+        await tempS3Service.initialize();
+        await tempS3Service.list("");
+        actionMsg.textContent =
+          "✅ Credentials verified! Saving configuration...";
+        actionMsg.style.color = "#22c55e";
+        Object.keys(newConfig).forEach((key) =>
+          this.config.set(key, newConfig[key])
         );
+        this.config.save();
+        if (!this.noSyncMode) {
+          this.operationQueue.add(
+            "save-and-sync",
+            async () => {
+              await this.s3Service.initialize();
+              await this.syncOrchestrator.performFullSync();
+              this.startAutoSync();
+              this.updateSyncStatus("success");
+              this.logger.log(
+                "success",
+                "Configuration saved and sync completed"
+              );
+            },
+            "high"
+          );
+        } else {
+          this.operationQueue.add(
+            "save-config-nosync",
+            async () => {
+              await this.s3Service.initialize();
+              this.logger.log(
+                "success",
+                "Configuration saved (NoSync mode - only snapshot available)"
+              );
+            },
+            "high"
+          );
+        }
+        setTimeout(() => {
+          this.closeModal(overlay);
+        }, 1500);
+      } catch (error) {
+        this.logger.log("error", "AWS credential verification failed", error);
+        let errorMessage =
+          "Verification failed. Please check your credentials and bucket permissions.";
+        if (error.code === "NoSuchBucket") {
+          errorMessage =
+            "Verification failed: The specified bucket does not exist.";
+        } else if (
+          error.code === "InvalidAccessKeyId" ||
+          error.code === "SignatureDoesNotMatch"
+        ) {
+          errorMessage =
+            "Verification failed: Invalid Access Key or Secret Key.";
+        } else if (error.code === "AccessDenied") {
+          errorMessage =
+            "Verification failed: Access Denied. Ensure the key has permissions to list the bucket.";
+        }
+        actionMsg.textContent = `❌ ${errorMessage}`;
+        actionMsg.style.color = "#ef4444";
+        saveButton.disabled = false;
+        saveButton.textContent = "Save";
       }
-
-      this.closeModal(overlay);
     }
     async createSnapshot() {
       if (!this.isSnapshotAvailable()) {
