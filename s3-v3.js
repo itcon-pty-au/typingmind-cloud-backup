@@ -1130,30 +1130,36 @@ if (window.typingMindCloudSync) {
             ) {
               const existingItem = this.metadata.items[key];
               const currentSize = this.getItemSize(value);
-              if (!existingItem) {
-                changedItems.push({
-                  id: key,
-                  type: "idb",
-                  size: currentSize,
-                  lastModified: now,
-                  reason: "new",
-                });
-              } else if (currentSize !== existingItem.size) {
-                changedItems.push({
-                  id: key,
-                  type: "idb",
-                  size: currentSize,
-                  lastModified: now,
-                  reason: "size",
-                });
-              } else if (!existingItem.synced) {
-                changedItems.push({
-                  id: key,
-                  type: "idb",
-                  size: currentSize,
-                  lastModified: now,
-                  reason: "never-synced",
-                });
+
+              // Skip items marked as deleted in metadata
+              if (existingItem && existingItem.deleted) {
+                // Silently skip deleted items to avoid spam
+              } else {
+                if (!existingItem) {
+                  changedItems.push({
+                    id: key,
+                    type: "idb",
+                    size: currentSize,
+                    lastModified: now,
+                    reason: "new",
+                  });
+                } else if (currentSize !== existingItem.size) {
+                  changedItems.push({
+                    id: key,
+                    type: "idb",
+                    size: currentSize,
+                    lastModified: now,
+                    reason: "size",
+                  });
+                } else if (!existingItem.synced) {
+                  changedItems.push({
+                    id: key,
+                    type: "idb",
+                    size: currentSize,
+                    lastModified: now,
+                    reason: "never-synced",
+                  });
+                }
               }
             }
             cursor.continue();
@@ -1169,30 +1175,36 @@ if (window.typingMindCloudSync) {
           const value = localStorage.getItem(key);
           const existingItem = this.metadata.items[key];
           const currentSize = this.getItemSize(value);
-          if (!existingItem) {
-            changedItems.push({
-              id: key,
-              type: "ls",
-              size: currentSize,
-              lastModified: now,
-              reason: "new",
-            });
-          } else if (currentSize !== existingItem.size) {
-            changedItems.push({
-              id: key,
-              type: "ls",
-              size: currentSize,
-              lastModified: now,
-              reason: "size",
-            });
-          } else if (!existingItem.synced) {
-            changedItems.push({
-              id: key,
-              type: "ls",
-              size: currentSize,
-              lastModified: now,
-              reason: "never-synced",
-            });
+
+          // Skip items marked as deleted in metadata
+          if (existingItem && existingItem.deleted) {
+            // Silently skip deleted items to avoid spam
+          } else {
+            if (!existingItem) {
+              changedItems.push({
+                id: key,
+                type: "ls",
+                size: currentSize,
+                lastModified: now,
+                reason: "new",
+              });
+            } else if (currentSize !== existingItem.size) {
+              changedItems.push({
+                id: key,
+                type: "ls",
+                size: currentSize,
+                lastModified: now,
+                reason: "size",
+              });
+            } else if (!existingItem.synced) {
+              changedItems.push({
+                id: key,
+                type: "ls",
+                size: currentSize,
+                lastModified: now,
+                reason: "never-synced",
+              });
+            }
           }
         }
       }
