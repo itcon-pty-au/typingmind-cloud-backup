@@ -2516,9 +2516,9 @@ if (window.typingMindCloudSync) {
       await this.restoreData(decryptedData);
       this.logger.log("success", "Simple backup restored successfully");
 
-      /* setTimeout(() => {
+      setTimeout(() => {
         window.location.reload();
-      }, 3000); */
+      }, 3000);
 
       return true;
     }
@@ -2638,9 +2638,9 @@ if (window.typingMindCloudSync) {
         `Chunked backup restored successfully (${metadata.totalChunks} chunks)`
       );
 
-      /* setTimeout(() => {
+      setTimeout(() => {
         window.location.reload();
-      }, 3000); */
+      }, 3000);
 
       return true;
     }
@@ -3662,10 +3662,8 @@ if (window.typingMindCloudSync) {
                 this.cryptoService
               );
               if (success) {
-                alert(
-                  "Backup restored successfully! Please manually reload the pageUpdate alert."
-                );
-                // location.reload();
+                alert("Backup restored successfully! Page will reload.");
+                location.reload();
               }
             } catch (error) {
               console.error("Failed to restore backup:", error);
@@ -3833,9 +3831,14 @@ if (window.typingMindCloudSync) {
       const diagnosticsBody = modal.querySelector("#sync-diagnostics-body");
       if (!diagnosticsBody) return;
 
+      const setContent = (html) => {
+        diagnosticsBody.innerHTML = html;
+      };
+
       if (!this.config.isConfigured()) {
-        diagnosticsBody.innerHTML =
-          '<tr><td colspan="3" class="text-center py-2 text-zinc-500">AWS Not Configured</td></tr>';
+        setContent(
+          '<tr><td colspan="3" class="text-center py-2 text-zinc-500">AWS Not Configured</td></tr>'
+        );
         const overallStatusEl = modal.querySelector("#sync-overall-status");
         const summaryEl = modal.querySelector("#sync-diagnostics-summary");
         if (overallStatusEl) overallStatusEl.textContent = "⚙️";
@@ -3844,8 +3847,9 @@ if (window.typingMindCloudSync) {
       }
 
       try {
-        diagnosticsBody.innerHTML =
-          '<tr><td colspan="3" class="text-center py-2 text-zinc-500">Loading...</td></tr>';
+        setContent(
+          '<tr><td colspan="3" class="text-center py-2 text-zinc-500">Loading...</td></tr>'
+        );
 
         // Get local items count
         const localItems = await this.dataService.getAllItems();
@@ -3949,12 +3953,13 @@ if (window.typingMindCloudSync) {
           `;
         }
 
-        diagnosticsBody.innerHTML = tableHTML + warningRow;
+        setContent(tableHTML + warningRow);
       } catch (error) {
         console.error("Failed to load sync diagnostics:", error);
         if (diagnosticsBody) {
-          diagnosticsBody.innerHTML =
-            '<tr><td colspan="3" class="text-center py-2 text-red-400">Error loading diagnostics</td></tr>';
+          setContent(
+            '<tr><td colspan="3" class="text-center py-2 text-red-400">Error loading diagnostics</td></tr>'
+          );
         }
         const overallStatusEl = modal.querySelector("#sync-overall-status");
         const summaryEl = modal.querySelector("#sync-diagnostics-summary");
