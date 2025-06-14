@@ -3048,30 +3048,34 @@ if (window.typingMindCloudSync) {
 
       let hasConfigParams = false;
 
-      // Manually parse to avoid '+' being converted to space for keys
-      const rawQuery = window.location.search.substring(1);
-      const rawParams = new URLSearchParams(rawQuery);
-
       for (const [urlParam, configKey] of Object.entries(paramMap)) {
-        if (rawParams.has(urlParam)) {
-          let value = rawParams.get(urlParam);
-          // For keys that might contain '+', which gets converted to a space by get(),
-          // we do a targeted replacement. We assume a space in a key is an encoded '+'.
-          if (
-            (configKey === "secretKey" ||
-              configKey === "accessKey" ||
-              configKey === "encryptionKey") &&
-            value.includes(" ")
-          ) {
-            const urlEncodedValue = new URLSearchParams(
-              window.location.search
-            ).get(urlParam);
-            if (urlEncodedValue) {
-              value = urlEncodedValue;
-            }
-          }
+        const value = urlParams.get(urlParam);
+        if (value !== null) {
           config[configKey] = value;
           hasConfigParams = true;
+        }
+      }
+
+      // Re-process sensitive keys that may contain '+' which URLSearchParams converts to space.
+      const sensitiveKeys = {
+        accesskey: "accessKey",
+        secretkey: "secretKey",
+        encryptionkey: "encryptionKey",
+      };
+
+      const rawQuery = window.location.search.substring(1);
+      if (rawQuery) {
+        const params = rawQuery.split("&");
+        for (const p of params) {
+          const idx = p.indexOf("=");
+          if (idx > 0) {
+            const key = p.substring(0, idx);
+            if (sensitiveKeys[key]) {
+              const value = decodeURIComponent(p.substring(idx + 1));
+              config[sensitiveKeys[key]] = value;
+              hasConfigParams = true;
+            }
+          }
         }
       }
 
