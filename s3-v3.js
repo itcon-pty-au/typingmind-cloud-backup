@@ -3211,6 +3211,25 @@ if (window.typingMindCloudSync) {
         ${modeStatus}
         <div class="space-y-3">
           <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
+            <div class="flex items-center justify-between mb-2">
+              <label class="block text-sm font-medium text-zinc-300">Sync Diagnostics</label>
+            </div>
+            <div class="overflow-x-auto">
+              <table id="sync-diagnostics-table" class="w-full text-xs text-zinc-300 border-collapse">
+                <thead>
+                  <tr class="border-b border-zinc-600">
+                    <th class="text-left py-1 px-2 font-medium">Type</th>
+                    <th class="text-right py-1 px-2 font-medium">Count</th>
+                    <th class="text-right py-1 px-2 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="sync-diagnostics-body">
+                  <tr><td colspan="3" class="text-center py-2 text-zinc-500">Loading...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
             <div class="flex items-center justify-between mb-1">
               <label class="block text-sm font-medium text-zinc-300">Available Backups</label>
             </div>
@@ -3379,6 +3398,7 @@ if (window.typingMindCloudSync) {
 
       this.loadBackupList(modal);
       this.setupBackupListHandlers(modal);
+      this.loadSyncDiagnostics(modal);
     }
 
     populateFormFromUrlParams(modal) {
@@ -3763,6 +3783,102 @@ if (window.typingMindCloudSync) {
       const sizes = ["B", "KB", "MB", "GB"];
       const i = Math.floor(Math.log(bytes) / Math.log(k));
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+    }
+    async loadSyncDiagnostics(modal) {
+      try {
+        const diagnosticsBody = modal.querySelector("#sync-diagnostics-body");
+        if (!diagnosticsBody) return;
+
+        diagnosticsBody.innerHTML =
+          '<tr><td colspan="3" class="text-center py-2 text-zinc-500">Loading...</td></tr>';
+
+        // Get local items count
+        const localItems = await this.dataService.getAllItems();
+        const localCount = localItems.length;
+        const chatItems = localItems.filter((item) =>
+          item.id.startsWith("CHAT_")
+        ).length;
+        const otherItems = localCount - chatItems;
+
+        // Get metadata count
+        const metadataCount = Object.keys(
+          this.syncOrchestrator.metadata.items || {}
+        ).length;
+        const metadataDeleted = Object.values(
+          this.syncOrchestrator.metadata.items || {}
+        ).filter((item) => item.deleted).length;
+        const metadataActive = metadataCount - metadataDeleted;
+
+        // Get cloud metadata
+        const cloudMetadata = await this.syncOrchestrator.getCloudMetadata();
+        const cloudCount = Object.keys(cloudMetadata.items || {}).length;
+        const cloudDeleted = Object.values(cloudMetadata.items || {}).filter(
+          (item) => item.deleted
+        ).length;
+        const cloudActive = cloudCount - cloudDeleted;
+
+        // Get sync timestamps
+        const localLastSync = localStorage.getItem("tcs_last-cloud-sync");
+        const cloudLastSync = cloudMetadata.lastSync || 0;
+        const hasCloudChanges = cloudLastSync > parseInt(localLastSync || "0");
+
+        // Generate table rows
+        const rows = [
+          {
+            type: "📱 Local Items",
+            count: localCount,
+            status: localCount > 0 ? "✅" : "⚠️",
+          },
+          {
+            type: "📋 Local Metadata",
+            count: metadataActive,
+            status: metadataActive === localCount ? "✅" : "⚠️",
+          },
+          {
+            type: "☁️ Cloud Items",
+            count: cloudActive,
+            status: cloudActive > 0 ? "✅" : "⚠️",
+          },
+          {
+            type: "🔄 Sync Status",
+            count: hasCloudChanges ? "Pending" : "Current",
+            status: hasCloudChanges ? "🟡" : "✅",
+          },
+        ];
+
+        const tableHTML = rows
+          .map(
+            (row) => `
+          <tr class="border-b border-zinc-700 hover:bg-zinc-700/30">
+            <td class="py-1 px-2">${row.type}</td>
+            <td class="text-right py-1 px-2">${row.count}</td>
+            <td class="text-center py-1 px-2">${row.status}</td>
+          </tr>
+        `
+          )
+          .join("");
+
+        // Add warning row if there are mismatches
+        let warningRow = "";
+        if (localCount !== metadataActive || localCount !== cloudActive) {
+          warningRow = `
+            <tr class="bg-orange-900/20 border-b border-orange-600">
+              <td class="py-1 px-2 text-orange-300">⚠️ Mismatch Detected</td>
+              <td class="text-right py-1 px-2 text-orange-300">Check README</td>
+              <td class="text-center py-1 px-2">🔧</td>
+            </tr>
+          `;
+        }
+
+        diagnosticsBody.innerHTML = tableHTML + warningRow;
+      } catch (error) {
+        console.error("Failed to load sync diagnostics:", error);
+        const diagnosticsBody = modal.querySelector("#sync-diagnostics-body");
+        if (diagnosticsBody) {
+          diagnosticsBody.innerHTML =
+            '<tr><td colspan="3" class="text-center py-2 text-red-400">Error loading diagnostics</td></tr>';
+        }
+      }
     }
     closeModal(overlay) {
       this.modalCleanupCallbacks.forEach((cleanup) => {
@@ -4336,6 +4452,23 @@ if (window.typingMindCloudSync) {
     .cloud-sync-modal input[type="checkbox"]:checked {
       background-color: rgb(59, 130, 246);
       border-color: rgb(59, 130, 246);
+    }
+    
+    #sync-diagnostics-table {
+      font-size: 0.75rem;
+    }
+    
+    #sync-diagnostics-table th {
+      background-color: rgb(82, 82, 91);
+      font-weight: 600;
+    }
+    
+    #sync-diagnostics-table tr:hover {
+      background-color: rgba(63, 63, 70, 0.5);
+    }
+    
+    #sync-diagnostics-table .bg-orange-900\/20 {
+      background-color: rgba(194, 65, 12, 0.2);
     }
   `;
   document.head.appendChild(styleSheet);

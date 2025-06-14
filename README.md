@@ -210,99 +210,193 @@ For troubleshooting, enable detailed logging:
 ## ☁️ Cloud Storage Setup
 
 ### AWS Config
+
 1. Create a user in Amazon IAM. In permissions option, select "Add user to group" but don't select any group. In next screen, "Create user".
 2. Open the user. Create Access Key for the user. In Step 1, select "Other", you can skip Step 2 and directly create Access Key. Copy the Access key and Secret Key and store it securely. You will need this to configure the extension.
 3. Create a bucket with the default settings. Due to security reasons, it is recommended to create a new bucket for Typingmind backup and ensure that no other files are stored in it.
 4. Open Bucket > Permissions > Bucket Policy
+
 ```yaml
 {
   "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "AWS": "arn:aws:iam::<AWS Account ID>:user/<IAM username>"
+  "Statement":
+    [
+      {
+        "Effect": "Allow",
+        "Principal":
+          { "AWS": "arn:aws:iam::<AWS Account ID>:user/<IAM username>" },
+        "Action":
+          [
+            "s3:ListBucket",
+            "s3:GetObject",
+            "s3:PutObject",
+            "s3:DeleteObject",
+            "s3:ListBucketMultipartUploads",
+            "s3:ListMultipartUploadParts",
+            "s3:AbortMultipartUpload",
+            "s3:GetBucketLocation",
+            "s3:GetBucketVersioning",
+            "s3:ListBucketVersions",
+            "s3:DeleteObjectVersion",
+          ],
+        "Resource":
+          [
+            "arn:aws:s3:::<AWS bucket name>",
+            "arn:aws:s3:::<AWS bucket name>/*",
+          ],
       },
-      "Action": [
-        "s3:ListBucket",
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:DeleteObject",
-        "s3:ListBucketMultipartUploads",
-        "s3:ListMultipartUploadParts",
-        "s3:AbortMultipartUpload",
-        "s3:GetBucketLocation",
-        "s3:GetBucketVersioning",
-        "s3:ListBucketVersions",
-        "s3:DeleteObjectVersion"
-      ],
-      "Resource": [
-        "arn:aws:s3:::<AWS bucket name>",
-        "arn:aws:s3:::<AWS bucket name>/*"
-      ]
-    },
-    {
-      "Sid": "PreventSpecificFileDeletion",
-      "Effect": "Deny",
-      "Principal": {
-        "AWS": "arn:aws:iam::<AWS Account ID>:user/<IAM username>"
+      {
+        "Sid": "PreventSpecificFileDeletion",
+        "Effect": "Deny",
+        "Principal":
+          { "AWS": "arn:aws:iam::<AWS Account ID>:user/<IAM username>" },
+        "Action": "s3:DeleteObject",
+        "Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json",
       },
-      "Action": "s3:DeleteObject",
-      "Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json"
-    }
-  ]
+    ],
 }
 ```
+
 Update AWS Account ID, IAM username and AWS bucket name in the policy with your specific values.
 
 5. Open Bucket > Permissions > CORS
+
 ```yaml
 [
   {
     "AllowedHeaders": ["*"],
     "AllowedMethods": ["HEAD", "GET", "PUT", "POST", "DELETE"],
     "AllowedOrigins": ["https://*.hostname.com"],
-    "ExposeHeaders": ["Access-Control-Allow-Origin","ETag","x-amz-server-side-encryption","x-amz-request-id","x-amz-id-2"],
-    "MaxAgeSeconds": 3000
-  }
+    "ExposeHeaders":
+      [
+        "Access-Control-Allow-Origin",
+        "ETag",
+        "x-amz-server-side-encryption",
+        "x-amz-request-id",
+        "x-amz-id-2",
+      ],
+    "MaxAgeSeconds": 3000,
+  },
 ]
 ```
+
 If you are using typingmind cloud, use the below
+
 ```yaml
 [
   {
     "AllowedHeaders": ["*"],
     "AllowedMethods": ["HEAD", "GET", "PUT", "POST", "DELETE"],
     "AllowedOrigins": ["https://www.typingmind.com"],
-    "ExposeHeaders": ["Access-Control-Allow-Origin","ETag","x-amz-server-side-encryption","x-amz-request-id","x-amz-id-2"],
-    "MaxAgeSeconds": 3000
-  }
+    "ExposeHeaders":
+      [
+        "Access-Control-Allow-Origin",
+        "ETag",
+        "x-amz-server-side-encryption",
+        "x-amz-request-id",
+        "x-amz-id-2",
+      ],
+    "MaxAgeSeconds": 3000,
+  },
 ]
 ```
-Update "https://*.hostname.com" with your specific hostname in case you are self hosting Typingmind (e.g. https://chat.yourhostname.com). If you are using Typingmind cloud, hostname should be https://www.typingmind.com. This restricts executing S3 commands from only the specified hostname providing better security.
+
+Update "https://\*.hostname.com" with your specific hostname in case you are self hosting Typingmind (e.g. https://chat.yourhostname.com). If you are using Typingmind cloud, hostname should be https://www.typingmind.com. This restricts executing S3 commands from only the specified hostname providing better security.
 
 ### S3 compatible storage services setup
+
 Cloudflare R2 provides S3 compatible API with a generous 10GB free storage per month. Refer [How to setup Cloudflare R2 and use with this extension](https://github.com/itcon-pty-au/typingmind-cloud-backup/blob/main/HowTo/Cloudflare_R2_HowTo.docx)
 iDrive E2 provides S3 compatible API with a generous 10GB free storage per month. Refer [How to setup iDrive E2 and use with this extension](https://github.com/itcon-pty-au/typingmind-cloud-backup/blob/main/HowTo/iDrive_E2_HowTo.docx)
 
-## Troubleshooting
+## 🐛 Troubleshooting
+
+### Enable Logging
+
+For troubleshooting, enable detailed logging:
+
+1. **Startup Logging**: Add `?log=true` to your URL
+2. **Runtime Logging**: Toggle "Console Logging" in the config modal
+3. Check browser console for detailed sync information
+
+### Sync Issues Between Devices
+
+**Symptom**: Different item counts between devices (e.g., Device 1 has 467 items, Device 2 has 376 items)
+
+**Root Cause**: Local metadata corruption/inconsistency
+
+- Local metadata incorrectly shows items as "synced" when they're not in cloud
+- Prevents items from being uploaded to cloud
+- Other devices can't download what was never uploaded
+
+**Diagnosis**:
+
+1. Open the Sync settings modal - check the "Sync Diagnostics" table
+2. Compare Local Items vs Cloud Items counts
+3. Look for mismatches between devices
+
+**Solutions** (in order of preference):
+
+**Solution 1: Reset metadata on device with CORRECT data**
+
+- Identify which device has the complete/correct dataset
+- On that device only:
+  ```javascript
+  localStorage.removeItem("tcs_local-metadata");
+  localStorage.removeItem("tcs_last-cloud-sync");
+  // Reload page
+  ```
+- This forces re-upload of all items to cloud
+- Other devices will then download missing items
+
+**Solution 2: Reset metadata on device with MISSING data**
+
+- On device with fewer items:
+  ```javascript
+  localStorage.removeItem("tcs_local-metadata");
+  localStorage.removeItem("tcs_last-cloud-sync");
+  // Reload page
+  ```
+- This forces download of missing items from cloud
+
+**Solution 3: Complete sync reset** (if Solutions 1-2 don't work)
+
+- Create backup/snapshot first on device with most data
+- On ALL devices:
+  ```javascript
+  localStorage.removeItem("tcs_local-metadata");
+  localStorage.removeItem("tcs_last-cloud-sync");
+  localStorage.removeItem("tcs_last-daily-backup");
+  // Reload all devices
+  ```
+
+**Prevention**:
+
+- Monitor sync status indicator (colored dot on sync button)
+- Avoid simultaneous syncing on multiple devices
+- Check logs periodically with `?log=true`
+- Create regular snapshots before major changes
 
 ### Using app in multiple devices simultaneously
+
 > The extension will work reliably only when one device is active at a time. So if you are facing issues, ensure the app is active only on one device at a time.
 
 ### New Chats Disappearing
-> - **Have you checked the setting**: "Alert if cloud backup is smaller during import"? 
-> **Implication of not checking this**: Assuming you have the extension in "Sync" mode.
+
+> - **Have you checked the setting**: "Alert if cloud backup is smaller during import"?
+>   **Implication of not checking this**: Assuming you have the extension in "Sync" mode.
 >   - You create a new chat.
 >   - You immediately swap to a different tab/window (Backup to S3 did not happen yet).
 >   - You come back to the app - At this point, data has been freshly imported from S3 and your new chat is now disappeared.
 > - **Resolution**: Make the extension work in **Backup mode** (Not an option if you are using the app on multiple devices), then check the setting "Alert if cloud backup is smaller during import". This will prompt the user for confirmation if the cloud backup size is less than the local backup size. In the above scenario, the prompt will appear. You should click **Cancel** as you are certain that the local data is newer, and it will skip the cloud import.
 
 ## Warning
-The extension encrypts the AWS credentials while its stored in the browser database. However, since the encryption key is still stored in plain text, sophisticated hackers who can get access to your browser data and could theoretically get access to your AWS credentials. So, be sure to provide minimum permissions to the AWS credentials. For Amazon S3, I have provided access policy above. However, for other S3 compatible providers, its up to you to setup proper access policies. 
+
+The extension encrypts the AWS credentials while its stored in the browser database. However, since the encryption key is still stored in plain text, sophisticated hackers who can get access to your browser data and could theoretically get access to your AWS credentials. So, be sure to provide minimum permissions to the AWS credentials. For Amazon S3, I have provided access policy above. However, for other S3 compatible providers, its up to you to setup proper access policies.
 
 ## About me
+
 I am a passionate developer dedicated to creating useful tools that can benefit the community. My goal is to distribute all of my projects as open source, enabling others to learn, contribute, and innovate together. If you appreciate my work and want to support my efforts, feel free to [buy me a coffee](https://buymeacoffee.com/itcon) :heart:!
 
 ## License
+
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
