@@ -3663,7 +3663,7 @@ if (window.typingMindCloudSync) {
               );
               if (success) {
                 alert(
-                  "Backup restored successfully! Please manually reload the page after checking the console for errors."
+                  "Backup restored successfully! Please manually reload the page."
                 );
                 // location.reload();
               }
