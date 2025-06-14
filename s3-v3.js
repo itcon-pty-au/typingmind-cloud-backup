@@ -2923,12 +2923,25 @@ if (window.typingMindCloudSync) {
         urlParams.get("nosync") === "true" || urlParams.has("nosync");
       const urlConfig = this.getConfigFromUrlParams();
 
-      // Apply URL config to in-memory config to allow immediate service initialization
+      // Apply URL config to in-memory config and save to localStorage
       if (urlConfig.hasParams) {
         Object.keys(urlConfig.config).forEach((key) => {
-          this.config.set(key, urlConfig.config[key]);
+          if (key === "exclusions") {
+            localStorage.setItem(
+              "tcs_sync-exclusions",
+              urlConfig.config.exclusions
+            );
+            this.config.reloadExclusions();
+          } else {
+            this.config.set(key, urlConfig.config[key]);
+          }
         });
-        this.logger.log("info", "Applied URL parameters to in-memory config.");
+        this.config.save();
+        this.logger.log(
+          "info",
+          "Applied and saved URL parameters to config and localStorage."
+        );
+        this.removeConfigFromUrl();
       }
 
       if (this.noSyncMode) {
@@ -3106,6 +3119,38 @@ if (window.typingMindCloudSync) {
         hasParams: hasConfigParams,
         autoOpen: autoOpen,
       };
+    }
+
+    removeConfigFromUrl() {
+      const url = new URL(window.location);
+      const params = url.searchParams;
+
+      const paramsToRemove = [
+        "bucket",
+        "bucketname",
+        "region",
+        "accesskey",
+        "secretkey",
+        "endpoint",
+        "encryptionkey",
+        "syncinterval",
+        "exclusions",
+        "config",
+        "autoconfig",
+      ];
+
+      let removedSomething = false;
+      paramsToRemove.forEach((p) => {
+        if (params.has(p)) {
+          params.delete(p);
+          removedSomething = true;
+        }
+      });
+
+      if (removedSomething) {
+        window.history.replaceState({}, document.title, url.toString());
+        this.logger.log("info", "Removed configuration parameters from URL.");
+      }
     }
 
     async waitForDOM() {
