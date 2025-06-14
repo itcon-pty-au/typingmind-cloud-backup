@@ -2923,6 +2923,14 @@ if (window.typingMindCloudSync) {
         urlParams.get("nosync") === "true" || urlParams.has("nosync");
       const urlConfig = this.getConfigFromUrlParams();
 
+      // Apply URL config to in-memory config to allow immediate service initialization
+      if (urlConfig.hasParams) {
+        Object.keys(urlConfig.config).forEach((key) => {
+          this.config.set(key, urlConfig.config[key]);
+        });
+        this.logger.log("info", "Applied URL parameters to in-memory config.");
+      }
+
       if (this.noSyncMode) {
         this.logger.log(
           "info",
@@ -2978,6 +2986,13 @@ if (window.typingMindCloudSync) {
           "info",
           "NoSync mode: Daily backups and auto-sync disabled"
         );
+        if (this.config.isConfigured()) {
+          try {
+            await this.s3Service.initialize();
+          } catch (error) {
+            this.logger.log("error", "S3 initialization failed", error.message);
+          }
+        }
       }
     }
     checkMandatoryConfig(urlConfig = {}) {
@@ -3874,6 +3889,10 @@ if (window.typingMindCloudSync) {
           diagnosticsBody.innerHTML =
             '<tr><td colspan="3" class="text-center py-2 text-red-400">Error loading diagnostics</td></tr>';
         }
+        const overallStatusEl = modal.querySelector("#sync-overall-status");
+        const summaryEl = modal.querySelector("#sync-diagnostics-summary");
+        if (overallStatusEl) overallStatusEl.textContent = "❌";
+        if (summaryEl) summaryEl.textContent = "Error";
       }
     }
     setupDiagnosticsToggle(modal) {
