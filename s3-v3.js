@@ -542,12 +542,14 @@ if (window.typingMindCloudSync) {
   }
 
   class CryptoService {
-    constructor(configManager) {
+    constructor(configManager, logger) {
       this.config = configManager;
+      this.logger = logger;
       this.keyCache = new Map();
       this.maxCacheSize = 10;
-      this.lastCacheCleanup = 0;
+      this.lastCacheCleanup = Date.now();
     }
+
     async deriveKey(password) {
       const now = Date.now();
       if (now - this.lastCacheCleanup > 30 * 60 * 1000) {
@@ -592,7 +594,28 @@ if (window.typingMindCloudSync) {
       const encryptionKey = this.config.get("encryptionKey");
       if (!encryptionKey) throw new Error("No encryption key configured");
       const key = await this.deriveKey(encryptionKey);
-      const encodedData = new TextEncoder().encode(JSON.stringify(data));
+      let encodedData = new TextEncoder().encode(JSON.stringify(data));
+      try {
+        if (window.CompressionStream) {
+          const compressedStream = new Blob([encodedData])
+            .stream()
+            .pipeThrough(new CompressionStream("deflate-raw"));
+          encodedData = new Uint8Array(
+            await new Response(compressedStream).arrayBuffer()
+          );
+        } else {
+          this.logger.log(
+            "warning",
+            "CompressionStream API not supported, uploading uncompressed."
+          );
+        }
+      } catch (e) {
+        this.logger.log(
+          "warning",
+          "Could not compress data, uploading uncompressed.",
+          e
+        );
+      }
       const iv = crypto.getRandomValues(new Uint8Array(12));
       const encrypted = await crypto.subtle.encrypt(
         { name: "AES-GCM", iv },
@@ -630,7 +653,28 @@ if (window.typingMindCloudSync) {
         key,
         data
       );
-      return JSON.parse(new TextDecoder().decode(decrypted));
+      try {
+        if (window.DecompressionStream) {
+          const stream = new Blob([decrypted])
+            .stream()
+            .pipeThrough(new DecompressionStream("deflate-raw"));
+          const text = await new Response(stream).text();
+          return JSON.parse(text);
+        } else {
+          this.logger.log(
+            "warning",
+            "DecompressionStream API not supported, decoding as text."
+          );
+          return JSON.parse(new TextDecoder().decode(decrypted));
+        }
+      } catch (e) {
+        this.logger.log(
+          "info",
+          "Decompression failed, assuming uncompressed data.",
+          e.message
+        );
+        return JSON.parse(new TextDecoder().decode(decrypted));
+      }
     }
     async decryptBytes(encryptedData) {
       const encryptionKey = this.config.get("encryptionKey");
@@ -2708,7 +2752,7 @@ if (window.typingMindCloudSync) {
         this.logger,
         this.operationQueue
       );
-      this.cryptoService = new CryptoService(this.config);
+      this.cryptoService = new CryptoService(this.config, this.logger);
       this.s3Service = new S3Service(
         this.config,
         this.cryptoService,
