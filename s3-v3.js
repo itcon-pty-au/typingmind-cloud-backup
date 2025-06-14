@@ -1144,6 +1144,20 @@ if (window.typingMindCloudSync) {
                     reason: "new",
                   });
                 } else if (currentSize !== existingItem.size) {
+                  // Debug logging for size changes
+                  if (key.startsWith("CHAT_")) {
+                    this.logger.log(
+                      "warning",
+                      `Size change detected for ${key}`,
+                      {
+                        currentSize,
+                        existingSize: existingItem.size,
+                        lastSynced: existingItem.synced
+                          ? new Date(existingItem.synced).toISOString()
+                          : "never",
+                      }
+                    );
+                  }
                   changedItems.push({
                     id: key,
                     type: "idb",
@@ -1152,6 +1166,18 @@ if (window.typingMindCloudSync) {
                     reason: "size",
                   });
                 } else if (!existingItem.synced) {
+                  // Debug logging for never-synced items
+                  if (key.startsWith("CHAT_")) {
+                    this.logger.log(
+                      "warning",
+                      `Never-synced item detected for ${key}`,
+                      {
+                        hasMetadata: !!existingItem,
+                        synced: existingItem.synced,
+                        size: currentSize,
+                      }
+                    );
+                  }
                   changedItems.push({
                     id: key,
                     type: "idb",
@@ -1189,6 +1215,18 @@ if (window.typingMindCloudSync) {
                 reason: "new",
               });
             } else if (currentSize !== existingItem.size) {
+              // Debug logging for size changes
+              this.logger.log(
+                "warning",
+                `localStorage size change detected for ${key}`,
+                {
+                  currentSize,
+                  existingSize: existingItem.size,
+                  lastSynced: existingItem.synced
+                    ? new Date(existingItem.synced).toISOString()
+                    : "never",
+                }
+              );
               changedItems.push({
                 id: key,
                 type: "ls",
@@ -1197,6 +1235,16 @@ if (window.typingMindCloudSync) {
                 reason: "size",
               });
             } else if (!existingItem.synced) {
+              // Debug logging for never-synced items
+              this.logger.log(
+                "warning",
+                `localStorage never-synced item detected for ${key}`,
+                {
+                  hasMetadata: !!existingItem,
+                  synced: existingItem.synced,
+                  size: currentSize,
+                }
+              );
               changedItems.push({
                 id: key,
                 type: "ls",
@@ -1272,9 +1320,14 @@ if (window.typingMindCloudSync) {
               items: recentlyChangedItems.map((item) => ({
                 id: item.id,
                 reason: item.reason,
+                currentSize: item.size,
                 lastSynced: this.metadata.items[item.id].synced
                   ? new Date(this.metadata.items[item.id].synced).toISOString()
                   : "never",
+                metadataSize: this.metadata.items[item.id]?.size,
+                metadataSynced: this.metadata.items[item.id]?.synced,
+                metadataLastModified:
+                  this.metadata.items[item.id]?.lastModified,
               })),
             }
           );
