@@ -69,6 +69,7 @@ if (window.typingMindCloudSync) {
         "TM_useLastVerifiedToken",
         "TM_useStateUpdateHistory",
         "INSTANCE_ID",
+        "eruda-console",
       ];
       return [...systemExclusions, ...userExclusions];
     }
@@ -349,7 +350,7 @@ if (window.typingMindCloudSync) {
         const db = await this.getDB();
         const transaction = db.transaction(["keyval"], "readwrite");
         const store = transaction.objectStore("keyval");
-        const itemId = itemKey || item.id;
+        const itemId = itemKey || (item && item.id);
         const itemData = item;
         return new Promise((resolve) => {
           const request = store.put(itemData, itemId);
@@ -1539,12 +1540,15 @@ if (window.typingMindCloudSync) {
           `📊 Local Metadata Stats: Total=${localItems.length}, Active=${localActive}, Deleted=${localDeleted}`
         );
       }
+
       await this.syncFromCloud();
+
       const cloudMetadata = await this.getCloudMetadata();
       const localMetadataEmpty =
         Object.keys(this.metadata.items || {}).length === 0;
       const cloudMetadataEmpty =
         Object.keys(cloudMetadata.items || {}).length === 0;
+
       if (localMetadataEmpty && cloudMetadataEmpty) {
         const allItems = await this.dataService.getAllItems();
         if (allItems.length > 0) {
@@ -1598,7 +1602,8 @@ if (window.typingMindCloudSync) {
       let tombstoneCount = 0;
       for (const item of allItems) {
         if (item.id && item.data) {
-          this.metadata.items[item.id] = {
+          const key = item.id;
+          this.metadata.items[key] = {
             synced: 0,
             type: item.type,
             size: this.getItemSize(item.data),
@@ -1645,7 +1650,11 @@ if (window.typingMindCloudSync) {
                   `items/${cloudItemId}.json`
                 );
                 if (data) {
-                  await this.dataService.saveItem(data, cloudItem.type);
+                  await this.dataService.saveItem(
+                    data,
+                    cloudItem.type,
+                    cloudItemId
+                  );
                   const syncTime = Date.now();
                   this.metadata.items[cloudItemId] = {
                     synced: syncTime,
