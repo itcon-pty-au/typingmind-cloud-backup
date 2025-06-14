@@ -3211,10 +3211,19 @@ if (window.typingMindCloudSync) {
         ${modeStatus}
         <div class="space-y-3">
           <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
-            <div class="flex items-center justify-between mb-2">
-              <label class="block text-sm font-medium text-zinc-300">Sync Diagnostics</label>
+            <div class="flex items-center justify-between mb-2 cursor-pointer select-none" id="sync-diagnostics-header">
+              <div class="flex items-center gap-2">
+                <label class="block text-sm font-medium text-zinc-300">Sync Diagnostics</label>
+                <span id="sync-overall-status" class="text-lg">✅</span>
+              </div>
+              <div class="flex items-center gap-1">
+                <span id="sync-diagnostics-summary" class="text-xs text-zinc-400">Tap to view details</span>
+                <svg id="sync-diagnostics-chevron" class="w-4 h-4 text-zinc-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+              </div>
             </div>
-            <div class="overflow-x-auto">
+            <div id="sync-diagnostics-content" class="hidden overflow-x-auto">
               <table id="sync-diagnostics-table" class="w-full text-xs text-zinc-300 border-collapse">
                 <thead>
                   <tr class="border-b border-zinc-600">
@@ -3399,6 +3408,7 @@ if (window.typingMindCloudSync) {
       this.loadBackupList(modal);
       this.setupBackupListHandlers(modal);
       this.loadSyncDiagnostics(modal);
+      this.setupDiagnosticsToggle(modal);
     }
 
     populateFormFromUrlParams(modal) {
@@ -3822,12 +3832,22 @@ if (window.typingMindCloudSync) {
         const cloudLastSync = cloudMetadata.lastSync || 0;
         const hasCloudChanges = cloudLastSync > parseInt(localLastSync || "0");
 
+        // Get cloud chat items count
+        const cloudChatItems = Object.keys(cloudMetadata.items || {}).filter(
+          (id) => id.startsWith("CHAT_") && !cloudMetadata.items[id].deleted
+        ).length;
+
         // Generate table rows
         const rows = [
           {
             type: "📱 Local Items",
             count: localCount,
             status: localCount > 0 ? "✅" : "⚠️",
+          },
+          {
+            type: "💬 Chat Sync",
+            count: `${chatItems} ⟷ ${cloudChatItems}`,
+            status: chatItems === cloudChatItems ? "✅" : "⚠️",
           },
           {
             type: "📋 Local Metadata",
@@ -3858,9 +3878,23 @@ if (window.typingMindCloudSync) {
           )
           .join("");
 
+        // Calculate overall status
+        const hasIssues =
+          localCount !== metadataActive ||
+          localCount !== cloudActive ||
+          chatItems !== cloudChatItems;
+        const overallStatus = hasIssues ? "⚠️" : "✅";
+        const summaryText = hasIssues ? "Issues detected" : "All systems OK";
+
+        // Update header status
+        const overallStatusEl = modal.querySelector("#sync-overall-status");
+        const summaryEl = modal.querySelector("#sync-diagnostics-summary");
+        if (overallStatusEl) overallStatusEl.textContent = overallStatus;
+        if (summaryEl) summaryEl.textContent = summaryText;
+
         // Add warning row if there are mismatches
         let warningRow = "";
-        if (localCount !== metadataActive || localCount !== cloudActive) {
+        if (hasIssues) {
           warningRow = `
             <tr class="bg-orange-900/20 border-b border-orange-600">
               <td class="py-1 px-2 text-orange-300">⚠️ Mismatch Detected</td>
@@ -3879,6 +3913,44 @@ if (window.typingMindCloudSync) {
             '<tr><td colspan="3" class="text-center py-2 text-red-400">Error loading diagnostics</td></tr>';
         }
       }
+    }
+    setupDiagnosticsToggle(modal) {
+      const header = modal.querySelector("#sync-diagnostics-header");
+      const content = modal.querySelector("#sync-diagnostics-content");
+      const chevron = modal.querySelector("#sync-diagnostics-chevron");
+
+      if (!header || !content || !chevron) return;
+
+      let isExpanded = false;
+
+      const toggleDiagnostics = () => {
+        isExpanded = !isExpanded;
+
+        if (isExpanded) {
+          content.classList.remove("hidden");
+          chevron.style.transform = "rotate(180deg)";
+        } else {
+          content.classList.add("hidden");
+          chevron.style.transform = "rotate(0deg)";
+        }
+      };
+
+      const clickHandler = toggleDiagnostics;
+      const touchHandler = (e) => {
+        e.preventDefault();
+        toggleDiagnostics();
+      };
+
+      header.addEventListener("click", clickHandler);
+      header.addEventListener("touchend", touchHandler);
+
+      // Add cleanup callback
+      this.modalCleanupCallbacks.push(() => {
+        if (header) {
+          header.removeEventListener("click", clickHandler);
+          header.removeEventListener("touchend", touchHandler);
+        }
+      });
     }
     closeModal(overlay) {
       this.modalCleanupCallbacks.forEach((cleanup) => {
@@ -4469,6 +4541,61 @@ if (window.typingMindCloudSync) {
     
     #sync-diagnostics-table .bg-orange-900\/20 {
       background-color: rgba(194, 65, 12, 0.2);
+    }
+    
+    #sync-diagnostics-header {
+      padding: 0.5rem;
+      margin: -0.5rem;
+      border-radius: 0.375rem;
+      transition: background-color 0.2s ease;
+      -webkit-tap-highlight-color: transparent;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+    }
+    
+    #sync-diagnostics-header:hover {
+      background-color: rgba(63, 63, 70, 0.5);
+    }
+    
+    #sync-diagnostics-header:active {
+      background-color: rgba(63, 63, 70, 0.8);
+    }
+    
+    #sync-diagnostics-chevron {
+      transition: transform 0.2s ease;
+    }
+    
+    #sync-diagnostics-content {
+      animation: slideDown 0.2s ease-out;
+    }
+    
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        max-height: 0;
+      }
+      to {
+        opacity: 1;
+        max-height: 300px;
+      }
+    }
+    
+    @media (max-width: 640px) {
+      #sync-diagnostics-table {
+        font-size: 0.7rem;
+      }
+      
+      #sync-diagnostics-table th,
+      #sync-diagnostics-table td {
+        padding: 0.5rem 0.25rem;
+      }
+      
+      .cloud-sync-modal {
+        margin: 0.5rem;
+        max-height: 90vh;
+        overflow-y: auto;
+      }
     }
   `;
   document.head.appendChild(styleSheet);
