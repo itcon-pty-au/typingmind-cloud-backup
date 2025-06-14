@@ -2283,7 +2283,7 @@ if (window.typingMindCloudSync) {
             index,
             filename: `${baseFilename}-chunk-${index
               .toString()
-              .padStart(3, "0")}.json`,
+              .padStart(3, "0")}.zip`,
             itemCount: chunk.length,
           })),
         };
@@ -3639,8 +3639,15 @@ if (window.typingMindCloudSync) {
               if (metadata.chunkList && metadata.chunkList.length > 0) {
                 let processedChunks = 0;
                 for (const chunkInfo of metadata.chunkList) {
-                  const chunkKey = chunkInfo.filename;
+                  let chunkKey = chunkInfo.filename;
                   this.logger.log("info", `Processing chunk: ${chunkKey}`);
+                  if (chunkKey.endsWith(".json")) {
+                    this.logger.log(
+                      "warn",
+                      `Correcting chunk filename from .json to .zip for ${chunkKey}`
+                    );
+                    chunkKey = chunkKey.replace(".json", ".zip");
+                  }
                   downloadButton.textContent = `Chunk ${processedChunks + 1}/${
                     metadata.chunkList.length
                   }`;
