@@ -1097,6 +1097,23 @@ if (window.typingMindCloudSync) {
         }
       }
 
+      // Detect deleted items by comparing metadata with current keys
+      for (const itemId in this.metadata.items) {
+        if (!idbKeys.has(itemId) && !lsKeys.has(itemId)) {
+          const metadataItem = this.metadata.items[itemId];
+          // Only add a tombstone if it's not already marked as deleted
+          if (!metadataItem.deleted) {
+            this.logger.log("warning", `Item deleted locally: ${itemId}`);
+            changedItems.push({
+              id: itemId,
+              type: metadataItem.type || "unknown",
+              deleted: now,
+              reason: "tombstone",
+            });
+          }
+        }
+      }
+
       return { changedItems, hasChanges: changedItems.length > 0 };
     }
     async syncToCloud() {
