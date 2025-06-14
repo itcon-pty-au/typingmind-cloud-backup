@@ -2516,9 +2516,9 @@ if (window.typingMindCloudSync) {
       await this.restoreData(decryptedData);
       this.logger.log("success", "Simple backup restored successfully");
 
-      setTimeout(() => {
+      /* setTimeout(() => {
         window.location.reload();
-      }, 3000);
+      }, 3000); */
 
       return true;
     }
@@ -2638,9 +2638,9 @@ if (window.typingMindCloudSync) {
         `Chunked backup restored successfully (${metadata.totalChunks} chunks)`
       );
 
-      setTimeout(() => {
+      /* setTimeout(() => {
         window.location.reload();
-      }, 3000);
+      }, 3000); */
 
       return true;
     }
@@ -3256,7 +3256,7 @@ if (window.typingMindCloudSync) {
                 </svg>
               </div>
             </div>
-            <div id="sync-diagnostics-content" class="hidden overflow-x-auto">
+            <div id="sync-diagnostics-content" class="overflow-x-auto">
               <table id="sync-diagnostics-table" class="w-full text-xs text-zinc-300 border-collapse">
                 <thead>
                   <tr class="border-b border-zinc-600">
@@ -3662,8 +3662,10 @@ if (window.typingMindCloudSync) {
                 this.cryptoService
               );
               if (success) {
-                alert("Backup restored successfully! Page will reload.");
-                location.reload();
+                alert(
+                  "Backup restored successfully! Please manually reload the page after checking the console for errors."
+                );
+                // location.reload();
               }
             } catch (error) {
               console.error("Failed to restore backup:", error);
@@ -3967,21 +3969,21 @@ if (window.typingMindCloudSync) {
 
       if (!header || !content || !chevron) return;
 
-      if (this.diagnosticsExpanded) {
-        content.classList.remove("hidden");
-        chevron.style.transform = "rotate(180deg)";
-      }
-
-      const toggleDiagnostics = () => {
-        this.diagnosticsExpanded = !this.diagnosticsExpanded;
-
-        if (this.diagnosticsExpanded) {
+      const setVisibility = (expanded) => {
+        if (expanded) {
           content.classList.remove("hidden");
           chevron.style.transform = "rotate(180deg)";
         } else {
           content.classList.add("hidden");
           chevron.style.transform = "rotate(0deg)";
         }
+      };
+
+      setVisibility(this.diagnosticsExpanded);
+
+      const toggleDiagnostics = () => {
+        this.diagnosticsExpanded = !this.diagnosticsExpanded;
+        setVisibility(this.diagnosticsExpanded);
       };
 
       const clickHandler = toggleDiagnostics;
