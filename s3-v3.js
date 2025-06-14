@@ -2913,6 +2913,7 @@ if (window.typingMindCloudSync) {
       this.eventListeners = [];
       this.modalCleanupCallbacks = [];
       this.noSyncMode = false;
+      this.diagnosticsInterval = null;
     }
     async initialize() {
       this.logger.log("start", "Initializing TypingmindCloud Sync V3");
@@ -3196,6 +3197,13 @@ if (window.typingMindCloudSync) {
       if (document.querySelector(".cloud-sync-modal")) return;
       this.logger.log("start", "Opening sync modal");
       this.createModal();
+      const modal = document.querySelector(".cloud-sync-modal");
+      if (modal && !this.diagnosticsInterval) {
+        this.diagnosticsInterval = setInterval(
+          () => this.loadSyncDiagnostics(modal),
+          5000
+        );
+      }
     }
     createModal() {
       const overlay = document.createElement("div");
@@ -3979,6 +3987,10 @@ if (window.typingMindCloudSync) {
       });
     }
     closeModal(overlay) {
+      if (this.diagnosticsInterval) {
+        clearInterval(this.diagnosticsInterval);
+        this.diagnosticsInterval = null;
+      }
       this.modalCleanupCallbacks.forEach((cleanup) => {
         try {
           cleanup();
