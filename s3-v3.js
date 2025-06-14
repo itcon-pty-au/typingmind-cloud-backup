@@ -766,16 +766,19 @@ if (window.typingMindCloudSync) {
           const body = isMetadata
             ? JSON.stringify(data)
             : await this.crypto.encrypt(data);
-          const result = await this.client
-            .upload({
-              Bucket: this.config.get("bucketName"),
-              Key: key,
-              Body: body,
-              ContentType: isMetadata
-                ? "application/json"
-                : "application/octet-stream",
-            })
-            .promise();
+          const params = {
+            Bucket: this.config.get("bucketName"),
+            Key: key,
+            Body: body,
+            ContentType: isMetadata
+              ? "application/json"
+              : "application/octet-stream",
+          };
+          if (isMetadata) {
+            params.CacheControl =
+              "no-cache, no-store, max-age=0, must-revalidate";
+          }
+          const result = await this.client.upload(params).promise();
           this.logger.log("success", `Uploaded ${key}`);
           return result;
         } catch (error) {
