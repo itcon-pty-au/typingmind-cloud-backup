@@ -3619,11 +3619,9 @@ if (window.typingMindCloudSync) {
                     metadata.chunkList.length
                   }`;
                   try {
-                    const chunkJsonData =
-                      await this.backupService.restoreFromZipBackup(
-                        chunkKey,
-                        this.cryptoService
-                      );
+                    const chunkJsonData = await this.downloadAndDecryptChunk(
+                      chunkKey
+                    );
                     const chunkJsonFilename = chunkKey.replace(".zip", ".json");
                     finalZip.file(
                       chunkJsonFilename,
@@ -3757,6 +3755,29 @@ if (window.typingMindCloudSync) {
         this.logger.log(
           "error",
           "Failed to process backup for download",
+          error.message
+        );
+        throw error;
+      }
+    }
+    async downloadAndDecryptChunk(chunkKey) {
+      try {
+        const JSZip = await this.backupService.loadJSZip();
+        const zipData = await this.s3Service.downloadRaw(chunkKey);
+        const decryptedZipBytes = await this.cryptoService.decryptBytes(
+          zipData
+        );
+        const zip = await JSZip.loadAsync(decryptedZipBytes);
+        const jsonFile = Object.keys(zip.files).find((f) =>
+          f.endsWith(".json")
+        );
+        if (!jsonFile) throw new Error("No JSON file found in chunk ZIP");
+        const jsonContent = await zip.file(jsonFile).async("string");
+        return JSON.parse(jsonContent);
+      } catch (error) {
+        this.logger.log(
+          "error",
+          `Failed to download and decrypt chunk ${chunkKey}`,
           error.message
         );
         throw error;
