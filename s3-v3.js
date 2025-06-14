@@ -3621,13 +3621,73 @@ if (window.typingMindCloudSync) {
             alert("Please select a backup to download");
             return;
           }
+          downloadButton.disabled = true;
+          downloadButton.textContent = "Downloading...";
           try {
-            downloadButton.disabled = true;
-            downloadButton.textContent = "Downloading...";
-            const backup = await this.s3Service.downloadRaw(key);
-            if (backup) {
-              await this.handleBackupDownload(backup, key);
+            if (key.endsWith("-metadata.json")) {
+              this.logger.log(
+                "start",
+                `Starting chunked backup download for ${key}`
+              );
+              const JSZip = await this.backupService.loadJSZip();
+              const finalZip = new JSZip();
+
+              const metadata = await this.s3Service.download(key, true);
+              finalZip.file(key, JSON.stringify(metadata, null, 2));
+              this.logger.log("info", "Added metadata file to zip.");
+
+              if (metadata.chunkList && metadata.chunkList.length > 0) {
+                let processedChunks = 0;
+                for (const chunkInfo of metadata.chunkList) {
+                  const chunkKey = chunkInfo.filename;
+                  this.logger.log("info", `Processing chunk: ${chunkKey}`);
+                  downloadButton.textContent = `Chunk ${processedChunks + 1}/${
+                    metadata.chunkList.length
+                  }`;
+                  try {
+                    const chunkJsonData =
+                      await this.backupService.restoreFromZipBackup(
+                        chunkKey,
+                        this.cryptoService
+                      );
+                    const chunkJsonFilename = chunkKey.replace(".zip", ".json");
+                    finalZip.file(
+                      chunkJsonFilename,
+                      JSON.stringify(chunkJsonData, null, 2)
+                    );
+                    this.logger.log(
+                      "success",
+                      `Added chunk ${chunkKey} to zip.`
+                    );
+                  } catch (chunkError) {
+                    this.logger.log(
+                      "error",
+                      `Failed to process chunk ${chunkKey}`,
+                      chunkError
+                    );
+                    finalZip.file(
+                      `${chunkKey}.error.txt`,
+                      `Failed to process this chunk: ${chunkError.message}`
+                    );
+                  }
+                  processedChunks++;
+                }
+              }
+
+              downloadButton.textContent = "Zipping...";
+              const zipBlob = await finalZip.generateAsync({ type: "blob" });
+              const finalZipFilename = key.replace(
+                "-metadata.json",
+                "-decrypted-package.zip"
+              );
+              this.downloadFile(finalZipFilename, zipBlob);
               downloadButton.textContent = "Downloaded!";
+            } else {
+              const backup = await this.s3Service.downloadRaw(key);
+              if (backup) {
+                await this.handleBackupDownload(backup, key);
+                downloadButton.textContent = "Downloaded!";
+              }
             }
           } catch (error) {
             console.error("Failed to download backup:", error);
