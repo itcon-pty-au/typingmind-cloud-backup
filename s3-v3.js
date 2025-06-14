@@ -2664,24 +2664,55 @@ if (window.typingMindCloudSync) {
       try {
         const objects = await this.s3Service.list("");
         const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-        let deletedCount = 0;
+        let deletedBackups = 0;
 
-        const backupFiles = objects.filter(
+        const backupMetadataFiles = objects.filter(
           (obj) =>
-            obj.Key.startsWith("typingmind-backup-") ||
-            obj.Key.startsWith("s-") ||
-            obj.Key.endsWith("-metadata.json") ||
-            obj.Key.includes("-chunk-")
+            (obj.Key.startsWith("typingmind-backup-") ||
+              obj.Key.startsWith("s-")) &&
+            (obj.Key.endsWith("-metadata.json") || obj.Key.endsWith(".zip"))
         );
 
-        for (const obj of backupFiles) {
+        const processedChunks = new Set();
+
+        for (const obj of backupMetadataFiles) {
           const isOldBackup =
             new Date(obj.LastModified).getTime() < thirtyDaysAgo;
 
           if (isOldBackup) {
             try {
+              if (obj.Key.endsWith("-metadata.json")) {
+                try {
+                  const metadata = await this.s3Service.download(obj.Key, true);
+                  if (metadata.chunkList && metadata.chunkList.length > 0) {
+                    for (const chunkInfo of metadata.chunkList) {
+                      if (!processedChunks.has(chunkInfo.filename)) {
+                        try {
+                          await this.s3Service.delete(chunkInfo.filename);
+                          processedChunks.add(chunkInfo.filename);
+                          this.logger.log(
+                            "info",
+                            `Cleaned up old chunk: ${chunkInfo.filename}`
+                          );
+                        } catch (chunkError) {
+                          this.logger.log(
+                            "warning",
+                            `Failed to delete chunk: ${chunkInfo.filename}`
+                          );
+                        }
+                      }
+                    }
+                  }
+                } catch (metadataError) {
+                  this.logger.log(
+                    "warning",
+                    `Failed to read metadata for cleanup: ${obj.Key}`
+                  );
+                }
+              }
+
               await this.s3Service.delete(obj.Key);
-              deletedCount++;
+              deletedBackups++;
               this.logger.log("info", `Cleaned up old backup: ${obj.Key}`);
             } catch (error) {
               this.logger.log("warning", `Failed to delete backup: ${obj.Key}`);
@@ -2689,10 +2720,10 @@ if (window.typingMindCloudSync) {
           }
         }
 
-        if (deletedCount > 0) {
+        if (deletedBackups > 0) {
           this.logger.log(
             "success",
-            `Cleaned up ${deletedCount} old backup files`
+            `Cleaned up ${deletedBackups} old backups with their chunks`
           );
         }
       } catch (error) {
@@ -3692,7 +3723,7 @@ if (window.typingMindCloudSync) {
             try {
               deleteButton.disabled = true;
               deleteButton.textContent = "Deleting...";
-              await this.s3Service.delete(key);
+              await this.deleteBackupWithChunks(key);
               await this.loadBackupList(modal);
               deleteButton.textContent = "Deleted!";
               setTimeout(() => {
@@ -4118,6 +4149,56 @@ if (window.typingMindCloudSync) {
           this.logger.log("error", "Failed to create snapshot", error.message);
           alert("Failed to create snapshot: " + error.message);
         }
+      }
+    }
+    async deleteBackupWithChunks(key) {
+      this.logger.log("start", `Deleting backup: ${key}`);
+
+      if (key.endsWith("-metadata.json")) {
+        this.logger.log("info", "Deleting chunked backup with all chunks");
+
+        try {
+          const metadata = await this.s3Service.download(key, true);
+          let deletedCount = 0;
+
+          if (metadata.chunkList && metadata.chunkList.length > 0) {
+            this.logger.log(
+              "info",
+              `Deleting ${metadata.chunkList.length} chunk files`
+            );
+
+            const deletePromises = metadata.chunkList.map(async (chunkInfo) => {
+              try {
+                await this.s3Service.delete(chunkInfo.filename);
+                deletedCount++;
+                this.logger.log("info", `Deleted chunk: ${chunkInfo.filename}`);
+              } catch (error) {
+                this.logger.log(
+                  "warning",
+                  `Failed to delete chunk ${chunkInfo.filename}: ${error.message}`
+                );
+              }
+            });
+
+            await Promise.allSettled(deletePromises);
+          }
+
+          await this.s3Service.delete(key);
+          this.logger.log(
+            "success",
+            `Deleted chunked backup: ${key} (${deletedCount} chunks + metadata)`
+          );
+        } catch (error) {
+          this.logger.log(
+            "warning",
+            `Failed to read metadata for ${key}, attempting to delete file anyway`
+          );
+          await this.s3Service.delete(key);
+        }
+      } else {
+        this.logger.log("info", "Deleting simple backup");
+        await this.s3Service.delete(key);
+        this.logger.log("success", `Deleted simple backup: ${key}`);
       }
     }
 
