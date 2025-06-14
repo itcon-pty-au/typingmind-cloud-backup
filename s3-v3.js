@@ -4582,11 +4582,6 @@ if (window.typingMindCloudSync) {
     }
     
     @media (max-width: 640px) {
-      .modal-overlay {
-        align-items: flex-start;
-        padding-top: 2.5rem;
-      }
-      
       #sync-diagnostics-table {
         font-size: 0.7rem;
       }
