@@ -2673,8 +2673,6 @@ if (window.typingMindCloudSync) {
             (obj.Key.endsWith("-metadata.json") || obj.Key.endsWith(".zip"))
         );
 
-        const processedChunks = new Set();
-
         for (const obj of backupMetadataFiles) {
           const isOldBackup =
             new Date(obj.LastModified).getTime() < thirtyDaysAgo;
@@ -2686,20 +2684,17 @@ if (window.typingMindCloudSync) {
                   const metadata = await this.s3Service.download(obj.Key, true);
                   if (metadata.chunkList && metadata.chunkList.length > 0) {
                     for (const chunkInfo of metadata.chunkList) {
-                      if (!processedChunks.has(chunkInfo.filename)) {
-                        try {
-                          await this.s3Service.delete(chunkInfo.filename);
-                          processedChunks.add(chunkInfo.filename);
-                          this.logger.log(
-                            "info",
-                            `Cleaned up old chunk: ${chunkInfo.filename}`
-                          );
-                        } catch (chunkError) {
-                          this.logger.log(
-                            "warning",
-                            `Failed to delete chunk: ${chunkInfo.filename}`
-                          );
-                        }
+                      try {
+                        await this.s3Service.delete(chunkInfo.filename);
+                        this.logger.log(
+                          "info",
+                          `Cleaned up old chunk: ${chunkInfo.filename}`
+                        );
+                      } catch (chunkError) {
+                        this.logger.log(
+                          "warning",
+                          `Failed to delete chunk: ${chunkInfo.filename}`
+                        );
                       }
                     }
                   }
