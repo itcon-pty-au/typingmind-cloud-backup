@@ -1113,6 +1113,8 @@ if (window.typingMindCloudSync) {
     async detectChanges() {
       const changedItems = [];
       const now = Date.now();
+      const idbKeys = new Set();
+      const lsKeys = new Set();
       const db = await this.dataService.getDB();
       const transaction = db.transaction(["keyval"], "readonly");
       const store = transaction.objectStore("keyval");
@@ -1128,6 +1130,7 @@ if (window.typingMindCloudSync) {
               value !== undefined &&
               !this.config.shouldExclude(key)
             ) {
+              idbKeys.add(key);
               const existingItem = this.metadata.items[key];
               const currentSize = this.getItemSize(value);
 
@@ -1198,6 +1201,7 @@ if (window.typingMindCloudSync) {
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && !this.config.shouldExclude(key)) {
+          lsKeys.add(key);
           const value = localStorage.getItem(key);
           const existingItem = this.metadata.items[key];
           const currentSize = this.getItemSize(value);
@@ -1286,6 +1290,29 @@ if (window.typingMindCloudSync) {
           });
         }
       }
+      // Check for key overlaps between IndexedDB and localStorage
+      const overlappingKeys = Array.from(idbKeys).filter((key) =>
+        lsKeys.has(key)
+      );
+      if (overlappingKeys.length > 0) {
+        const chatOverlaps = overlappingKeys.filter((key) =>
+          key.startsWith("CHAT_")
+        );
+        if (chatOverlaps.length > 0) {
+          this.logger.log(
+            "error",
+            `🚨 DETECTED DUPLICATE KEYS IN BOTH STORAGE TYPES`,
+            {
+              totalOverlaps: overlappingKeys.length,
+              chatOverlaps: chatOverlaps.slice(0, 10), // Show first 10
+              totalChatOverlaps: chatOverlaps.length,
+              totalIdbKeys: idbKeys.size,
+              totalLsKeys: lsKeys.size,
+            }
+          );
+        }
+      }
+
       return { changedItems, hasChanges: changedItems.length > 0 };
     }
     async syncToCloud() {
