@@ -1224,6 +1224,7 @@ if (window.typingMindCloudSync) {
               "skip",
               `Skipping upload for ${item.id}, cloud version is newer`
             );
+            this.metadata.items[item.id] = { ...cloudItem };
             return;
           }
 
