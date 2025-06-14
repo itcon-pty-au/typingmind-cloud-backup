@@ -2489,31 +2489,18 @@ if (window.typingMindCloudSync) {
     async restoreFromSimpleBackup(key, cryptoService) {
       this.logger.log("info", "Restoring from simple backup format");
 
-      let backup;
-      if (key.endsWith(".zip")) {
-        backup = await this.restoreFromZipBackup(key, cryptoService);
-      } else {
-        backup = await this.s3Service.download(key);
-      }
-
+      const backup = await this.restoreFromZipBackup(key, cryptoService);
       if (!backup) {
         throw new Error("Backup not found");
       }
 
-      let decryptedData;
-      if (backup.data) {
-        decryptedData = await cryptoService.decrypt(backup.data);
-      } else {
-        decryptedData = backup;
-      }
-
-      if (!decryptedData.localStorage && !decryptedData.indexedDB) {
+      if (!backup.localStorage && !backup.indexedDB) {
         throw new Error(
           "Invalid backup format - missing localStorage and indexedDB data"
         );
       }
 
-      await this.restoreData(decryptedData);
+      await this.restoreData(backup);
       this.logger.log("success", "Simple backup restored successfully");
 
       setTimeout(() => {
@@ -2523,37 +2510,18 @@ if (window.typingMindCloudSync) {
       return true;
     }
 
-    async restoreFromZipBackup(key, cryptoService, legacy = false) {
+    async restoreFromZipBackup(key, cryptoService) {
       try {
         const JSZip = await this.loadJSZip();
         const zipData = await this.s3Service.downloadRaw(key);
-        try {
-          this.logger.log(
-            "info",
-            "Attempting V3 restore (compressed, then encrypted)"
-          );
-          const decryptedZipBytes = await cryptoService.decryptBytes(zipData);
-          const zip = await JSZip.loadAsync(decryptedZipBytes);
-          const jsonFile = Object.keys(zip.files).find((f) =>
-            f.endsWith(".json")
-          );
-          if (!jsonFile) throw new Error("No JSON file found in V3 ZIP backup");
-          const jsonContent = await zip.file(jsonFile).async("string");
-          return JSON.parse(jsonContent);
-        } catch (v3Error) {
-          this.logger.log(
-            "warn",
-            "V3 restore failed, attempting V2 restore.",
-            v3Error.message
-          );
-          const zip = await JSZip.loadAsync(zipData);
-          const jsonFile = Object.keys(zip.files).find((f) =>
-            f.endsWith(".json")
-          );
-          if (!jsonFile) throw new Error("No JSON file found in V2 ZIP backup");
-          const encryptedData = await zip.file(jsonFile).async("uint8array");
-          return await cryptoService.decrypt(encryptedData);
-        }
+        const decryptedZipBytes = await cryptoService.decryptBytes(zipData);
+        const zip = await JSZip.loadAsync(decryptedZipBytes);
+        const jsonFile = Object.keys(zip.files).find((f) =>
+          f.endsWith(".json")
+        );
+        if (!jsonFile) throw new Error("No JSON file found in ZIP backup");
+        const jsonContent = await zip.file(jsonFile).async("string");
+        return JSON.parse(jsonContent);
       } catch (error) {
         this.logger.log(
           "error",
@@ -2590,15 +2558,10 @@ if (window.typingMindCloudSync) {
         );
 
         try {
-          let chunkData;
-          if (chunkInfo.filename.endsWith(".zip")) {
-            chunkData = await this.restoreFromZipBackup(
-              chunkInfo.filename,
-              cryptoService
-            );
-          } else {
-            chunkData = await this.s3Service.download(chunkInfo.filename);
-          }
+          const chunkData = await this.restoreFromZipBackup(
+            chunkInfo.filename,
+            cryptoService
+          );
 
           if (chunkData.items) {
             for (const item of chunkData.items) {
@@ -2962,7 +2925,6 @@ if (window.typingMindCloudSync) {
         return;
       }
 
-      await this.performV2toV3Migration();
       await this.waitForDOM();
       this.insertSyncButton();
 
@@ -3622,20 +3584,11 @@ if (window.typingMindCloudSync) {
 
               const metadata = await this.s3Service.download(key, true);
               finalZip.file(key, JSON.stringify(metadata, null, 2));
-              this.logger.log("info", "Added metadata file to zip.");
 
               if (metadata.chunkList && metadata.chunkList.length > 0) {
                 let processedChunks = 0;
                 for (const chunkInfo of metadata.chunkList) {
-                  let chunkKey = chunkInfo.filename;
-                  this.logger.log("info", `Processing chunk: ${chunkKey}`);
-                  if (chunkKey.endsWith(".json")) {
-                    this.logger.log(
-                      "warn",
-                      `Correcting chunk filename from .json to .zip for ${chunkKey}`
-                    );
-                    chunkKey = chunkKey.replace(".json", ".zip");
-                  }
+                  const chunkKey = chunkInfo.filename;
                   downloadButton.textContent = `Chunk ${processedChunks + 1}/${
                     metadata.chunkList.length
                   }`;
@@ -3650,16 +3603,7 @@ if (window.typingMindCloudSync) {
                       chunkJsonFilename,
                       JSON.stringify(chunkJsonData, null, 2)
                     );
-                    this.logger.log(
-                      "success",
-                      `Added chunk ${chunkKey} to zip.`
-                    );
                   } catch (chunkError) {
-                    this.logger.log(
-                      "error",
-                      `Failed to process chunk ${chunkKey}`,
-                      chunkError
-                    );
                     finalZip.file(
                       `${chunkKey}.error.txt`,
                       `Failed to process this chunk: ${chunkError.message}`
@@ -3771,117 +3715,25 @@ if (window.typingMindCloudSync) {
     }
     async handleBackupDownload(backupData, key) {
       try {
-        let content;
-        if (key.endsWith(".zip")) {
-          const JSZip = await this.backupService.loadJSZip();
-          try {
-            this.logger.log("info", "Attempting to download as V3 backup.");
-            const decryptedZipBytes = await this.cryptoService.decryptBytes(
-              backupData
-            );
-            const zip = await JSZip.loadAsync(decryptedZipBytes);
-            const jsonFile = Object.keys(zip.files).find((f) =>
-              f.endsWith(".json")
-            );
-            if (!jsonFile)
-              throw new Error("No JSON file found in V3 ZIP backup");
-            const jsonContent = await zip.file(jsonFile).async("string");
-            content = JSON.stringify(JSON.parse(jsonContent), null, 2);
-          } catch (v3Error) {
-            this.logger.log(
-              "warn",
-              "V3 download failed, trying V2 format.",
-              v3Error.message
-            );
-            const zip = await JSZip.loadAsync(backupData);
-            const jsonFile = Object.keys(zip.files).find((f) =>
-              f.endsWith(".json")
-            );
-            if (!jsonFile)
-              throw new Error("No JSON file found in V2 ZIP backup");
-            const fileContentAsString = await zip
-              .file(jsonFile)
-              .async("string");
-
-            if (fileContentAsString.startsWith("ENCRYPTED:")) {
-              this.logger.log(
-                "info",
-                "Detected V2 'ENCRYPTED:' prefix format."
-              );
-              const base64Data = fileContentAsString.substring(10);
-              const encryptedDataWithIv = Uint8Array.from(
-                atob(base64Data),
-                (c) => c.charCodeAt(0)
-              );
-              const decryptedContent = await this.cryptoService.decrypt(
-                encryptedDataWithIv
-              );
-              content = JSON.stringify(decryptedContent, null, 2);
-            } else {
-              this.logger.log(
-                "error",
-                "Unrecognized V2 backup format. Content does not start with 'ENCRYPTED:'.",
-                fileContentAsString.substring(0, 100)
-              );
-              throw new Error("Unrecognized V2 backup format.");
-            }
-          }
-        } else if (
-          key.startsWith("s-") ||
-          key.startsWith("typingmind-backup-")
-        ) {
-          try {
-            const decryptedContent = await this.cryptoService.decrypt(
-              backupData
-            );
-            content = JSON.stringify(decryptedContent, null, 2);
-          } catch (decryptError) {
-            this.logger.log(
-              "warn",
-              "Failed to decrypt backup file, downloading as raw data:",
-              decryptError
-            );
-            const blob = new Blob([backupData], {
-              type: "application/octet-stream",
-            });
-            this.downloadFile(key, blob);
-            return;
-          }
-        } else {
-          if (typeof backupData === "string") {
-            content = backupData;
-          } else {
-            try {
-              const decryptedContent = await this.cryptoService.decrypt(
-                backupData
-              );
-              content = JSON.stringify(decryptedContent, null, 2);
-            } catch (decryptError) {
-              this.logger.log(
-                "warn",
-                "Failed to decrypt file, downloading as raw data:",
-                decryptError
-              );
-              const blob = new Blob([backupData], {
-                type: "application/octet-stream",
-              });
-              this.downloadFile(key, blob);
-              return;
-            }
-          }
-        }
-
+        const JSZip = await this.backupService.loadJSZip();
+        const decryptedZipBytes = await this.cryptoService.decryptBytes(
+          backupData
+        );
+        const zip = await JSZip.loadAsync(decryptedZipBytes);
+        const jsonFile = Object.keys(zip.files).find((f) =>
+          f.endsWith(".json")
+        );
+        if (!jsonFile) throw new Error("No JSON file found in ZIP backup");
+        const jsonContent = await zip.file(jsonFile).async("string");
+        const content = JSON.stringify(JSON.parse(jsonContent), null, 2);
         this.downloadFile(key.replace(".zip", ".json"), content);
       } catch (error) {
         this.logger.log(
           "error",
-          "Failed to process backup for download, providing raw file.",
+          "Failed to process backup for download",
           error.message
         );
-        const blob = new Blob([backupData], {
-          type: "application/octet-stream",
-        });
-        this.downloadFile(key, blob);
+        throw error;
       }
     }
     downloadFile(filename, content) {
@@ -4268,239 +4120,7 @@ if (window.typingMindCloudSync) {
         }
       }
     }
-    async performV2toV3Migration() {
-      const localMigrationFlag = "tcs_localMigrated";
-      if (localStorage.getItem(localMigrationFlag) === "true") {
-        //this.logger.log(
-        //  "info",
-        //  "Local V2 to V3 migration already completed, skipping"
-        //);
-        return;
-      }
-      const v2Keys = [
-        "aws-bucket",
-        "aws-access-key",
-        "aws-secret-key",
-        "aws-region",
-        "aws-endpoint",
-        "encryption-key",
-        "sync-interval",
-        "chat-sync-metadata",
-        "last-cloud-sync",
-        "sync-mode",
-      ];
-      const hasV2Keys = v2Keys.some(
-        (key) => localStorage.getItem(key) !== null
-      );
-      if (!hasV2Keys) {
-        this.logger.log(
-          "info",
-          "No v2 keys found, skipping migration (new V3 installation)"
-        );
-        localStorage.setItem(localMigrationFlag, "true");
-        return;
-      }
-      this.logger.log("start", "V2 keys detected, starting V2 to V3 migration");
-      try {
-        await this.migrateStorageKeys();
-        this.config.config = this.config.loadConfig();
-        this.logger.log("info", "Reloaded configuration with migrated keys");
-        await this.cleanupAndFreshSync();
-        localStorage.setItem(localMigrationFlag, "true");
-        this.logger.log("success", "V2 to V3 migration completed successfully");
-      } catch (error) {
-        this.logger.log("error", "V2 to V3 migration failed", error.message);
-      }
-    }
 
-    async migrateStorageKeys() {
-      this.logger.log("info", "Migrating v2 storage keys to V3 format");
-      const oldToNewKeyMap = {
-        "aws-bucket": "tcs_aws_bucketname",
-        "aws-access-key": "tcs_aws_accesskey",
-        "aws-secret-key": "tcs_aws_secretkey",
-        "aws-region": "tcs_aws_region",
-        "aws-endpoint": "tcs_aws_endpoint",
-        "encryption-key": "tcs_encryptionkey",
-        "sync-interval": "tcs_syncinterval",
-      };
-      const migrationBackup = {};
-      let migratedCount = 0;
-      Object.entries(oldToNewKeyMap).forEach(([oldKey, newKey]) => {
-        const value = localStorage.getItem(oldKey);
-        if (value) {
-          migrationBackup[oldKey] = value;
-          localStorage.setItem(newKey, value);
-          migratedCount++;
-          this.logger.log("info", `Migrated ${oldKey} → ${newKey}`);
-        }
-      });
-      if (migratedCount > 0) {
-        localStorage.setItem(
-          "tcs_migrationBackup",
-          JSON.stringify(migrationBackup)
-        );
-        this.logger.log(
-          "success",
-          `Successfully migrated ${migratedCount} configuration keys`
-        );
-      } else {
-        this.logger.log("info", "No v2 configuration keys found to migrate");
-      }
-    }
-
-    async cleanupAndFreshSync() {
-      this.logger.log("info", "Cleaning up v2 metadata and obsolete keys");
-      const keysToRemove = [
-        "chat-sync-metadata",
-        "last-cloud-sync",
-        "last-daily-backup",
-        "sync-mode",
-        "sync-exclusions",
-        "aws-bucket",
-        "aws-access-key",
-        "aws-secret-key",
-        "aws-region",
-        "aws-endpoint",
-        "encryption-key",
-        "sync-interval",
-      ];
-      let removedCount = 0;
-      keysToRemove.forEach((key) => {
-        if (localStorage.getItem(key) !== null) {
-          localStorage.removeItem(key);
-          removedCount++;
-        }
-      });
-      if (removedCount > 0) {
-        this.logger.log(
-          "success",
-          `Cleaned up ${removedCount} obsolete keys from localStorage`
-        );
-      }
-      if (this.config.isConfigured()) {
-        try {
-          await this.s3Service.initialize();
-          const needsCloudCleanup = await this.checkIfCloudNeedsV2Cleanup();
-          if (!needsCloudCleanup) {
-            this.logger.log(
-              "info",
-              "Cloud already in V3 format or clean, skipping cloud cleanup"
-            );
-            await this.syncOrchestrator.performFullSync();
-            return;
-          }
-          this.logger.log(
-            "info",
-            "V2 data detected in cloud, performing cleanup and fresh sync"
-          );
-          try {
-            await this.s3Service.delete("metadata.json");
-            this.logger.log("info", "Removed old cloud metadata.json");
-          } catch (error) {
-            if (error.code !== "NoSuchKey" && error.statusCode !== 404) {
-              this.logger.log(
-                "warning",
-                "Failed to delete old metadata.json",
-                error.message
-              );
-            }
-          }
-          try {
-            const items = await this.s3Service.list("items/");
-            if (items.length > 0) {
-              const deletePromises = items.map((item) =>
-                this.s3Service.delete(item.Key)
-              );
-              await Promise.allSettled(deletePromises);
-              this.logger.log(
-                "success",
-                `Cleaned up ${items.length} items from cloud`
-              );
-            }
-          } catch (error) {
-            this.logger.log(
-              "warning",
-              "Failed to clean items folder",
-              error.message
-            );
-          }
-          const v2Folders = ["chats/", "settings/"];
-          for (const folder of v2Folders) {
-            try {
-              const folderItems = await this.s3Service.list(folder);
-              if (folderItems.length > 0) {
-                const deletePromises = folderItems.map((item) =>
-                  this.s3Service.delete(item.Key)
-                );
-                await Promise.allSettled(deletePromises);
-                this.logger.log(
-                  "success",
-                  `Cleaned up ${folderItems.length} items from ${folder}`
-                );
-              }
-            } catch (error) {
-              this.logger.log(
-                "warning",
-                `Failed to clean ${folder}`,
-                error.message
-              );
-            }
-          }
-          this.logger.log("info", "Performing fresh initial sync");
-          await this.syncOrchestrator.createInitialSync();
-          this.logger.log("success", "Fresh sync completed successfully");
-        } catch (error) {
-          this.logger.log(
-            "warning",
-            "Cloud cleanup had issues, but migration will continue",
-            error.message
-          );
-        }
-      } else {
-        this.logger.log("info", "AWS not configured, skipping cloud cleanup");
-      }
-    }
-    async checkIfCloudNeedsV2Cleanup() {
-      try {
-        const v2Folders = ["chats/", "settings/"];
-        for (const folder of v2Folders) {
-          const items = await this.s3Service.list(folder);
-          if (items.length > 0) {
-            this.logger.log("info", `Found V2 data in ${folder}`);
-            return true;
-          }
-        }
-        try {
-          const metadata = await this.s3Service.download("metadata.json", true);
-          if (
-            metadata &&
-            metadata.chats &&
-            typeof metadata.chats === "object"
-          ) {
-            this.logger.log("info", "Found V2 metadata.json format");
-            return true;
-          }
-        } catch (error) {
-          if (error.code !== "NoSuchKey" && error.statusCode !== 404) {
-            this.logger.log(
-              "warning",
-              "Error checking metadata.json",
-              error.message
-            );
-          }
-        }
-        this.logger.log("info", "No V2 data found in cloud");
-        return false;
-      } catch (error) {
-        this.logger.log(
-          "warning",
-          "Error checking for V2 cloud data",
-          error.message
-        );
-        return false;
-      }
-    }
     startAutoSync() {
       if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
 
@@ -4520,47 +4140,6 @@ if (window.typingMindCloudSync) {
       }, interval);
 
       this.logger.log("info", "Auto-sync started");
-    }
-    cleanupOldTombstones() {
-      const now = Date.now();
-      const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
-      let cleanupCount = 0;
-
-      for (let i = localStorage.length - 1; i >= 0; i--) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith("tcs_tombstone_")) {
-          try {
-            const tombstone = JSON.parse(localStorage.getItem(key));
-            if (
-              tombstone.deleted &&
-              now - tombstone.deleted > tombstoneRetentionPeriod
-            ) {
-              localStorage.removeItem(key);
-              cleanupCount++;
-            }
-          } catch {
-            localStorage.removeItem(key);
-            cleanupCount++;
-          }
-        }
-      }
-
-      for (const [itemId, metadata] of Object.entries(this.metadata.items)) {
-        if (
-          metadata.deleted &&
-          now - metadata.deleted > tombstoneRetentionPeriod
-        ) {
-          delete this.metadata.items[itemId];
-          cleanupCount++;
-        }
-      }
-
-      if (cleanupCount > 0) {
-        this.saveMetadata();
-        this.logger.log("info", `🧹 Cleaned up ${cleanupCount} old tombstones`);
-      }
-
-      return cleanupCount;
     }
     async getCloudMetadata() {
       try {
