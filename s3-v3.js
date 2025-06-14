@@ -1920,7 +1920,6 @@ if (window.typingMindCloudSync) {
         zip.file(jsonFileName, stringifiedData, {
           compression: "DEFLATE",
           compressionOptions: { level: 9 },
-          binary: true,
         });
 
         // Generate compressed blob as a Uint8Array
@@ -2347,6 +2346,15 @@ if (window.typingMindCloudSync) {
                   const metadata = await this.s3Service.download(obj.Key, true);
                   if (metadata.format === "chunked") {
                     const backupType = this.getBackupType(obj.Key);
+                    const baseName = obj.Key.replace("-metadata.json", "");
+                    const chunkFiles = objects.filter(
+                      (o) =>
+                        o.Key.startsWith(baseName) && o.Key.includes("-chunk-")
+                    );
+                    const totalChunkSize = chunkFiles.reduce(
+                      (sum, chunk) => sum + chunk.Size,
+                      0
+                    );
                     backups.push({
                       key: obj.Key,
                       name: obj.Key.replace("-metadata.json", ""),
@@ -2354,7 +2362,7 @@ if (window.typingMindCloudSync) {
                         obj.Key,
                         metadata
                       ),
-                      size: metadata.estimatedSize || obj.Size,
+                      size: totalChunkSize,
                       modified: obj.LastModified,
                       format: "chunked",
                       chunks: metadata.totalChunks,
