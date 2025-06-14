@@ -2526,46 +2526,34 @@ if (window.typingMindCloudSync) {
     async restoreFromZipBackup(key, cryptoService, legacy = false) {
       try {
         const JSZip = await this.loadJSZip();
-
-        // Download raw ZIP data
         const zipData = await this.s3Service.downloadRaw(key);
-
-        if (legacy) {
-          // Legacy: Encrypted THEN compressed
+        try {
+          this.logger.log(
+            "info",
+            "Attempting V3 restore (compressed, then encrypted)"
+          );
+          const decryptedZipBytes = await cryptoService.decryptBytes(zipData);
+          const zip = await JSZip.loadAsync(decryptedZipBytes);
+          const jsonFile = Object.keys(zip.files).find((f) =>
+            f.endsWith(".json")
+          );
+          if (!jsonFile) throw new Error("No JSON file found in V3 ZIP backup");
+          const jsonContent = await zip.file(jsonFile).async("string");
+          return JSON.parse(jsonContent);
+        } catch (v3Error) {
+          this.logger.log(
+            "warn",
+            "V3 restore failed, attempting V2 restore.",
+            v3Error.message
+          );
           const zip = await JSZip.loadAsync(zipData);
           const jsonFile = Object.keys(zip.files).find((f) =>
             f.endsWith(".json")
           );
-          if (!jsonFile) {
-            throw new Error("No JSON file found in ZIP backup");
-          }
+          if (!jsonFile) throw new Error("No JSON file found in V2 ZIP backup");
           const encryptedData = await zip.file(jsonFile).async("uint8array");
           return await cryptoService.decrypt(encryptedData);
         }
-
-        // New method: Compressed THEN encrypted
-        const decryptedZipBytes = await cryptoService.decryptBytes(zipData);
-
-        // Load ZIP from decrypted bytes
-        const zip = await JSZip.loadAsync(decryptedZipBytes);
-
-        // Find JSON file inside ZIP
-        const jsonFile = Object.keys(zip.files).find((f) =>
-          f.endsWith(".json")
-        );
-        if (!jsonFile) {
-          throw new Error("No JSON file found in ZIP backup");
-        }
-
-        // Extract and parse the content
-        const jsonContent = await zip.file(jsonFile).async("string");
-        const decryptedData = JSON.parse(jsonContent);
-
-        this.logger.log(
-          "info",
-          "Successfully extracted and decrypted ZIP backup"
-        );
-        return decryptedData;
       } catch (error) {
         this.logger.log(
           "error",
