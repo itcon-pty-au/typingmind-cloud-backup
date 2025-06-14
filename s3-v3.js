@@ -3811,30 +3811,32 @@ if (window.typingMindCloudSync) {
             );
             if (!jsonFile)
               throw new Error("No JSON file found in V2 ZIP backup");
-            const encryptedJsonString = await zip
+            const fileContentAsString = await zip
               .file(jsonFile)
               .async("string");
-            const parsedData = JSON.parse(encryptedJsonString);
-            if (!parsedData.iv || !parsedData.encrypted) {
-              throw new Error("Invalid V2 legacy backup format.");
+
+            if (fileContentAsString.startsWith("ENCRYPTED:")) {
+              this.logger.log(
+                "info",
+                "Detected V2 'ENCRYPTED:' prefix format."
+              );
+              const base64Data = fileContentAsString.substring(10);
+              const encryptedDataWithIv = Uint8Array.from(
+                atob(base64Data),
+                (c) => c.charCodeAt(0)
+              );
+              const decryptedContent = await this.cryptoService.decrypt(
+                encryptedDataWithIv
+              );
+              content = JSON.stringify(decryptedContent, null, 2);
+            } else {
+              this.logger.log(
+                "error",
+                "Unrecognized V2 backup format. Content does not start with 'ENCRYPTED:'.",
+                fileContentAsString.substring(0, 100)
+              );
+              throw new Error("Unrecognized V2 backup format.");
             }
-            const encryptionKey = this.config.get("encryptionKey");
-            const cryptoKey = await this.cryptoService.deriveKey(encryptionKey);
-            const iv = Uint8Array.from(atob(parsedData.iv), (c) =>
-              c.charCodeAt(0)
-            );
-            const encrypted = Uint8Array.from(atob(parsedData.encrypted), (c) =>
-              c.charCodeAt(0)
-            );
-            const decrypted = await crypto.subtle.decrypt(
-              { name: "AES-GCM", iv },
-              cryptoKey,
-              encrypted
-            );
-            const decryptedJson = JSON.parse(
-              new TextDecoder().decode(decrypted)
-            );
-            content = JSON.stringify(decryptedJson, null, 2);
           }
         } else if (
           key.startsWith("s-") ||
