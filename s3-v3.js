@@ -857,6 +857,15 @@ if (window.typingMindCloudSync) {
         return result.Contents || [];
       });
     }
+
+    async downloadWithResponse(key) {
+      return this.withRetry(async () => {
+        const result = await this.client
+          .getObject({ Bucket: this.config.get("bucketName"), Key: key })
+          .promise();
+        return result;
+      });
+    }
   }
 
   class SyncOrchestrator {
@@ -1272,8 +1281,8 @@ if (window.typingMindCloudSync) {
       }
       this.syncInProgress = true;
       try {
-        //this.logger.log("start", "Starting sync from cloud");
-        const cloudMetadata = await this.getCloudMetadata();
+        const { metadata: cloudMetadata, etag: cloudMetadataETag } =
+          await this.getCloudMetadataWithETag();
 
         const debugEnabled =
           new URLSearchParams(window.location.search).get("log") === "true";
@@ -1288,15 +1297,16 @@ if (window.typingMindCloudSync) {
           );
         }
 
-        const lastCloudSync = this.getLastCloudSync();
+        const lastMetadataETag = localStorage.getItem("tcs_metadata_etag");
+        const hasCloudChanges = cloudMetadataETag !== lastMetadataETag;
         const cloudLastSync = cloudMetadata.lastSync || 0;
-        const hasCloudChanges = cloudLastSync > lastCloudSync;
+
         if (!hasCloudChanges) {
           this.logger.log(
             "info",
-            "No cloud changes detected - skipping item downloads"
+            "No cloud changes detected based on ETag - skipping item downloads"
           );
-          this.metadata.lastSync = Date.now();
+          this.metadata.lastSync = cloudLastSync;
           this.setLastCloudSync(cloudLastSync);
           this.saveMetadata();
           this.logger.log("success", "Sync from cloud completed (no changes)");
@@ -1316,8 +1326,6 @@ if (window.typingMindCloudSync) {
               const localVersion = localTombstone?.tombstoneVersion || 0;
               return cloudVersion > localVersion;
             }
-            // Only download if local item doesn't exist or has never been synced
-            // Don't use lastModified comparison to avoid sync loops
             return !localItem || !localItem.synced || localItem.synced === 0;
           }
         );
@@ -1363,8 +1371,9 @@ if (window.typingMindCloudSync) {
           }
         );
         await Promise.allSettled(downloadPromises);
-        this.metadata.lastSync = Date.now();
+        this.metadata.lastSync = cloudLastSync;
         this.setLastCloudSync(cloudLastSync);
+        localStorage.setItem("tcs_metadata_etag", cloudMetadataETag);
         this.saveMetadata();
         this.logger.log("success", "Sync from cloud completed");
       } catch (error) {
@@ -1721,26 +1730,35 @@ if (window.typingMindCloudSync) {
 
       return cleanupCount;
     }
-    async getCloudMetadata() {
+
+    async getCloudMetadataWithETag() {
       try {
-        const cloudMetadata = await this.s3Service.download(
-          "metadata.json",
-          true
+        const result = await this.s3Service.downloadWithResponse(
+          "metadata.json"
         );
-        if (!cloudMetadata || typeof cloudMetadata !== "object") {
-          return { lastSync: 0, items: {} };
+        const metadata = JSON.parse(result.Body.toString());
+        const etag = result.ETag;
+
+        if (!metadata || typeof metadata !== "object") {
+          return { metadata: { lastSync: 0, items: {} }, etag };
         }
-        if (!cloudMetadata.items) {
-          cloudMetadata.items = {};
+        if (!metadata.items) {
+          metadata.items = {};
         }
-        return cloudMetadata;
+        return { metadata, etag };
       } catch (error) {
         if (error.code === "NoSuchKey" || error.statusCode === 404) {
-          return { lastSync: 0, items: {} };
+          return { metadata: { lastSync: 0, items: {} }, etag: null };
         }
         throw error;
       }
     }
+
+    async getCloudMetadata() {
+      const { metadata } = await this.getCloudMetadataWithETag();
+      return metadata;
+    }
+
     cleanup() {
       if (this.autoSyncInterval) {
         clearInterval(this.autoSyncInterval);
