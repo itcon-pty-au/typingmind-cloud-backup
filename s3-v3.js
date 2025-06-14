@@ -1914,10 +1914,13 @@ if (window.typingMindCloudSync) {
         const stringifiedData = JSON.stringify(data);
         const uncompressedSize = stringifiedData.length;
 
+        const textEncoder = new TextEncoder();
+        const stringifiedDataBytes = textEncoder.encode(stringifiedData);
+
         // Create ZIP with high compression from raw data
         const zip = new JSZip();
         const jsonFileName = filename.replace(".zip", ".json");
-        zip.file(jsonFileName, stringifiedData, {
+        zip.file(jsonFileName, stringifiedDataBytes, {
           compression: "DEFLATE",
           compressionOptions: { level: 9 },
         });
@@ -2922,6 +2925,7 @@ if (window.typingMindCloudSync) {
       this.modalCleanupCallbacks = [];
       this.noSyncMode = false;
       this.diagnosticsInterval = null;
+      this.diagnosticsExpanded = false;
     }
     async initialize() {
       this.logger.log("start", "Initializing TypingmindCloud Sync V3");
@@ -3963,12 +3967,15 @@ if (window.typingMindCloudSync) {
 
       if (!header || !content || !chevron) return;
 
-      let isExpanded = false;
+      if (this.diagnosticsExpanded) {
+        content.classList.remove("hidden");
+        chevron.style.transform = "rotate(180deg)";
+      }
 
       const toggleDiagnostics = () => {
-        isExpanded = !isExpanded;
+        this.diagnosticsExpanded = !this.diagnosticsExpanded;
 
-        if (isExpanded) {
+        if (this.diagnosticsExpanded) {
           content.classList.remove("hidden");
           chevron.style.transform = "rotate(180deg)";
         } else {
@@ -3999,6 +4006,7 @@ if (window.typingMindCloudSync) {
         clearInterval(this.diagnosticsInterval);
         this.diagnosticsInterval = null;
       }
+      this.diagnosticsExpanded = false;
       this.modalCleanupCallbacks.forEach((cleanup) => {
         try {
           cleanup();
