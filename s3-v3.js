@@ -1244,6 +1244,7 @@ if (window.typingMindCloudSync) {
         }
 
         // Log potential sync loops for debugging
+        const now = Date.now();
         const recentlyChangedItems = changedItems.filter(
           (item) =>
             this.metadata.items[item.id] &&
