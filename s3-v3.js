@@ -150,11 +150,6 @@ if (window.typingMindCloudSync) {
       this.logger = logger;
       this.operationQueue = operationQueue;
       this.dbPromise = null;
-      this.deletionMonitor = null;
-      this.knownItems = new Map();
-      this.potentialDeletions = new Map();
-      this.maxKnownItems = 5000;
-      this.lastStaleCleanup = 0;
     }
     async getDB() {
       if (!this.dbPromise) {
@@ -895,6 +890,21 @@ if (window.typingMindCloudSync) {
       result.set(new Uint8Array(encrypted), iv.length);
       return result;
     }
+    async encryptBytes(data) {
+      const encryptionKey = this.config.get("encryptionKey");
+      if (!encryptionKey) throw new Error("No encryption key configured");
+      const key = await this.deriveKey(encryptionKey);
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const encrypted = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv },
+        key,
+        data
+      );
+      const result = new Uint8Array(iv.length + encrypted.byteLength);
+      result.set(iv, 0);
+      result.set(new Uint8Array(encrypted), iv.length);
+      return result;
+    }
     async decrypt(encryptedData) {
       const encryptionKey = this.config.get("encryptionKey");
       if (!encryptionKey) throw new Error("No encryption key configured");
@@ -907,6 +917,19 @@ if (window.typingMindCloudSync) {
         data
       );
       return JSON.parse(new TextDecoder().decode(decrypted));
+    }
+    async decryptBytes(encryptedData) {
+      const encryptionKey = this.config.get("encryptionKey");
+      if (!encryptionKey) throw new Error("No encryption key configured");
+      const key = await this.deriveKey(encryptionKey);
+      const iv = encryptedData.slice(0, 12);
+      const data = encryptedData.slice(12);
+      const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv },
+        key,
+        data
+      );
+      return new Uint8Array(decrypted);
     }
     cleanup() {
       this.keyCache.clear();
@@ -1991,41 +2014,42 @@ if (window.typingMindCloudSync) {
       try {
         const JSZip = await this.loadJSZip();
 
-        // Encrypt the data first
-        const encryptedData = await this.s3Service.crypto.encrypt(data);
+        const stringifiedData = JSON.stringify(data);
+        const uncompressedSize = stringifiedData.length;
 
-        // Create ZIP with high compression
+        // Create ZIP with high compression from raw data
         const zip = new JSZip();
         const jsonFileName = filename.replace(".zip", ".json");
-        zip.file(jsonFileName, encryptedData, {
+        zip.file(jsonFileName, stringifiedData, {
           compression: "DEFLATE",
           compressionOptions: { level: 9 },
           binary: true,
         });
 
-        // Generate compressed blob
-        const compressedContent = await zip.generateAsync({ type: "blob" });
+        // Generate compressed blob as a Uint8Array
+        const compressedData = await zip.generateAsync({ type: "uint8array" });
 
-        if (compressedContent.size < 100) {
+        if (compressedData.length < 100) {
           throw new Error(
             "Backup file is too small or empty. Upload cancelled."
           );
         }
 
-        // Convert to Uint8Array for S3 upload
-        const arrayBuffer = await compressedContent.arrayBuffer();
-        const compressedData = new Uint8Array(arrayBuffer);
+        // Encrypt the compressed data
+        const encryptedData = await this.s3Service.crypto.encryptBytes(
+          compressedData
+        );
 
-        // Upload raw compressed data (not through crypto again)
-        await this.s3Service.uploadRaw(filename, compressedData);
+        // Upload raw encrypted data
+        await this.s3Service.uploadRaw(filename, encryptedData);
 
         this.logger.log(
           "info",
           `Compression: ${this.formatFileSize(
-            JSON.stringify(data).length
-          )} → ${this.formatFileSize(compressedContent.size)} ` +
+            uncompressedSize
+          )} → ${this.formatFileSize(compressedData.length)} ` +
             `(${Math.round(
-              (1 - compressedContent.size / JSON.stringify(data).length) * 100
+              (1 - compressedData.length / uncompressedSize) * 100
             )}% reduction)`
         );
 
@@ -2591,15 +2615,31 @@ if (window.typingMindCloudSync) {
       return true;
     }
 
-    async restoreFromZipBackup(key, cryptoService) {
+    async restoreFromZipBackup(key, cryptoService, legacy = false) {
       try {
         const JSZip = await this.loadJSZip();
 
         // Download raw ZIP data
         const zipData = await this.s3Service.downloadRaw(key);
 
-        // Load ZIP
-        const zip = await JSZip.loadAsync(zipData);
+        if (legacy) {
+          // Legacy: Encrypted THEN compressed
+          const zip = await JSZip.loadAsync(zipData);
+          const jsonFile = Object.keys(zip.files).find((f) =>
+            f.endsWith(".json")
+          );
+          if (!jsonFile) {
+            throw new Error("No JSON file found in ZIP backup");
+          }
+          const encryptedData = await zip.file(jsonFile).async("uint8array");
+          return await cryptoService.decrypt(encryptedData);
+        }
+
+        // New method: Compressed THEN encrypted
+        const decryptedZipBytes = await cryptoService.decryptBytes(zipData);
+
+        // Load ZIP from decrypted bytes
+        const zip = await JSZip.loadAsync(decryptedZipBytes);
 
         // Find JSON file inside ZIP
         const jsonFile = Object.keys(zip.files).find((f) =>
@@ -2609,11 +2649,9 @@ if (window.typingMindCloudSync) {
           throw new Error("No JSON file found in ZIP backup");
         }
 
-        // Extract encrypted content
-        const encryptedData = await zip.file(jsonFile).async("uint8array");
-
-        // Decrypt content
-        const decryptedData = await cryptoService.decrypt(encryptedData);
+        // Extract and parse the content
+        const jsonContent = await zip.file(jsonFile).async("string");
+        const decryptedData = JSON.parse(jsonContent);
 
         this.logger.log(
           "info",
@@ -3029,10 +3067,7 @@ if (window.typingMindCloudSync) {
             await this.syncOrchestrator.performFullSync();
             this.startAutoSync();
             this.updateSyncStatus("success");
-            this.logger.log(
-              "success",
-              "Cloud Sync initialized successfully with tombstone monitoring"
-            );
+            this.logger.log("success", "Cloud Sync initialized successfully");
           } catch (error) {
             this.logger.log("error", "Initialization failed", error.message);
             this.updateSyncStatus("error");
@@ -3040,13 +3075,13 @@ if (window.typingMindCloudSync) {
         } else {
           this.logger.log(
             "info",
-            "AWS not configured - running in monitoring mode only"
+            "AWS not configured - running in limited capacity"
           );
         }
       } else {
         this.logger.log(
           "info",
-          "NoSync mode: Monitoring, daily backups, and auto-sync disabled"
+          "NoSync mode: Daily backups and auto-sync disabled"
         );
       }
     }
