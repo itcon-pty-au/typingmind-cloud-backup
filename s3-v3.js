@@ -668,11 +668,6 @@ if (window.typingMindCloudSync) {
           return JSON.parse(new TextDecoder().decode(decrypted));
         }
       } catch (e) {
-        this.logger.log(
-          "info",
-          "Decompression failed, assuming uncompressed data.",
-          e.message
-        );
         return JSON.parse(new TextDecoder().decode(decrypted));
       }
     }
@@ -1175,6 +1170,9 @@ if (window.typingMindCloudSync) {
           "info",
           `Syncing ${changedItems.length} items to cloud`
         );
+
+        let itemsSynced = 0;
+
         const uploadPromises = changedItems.map(async (item) => {
           const cloudItem = cloudMetadata.items[item.id];
           if (
@@ -1202,6 +1200,7 @@ if (window.typingMindCloudSync) {
               };
               this.metadata.items[item.id] = tombstoneData;
               cloudMetadata.items[item.id] = { ...tombstoneData };
+              itemsSynced++;
               this.logger.log(
                 "info",
                 `🗑️ Synced tombstone for key "${item.id}" to cloud (v${tombstoneData.tombstoneVersion})`
@@ -1210,16 +1209,16 @@ if (window.typingMindCloudSync) {
               const data = await this.dataService.getItem(item.id, item.type);
               if (data) {
                 await this.s3Service.upload(`items/${item.id}.json`, data);
-                const syncTime = Date.now();
                 this.metadata.items[item.id] = {
-                  synced: syncTime,
+                  synced: Date.now(),
                   type: item.type,
                   size: item.size,
-                  lastModified: syncTime,
+                  lastModified: item.lastModified,
                 };
                 cloudMetadata.items[item.id] = {
                   ...this.metadata.items[item.id],
                 };
+                itemsSynced++;
                 this.logger.log("info", `Synced key "${item.id}" to cloud`);
               }
             }
@@ -1243,16 +1242,22 @@ if (window.typingMindCloudSync) {
             throw error;
           }
         });
+
         await Promise.allSettled(uploadPromises);
-        cloudMetadata.lastSync = Date.now();
-        await this.s3Service.upload("metadata.json", cloudMetadata, true);
-        this.metadata.lastSync = cloudMetadata.lastSync;
-        this.setLastCloudSync(cloudMetadata.lastSync);
-        this.saveMetadata();
-        this.logger.log(
-          "success",
-          `Sync to cloud completed - ${changedItems.length} items synced`
-        );
+
+        if (itemsSynced > 0) {
+          cloudMetadata.lastSync = Date.now();
+          await this.s3Service.upload("metadata.json", cloudMetadata, true);
+          this.metadata.lastSync = cloudMetadata.lastSync;
+          this.setLastCloudSync(cloudMetadata.lastSync);
+          this.saveMetadata();
+          this.logger.log(
+            "success",
+            `Sync to cloud completed - ${itemsSynced} items synced`
+          );
+        } else {
+          this.logger.log("info", "Sync to cloud did not upload any items.");
+        }
       } catch (error) {
         this.logger.log("error", "Failed to sync to cloud", error.message);
         if (this.operationQueue) {
@@ -2136,7 +2141,7 @@ if (window.typingMindCloudSync) {
     }
 
     async performDailyBackup() {
-      this.logger.log("start", "Starting daily backup");
+      //this.logger.log("start", "Starting daily backup");
 
       const estimatedSize = await this.estimateDataSize();
       this.logger.log(
