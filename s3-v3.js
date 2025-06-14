@@ -117,6 +117,35 @@ if (window.typingMindCloudSync) {
         start: "🔄",
         skip: "⏭️",
       };
+      if (this.enabled) {
+        this.loadEruda();
+      }
+    }
+    loadEruda() {
+      const isMobile =
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+          navigator.userAgent
+        );
+      if (!isMobile) return;
+      if (document.getElementById("eruda-script")) return;
+      const script = document.createElement("script");
+      script.id = "eruda-script";
+      script.src = "https://cdn.jsdelivr.net/npm/eruda";
+      script.onload = () => {
+        if (window.eruda) {
+          window.eruda.init();
+        }
+      };
+      document.head.appendChild(script);
+    }
+    destroyEruda() {
+      if (window.eruda) {
+        window.eruda.destroy();
+      }
+      const script = document.getElementById("eruda-script");
+      if (script) {
+        script.remove();
+      }
     }
     log(type, message, data = null) {
       if (!this.enabled) return;
@@ -138,8 +167,13 @@ if (window.typingMindCloudSync) {
     setEnabled(enabled) {
       this.enabled = enabled;
       const url = new URL(window.location);
-      if (enabled) url.searchParams.set("log", "");
-      else url.searchParams.delete("log");
+      if (enabled) {
+        url.searchParams.set("log", "");
+        this.loadEruda();
+      } else {
+        url.searchParams.delete("log");
+        this.destroyEruda();
+      }
       window.history.replaceState({}, "", url);
     }
   }
