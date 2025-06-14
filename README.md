@@ -1,4 +1,4 @@
-<div align="center">💗 <a href="https://buymeacoffee.com/itcon">Countless hours have gone into coding this extension. If you found this useful, please consider donating so that I stay motivated to build and release  such awesome tools for free.</a> 💗<br/><img src="public/bmc.png" alt="Buy Me A Coffee" height="40" /><br/></div>
+<div align="center">💗 <a href="https://buymeacoffee.com/itcon">Countless hours have gone into coding this extension. If you found this useful, please consider donating so that I stay motivated to build and release  such awesome tools for free.</a> 💗<br/><img src="Admin/bmc.png" alt="Buy Me A Coffee" height="40" /><br/></div>
 
 # TypingMind Cloud Sync V3
 
