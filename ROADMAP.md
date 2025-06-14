@@ -19,6 +19,3 @@ This document outlines the planned features, fixes, and improvements for the clo
 ---
 
 ### 🚀 New Features & Enhancements
-
-- [ ] **Configuration Import/Export:** Add buttons to the settings modal to allow users to export their configuration to a file (excluding secrets) and import it on another device.
-- [ ] **Pre-flight Credential Check:** Add a function to the "Save" button to perform a simple check (e.g., list the bucket) to verify credentials and permissions before saving them. _(Implemented)_
