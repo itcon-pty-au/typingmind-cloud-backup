@@ -79,11 +79,11 @@ After installation, you'll see a new **Sync** button in the sidebar. Click it to
 
 #### Option A: Manual Configuration
 
-1. Click the **Sync** button
+1. Click the **Sync** button in the navigation menu
 2. Fill in your cloud storage credentials
 3. Click **Save** - the extension will:
    - Check if cloud backup exists and restore it if found
-   - Create initial backup if no cloud data exists
+   - Create initial backup if no cloud data exists and push the app data to cloud
    - Start automatic sync monitoring and daily backups
 
 #### Option B: URL Configuration (Recommended for multiple devices)
