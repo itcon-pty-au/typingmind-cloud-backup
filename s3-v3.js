@@ -1146,15 +1146,12 @@ if (window.typingMindCloudSync) {
                   lastModified: now,
                   reason: "size",
                 });
-              } else if (
-                !existingItem.synced ||
-                (existingItem.lastModified || 0) > existingItem.synced
-              ) {
+              } else if (!existingItem.synced) {
                 changedItems.push({
                   id: key,
                   type: "idb",
                   size: currentSize,
-                  lastModified: existingItem.lastModified || now,
+                  lastModified: now,
                   reason: "never-synced",
                 });
               }
@@ -1188,15 +1185,12 @@ if (window.typingMindCloudSync) {
               lastModified: now,
               reason: "size",
             });
-          } else if (
-            !existingItem.synced ||
-            (existingItem.lastModified || 0) > existingItem.synced
-          ) {
+          } else if (!existingItem.synced) {
             changedItems.push({
               id: key,
               type: "ls",
               size: currentSize,
-              lastModified: existingItem.lastModified || now,
+              lastModified: now,
               reason: "never-synced",
             });
           }
@@ -1236,7 +1230,7 @@ if (window.typingMindCloudSync) {
     }
     async syncToCloud() {
       if (this.syncInProgress) {
-        this.logger.log("skip", "Sync already in progress");
+        this.logger.log("skip", "Sync to cloud already in progress");
         return;
       }
       this.syncInProgress = true;
@@ -1247,6 +1241,30 @@ if (window.typingMindCloudSync) {
         if (changedItems.length === 0) {
           this.logger.log("info", "No items to sync to cloud");
           return;
+        }
+
+        // Log potential sync loops for debugging
+        const recentlyChangedItems = changedItems.filter(
+          (item) =>
+            this.metadata.items[item.id] &&
+            this.metadata.items[item.id].synced &&
+            now - this.metadata.items[item.id].synced < 60000 // Last synced within 1 minute
+        );
+
+        if (recentlyChangedItems.length > 0) {
+          this.logger.log(
+            "warning",
+            `Detected ${recentlyChangedItems.length} items synced recently, potential sync loop`,
+            {
+              items: recentlyChangedItems.map((item) => ({
+                id: item.id,
+                reason: item.reason,
+                lastSynced: this.metadata.items[item.id].synced
+                  ? new Date(this.metadata.items[item.id].synced).toISOString()
+                  : "never",
+              })),
+            }
+          );
         }
         this.logger.log(
           "info",
@@ -1273,11 +1291,12 @@ if (window.typingMindCloudSync) {
               const data = await this.dataService.getItem(item.id, item.type);
               if (data) {
                 await this.s3Service.upload(`items/${item.id}.json`, data);
+                const syncTime = Date.now();
                 this.metadata.items[item.id] = {
-                  synced: Date.now(),
+                  synced: syncTime,
                   type: item.type,
                   size: item.size,
-                  lastModified: item.lastModified,
+                  lastModified: syncTime,
                 };
                 cloudMetadata.items[item.id] = {
                   ...this.metadata.items[item.id],
@@ -1354,7 +1373,7 @@ if (window.typingMindCloudSync) {
     }
     async syncFromCloud() {
       if (this.syncInProgress) {
-        this.logger.log("skip", "Sync already in progress");
+        this.logger.log("skip", "Sync from cloud already in progress");
         return;
       }
       this.syncInProgress = true;
@@ -1403,11 +1422,9 @@ if (window.typingMindCloudSync) {
               const localVersion = localTombstone?.tombstoneVersion || 0;
               return cloudVersion > localVersion;
             }
-            return (
-              !localItem ||
-              (cloudItem.lastModified || cloudItem.synced) >
-                (localItem?.synced || 0)
-            );
+            // Only download if local item doesn't exist or has never been synced
+            // Don't use lastModified comparison to avoid sync loops
+            return !localItem || !localItem.synced || localItem.synced === 0;
           }
         );
         if (itemsToDownload.length > 0) {
@@ -1439,11 +1456,12 @@ if (window.typingMindCloudSync) {
               const data = await this.s3Service.download(`items/${key}.json`);
               if (data) {
                 await this.dataService.saveItem(data, cloudItem.type, key);
+                const syncTime = Date.now();
                 this.metadata.items[key] = {
-                  synced: Date.now(),
+                  synced: syncTime,
                   type: cloudItem.type,
                   size: cloudItem.size || this.getItemSize(data),
-                  lastModified: cloudItem.lastModified || cloudItem.synced,
+                  lastModified: syncTime,
                 };
                 this.logger.log("info", `Synced key "${key}" from cloud`);
               }
@@ -1641,11 +1659,12 @@ if (window.typingMindCloudSync) {
                 );
                 if (data) {
                   await this.dataService.saveItem(data, cloudItem.type);
+                  const syncTime = Date.now();
                   this.metadata.items[cloudItemId] = {
-                    synced: Date.now(),
+                    synced: syncTime,
                     type: cloudItem.type,
                     size: cloudItem.size || this.getItemSize(data),
-                    lastModified: cloudItem.lastModified || cloudItem.synced,
+                    lastModified: syncTime,
                   };
                   restoredCount++;
                   this.logger.log(
