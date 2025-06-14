@@ -779,7 +779,7 @@ if (window.typingMindCloudSync) {
               "no-cache, no-store, max-age=0, must-revalidate";
           }
           const result = await this.client.upload(params).promise();
-          this.logger.log("success", `Uploaded ${key}`);
+          this.logger.log("success", `Uploaded ${key}`, { ETag: result.ETag });
           return result;
         } catch (error) {
           this.logger.log(
@@ -806,7 +806,9 @@ if (window.typingMindCloudSync) {
                 : "application/octet-stream",
             })
             .promise();
-          this.logger.log("success", `Uploaded raw ${key}`);
+          this.logger.log("success", `Uploaded raw ${key}`, {
+            ETag: result.ETag,
+          });
           return result;
         } catch (error) {
           this.logger.log(
@@ -1174,6 +1176,20 @@ if (window.typingMindCloudSync) {
           `Syncing ${changedItems.length} items to cloud`
         );
         const uploadPromises = changedItems.map(async (item) => {
+          const cloudItem = cloudMetadata.items[item.id];
+          if (
+            cloudItem &&
+            !item.deleted &&
+            (cloudItem.lastModified || 0) >
+              (this.metadata.items[item.id]?.lastModified || 0) + 2000
+          ) {
+            this.logger.log(
+              "skip",
+              `Skipping upload for ${item.id}, cloud version is newer`
+            );
+            return;
+          }
+
           try {
             if (item.deleted || item.reason === "tombstone") {
               const timestamp = Date.now();
@@ -1284,6 +1300,13 @@ if (window.typingMindCloudSync) {
         const { metadata: cloudMetadata, etag: cloudMetadataETag } =
           await this.getCloudMetadataWithETag();
 
+        this.logger.log("info", "Downloaded cloud metadata", {
+          ETag: cloudMetadataETag,
+          lastSync: cloudMetadata.lastSync
+            ? new Date(cloudMetadata.lastSync).toISOString()
+            : "never",
+        });
+
         const debugEnabled =
           new URLSearchParams(window.location.search).get("log") === "true";
         if (debugEnabled && cloudMetadata.items) {
@@ -1321,14 +1344,36 @@ if (window.typingMindCloudSync) {
             const localItem = this.metadata.items[key];
             const localTombstone =
               this.dataService.getTombstoneFromStorage(key);
+
             if (cloudItem.deleted) {
               const cloudVersion = cloudItem.tombstoneVersion || 1;
-              const localVersion = localTombstone?.tombstoneVersion || 0;
+              const localMetadataVersion =
+                localItem && localItem.deleted
+                  ? localItem.tombstoneVersion || 1
+                  : 0;
+              const localStorageVersion = localTombstone?.tombstoneVersion || 0;
+              const localVersion = Math.max(
+                localMetadataVersion,
+                localStorageVersion
+              );
               return cloudVersion > localVersion;
             }
-            return !localItem || !localItem.synced || localItem.synced === 0;
+
+            if (localItem && localItem.deleted) {
+              return (cloudItem.lastModified || 0) > localItem.deleted;
+            }
+
+            if (!localItem) {
+              return true;
+            }
+
+            return (
+              (cloudItem.lastModified || 0) >
+              (localItem.lastModified || 0) + 2000
+            );
           }
         );
+
         if (itemsToDownload.length > 0) {
           this.logger.log(
             "info",
