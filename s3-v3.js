@@ -99,7 +99,11 @@ if (window.typingMindCloudSync) {
       );
     }
     shouldExclude(key) {
-      return this.exclusions.includes(key) || key.startsWith("tcs_");
+      return (
+        this.exclusions.includes(key) ||
+        key.startsWith("tcs_") ||
+        key.includes("eruda")
+      );
     }
     reloadExclusions() {
       this.exclusions = this.loadExclusions();
@@ -1381,6 +1385,9 @@ if (window.typingMindCloudSync) {
         );
         const itemsToDownload = Object.entries(cloudMetadata.items).filter(
           ([key, cloudItem]) => {
+            if (this.config.shouldExclude(key)) {
+              return false;
+            }
             const localItem = this.metadata.items[key];
             const localTombstone =
               this.dataService.getTombstoneFromStorage(key);
@@ -3041,9 +3048,28 @@ if (window.typingMindCloudSync) {
 
       let hasConfigParams = false;
 
+      // Manually parse to avoid '+' being converted to space for keys
+      const rawQuery = window.location.search.substring(1);
+      const rawParams = new URLSearchParams(rawQuery);
+
       for (const [urlParam, configKey] of Object.entries(paramMap)) {
-        const value = urlParams.get(urlParam);
-        if (value !== null) {
+        if (rawParams.has(urlParam)) {
+          let value = rawParams.get(urlParam);
+          // For keys that might contain '+', which gets converted to a space by get(),
+          // we do a targeted replacement. We assume a space in a key is an encoded '+'.
+          if (
+            (configKey === "secretKey" ||
+              configKey === "accessKey" ||
+              configKey === "encryptionKey") &&
+            value.includes(" ")
+          ) {
+            const urlEncodedValue = new URLSearchParams(
+              window.location.search
+            ).get(urlParam);
+            if (urlEncodedValue) {
+              value = urlEncodedValue;
+            }
+          }
           config[configKey] = value;
           hasConfigParams = true;
         }
@@ -3717,10 +3743,20 @@ if (window.typingMindCloudSync) {
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
     }
     async loadSyncDiagnostics(modal) {
-      try {
-        const diagnosticsBody = modal.querySelector("#sync-diagnostics-body");
-        if (!diagnosticsBody) return;
+      const diagnosticsBody = modal.querySelector("#sync-diagnostics-body");
+      if (!diagnosticsBody) return;
 
+      if (!this.config.isConfigured()) {
+        diagnosticsBody.innerHTML =
+          '<tr><td colspan="3" class="text-center py-2 text-zinc-500">AWS Not Configured</td></tr>';
+        const overallStatusEl = modal.querySelector("#sync-overall-status");
+        const summaryEl = modal.querySelector("#sync-diagnostics-summary");
+        if (overallStatusEl) overallStatusEl.textContent = "⚙️";
+        if (summaryEl) summaryEl.textContent = "Setup required";
+        return;
+      }
+
+      try {
         diagnosticsBody.innerHTML =
           '<tr><td colspan="3" class="text-center py-2 text-zinc-500">Loading...</td></tr>';
 
@@ -3829,7 +3865,6 @@ if (window.typingMindCloudSync) {
         diagnosticsBody.innerHTML = tableHTML + warningRow;
       } catch (error) {
         console.error("Failed to load sync diagnostics:", error);
-        const diagnosticsBody = modal.querySelector("#sync-diagnostics-body");
         if (diagnosticsBody) {
           diagnosticsBody.innerHTML =
             '<tr><td colspan="3" class="text-center py-2 text-red-400">Error loading diagnostics</td></tr>';
