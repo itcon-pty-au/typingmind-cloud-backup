@@ -3778,35 +3778,56 @@ if (window.typingMindCloudSync) {
       try {
         let content;
         if (key.endsWith(".zip")) {
+          const JSZip = await this.backupService.loadJSZip();
           try {
-            // Handle ZIP files using JSZip
-            const JSZip = await this.backupService.loadJSZip();
-            const zip = await JSZip.loadAsync(backupData);
-
-            // Find JSON file inside ZIP
+            this.logger.log("info", "Attempting to download as V3 backup.");
+            const decryptedZipBytes = await this.cryptoService.decryptBytes(
+              backupData
+            );
+            const zip = await JSZip.loadAsync(decryptedZipBytes);
             const jsonFile = Object.keys(zip.files).find((f) =>
               f.endsWith(".json")
             );
-            if (!jsonFile) {
-              throw new Error("No JSON file found in ZIP backup");
+            if (!jsonFile)
+              throw new Error("No JSON file found in V3 ZIP backup");
+            const jsonContent = await zip.file(jsonFile).async("string");
+            content = JSON.stringify(JSON.parse(jsonContent), null, 2);
+          } catch (v3Error) {
+            this.logger.log(
+              "warn",
+              "V3 download failed, trying V2 format.",
+              v3Error.message
+            );
+            const zip = await JSZip.loadAsync(backupData);
+            const jsonFile = Object.keys(zip.files).find((f) =>
+              f.endsWith(".json")
+            );
+            if (!jsonFile)
+              throw new Error("No JSON file found in V2 ZIP backup");
+            const encryptedJsonString = await zip
+              .file(jsonFile)
+              .async("string");
+            const parsedData = JSON.parse(encryptedJsonString);
+            if (!parsedData.iv || !parsedData.encrypted) {
+              throw new Error("Invalid V2 legacy backup format.");
             }
-
-            // Extract encrypted content
-            const encryptedData = await zip.file(jsonFile).async("uint8array");
-
-            // Decrypt content
-            const decryptedContent = await this.cryptoService.decrypt(
-              encryptedData
+            const encryptionKey = this.config.get("encryptionKey");
+            const cryptoKey = await this.cryptoService.deriveKey(encryptionKey);
+            const iv = Uint8Array.from(atob(parsedData.iv), (c) =>
+              c.charCodeAt(0)
             );
-            content = JSON.stringify(decryptedContent, null, 2);
-          } catch (zipError) {
-            console.warn(
-              "Failed to process ZIP file, downloading as raw data:",
-              zipError
+            const encrypted = Uint8Array.from(atob(parsedData.encrypted), (c) =>
+              c.charCodeAt(0)
             );
-            const blob = new Blob([backupData], { type: "application/zip" });
-            this.downloadFile(key, blob);
-            return;
+            const decrypted = await crypto.subtle.decrypt(
+              { name: "AES-GCM", iv },
+              cryptoKey,
+              encrypted
+            );
+            const decryptedJson = JSON.parse(
+              new TextDecoder().decode(decrypted)
+            );
+            content = JSON.stringify(decryptedJson, null, 2);
           }
         } else if (
           key.startsWith("s-") ||
@@ -3818,7 +3839,8 @@ if (window.typingMindCloudSync) {
             );
             content = JSON.stringify(decryptedContent, null, 2);
           } catch (decryptError) {
-            console.warn(
+            this.logger.log(
+              "warn",
               "Failed to decrypt backup file, downloading as raw data:",
               decryptError
             );
@@ -3838,7 +3860,8 @@ if (window.typingMindCloudSync) {
               );
               content = JSON.stringify(decryptedContent, null, 2);
             } catch (decryptError) {
-              console.warn(
+              this.logger.log(
+                "warn",
                 "Failed to decrypt file, downloading as raw data:",
                 decryptError
               );
@@ -3853,7 +3876,11 @@ if (window.typingMindCloudSync) {
 
         this.downloadFile(key.replace(".zip", ".json"), content);
       } catch (error) {
-        console.error("Failed to process backup:", error);
+        this.logger.log(
+          "error",
+          "Failed to process backup for download, providing raw file.",
+          error.message
+        );
         const blob = new Blob([backupData], {
           type: "application/octet-stream",
         });
@@ -3890,6 +3917,8 @@ if (window.typingMindCloudSync) {
     async loadSyncDiagnostics(modal) {
       const diagnosticsBody = modal.querySelector("#sync-diagnostics-body");
       if (!diagnosticsBody) return;
+      const overallStatusEl = modal.querySelector("#sync-overall-status");
+      const summaryEl = modal.querySelector("#sync-diagnostics-summary");
 
       const setContent = (html) => {
         diagnosticsBody.innerHTML = html;
@@ -3899,18 +3928,16 @@ if (window.typingMindCloudSync) {
         setContent(
           '<tr><td colspan="3" class="text-center py-2 text-zinc-500">AWS Not Configured</td></tr>'
         );
-        const overallStatusEl = modal.querySelector("#sync-overall-status");
-        const summaryEl = modal.querySelector("#sync-diagnostics-summary");
         if (overallStatusEl) overallStatusEl.textContent = "⚙️";
         if (summaryEl) summaryEl.textContent = "Setup required";
         return;
       }
 
-      try {
-        setContent(
-          '<tr><td colspan="3" class="text-center py-2 text-zinc-500">Loading...</td></tr>'
-        );
+      if (overallStatusEl) {
+        overallStatusEl.textContent = "🔄";
+      }
 
+      try {
         // Get local items count
         const localItems = await this.dataService.getAllItems();
         const localCount = localItems.length;
@@ -3996,8 +4023,6 @@ if (window.typingMindCloudSync) {
         const summaryText = hasIssues ? "Issues detected" : "All systems OK";
 
         // Update header status
-        const overallStatusEl = modal.querySelector("#sync-overall-status");
-        const summaryEl = modal.querySelector("#sync-diagnostics-summary");
         if (overallStatusEl) overallStatusEl.textContent = overallStatus;
         if (summaryEl) summaryEl.textContent = summaryText;
 
@@ -4021,8 +4046,6 @@ if (window.typingMindCloudSync) {
             '<tr><td colspan="3" class="text-center py-2 text-red-400">Error loading diagnostics</td></tr>'
           );
         }
-        const overallStatusEl = modal.querySelector("#sync-overall-status");
-        const summaryEl = modal.querySelector("#sync-diagnostics-summary");
         if (overallStatusEl) overallStatusEl.textContent = "❌";
         if (summaryEl) summaryEl.textContent = "Error";
       }
