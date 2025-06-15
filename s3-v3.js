@@ -902,8 +902,7 @@ if (window.typingMindCloudSync) {
               idbKeys.add(key);
               const existingItem = this.metadata.items[key];
               const currentSize = this.getItemSize(value);
-              if (existingItem && existingItem.deleted) {
-              } else {
+              if (!existingItem || !existingItem.deleted) {
                 if (!existingItem) {
                   changedItems.push({
                     id: key,
@@ -969,8 +968,7 @@ if (window.typingMindCloudSync) {
           const value = localStorage.getItem(key);
           const existingItem = this.metadata.items[key];
           const currentSize = this.getItemSize(value);
-          if (existingItem && existingItem.deleted) {
-          } else {
+          if (!existingItem || !existingItem.deleted) {
             if (!existingItem) {
               changedItems.push({
                 id: key,
