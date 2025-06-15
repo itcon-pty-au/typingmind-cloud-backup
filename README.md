@@ -1,5 +1,19 @@
 <div align="center">💗 <a href="https://buymeacoffee.com/itcon">Countless hours have gone into coding this extension. If you found this useful, please consider donating so that I stay motivated to build and release  such awesome tools for free.</a> 💗<br/><br/><img src="Admin/bmc.png" alt="Buy Me A Coffee" height="40" /></div>
 
+<div align="center">
+
+**Quick Navigation**
+
+[Key Features](#-key-features) •
+[Installation & Setup](#-installation--setup) •
+[Migration to V3](#-migration-to-v3) •
+[Operating Modes](#-operating-modes) •
+[Using the Extension](#-using-the-extension) •
+[Cloud Storage Setup](#️-cloud-storage-setup) •
+[Troubleshooting](#-troubleshooting)
+
+</div>
+
 # TypingMind Cloud Sync V3
 
 A comprehensive cloud backup and sync extension for TypingMind that automatically backs up and synchronizes your entire TypingMind data with AWS S3 or S3-compatible cloud storage services.
@@ -51,7 +65,7 @@ A comprehensive cloud backup and sync extension for TypingMind that automaticall
 
 1. **Logout of TypingMind** (this disables native sync - the app works perfectly when logged out)
 2. Go to **Menu > Preferences > Extensions** in TypingMind
-3. Load this URL: `https://itcon-pty-au.github.io/typingmind-cloud-backup/s3-v2.js`
+3. Load this URL: `https://itcon-pty-au.github.io/typingmind-cloud-backup/s3-v3.js`
 
 ### Step 2: Configure Cloud Storage
 
@@ -180,15 +194,26 @@ For large datasets (>50MB), the system automatically:
 - Maintains metadata for reconstruction
 - Enables backup of very large TypingMind instances
 
-### Migration from V2
+### 🚀 Migration to V3
 
-V3 automatically migrates from V2:
+V3 is a major rewrite with a new architecture and is **not backward compatible** with backups created by older versions (V1 or V2). However, migrating your live data is designed to be a seamless, automatic process.
 
-- Converts old configuration keys (e.g., `aws-bucket` → `tcs_aws_bucketname`)
-- Cleans up obsolete cloud data and V2 folder structure
-- Preserves all your existing data
-- Creates fresh metadata structure for better sync tracking
-- No manual migration required - happens automatically on first load
+#### What to Expect During Migration
+
+When you load the V3 extension for the first time, it will automatically:
+
+- **Preserve Your Data**: Your existing local TypingMind data (chats, folders, etc.) is safe and will be used as the source for the first sync.
+- **Convert Configuration**: Old configuration keys (e.g., `aws-bucket`) are automatically renamed to the new `tcs_` prefixed format (`tcs_aws_bucketname`).
+- **Clean Up Obsolete Data**: The old `V2/` folder structure in your S3 bucket will be ignored. V3 uses a new, more efficient structure.
+- **Create New Metadata**: A fresh `metadata.json` file is created to track your data, enabling more robust sync logic.
+
+#### ⚠️ Important Compatibility Notes
+
+- **Old Backups Are Incompatible**: Backups created with V1 or V2 of this extension **cannot be restored** using V3 due to the new encryption and data format. It is recommended to delete old backup files from your S3 bucket.
+- **Live Data Syncs Fine**: While old backups are not restorable, your current local data will sync correctly to the cloud when V3 is first run.
+- **One-Way Upgrade**: The migration process is one-way. Once you upgrade to V3, you cannot revert to an older version without potentially causing data sync issues.
+
+There is no manual migration required—the extension handles everything automatically on the first load. Just install, configure, and let it work.
 
 ### Error Handling & Recovery
 
@@ -309,14 +334,6 @@ Cloudflare R2 provides S3 compatible API with a generous 10GB free storage per m
 iDrive E2 provides S3 compatible API with a generous 10GB free storage per month. Refer [How to setup iDrive E2 and use with this extension](https://github.com/itcon-pty-au/typingmind-cloud-backup/blob/main/HowTo/iDrive_E2_HowTo.docx)
 
 ## 🐛 Troubleshooting
-
-### Enable Logging
-
-For troubleshooting, enable detailed logging:
-
-1. **Startup Logging**: Add `?log=true` to your URL
-2. **Runtime Logging**: Toggle "Console Logging" in the config modal
-3. Check browser console for detailed sync information
 
 ### Sync Issues Between Devices
 
