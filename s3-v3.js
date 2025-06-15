@@ -29,12 +29,10 @@ if (window.typingMindCloudSync) {
       };
       const stored = {};
       Object.keys(defaults).forEach((key) => {
-        let storageKey;
-        if (key === "encryptionKey") {
-          storageKey = "tcs_encryptionkey";
-        } else {
-          storageKey = `tcs_aws_${key.toLowerCase()}`;
-        }
+        const storageKey =
+          key === "encryptionKey"
+            ? "tcs_encryptionkey"
+            : `tcs_aws_${key.toLowerCase()}`;
         const value = localStorage.getItem(storageKey);
         stored[key] =
           key === "syncInterval" ? parseInt(value) || 15 : value || "";
@@ -80,12 +78,10 @@ if (window.typingMindCloudSync) {
     }
     save() {
       Object.keys(this.config).forEach((key) => {
-        let storageKey;
-        if (key === "encryptionKey") {
-          storageKey = "tcs_encryptionkey";
-        } else {
-          storageKey = `tcs_aws_${key.toLowerCase()}`;
-        }
+        const storageKey =
+          key === "encryptionKey"
+            ? "tcs_encryptionkey"
+            : `tcs_aws_${key.toLowerCase()}`;
         localStorage.setItem(storageKey, this.config[key].toString());
       });
     }
@@ -138,9 +134,7 @@ if (window.typingMindCloudSync) {
         "sha384-yP/1rNPS4CZNk2LzVAt1kcc0H82iZ8t0BS5hEZR2D7S+LgMv8U50Q2J32H2x3rO9";
       script.crossOrigin = "anonymous";
       script.onload = () => {
-        if (window.eruda) {
-          window.eruda.init();
-        }
+        window.eruda?.init();
       };
       document.head.appendChild(script);
     }
@@ -899,7 +893,7 @@ if (window.typingMindCloudSync) {
               idbKeys.add(key);
               const existingItem = this.metadata.items[key];
               const currentSize = this.getItemSize(value);
-              if (!existingItem || !existingItem.deleted) {
+              if (!existingItem?.deleted) {
                 if (!existingItem) {
                   changedItems.push({
                     id: key,
@@ -965,7 +959,7 @@ if (window.typingMindCloudSync) {
           const value = localStorage.getItem(key);
           const existingItem = this.metadata.items[key];
           const currentSize = this.getItemSize(value);
-          if (!existingItem || !existingItem.deleted) {
+          if (!existingItem?.deleted) {
             if (!existingItem) {
               changedItems.push({
                 id: key,
@@ -1018,11 +1012,11 @@ if (window.typingMindCloudSync) {
       for (const [itemId, tombstone] of tombstones.entries()) {
         const existingItem = this.metadata.items[itemId];
         const needsSync =
-          !existingItem ||
-          !existingItem.deleted ||
-          existingItem.deleted < tombstone.deleted ||
-          (existingItem.tombstoneVersion || 0) <
-            (tombstone.tombstoneVersion || 1);
+          !existingItem?.deleted ||
+          (existingItem && existingItem.deleted < tombstone.deleted) ||
+          (existingItem &&
+            (existingItem.tombstoneVersion || 0) <
+              (tombstone.tombstoneVersion || 1));
         if (needsSync) {
           changedItems.push({
             id: itemId,
@@ -1095,12 +1089,10 @@ if (window.typingMindCloudSync) {
           return;
         }
         const now = Date.now();
-        const recentlyChangedItems = changedItems.filter(
-          (item) =>
-            this.metadata.items[item.id] &&
-            this.metadata.items[item.id].synced &&
-            now - this.metadata.items[item.id].synced < 60000
-        );
+        const recentlyChangedItems = changedItems.filter((item) => {
+          const synced = this.metadata.items[item.id]?.synced;
+          return synced && now - synced < 60000;
+        });
         if (recentlyChangedItems.length > 0) {
           this.logger.log(
             "warning",
