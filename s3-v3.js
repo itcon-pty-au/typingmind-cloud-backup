@@ -695,9 +695,6 @@ if (window.typingMindCloudSync) {
       return new Promise((resolve, reject) => {
         const script = document.createElement("script");
         script.src = "https://sdk.amazonaws.com/js/aws-sdk-2.1692.0.min.js";
-        script.integrity =
-          "sha384-OJL5+I1i6A+7IPhYlS97p3e2N2K+F3QT8D6jMhg00P2NqS7J4h5rSj9B/e3Lkvda";
-        script.crossOrigin = "anonymous";
         script.onload = () => {
           this.sdkLoaded = true;
           resolve();
