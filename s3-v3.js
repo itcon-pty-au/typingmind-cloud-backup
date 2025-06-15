@@ -2684,11 +2684,26 @@ if (window.typingMindCloudSync) {
         if (this.config.isConfigured()) {
           try {
             await this.s3Service.initialize();
-            await this.backupService.checkAndPerformDailyBackup();
-            await this.syncOrchestrator.performFullSync();
-            this.startAutoSync();
-            this.updateSyncStatus("success");
-            this.logger.log("success", "Cloud Sync initialized successfully");
+            this.updateSyncStatus("syncing");
+            setTimeout(async () => {
+              try {
+                await this.backupService.checkAndPerformDailyBackup();
+                await this.syncOrchestrator.performFullSync();
+                this.startAutoSync();
+                this.updateSyncStatus("success");
+                this.logger.log(
+                  "success",
+                  "Cloud Sync initialized successfully"
+                );
+              } catch (error) {
+                this.logger.log(
+                  "error",
+                  "Background sync/backup failed",
+                  error.message
+                );
+                this.updateSyncStatus("error");
+              }
+            }, 1000);
           } catch (error) {
             this.logger.log("error", "Initialization failed", error.message);
             this.updateSyncStatus("error");
