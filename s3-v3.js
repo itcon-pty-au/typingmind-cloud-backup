@@ -3991,7 +3991,7 @@ if (window.typingMindCloudSync) {
       background-color: rgba(63, 63, 70, 0.5);
     }
     
-    #sync-diagnostics-table .bg-orange-900\/20 {
+    #sync-diagnostics-table .bg-orange-900\\/20 {
       background-color: rgba(194, 65, 12, 0.2);
     }
     
