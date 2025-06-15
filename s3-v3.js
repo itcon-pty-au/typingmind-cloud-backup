@@ -142,13 +142,8 @@ if (window.typingMindCloudSync) {
       document.head.appendChild(script);
     }
     destroyEruda() {
-      if (window.eruda) {
-        window.eruda.destroy();
-      }
-      const script = document.getElementById("eruda-script");
-      if (script) {
-        script.remove();
-      }
+      window.eruda?.destroy();
+      document.getElementById("eruda-script")?.remove();
     }
     log(type, message, data = null) {
       if (!this.enabled) return;
@@ -335,7 +330,7 @@ if (window.typingMindCloudSync) {
         const db = await this.getDB();
         const transaction = db.transaction(["keyval"], "readwrite");
         const store = transaction.objectStore("keyval");
-        const itemId = itemKey || (item && item.id);
+        const itemId = itemKey || item?.id;
         const itemData = item;
         return new Promise((resolve) => {
           const request = store.put(itemData, itemId);
@@ -402,7 +397,7 @@ if (window.typingMindCloudSync) {
         source: source,
       });
       const existingItem = orchestrator.metadata.items[itemId];
-      if (existingItem && existingItem.deleted) {
+      if (existingItem?.deleted) {
         tombstone.tombstoneVersion = (existingItem.tombstoneVersion || 0) + 1;
         this.logger.log(
           "info",
@@ -421,13 +416,11 @@ if (window.typingMindCloudSync) {
         itemId: itemId,
         version: tombstone.tombstoneVersion,
       });
-      if (this.operationQueue) {
-        this.operationQueue.add(
-          `tombstone-sync-${itemId}`,
-          () => this.syncTombstone(itemId),
-          "high"
-        );
-      }
+      this.operationQueue?.add(
+        `tombstone-sync-${itemId}`,
+        () => this.syncTombstone(itemId),
+        "high"
+      );
       return tombstone;
     }
     getTombstoneFromStorage(itemId) {
@@ -479,7 +472,7 @@ if (window.typingMindCloudSync) {
       const tombstones = new Map();
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith("tcs_tombstone_")) {
+        if (key?.startsWith("tcs_tombstone_")) {
           const itemId = key.replace("tcs_tombstone_", "");
           try {
             const tombstone = JSON.parse(localStorage.getItem(key));
@@ -493,7 +486,7 @@ if (window.typingMindCloudSync) {
     }
     async syncTombstone(itemId) {
       this.logger.log("info", `🔄 Triggering sync for tombstone ${itemId}`);
-      if (window.cloudSyncApp && window.cloudSyncApp.syncOrchestrator) {
+      if (window.cloudSyncApp?.syncOrchestrator) {
         try {
           await window.cloudSyncApp.syncOrchestrator.syncToCloud();
           this.logger.log(
@@ -519,9 +512,7 @@ if (window.typingMindCloudSync) {
       if (this.dbPromise) {
         this.dbPromise
           .then((db) => {
-            if (db && db.close) {
-              db.close();
-            }
+            db?.close();
           })
           .catch(() => {});
       }
@@ -1266,7 +1257,7 @@ if (window.typingMindCloudSync) {
         });
         const debugEnabled =
           new URLSearchParams(window.location.search).get("log") === "true";
-        if (debugEnabled && cloudMetadata.items) {
+        if (debugEnabled && cloudMetadata?.items) {
           const cloudItems = Object.keys(cloudMetadata.items);
           const cloudDeleted = cloudItems.filter(
             (id) => cloudMetadata.items[id].deleted
@@ -1304,10 +1295,9 @@ if (window.typingMindCloudSync) {
               this.dataService.getTombstoneFromStorage(key);
             if (cloudItem.deleted) {
               const cloudVersion = cloudItem.tombstoneVersion || 1;
-              const localMetadataVersion =
-                localItem && localItem.deleted
-                  ? localItem.tombstoneVersion || 1
-                  : 0;
+              const localMetadataVersion = localItem?.deleted
+                ? localItem.tombstoneVersion || 1
+                : 0;
               const localStorageVersion = localTombstone?.tombstoneVersion || 0;
               const localVersion = Math.max(
                 localMetadataVersion,
@@ -1315,7 +1305,7 @@ if (window.typingMindCloudSync) {
               );
               return cloudVersion > localVersion;
             }
-            if (localItem && localItem.deleted) {
+            if (localItem?.deleted) {
               return (cloudItem.lastModified || 0) > localItem.deleted;
             }
             if (!localItem) {
@@ -1638,7 +1628,7 @@ if (window.typingMindCloudSync) {
         const now = Date.now();
         const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
         let cleanupCount = 0;
-        if (cloudMetadata.items) {
+        if (cloudMetadata?.items) {
           for (const [itemId, metadata] of Object.entries(
             cloudMetadata.items
           )) {
@@ -1688,11 +1678,11 @@ if (window.typingMindCloudSync) {
       let cleanupCount = 0;
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
-        if (key && key.startsWith("tcs_tombstone_")) {
+        if (key?.startsWith("tcs_tombstone_")) {
           try {
             const tombstone = JSON.parse(localStorage.getItem(key));
             if (
-              tombstone.deleted &&
+              tombstone?.deleted &&
               now - tombstone.deleted > tombstoneRetentionPeriod
             ) {
               localStorage.removeItem(key);
@@ -1706,7 +1696,7 @@ if (window.typingMindCloudSync) {
       }
       for (const [itemId, metadata] of Object.entries(this.metadata.items)) {
         if (
-          metadata.deleted &&
+          metadata?.deleted &&
           now - metadata.deleted > tombstoneRetentionPeriod
         ) {
           delete this.metadata.items[itemId];
@@ -2224,7 +2214,6 @@ if (window.typingMindCloudSync) {
     }
     formatBackupDisplayName(filename, metadata = null) {
       const type = this.getBackupType(filename);
-      const isChunked = metadata && metadata.format === "chunked";
       if (type === "snapshot") {
         const cleanName = filename
           .replace(/^s-/, "")
@@ -2347,7 +2336,7 @@ if (window.typingMindCloudSync) {
             chunkInfo.filename,
             cryptoService
           );
-          if (chunkData.items) {
+          if (chunkData?.items) {
             for (const item of chunkData.items) {
               if (item.type === "idb" && item.data) {
                 allData.indexedDB[item.id] = item.data;
@@ -2448,7 +2437,7 @@ if (window.typingMindCloudSync) {
               if (obj.Key.endsWith("-metadata.json")) {
                 try {
                   const metadata = await this.s3Service.download(obj.Key, true);
-                  if (metadata.chunkList && metadata.chunkList.length > 0) {
+                  if (metadata?.chunkList?.length > 0) {
                     for (const chunkInfo of metadata.chunkList) {
                       try {
                         await this.s3Service.delete(chunkInfo.filename);
@@ -3501,7 +3490,6 @@ if (window.typingMindCloudSync) {
         const chatItems = localItems.filter((item) =>
           item.id.startsWith("CHAT_")
         ).length;
-        const otherItems = localCount - chatItems;
         const metadataCount = Object.keys(
           this.syncOrchestrator.metadata.items || {}
         ).length;
@@ -4073,25 +4061,23 @@ if (window.typingMindCloudSync) {
   app.initialize();
   window.cloudSyncApp = app;
   const cleanupHandler = () => {
-    if (app && app.cleanup) {
-      try {
-        app.cleanup();
-      } catch (error) {
-        console.warn("Cleanup error:", error);
-      }
+    try {
+      app?.cleanup();
+    } catch (error) {
+      console.warn("Cleanup error:", error);
     }
   };
   window.addEventListener("beforeunload", cleanupHandler);
   window.addEventListener("unload", cleanupHandler);
   window.addEventListener("pagehide", cleanupHandler);
   window.createTombstone = (itemId, type, source = "manual") => {
-    if (app && app.dataService) {
+    if (app?.dataService) {
       return app.dataService.createTombstone(itemId, type, source);
     }
     return null;
   };
   window.getTombstones = () => {
-    if (app && app.dataService) {
+    if (app?.dataService) {
       return Array.from(app.dataService.getAllTombstones().entries());
     }
     return [];
@@ -4108,7 +4094,7 @@ if (window.typingMindCloudSync) {
     return {};
   };
   window.estimateBackupSize = async () => {
-    if (app && app.backupService) {
+    if (app?.backupService) {
       const size = await app.backupService.estimateDataSize();
       const chunkLimit = app.backupService.chunkSizeLimit;
       const willUseChunks = size > chunkLimit;
