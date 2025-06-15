@@ -133,7 +133,10 @@ if (window.typingMindCloudSync) {
       if (document.getElementById("eruda-script")) return;
       const script = document.createElement("script");
       script.id = "eruda-script";
-      script.src = "https://cdn.jsdelivr.net/npm/eruda";
+      script.src = "https://cdn.jsdelivr.net/npm/eruda@3.0.1/eruda.min.js";
+      script.integrity =
+        "sha384-yP/1rNPS4CZNk2LzVAt1kcc0H82iZ8t0BS5hEZR2D7S+LgMv8U50Q2J32H2x3rO9";
+      script.crossOrigin = "anonymous";
       script.onload = () => {
         if (window.eruda) {
           window.eruda.init();
@@ -697,7 +700,10 @@ if (window.typingMindCloudSync) {
       }
       return new Promise((resolve, reject) => {
         const script = document.createElement("script");
-        script.src = "https://sdk.amazonaws.com/js/aws-sdk-2.1691.0.min.js";
+        script.src = "https://sdk.amazonaws.com/js/aws-sdk-2.1692.0.min.js";
+        script.integrity =
+          "sha384-OJL5+I1i6A+7IPhYlS97p3e2N2K+F3QT8D6jMhg00P2NqS7J4h5rSj9B/e3Lkvda";
+        script.crossOrigin = "anonymous";
         script.onload = () => {
           this.sdkLoaded = true;
           resolve();
@@ -1765,6 +1771,9 @@ if (window.typingMindCloudSync) {
         const script = document.createElement("script");
         script.src =
           "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+        script.integrity =
+          "sha384-4w5L02pJS32Xk2Q8P1kXXFm+3b204gTzXlJ/Lg1uI6gmaSbrz3u4o8xny6u/1sR1";
+        script.crossOrigin = "anonymous";
         script.onload = () => {
           this.jsZipLoaded = true;
           this.logger.log("success", "JSZip library loaded successfully");
