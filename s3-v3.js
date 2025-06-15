@@ -130,9 +130,6 @@ if (window.typingMindCloudSync) {
       const script = document.createElement("script");
       script.id = "eruda-script";
       script.src = "https://cdn.jsdelivr.net/npm/eruda@3.0.1/eruda.min.js";
-      script.integrity =
-        "sha384-yP/1rNPS4CZNk2LzVAt1kcc0H82iZ8t0BS5hEZR2D7S+LgMv8U50Q2J32H2x3rO9";
-      script.crossOrigin = "anonymous";
       script.onload = () => {
         window.eruda?.init();
       };
@@ -1760,9 +1757,6 @@ if (window.typingMindCloudSync) {
         const script = document.createElement("script");
         script.src =
           "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
-        script.integrity =
-          "sha384-4w5L02pJS32Xk2Q8P1kXXFm+3b204gTzXlJ/Lg1uI6gmaSbrz3u4o8xny6u/1sR1";
-        script.crossOrigin = "anonymous";
         script.onload = () => {
           this.jsZipLoaded = true;
           this.logger.log("success", "JSZip library loaded successfully");

@@ -1,0 +1,60 @@
+name: Deploy TypingMind to Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create correct directory structure
+        run: |
+          mkdir -p deploy_root/src
+          cp -r src/* deploy_root/src/
+          mv deploy_root/src/index.html deploy_root/
+
+          # Convert all absolute paths to relative paths with src/ prefix
+          # This handles _next/, favicon, manifest, icons, assets, and any other absolute paths
+          sed -i 's/\(src\|href\|content\)="\(\/[^"]*\)"/\1="src\2"/g' deploy_root/index.html
+
+          echo "=== DIRECTORY STRUCTURE ==="
+          find deploy_root -type f | head -20
+
+          echo "=== CHECKING PATHS IN HTML ==="
+          grep -o 'src="[^"]*_next[^"]*"' deploy_root/index.html | head -5
+          grep -o 'href="[^"]*_next[^"]*"' deploy_root/index.html | head -5
+
+      - name: Create redirect rules
+        run: |
+          # Create _redirects file for server-side redirects
+          cat > deploy_root/_redirects << 'EOF'
+          /typingmind/_next/* /typingmind/src/_next/:splat 200
+          /typingmind/favicon* /typingmind/src/favicon:splat 200
+          /typingmind/manifest* /typingmind/src/manifest:splat 200
+          /typingmind/android-icon* /typingmind/src/android-icon:splat 200
+          /typingmind/apple-icon* /typingmind/src/apple-icon:splat 200
+          /typingmind/ms-icon* /typingmind/src/ms-icon:splat 200
+          /typingmind/assets/* /typingmind/src/assets/:splat 200
+          EOF
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./deploy_root
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
