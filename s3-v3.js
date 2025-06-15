@@ -12,7 +12,6 @@ if (window.typingMindCloudSync) {
   console.log("TypingMind Cloud Sync already loaded");
 } else {
   window.typingMindCloudSync = true;
-
   class ConfigManager {
     constructor() {
       this.config = this.loadConfig();
@@ -109,7 +108,6 @@ if (window.typingMindCloudSync) {
       this.exclusions = this.loadExclusions();
     }
   }
-
   class Logger {
     constructor() {
       const urlParams = new URLSearchParams(window.location.search);
@@ -157,7 +155,6 @@ if (window.typingMindCloudSync) {
       const timestamp = new Date().toLocaleTimeString();
       const icon = this.icons[type] || "ℹ️";
       const logMessage = `${icon} [${timestamp}] ${message}`;
-
       switch (type) {
         case "error":
           console.error(logMessage, data || "");
@@ -182,7 +179,6 @@ if (window.typingMindCloudSync) {
       window.history.replaceState({}, "", url);
     }
   }
-
   class DataService {
     constructor(configManager, logger, operationQueue = null) {
       this.config = configManager;
@@ -202,11 +198,6 @@ if (window.typingMindCloudSync) {
     }
     async getAllItems() {
       const items = new Map();
-
-      //this.logger.log("start", "📊 Getting all items for deletion check", {
-      //  timestamp: new Date().toISOString(),
-      //});
-
       const db = await this.getDB();
       const transaction = db.transaction(["keyval"], "readonly");
       const store = transaction.objectStore("keyval");
@@ -270,14 +261,12 @@ if (window.typingMindCloudSync) {
         );
         console.log(`📊 Total items to sync: ${items.size} (IDB + LS)`);
       }
-
       const chatItems = Array.from(items.keys()).filter((id) =>
         id.startsWith("CHAT_")
       );
       const otherItems = Array.from(items.keys()).filter(
         (id) => !id.startsWith("CHAT_")
       );
-
       this.logger.log("success", "📋 Retrieved all items for deletion check", {
         totalItems: items.size,
         idbStats: {
@@ -291,18 +280,13 @@ if (window.typingMindCloudSync) {
         sampleChatItems: chatItems.slice(0, 5),
         sampleOtherItems: otherItems.slice(0, 5),
       });
-
       return Array.from(items.values());
     }
-
     async getAllItemKeys() {
       const itemKeys = new Set();
-
-      // Use openKeyCursor() for performance - only fetches keys, not values
       const db = await this.getDB();
       const transaction = db.transaction(["keyval"], "readonly");
       const store = transaction.objectStore("keyval");
-
       await new Promise((resolve) => {
         const request = store.openKeyCursor();
         request.onsuccess = (event) => {
@@ -319,17 +303,14 @@ if (window.typingMindCloudSync) {
         };
         request.onerror = () => resolve();
       });
-
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && !this.config.shouldExclude(key)) {
           itemKeys.add(key);
         }
       }
-
       return itemKeys;
     }
-
     async getItem(itemId, type) {
       if (type === "idb") {
         const db = await this.getDB();
@@ -407,7 +388,6 @@ if (window.typingMindCloudSync) {
         );
         return null;
       }
-
       const timestamp = Date.now();
       const tombstone = {
         deleted: timestamp,
@@ -416,13 +396,11 @@ if (window.typingMindCloudSync) {
         source: source,
         tombstoneVersion: 1,
       };
-
       this.logger.log("start", "🪦 Creating tombstone in metadata", {
         itemId: itemId,
         type: type,
         source: source,
       });
-
       const existingItem = orchestrator.metadata.items[itemId];
       if (existingItem && existingItem.deleted) {
         tombstone.tombstoneVersion = (existingItem.tombstoneVersion || 0) + 1;
@@ -434,18 +412,15 @@ if (window.typingMindCloudSync) {
           }
         );
       }
-
       orchestrator.metadata.items[itemId] = {
         ...tombstone,
         synced: 0,
       };
       orchestrator.saveMetadata();
-
       this.logger.log("success", "✅ Tombstone created in metadata", {
         itemId: itemId,
         version: tombstone.tombstoneVersion,
       });
-
       if (this.operationQueue) {
         this.operationQueue.add(
           `tombstone-sync-${itemId}`,
@@ -453,30 +428,16 @@ if (window.typingMindCloudSync) {
           "high"
         );
       }
-
       return tombstone;
     }
     getTombstoneFromStorage(itemId) {
       try {
         const storageKey = `tcs_tombstone_${itemId}`;
-        // this.logger.log("info", "🔍 Checking for existing tombstone", {
-        //   itemId: itemId,
-        //   storageKey: storageKey,
-        // });
-
         const stored = localStorage.getItem(storageKey);
         if (stored) {
           const tombstone = JSON.parse(stored);
-          // this.logger.log("success", "📥 Found existing tombstone", {
-          //   itemId: itemId,
-          //   tombstone: tombstone,
-          // });
           return tombstone;
         } else {
-          // this.logger.log("info", "❌ No existing tombstone found", {
-          //   itemId: itemId,
-          //   storageKey: storageKey,
-          // });
           return null;
         }
       } catch (error) {
@@ -490,15 +451,7 @@ if (window.typingMindCloudSync) {
     saveTombstoneToStorage(itemId, tombstone) {
       try {
         const storageKey = `tcs_tombstone_${itemId}`;
-        // this.logger.log("start", "💾 Saving tombstone to localStorage", {
-        //   itemId: itemId,
-        //   storageKey: storageKey,
-        //   tombstone: tombstone,
-        // });
-
         localStorage.setItem(storageKey, JSON.stringify(tombstone));
-
-        // Verify it was saved
         const verification = localStorage.getItem(storageKey);
         if (verification) {
           this.logger.log(
@@ -540,7 +493,6 @@ if (window.typingMindCloudSync) {
     }
     async syncTombstone(itemId) {
       this.logger.log("info", `🔄 Triggering sync for tombstone ${itemId}`);
-
       if (window.cloudSyncApp && window.cloudSyncApp.syncOrchestrator) {
         try {
           await window.cloudSyncApp.syncOrchestrator.syncToCloud();
@@ -579,7 +531,6 @@ if (window.typingMindCloudSync) {
       this.operationQueue = null;
     }
   }
-
   class CryptoService {
     constructor(configManager, logger) {
       this.config = configManager;
@@ -588,21 +539,17 @@ if (window.typingMindCloudSync) {
       this.maxCacheSize = 10;
       this.lastCacheCleanup = Date.now();
     }
-
     async deriveKey(password) {
       const now = Date.now();
       if (now - this.lastCacheCleanup > 30 * 60 * 1000) {
         this.cleanupKeyCache();
         this.lastCacheCleanup = now;
       }
-
       if (this.keyCache.has(password)) return this.keyCache.get(password);
-
       if (this.keyCache.size >= this.maxCacheSize) {
         const firstKey = this.keyCache.keys().next().value;
         this.keyCache.delete(firstKey);
       }
-
       const data = new TextEncoder().encode(password);
       const hash = await crypto.subtle.digest("SHA-256", data);
       const key = await crypto.subtle.importKey(
@@ -615,12 +562,10 @@ if (window.typingMindCloudSync) {
       this.keyCache.set(password, key);
       return key;
     }
-
     cleanupKeyCache() {
       if (this.keyCache.size > this.maxCacheSize / 2) {
         const keysToRemove = Math.floor(this.keyCache.size / 2);
         const keyIterator = this.keyCache.keys();
-
         for (let i = 0; i < keysToRemove; i++) {
           const oldestKey = keyIterator.next().value;
           if (oldestKey) {
@@ -729,7 +674,6 @@ if (window.typingMindCloudSync) {
       this.config = null;
     }
   }
-
   class S3Service {
     constructor(configManager, cryptoService, logger) {
       this.config = configManager;
@@ -754,7 +698,6 @@ if (window.typingMindCloudSync) {
       }
       AWS.config.update(s3Config);
       this.client = new AWS.S3();
-      //this.logger.log("success", "S3 service initialized");
     }
     async loadSDK() {
       if (this.sdkLoaded || window.AWS) {
@@ -826,7 +769,6 @@ if (window.typingMindCloudSync) {
         }
       });
     }
-
     async uploadRaw(key, data) {
       return this.withRetry(async () => {
         try {
@@ -893,7 +835,6 @@ if (window.typingMindCloudSync) {
         return result.Contents || [];
       });
     }
-
     async downloadWithResponse(key) {
       return this.withRetry(async () => {
         const result = await this.client
@@ -903,7 +844,6 @@ if (window.typingMindCloudSync) {
       });
     }
   }
-
   class SyncOrchestrator {
     constructor(
       configManager,
@@ -962,10 +902,7 @@ if (window.typingMindCloudSync) {
               idbKeys.add(key);
               const existingItem = this.metadata.items[key];
               const currentSize = this.getItemSize(value);
-
-              // Skip items marked as deleted in metadata
               if (existingItem && existingItem.deleted) {
-                // Silently skip deleted items to avoid spam
               } else {
                 if (!existingItem) {
                   changedItems.push({
@@ -976,7 +913,6 @@ if (window.typingMindCloudSync) {
                     reason: "new",
                   });
                 } else if (currentSize !== existingItem.size) {
-                  // Debug logging for size changes
                   if (key.startsWith("CHAT_")) {
                     this.logger.log(
                       "warning",
@@ -998,7 +934,6 @@ if (window.typingMindCloudSync) {
                     reason: "size",
                   });
                 } else if (!existingItem.synced) {
-                  // Debug logging for never-synced items
                   if (key.startsWith("CHAT_")) {
                     this.logger.log(
                       "warning",
@@ -1034,10 +969,7 @@ if (window.typingMindCloudSync) {
           const value = localStorage.getItem(key);
           const existingItem = this.metadata.items[key];
           const currentSize = this.getItemSize(value);
-
-          // Skip items marked as deleted in metadata
           if (existingItem && existingItem.deleted) {
-            // Silently skip deleted items to avoid spam
           } else {
             if (!existingItem) {
               changedItems.push({
@@ -1048,7 +980,6 @@ if (window.typingMindCloudSync) {
                 reason: "new",
               });
             } else if (currentSize !== existingItem.size) {
-              // Debug logging for size changes
               this.logger.log(
                 "warning",
                 `localStorage size change detected for ${key}`,
@@ -1068,7 +999,6 @@ if (window.typingMindCloudSync) {
                 reason: "size",
               });
             } else if (!existingItem.synced) {
-              // Debug logging for never-synced items
               this.logger.log(
                 "warning",
                 `localStorage never-synced item detected for ${key}`,
@@ -1119,7 +1049,6 @@ if (window.typingMindCloudSync) {
           });
         }
       }
-      // Check for key overlaps between IndexedDB and localStorage
       const overlappingKeys = Array.from(idbKeys).filter((key) =>
         lsKeys.has(key)
       );
@@ -1133,7 +1062,7 @@ if (window.typingMindCloudSync) {
             `🚨 DETECTED DUPLICATE KEYS IN BOTH STORAGE TYPES`,
             {
               totalOverlaps: overlappingKeys.length,
-              chatOverlaps: chatOverlaps.slice(0, 10), // Show first 10
+              chatOverlaps: chatOverlaps.slice(0, 10),
               totalChatOverlaps: chatOverlaps.length,
               totalIdbKeys: idbKeys.size,
               totalLsKeys: lsKeys.size,
@@ -1141,12 +1070,9 @@ if (window.typingMindCloudSync) {
           );
         }
       }
-
-      // Detect deleted items by comparing metadata with current keys
       for (const itemId in this.metadata.items) {
         if (!idbKeys.has(itemId) && !lsKeys.has(itemId)) {
           const metadataItem = this.metadata.items[itemId];
-          // Only add a tombstone if it's not already marked as deleted
           if (!metadataItem.deleted) {
             this.logger.log("warning", `Item deleted locally: ${itemId}`);
             changedItems.push({
@@ -1158,7 +1084,6 @@ if (window.typingMindCloudSync) {
           }
         }
       }
-
       return { changedItems, hasChanges: changedItems.length > 0 };
     }
     async syncToCloud() {
@@ -1168,23 +1093,19 @@ if (window.typingMindCloudSync) {
       }
       this.syncInProgress = true;
       try {
-        //this.logger.log("start", "Starting sync to cloud");
         const { changedItems } = await this.detectChanges();
         const cloudMetadata = await this.getCloudMetadata();
         if (changedItems.length === 0) {
           this.logger.log("info", "No items to sync to cloud");
           return;
         }
-
-        // Log potential sync loops for debugging
         const now = Date.now();
         const recentlyChangedItems = changedItems.filter(
           (item) =>
             this.metadata.items[item.id] &&
             this.metadata.items[item.id].synced &&
-            now - this.metadata.items[item.id].synced < 60000 // Last synced within 1 minute
+            now - this.metadata.items[item.id].synced < 60000
         );
-
         if (recentlyChangedItems.length > 0) {
           this.logger.log(
             "warning",
@@ -1209,9 +1130,7 @@ if (window.typingMindCloudSync) {
           "info",
           `Syncing ${changedItems.length} items to cloud`
         );
-
         let itemsSynced = 0;
-
         const uploadPromises = changedItems.map(async (item) => {
           const cloudItem = cloudMetadata.items[item.id];
           if (
@@ -1227,7 +1146,6 @@ if (window.typingMindCloudSync) {
             this.metadata.items[item.id] = { ...cloudItem };
             return;
           }
-
           try {
             if (item.deleted || item.reason === "tombstone") {
               const timestamp = Date.now();
@@ -1282,9 +1200,7 @@ if (window.typingMindCloudSync) {
             throw error;
           }
         });
-
         await Promise.allSettled(uploadPromises);
-
         if (itemsSynced > 0) {
           cloudMetadata.lastSync = Date.now();
           await this.s3Service.upload("metadata.json", cloudMetadata, true);
@@ -1344,14 +1260,12 @@ if (window.typingMindCloudSync) {
       try {
         const { metadata: cloudMetadata, etag: cloudMetadataETag } =
           await this.getCloudMetadataWithETag();
-
         this.logger.log("info", "Downloaded cloud metadata", {
           ETag: cloudMetadataETag,
           lastSync: cloudMetadata.lastSync
             ? new Date(cloudMetadata.lastSync).toISOString()
             : "never",
         });
-
         const debugEnabled =
           new URLSearchParams(window.location.search).get("log") === "true";
         if (debugEnabled && cloudMetadata.items) {
@@ -1364,11 +1278,9 @@ if (window.typingMindCloudSync) {
             `📊 Cloud Metadata Stats: Total=${cloudItems.length}, Active=${cloudActive}, Deleted=${cloudDeleted}`
           );
         }
-
         const lastMetadataETag = localStorage.getItem("tcs_metadata_etag");
         const hasCloudChanges = cloudMetadataETag !== lastMetadataETag;
         const cloudLastSync = cloudMetadata.lastSync || 0;
-
         if (!hasCloudChanges) {
           this.logger.log(
             "info",
@@ -1392,7 +1304,6 @@ if (window.typingMindCloudSync) {
             const localItem = this.metadata.items[key];
             const localTombstone =
               this.dataService.getTombstoneFromStorage(key);
-
             if (cloudItem.deleted) {
               const cloudVersion = cloudItem.tombstoneVersion || 1;
               const localMetadataVersion =
@@ -1406,22 +1317,18 @@ if (window.typingMindCloudSync) {
               );
               return cloudVersion > localVersion;
             }
-
             if (localItem && localItem.deleted) {
               return (cloudItem.lastModified || 0) > localItem.deleted;
             }
-
             if (!localItem) {
               return true;
             }
-
             return (
               (cloudItem.lastModified || 0) >
               (localItem.lastModified || 0) + 2000
             );
           }
         );
-
         if (itemsToDownload.length > 0) {
           this.logger.log(
             "info",
@@ -1548,15 +1455,12 @@ if (window.typingMindCloudSync) {
           `📊 Local Metadata Stats: Total=${localItems.length}, Active=${localActive}, Deleted=${localDeleted}`
         );
       }
-
       await this.syncFromCloud();
-
       const cloudMetadata = await this.getCloudMetadata();
       const localMetadataEmpty =
         Object.keys(this.metadata.items || {}).length === 0;
       const cloudMetadataEmpty =
         Object.keys(cloudMetadata.items || {}).length === 0;
-
       if (localMetadataEmpty && cloudMetadataEmpty) {
         const allItems = await this.dataService.getAllItems();
         if (allItems.length > 0) {
@@ -1594,10 +1498,6 @@ if (window.typingMindCloudSync) {
       const isEmptyMetadata =
         Object.keys(this.metadata.items || {}).length === 0;
       if (!isEmptyMetadata) {
-        // this.logger.log(
-        //   "info",
-        //   "Local metadata already exists, skipping initialization"
-        // );
         return;
       }
       this.logger.log(
@@ -1740,7 +1640,6 @@ if (window.typingMindCloudSync) {
         const now = Date.now();
         const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
         let cleanupCount = 0;
-
         if (cloudMetadata.items) {
           for (const [itemId, metadata] of Object.entries(
             cloudMetadata.items
@@ -1753,7 +1652,6 @@ if (window.typingMindCloudSync) {
               cleanupCount++;
             }
           }
-
           if (cleanupCount > 0) {
             await this.s3Service.upload("metadata.json", cloudMetadata, true);
             this.logger.log(
@@ -1762,7 +1660,6 @@ if (window.typingMindCloudSync) {
             );
           }
         }
-
         return cleanupCount;
       } catch (error) {
         this.logger.log(
@@ -1775,9 +1672,7 @@ if (window.typingMindCloudSync) {
     }
     startAutoSync() {
       if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
-
       const interval = Math.max(this.config.get("syncInterval") * 1000, 15000);
-
       this.autoSyncInterval = setInterval(async () => {
         if (this.config.isConfigured() && !this.syncInProgress) {
           try {
@@ -1787,14 +1682,12 @@ if (window.typingMindCloudSync) {
           }
         }
       }, interval);
-
       this.logger.log("info", "Auto-sync started");
     }
     cleanupOldTombstones() {
       const now = Date.now();
       const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
       let cleanupCount = 0;
-
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
         if (key && key.startsWith("tcs_tombstone_")) {
@@ -1813,7 +1706,6 @@ if (window.typingMindCloudSync) {
           }
         }
       }
-
       for (const [itemId, metadata] of Object.entries(this.metadata.items)) {
         if (
           metadata.deleted &&
@@ -1823,15 +1715,12 @@ if (window.typingMindCloudSync) {
           cleanupCount++;
         }
       }
-
       if (cleanupCount > 0) {
         this.saveMetadata();
         this.logger.log("info", `🧹 Cleaned up ${cleanupCount} old tombstones`);
       }
-
       return cleanupCount;
     }
-
     async getCloudMetadataWithETag() {
       try {
         const result = await this.s3Service.downloadWithResponse(
@@ -1839,7 +1728,6 @@ if (window.typingMindCloudSync) {
         );
         const metadata = JSON.parse(result.Body.toString());
         const etag = result.ETag;
-
         if (!metadata || typeof metadata !== "object") {
           return { metadata: { lastSync: 0, items: {} }, etag };
         }
@@ -1854,12 +1742,10 @@ if (window.typingMindCloudSync) {
         throw error;
       }
     }
-
     async getCloudMetadata() {
       const { metadata } = await this.getCloudMetadataWithETag();
       return metadata;
     }
-
     cleanup() {
       if (this.autoSyncInterval) {
         clearInterval(this.autoSyncInterval);
@@ -1874,7 +1760,6 @@ if (window.typingMindCloudSync) {
       this.metadata = null;
     }
   }
-
   class BackupService {
     constructor(dataService, s3Service, logger) {
       this.dataService = dataService;
@@ -1883,13 +1768,11 @@ if (window.typingMindCloudSync) {
       this.chunkSizeLimit = 50 * 1024 * 1024;
       this.jsZipLoaded = false;
     }
-
     async loadJSZip() {
       if (this.jsZipLoaded || window.JSZip) {
         this.jsZipLoaded = true;
         return window.JSZip;
       }
-
       return new Promise((resolve, reject) => {
         const script = document.createElement("script");
         script.src =
@@ -1906,42 +1789,29 @@ if (window.typingMindCloudSync) {
         document.head.appendChild(script);
       });
     }
-
     async createCompressedBackup(filename, data) {
       try {
         const JSZip = await this.loadJSZip();
-
         const stringifiedData = JSON.stringify(data);
         const uncompressedSize = stringifiedData.length;
-
         const textEncoder = new TextEncoder();
         const stringifiedDataBytes = textEncoder.encode(stringifiedData);
-
-        // Create ZIP with high compression from raw data
         const zip = new JSZip();
         const jsonFileName = filename.replace(".zip", ".json");
         zip.file(jsonFileName, stringifiedDataBytes, {
           compression: "DEFLATE",
           compressionOptions: { level: 9 },
         });
-
-        // Generate compressed blob as a Uint8Array
         const compressedData = await zip.generateAsync({ type: "uint8array" });
-
         if (compressedData.length < 100) {
           throw new Error(
             "Backup file is too small or empty. Upload cancelled."
           );
         }
-
-        // Encrypt the compressed data
         const encryptedData = await this.s3Service.crypto.encryptBytes(
           compressedData
         );
-
-        // Upload raw encrypted data
         await this.s3Service.uploadRaw(filename, encryptedData);
-
         this.logger.log(
           "info",
           `Compression: ${this.formatFileSize(
@@ -1951,7 +1821,6 @@ if (window.typingMindCloudSync) {
               (1 - compressedData.length / uncompressedSize) * 100
             )}% reduction)`
         );
-
         return true;
       } catch (error) {
         this.logger.log(
@@ -1962,16 +1831,14 @@ if (window.typingMindCloudSync) {
         throw error;
       }
     }
-
     async estimateDataSize() {
       try {
         const items = await this.dataService.getAllItems();
         let totalSize = 0;
-
         items.forEach((item) => {
           try {
             const itemStr = JSON.stringify(item.data);
-            totalSize += itemStr.length * 2; // Rough estimate with overhead
+            totalSize += itemStr.length * 2;
           } catch (error) {
             this.logger.log(
               "warning",
@@ -1979,30 +1846,25 @@ if (window.typingMindCloudSync) {
             );
           }
         });
-
         return totalSize;
       } catch (error) {
         this.logger.log("error", "Failed to estimate data size", error.message);
         return 0;
       }
     }
-
     async createSnapshot(name) {
       this.logger.log("start", `Creating snapshot: ${name}`);
-
       const estimatedSize = await this.estimateDataSize();
       this.logger.log(
         "info",
         `Estimated data size: ${this.formatFileSize(estimatedSize)}`
       );
-
       if (estimatedSize > this.chunkSizeLimit) {
         return await this.createChunkedSnapshot(name, estimatedSize);
       } else {
         return await this.createSimpleSnapshot(name);
       }
     }
-
     async createSimpleSnapshot(name) {
       this.logger.log("info", "Using simple snapshot method for small dataset");
       const timestamp = new Date()
@@ -2013,9 +1875,7 @@ if (window.typingMindCloudSync) {
         /[^a-zA-Z0-9]/g,
         "-"
       )}-${timestamp}.zip`;
-
       const allItems = await this.dataService.getAllItems();
-
       const indexedDBData = {};
       allItems
         .filter((item) => item.type === "idb")
@@ -2024,14 +1884,12 @@ if (window.typingMindCloudSync) {
             indexedDBData[item.id] = item.data;
           }
         });
-
       const localStorageData = {};
       allItems
         .filter((item) => item.type === "ls")
         .forEach((item) => {
           localStorageData[item.data.key] = item.data.value;
         });
-
       const snapshot = {
         localStorage: localStorageData,
         indexedDB: indexedDBData,
@@ -2039,12 +1897,10 @@ if (window.typingMindCloudSync) {
         name,
         format: "simple",
       };
-
       await this.createCompressedBackup(filename, snapshot);
       this.logger.log("success", `Simple snapshot created: ${filename}`);
       return true;
     }
-
     async createChunkedSnapshot(name, estimatedSize) {
       this.logger.log(
         "info",
@@ -2052,7 +1908,6 @@ if (window.typingMindCloudSync) {
           estimatedSize
         )})`
       );
-
       const timestamp = new Date()
         .toISOString()
         .replace(/[-:]/g, "")
@@ -2061,14 +1916,10 @@ if (window.typingMindCloudSync) {
         /[^a-zA-Z0-9]/g,
         "-"
       )}-${timestamp}`;
-
       try {
         const allItems = await this.dataService.getAllItems();
         const chunks = await this.createDataChunks(allItems);
-
         this.logger.log("info", `Created ${chunks.length} chunks for upload`);
-
-        // Upload metadata first
         const metadata = {
           format: "chunked",
           created: Date.now(),
@@ -2083,14 +1934,11 @@ if (window.typingMindCloudSync) {
             itemCount: chunk.length,
           })),
         };
-
         await this.s3Service.upload(
           `${baseFilename}-metadata.json`,
           metadata,
           true
         );
-
-        // Upload chunks with progress tracking
         for (let i = 0; i < chunks.length; i++) {
           const chunkFilename = `${baseFilename}-chunk-${i
             .toString()
@@ -2101,14 +1949,12 @@ if (window.typingMindCloudSync) {
             items: chunks[i],
             created: Date.now(),
           };
-
           this.logger.log(
             "info",
             `Uploading chunk ${i + 1}/${chunks.length} (${
               chunks[i].length
             } items)`
           );
-
           try {
             await this.createCompressedBackup(chunkFilename, chunkData);
           } catch (error) {
@@ -2121,7 +1967,6 @@ if (window.typingMindCloudSync) {
             );
           }
         }
-
         this.logger.log(
           "success",
           `Chunked snapshot created: ${baseFilename} (${chunks.length} chunks)`
@@ -2136,18 +1981,14 @@ if (window.typingMindCloudSync) {
         throw error;
       }
     }
-
     async createDataChunks(allItems) {
       const chunks = [];
       let currentChunk = [];
       let currentChunkSize = 0;
-
       for (const item of allItems) {
         try {
           const itemStr = JSON.stringify(item);
-          const itemSize = itemStr.length * 2; // Rough size estimate
-
-          // If adding this item would exceed chunk size, start new chunk
+          const itemSize = itemStr.length * 2;
           if (
             currentChunkSize + itemSize > this.chunkSizeLimit &&
             currentChunk.length > 0
@@ -2156,7 +1997,6 @@ if (window.typingMindCloudSync) {
             currentChunk = [];
             currentChunkSize = 0;
           }
-
           currentChunk.push(item);
           currentChunkSize += itemSize;
         } catch (error) {
@@ -2166,49 +2006,36 @@ if (window.typingMindCloudSync) {
           );
         }
       }
-
-      // Add the last chunk if it has items
       if (currentChunk.length > 0) {
         chunks.push(currentChunk);
       }
-
       return chunks;
     }
-
     async checkAndPerformDailyBackup() {
       const lastBackupStr = localStorage.getItem("tcs_last-daily-backup");
       const now = new Date();
       const currentDateStr = `${now.getFullYear()}${String(
         now.getMonth() + 1
       ).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-
       if (!lastBackupStr || lastBackupStr !== currentDateStr) {
         this.logger.log("info", "Starting daily backup...");
         await this.performDailyBackup();
         localStorage.setItem("tcs_last-daily-backup", currentDateStr);
         this.logger.log("success", "Daily backup completed");
       }
-      //else {
-      //   this.logger.log("info", "Daily backup already performed today");
-      // }
     }
-
     async performDailyBackup() {
-      //this.logger.log("start", "Starting daily backup");
-
       const estimatedSize = await this.estimateDataSize();
       this.logger.log(
         "info",
         `Estimated data size: ${this.formatFileSize(estimatedSize)}`
       );
-
       if (estimatedSize > this.chunkSizeLimit) {
         return await this.performChunkedDailyBackup(estimatedSize);
       } else {
         return await this.performSimpleDailyBackup();
       }
     }
-
     async performSimpleDailyBackup() {
       this.logger.log("info", "Using simple daily backup method");
       const today = new Date();
@@ -2216,9 +2043,7 @@ if (window.typingMindCloudSync) {
         today.getMonth() + 1
       ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
       const filename = `typingmind-backup-${dateString}.zip`;
-
       const allItems = await this.dataService.getAllItems();
-
       const indexedDBData = {};
       allItems
         .filter((item) => item.type === "idb")
@@ -2227,14 +2052,12 @@ if (window.typingMindCloudSync) {
             indexedDBData[item.id] = item.data;
           }
         });
-
       const localStorageData = {};
       allItems
         .filter((item) => item.type === "ls")
         .forEach((item) => {
           localStorageData[item.data.key] = item.data.value;
         });
-
       const backup = {
         localStorage: localStorageData,
         indexedDB: indexedDBData,
@@ -2242,12 +2065,10 @@ if (window.typingMindCloudSync) {
         name: "daily-auto",
         format: "simple",
       };
-
       await this.createCompressedBackup(filename, backup);
       this.logger.log("success", `Simple daily backup completed: ${filename}`);
       await this.cleanupOldBackups();
     }
-
     async performChunkedDailyBackup(estimatedSize) {
       this.logger.log(
         "info",
@@ -2255,23 +2076,18 @@ if (window.typingMindCloudSync) {
           estimatedSize
         )})`
       );
-
       const today = new Date();
       const dateString = `${today.getFullYear()}${String(
         today.getMonth() + 1
       ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
       const baseFilename = `typingmind-backup-${dateString}`;
-
       try {
         const allItems = await this.dataService.getAllItems();
         const chunks = await this.createDataChunks(allItems);
-
         this.logger.log(
           "info",
           `Created ${chunks.length} chunks for daily backup`
         );
-
-        // Upload metadata
         const metadata = {
           format: "chunked",
           created: Date.now(),
@@ -2287,14 +2103,11 @@ if (window.typingMindCloudSync) {
             itemCount: chunk.length,
           })),
         };
-
         await this.s3Service.upload(
           `${baseFilename}-metadata.json`,
           metadata,
           true
         );
-
-        // Upload chunks
         for (let i = 0; i < chunks.length; i++) {
           const chunkFilename = `${baseFilename}-chunk-${i
             .toString()
@@ -2305,14 +2118,12 @@ if (window.typingMindCloudSync) {
             items: chunks[i],
             created: Date.now(),
           };
-
           this.logger.log(
             "info",
             `Uploading daily backup chunk ${i + 1}/${chunks.length}`
           );
           await this.createCompressedBackup(chunkFilename, chunkData);
         }
-
         this.logger.log(
           "success",
           `Chunked daily backup completed: ${baseFilename} (${chunks.length} chunks)`
@@ -2323,7 +2134,6 @@ if (window.typingMindCloudSync) {
         throw error;
       }
     }
-
     formatFileSize(bytes) {
       if (bytes === 0) return "0 B";
       const k = 1024;
@@ -2331,18 +2141,15 @@ if (window.typingMindCloudSync) {
       const i = Math.floor(Math.log(bytes) / Math.log(k));
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
     }
-
     async loadBackupList() {
       try {
         const objects = await this.s3Service.list("");
         const backups = [];
-
         for (const obj of objects) {
           if (!obj.Key.includes("/")) {
             const isValidBackupFile =
               obj.Key.startsWith("typingmind-backup-") ||
               obj.Key.startsWith("s-");
-
             if (isValidBackupFile) {
               if (obj.Key.endsWith("-metadata.json")) {
                 try {
@@ -2398,7 +2205,6 @@ if (window.typingMindCloudSync) {
             }
           }
         }
-
         return backups.sort((a, b) => {
           if (a.sortOrder !== b.sortOrder) {
             return a.sortOrder - b.sortOrder;
@@ -2410,7 +2216,6 @@ if (window.typingMindCloudSync) {
         return [];
       }
     }
-
     getBackupType(filename) {
       if (filename.startsWith("s-")) {
         return "snapshot";
@@ -2419,11 +2224,9 @@ if (window.typingMindCloudSync) {
       }
       return "unknown";
     }
-
     formatBackupDisplayName(filename, metadata = null) {
       const type = this.getBackupType(filename);
       const isChunked = metadata && metadata.format === "chunked";
-
       if (type === "snapshot") {
         const cleanName = filename
           .replace(/^s-/, "")
@@ -2465,15 +2268,12 @@ if (window.typingMindCloudSync) {
         }
         return "🗓️ Daily Backup";
       }
-
       return filename
         .replace(/\.(zip|json)$/, "")
         .replace("-metadata.json", "");
     }
-
     async restoreFromBackup(key, cryptoService) {
       this.logger.log("start", `Restoring from backup: ${key}`);
-
       try {
         if (key.endsWith("-metadata.json")) {
           return await this.restoreFromChunkedBackup(key, cryptoService);
@@ -2485,31 +2285,24 @@ if (window.typingMindCloudSync) {
         throw error;
       }
     }
-
     async restoreFromSimpleBackup(key, cryptoService) {
       this.logger.log("info", "Restoring from simple backup format");
-
       const backup = await this.restoreFromZipBackup(key, cryptoService);
       if (!backup) {
         throw new Error("Backup not found");
       }
-
       if (!backup.localStorage && !backup.indexedDB) {
         throw new Error(
           "Invalid backup format - missing localStorage and indexedDB data"
         );
       }
-
       await this.restoreData(backup);
       this.logger.log("success", "Simple backup restored successfully");
-
       setTimeout(() => {
         window.location.reload();
       }, 3000);
-
       return true;
     }
-
     async restoreFromZipBackup(key, cryptoService) {
       try {
         const JSZip = await this.loadJSZip();
@@ -2531,38 +2324,31 @@ if (window.typingMindCloudSync) {
         throw error;
       }
     }
-
     async restoreFromChunkedBackup(metadataKey, cryptoService) {
       this.logger.log("info", "Restoring from chunked backup format");
-
       const metadata = await this.s3Service.download(metadataKey, true);
       if (!metadata || metadata.format !== "chunked") {
         throw new Error("Invalid chunked backup metadata");
       }
-
       this.logger.log(
         "info",
         `Restoring chunked backup: ${metadata.totalChunks} chunks`
       );
-
       const allData = {
         localStorage: {},
         indexedDB: {},
       };
-
       for (let i = 0; i < metadata.totalChunks; i++) {
         const chunkInfo = metadata.chunkList[i];
         this.logger.log(
           "info",
           `Processing chunk ${i + 1}/${metadata.totalChunks}`
         );
-
         try {
           const chunkData = await this.restoreFromZipBackup(
             chunkInfo.filename,
             cryptoService
           );
-
           if (chunkData.items) {
             for (const item of chunkData.items) {
               if (item.type === "idb" && item.data) {
@@ -2582,40 +2368,31 @@ if (window.typingMindCloudSync) {
           );
         }
       }
-
       await this.restoreData(allData);
       this.logger.log(
         "success",
         `Chunked backup restored successfully (${metadata.totalChunks} chunks)`
       );
-
       setTimeout(() => {
         window.location.reload();
       }, 3000);
-
       return true;
     }
-
     async restoreData(data) {
       this.logger.log("info", "Restoring data to local storage");
-
       if (!data || typeof data !== "object") {
         throw new Error("Invalid restore data: data must be an object");
       }
-
       if (!data.localStorage && !data.indexedDB) {
         throw new Error(
           "Invalid restore data: missing localStorage and indexedDB sections"
         );
       }
-
       this.logger.log(
         "warning",
         "⚠️ CRITICAL: This restore will overwrite ALL local data. Page will reload after restore."
       );
-
       const promises = [];
-
       if (data.indexedDB && typeof data.indexedDB === "object") {
         Object.entries(data.indexedDB).forEach(([key, itemData]) => {
           if (key && itemData !== undefined && itemData !== null) {
@@ -2629,7 +2406,6 @@ if (window.typingMindCloudSync) {
           }
         });
       }
-
       if (data.localStorage && typeof data.localStorage === "object") {
         Object.entries(data.localStorage).forEach(([key, value]) => {
           if (key && value !== undefined && value !== null) {
@@ -2643,40 +2419,32 @@ if (window.typingMindCloudSync) {
           }
         });
       }
-
       await Promise.all(promises);
-
       this.logger.log(
         "info",
         "✅ Data restore completed. Clearing sync metadata to force fresh sync."
       );
-
       localStorage.removeItem("tcs_cloud-metadata");
       localStorage.removeItem("tcs_last-cloud-sync");
-
       this.logger.log(
         "success",
         "Restore completed successfully. Page will reload in 3 seconds."
       );
     }
-
     async cleanupOldBackups() {
       try {
         const objects = await this.s3Service.list("");
         const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
         let deletedBackups = 0;
-
         const backupMetadataFiles = objects.filter(
           (obj) =>
             (obj.Key.startsWith("typingmind-backup-") ||
               obj.Key.startsWith("s-")) &&
             (obj.Key.endsWith("-metadata.json") || obj.Key.endsWith(".zip"))
         );
-
         for (const obj of backupMetadataFiles) {
           const isOldBackup =
             new Date(obj.LastModified).getTime() < thirtyDaysAgo;
-
           if (isOldBackup) {
             try {
               if (obj.Key.endsWith("-metadata.json")) {
@@ -2705,7 +2473,6 @@ if (window.typingMindCloudSync) {
                   );
                 }
               }
-
               await this.s3Service.delete(obj.Key);
               deletedBackups++;
               this.logger.log("info", `Cleaned up old backup: ${obj.Key}`);
@@ -2714,7 +2481,6 @@ if (window.typingMindCloudSync) {
             }
           }
         }
-
         if (deletedBackups > 0) {
           this.logger.log(
             "success",
@@ -2730,7 +2496,6 @@ if (window.typingMindCloudSync) {
       }
     }
   }
-
   class OperationQueue {
     constructor(logger) {
       this.logger = logger;
@@ -2741,20 +2506,16 @@ if (window.typingMindCloudSync) {
       this.maxQueueSize = 100;
       this.lastCleanup = 0;
     }
-
     add(operationId, operation, priority = "normal") {
       const now = Date.now();
-
       if (now - this.lastCleanup > 10 * 60 * 1000) {
         this.cleanupStaleOperations(now);
         this.lastCleanup = now;
       }
-
       if (this.queue.has(operationId)) {
         this.logger.log("skip", `Operation ${operationId} already queued`);
         return;
       }
-
       if (this.queue.size >= this.maxQueueSize) {
         this.logger.log(
           "warning",
@@ -2763,7 +2524,6 @@ if (window.typingMindCloudSync) {
         const oldestKey = this.queue.keys().next().value;
         this.queue.delete(oldestKey);
       }
-
       this.queue.set(operationId, {
         id: operationId,
         operation,
@@ -2771,15 +2531,12 @@ if (window.typingMindCloudSync) {
         retries: 0,
         addedAt: now,
       });
-
       this.logger.log("info", `📋 Queued operation: ${operationId}`);
       this.process();
     }
-
     cleanupStaleOperations(now) {
       const staleThreshold = 60 * 60 * 1000;
       let removedCount = 0;
-
       for (const [operationId, operation] of this.queue.entries()) {
         if (
           now - operation.addedAt > staleThreshold &&
@@ -2789,7 +2546,6 @@ if (window.typingMindCloudSync) {
           removedCount++;
         }
       }
-
       if (removedCount > 0) {
         this.logger.log(
           "info",
@@ -2797,18 +2553,14 @@ if (window.typingMindCloudSync) {
         );
       }
     }
-
     async process() {
       if (this.processing || this.queue.size === 0) return;
-
       this.processing = true;
-
       while (this.queue.size > 0) {
         const operations = Array.from(this.queue.values());
         const highPriority = operations.filter((op) => op.priority === "high");
         const nextOp =
           highPriority.length > 0 ? highPriority[0] : operations[0];
-
         try {
           this.logger.log("info", `⚡ Executing: ${nextOp.id}`);
           await nextOp.operation();
@@ -2816,7 +2568,6 @@ if (window.typingMindCloudSync) {
           this.logger.log("success", `✅ Completed: ${nextOp.id}`);
         } catch (error) {
           this.logger.log("error", `❌ Failed: ${nextOp.id}`, error.message);
-
           if (nextOp.retries < this.maxRetries) {
             nextOp.retries++;
             const delay = Math.min(1000 * Math.pow(2, nextOp.retries), 10000);
@@ -2824,7 +2575,6 @@ if (window.typingMindCloudSync) {
               "warning",
               `🔄 Retrying ${nextOp.id} in ${delay}ms (${nextOp.retries}/${this.maxRetries})`
             );
-
             const timeoutId = setTimeout(() => {
               this.activeTimeouts.delete(timeoutId);
               if (this.queue.has(nextOp.id)) {
@@ -2838,37 +2588,30 @@ if (window.typingMindCloudSync) {
             this.queue.delete(nextOp.id);
           }
         }
-
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
-
       this.processing = false;
     }
-
     clear() {
       this.queue.clear();
       this.clearTimeouts();
       this.processing = false;
     }
-
     clearTimeouts() {
       for (const timeoutId of this.activeTimeouts) {
         clearTimeout(timeoutId);
       }
       this.activeTimeouts.clear();
     }
-
     size() {
       return this.queue.size;
     }
-
     cleanup() {
       this.clear();
       this.lastCleanup = 0;
       this.logger = null;
     }
   }
-
   class CloudSyncApp {
     constructor() {
       this.logger = new Logger();
@@ -2906,14 +2649,10 @@ if (window.typingMindCloudSync) {
     }
     async initialize() {
       this.logger.log("start", "Initializing TypingmindCloud Sync V3");
-
-      // Check for nosync parameter and get URL config
       const urlParams = new URLSearchParams(window.location.search);
       this.noSyncMode =
         urlParams.get("nosync") === "true" || urlParams.has("nosync");
       const urlConfig = this.getConfigFromUrlParams();
-
-      // Apply URL config to in-memory config and save to localStorage
       if (urlConfig.hasParams) {
         Object.keys(urlConfig.config).forEach((key) => {
           if (key === "exclusions") {
@@ -2933,15 +2672,12 @@ if (window.typingMindCloudSync) {
         );
         this.removeConfigFromUrl();
       }
-
       if (this.noSyncMode) {
         this.logger.log(
           "info",
           "🚫 NoSync mode enabled - only snapshot functionality available"
         );
       }
-
-      // Check for mandatory configuration if not in nosync mode
       if (!this.noSyncMode && !this.checkMandatoryConfig(urlConfig.config)) {
         alert(
           "⚠️ Cloud Sync Configuration Required\n\nPlease configure the following mandatory fields in the sync settings:\n• AWS Bucket Name\n• AWS Region\n• AWS Access Key\n• AWS Secret Key\n• Encryption Key\n\nClick on the Sync button to open settings, then reload the page after configuration."
@@ -2950,11 +2686,8 @@ if (window.typingMindCloudSync) {
         this.insertSyncButton();
         return;
       }
-
       await this.waitForDOM();
       this.insertSyncButton();
-
-      // Check for URL config parameters and auto-open modal if requested
       if (urlConfig.autoOpen || urlConfig.hasParams) {
         this.logger.log(
           "info",
@@ -2962,8 +2695,6 @@ if (window.typingMindCloudSync) {
         );
         setTimeout(() => this.openSyncModal(), 1000);
       }
-
-      // Only start monitoring and syncing if not in nosync mode
       if (!this.noSyncMode) {
         if (this.config.isConfigured()) {
           try {
@@ -3005,13 +2736,10 @@ if (window.typingMindCloudSync) {
         { key: "tcs_aws_secretkey", urlKey: "secretKey" },
         { key: "tcs_encryptionkey", urlKey: "encryptionKey" },
       ];
-
       const missingFields = [];
-
       for (const field of requiredFields) {
         const localValue = localStorage.getItem(field.key);
         const urlValue = urlConfig[field.urlKey];
-
         if (
           (!localValue || localValue.trim() === "") &&
           (!urlValue || urlValue.trim() === "")
@@ -3023,7 +2751,6 @@ if (window.typingMindCloudSync) {
           missingFields.push(field.key);
         }
       }
-
       if (missingFields.length > 0) {
         this.logger.log(
           "warning",
@@ -3032,26 +2759,16 @@ if (window.typingMindCloudSync) {
         );
         return false;
       }
-
-      //this.logger.log(
-      //  "success",
-      //  "All mandatory configuration fields are present (localStorage + URL params)"
-      //);
       return true;
     }
-
     isSnapshotAvailable() {
-      // Snapshots require S3 configuration to work
       const urlConfig = this.getConfigFromUrlParams();
       return this.checkMandatoryConfig(urlConfig.config);
     }
-
     getConfigFromUrlParams() {
       const urlParams = new URLSearchParams(window.location.search);
       const config = {};
       const autoOpen = urlParams.has("config") || urlParams.has("autoconfig");
-
-      // Map URL parameters to config values
       const paramMap = {
         bucket: "bucketName",
         bucketname: "bucketName",
@@ -3063,9 +2780,7 @@ if (window.typingMindCloudSync) {
         syncinterval: "syncInterval",
         exclusions: "exclusions",
       };
-
       let hasConfigParams = false;
-
       for (const [urlParam, configKey] of Object.entries(paramMap)) {
         const value = urlParams.get(urlParam);
         if (value !== null) {
@@ -3073,14 +2788,11 @@ if (window.typingMindCloudSync) {
           hasConfigParams = true;
         }
       }
-
-      // Re-process sensitive keys that may contain '+' which URLSearchParams converts to space.
       const sensitiveKeys = {
         accesskey: "accessKey",
         secretkey: "secretKey",
         encryptionkey: "encryptionKey",
       };
-
       const rawQuery = window.location.search.substring(1);
       if (rawQuery) {
         const params = rawQuery.split("&");
@@ -3096,24 +2808,15 @@ if (window.typingMindCloudSync) {
           }
         }
       }
-
-      //this.logger.log("info", "URL config parameters detected", {
-      //  hasParams: hasConfigParams,
-      //  autoOpen: autoOpen,
-      //  configKeys: Object.keys(config),
-      //});
-
       return {
         config: config,
         hasParams: hasConfigParams,
         autoOpen: autoOpen,
       };
     }
-
     removeConfigFromUrl() {
       const url = new URL(window.location);
       const params = url.searchParams;
-
       const paramsToRemove = [
         "bucket",
         "bucketname",
@@ -3127,7 +2830,6 @@ if (window.typingMindCloudSync) {
         "config",
         "autoconfig",
       ];
-
       let removedSomething = false;
       paramsToRemove.forEach((p) => {
         if (params.has(p)) {
@@ -3135,13 +2837,11 @@ if (window.typingMindCloudSync) {
           removedSomething = true;
         }
       });
-
       if (removedSomething) {
         window.history.replaceState({}, document.title, url.toString());
         this.logger.log("info", "Removed configuration parameters from URL.");
       }
     }
-
     async waitForDOM() {
       if (document.readyState === "loading") {
         return new Promise((resolve) =>
@@ -3167,7 +2867,6 @@ if (window.typingMindCloudSync) {
       if (chatButton?.parentNode) {
         chatButton.parentNode.insertBefore(button, chatButton.nextSibling);
       }
-      //this.logger.log("success", "Sync button inserted");
     }
     updateSyncStatus(status = "success") {
       const dot = document.getElementById("sync-status-dot");
@@ -3212,7 +2911,6 @@ if (window.typingMindCloudSync) {
              </div>
            </div>`
         : "";
-
       return `<div class="text-white text-left text-sm">
         <div class="flex justify-center items-center mb-3">
           <h3 class="text-center text-xl font-bold text-white">S3 Backup & Sync Settings</h3>
@@ -3368,7 +3066,6 @@ if (window.typingMindCloudSync) {
       const handleSyncNowHandler = () => this.handleSyncNow(modal);
       const consoleLoggingHandler = (e) =>
         this.logger.setEnabled(e.target.checked);
-
       overlay.addEventListener("click", closeModalHandler);
       modal.addEventListener("click", (e) => e.stopPropagation());
       modal
@@ -3386,7 +3083,6 @@ if (window.typingMindCloudSync) {
       modal
         .querySelector("#console-logging-toggle")
         .addEventListener("change", consoleLoggingHandler);
-
       this.modalCleanupCallbacks.push(() => {
         overlay.removeEventListener("click", closeModalHandler);
         modal
@@ -3405,36 +3101,27 @@ if (window.typingMindCloudSync) {
           .querySelector("#console-logging-toggle")
           ?.removeEventListener("change", consoleLoggingHandler);
       });
-
       const consoleLoggingCheckbox = modal.querySelector(
         "#console-logging-toggle"
       );
       consoleLoggingCheckbox.checked = this.logger.enabled;
-
-      // Auto-populate form with URL parameters if present
       this.populateFormFromUrlParams(modal);
-
       this.loadBackupList(modal);
       this.setupBackupListHandlers(modal);
       this.loadSyncDiagnostics(modal);
       this.setupDiagnosticsToggle(modal);
     }
-
     populateFormFromUrlParams(modal) {
       const urlConfig = this.getConfigFromUrlParams();
-
       if (!urlConfig.hasParams) {
         this.logger.log("info", "No URL config parameters to populate");
         return;
       }
-
       this.logger.log(
         "info",
         "Populating form with URL parameters",
         urlConfig.config
       );
-
-      // Map config keys to form field IDs
       const fieldMap = {
         bucketName: "aws-bucket",
         region: "aws-region",
@@ -3445,9 +3132,7 @@ if (window.typingMindCloudSync) {
         syncInterval: "sync-interval",
         exclusions: "sync-exclusions",
       };
-
       let populatedCount = 0;
-
       for (const [configKey, fieldId] of Object.entries(fieldMap)) {
         const value = urlConfig.config[configKey];
         if (value !== undefined) {
@@ -3462,13 +3147,11 @@ if (window.typingMindCloudSync) {
           }
         }
       }
-
       if (populatedCount > 0) {
-        // Show a message to the user that fields were auto-populated
         const actionMsg = modal.querySelector("#action-msg");
         if (actionMsg) {
           actionMsg.textContent = `✨ Auto-populated ${populatedCount} field(s) from URL parameters`;
-          actionMsg.style.color = "#22c55e"; // Green color
+          actionMsg.style.color = "#22c55e";
           setTimeout(() => {
             actionMsg.textContent = "";
             actionMsg.style.color = "";
@@ -3483,12 +3166,10 @@ if (window.typingMindCloudSync) {
         );
         return;
       }
-
       const syncNowButton = modal.querySelector("#sync-now");
       const originalText = syncNowButton.textContent;
       syncNowButton.disabled = true;
       syncNowButton.textContent = "Working...";
-
       this.operationQueue.add(
         "manual-full-sync",
         async () => {
@@ -3496,7 +3177,6 @@ if (window.typingMindCloudSync) {
         },
         "high"
       );
-
       setTimeout(() => {
         syncNowButton.textContent = "Done!";
         setTimeout(() => {
@@ -3509,21 +3189,17 @@ if (window.typingMindCloudSync) {
       try {
         const backupList = modal.querySelector("#backup-files");
         if (!backupList) return;
-
         backupList.innerHTML = '<option value="">Loading backups...</option>';
         backupList.disabled = true;
-
         if (!this.config.isConfigured()) {
           backupList.innerHTML =
             '<option value="">Please configure AWS credentials first</option>';
           backupList.disabled = false;
           return;
         }
-
         const backups = await this.backupService.loadBackupList();
         backupList.innerHTML = "";
         backupList.disabled = false;
-
         if (backups.length === 0) {
           const option = document.createElement("option");
           option.value = "";
@@ -3543,7 +3219,6 @@ if (window.typingMindCloudSync) {
             backupList.appendChild(option);
           });
         }
-
         this.updateBackupButtonStates(modal);
         backupList.addEventListener("change", () =>
           this.updateBackupButtonStates(modal)
@@ -3563,23 +3238,19 @@ if (window.typingMindCloudSync) {
       const downloadButton = modal.querySelector("#download-backup-btn");
       const restoreButton = modal.querySelector("#restore-backup-btn");
       const deleteButton = modal.querySelector("#delete-backup-btn");
-
       const isSnapshot = selectedValue.includes("s-");
       const isDailyBackup = selectedValue.includes("typingmind-backup-");
       const isChunkedBackup = selectedValue.endsWith("-metadata.json");
       const isMetadataFile = selectedValue === "metadata.json";
       const isItemsFile = selectedValue.startsWith("items/");
-
       if (downloadButton) {
         downloadButton.disabled = !selectedValue;
       }
-
       if (restoreButton) {
         const canRestore =
           selectedValue && (isSnapshot || isDailyBackup || isChunkedBackup);
         restoreButton.disabled = !canRestore;
       }
-
       if (deleteButton) {
         const isProtectedFile = !selectedValue || isMetadataFile || isItemsFile;
         deleteButton.disabled = isProtectedFile;
@@ -3607,10 +3278,8 @@ if (window.typingMindCloudSync) {
               );
               const JSZip = await this.backupService.loadJSZip();
               const finalZip = new JSZip();
-
               const metadata = await this.s3Service.download(key, true);
               finalZip.file(key, JSON.stringify(metadata, null, 2));
-
               if (metadata.chunkList && metadata.chunkList.length > 0) {
                 let processedChunks = 0;
                 for (const chunkInfo of metadata.chunkList) {
@@ -3636,7 +3305,6 @@ if (window.typingMindCloudSync) {
                   processedChunks++;
                 }
               }
-
               downloadButton.textContent = "Zipping...";
               const zipBlob = await finalZip.generateAsync({ type: "blob" });
               const finalZipFilename = key.replace(
@@ -3815,11 +3483,9 @@ if (window.typingMindCloudSync) {
       if (!diagnosticsBody) return;
       const overallStatusEl = modal.querySelector("#sync-overall-status");
       const summaryEl = modal.querySelector("#sync-diagnostics-summary");
-
       const setContent = (html) => {
         diagnosticsBody.innerHTML = html;
       };
-
       if (!this.config.isConfigured()) {
         setContent(
           '<tr><td colspan="3" class="text-center py-2 text-zinc-500">AWS Not Configured</td></tr>'
@@ -3828,21 +3494,16 @@ if (window.typingMindCloudSync) {
         if (summaryEl) summaryEl.textContent = "Setup required";
         return;
       }
-
       if (overallStatusEl) {
         overallStatusEl.textContent = "🔄";
       }
-
       try {
-        // Get local items count
         const localItems = await this.dataService.getAllItems();
         const localCount = localItems.length;
         const chatItems = localItems.filter((item) =>
           item.id.startsWith("CHAT_")
         ).length;
         const otherItems = localCount - chatItems;
-
-        // Get metadata count
         const metadataCount = Object.keys(
           this.syncOrchestrator.metadata.items || {}
         ).length;
@@ -3850,26 +3511,18 @@ if (window.typingMindCloudSync) {
           this.syncOrchestrator.metadata.items || {}
         ).filter((item) => item.deleted).length;
         const metadataActive = metadataCount - metadataDeleted;
-
-        // Get cloud metadata
         const cloudMetadata = await this.syncOrchestrator.getCloudMetadata();
         const cloudCount = Object.keys(cloudMetadata.items || {}).length;
         const cloudDeleted = Object.values(cloudMetadata.items || {}).filter(
           (item) => item.deleted
         ).length;
         const cloudActive = cloudCount - cloudDeleted;
-
-        // Get sync timestamps
         const localLastSync = localStorage.getItem("tcs_last-cloud-sync");
         const cloudLastSync = cloudMetadata.lastSync || 0;
         const hasCloudChanges = cloudLastSync > parseInt(localLastSync || "0");
-
-        // Get cloud chat items count
         const cloudChatItems = Object.keys(cloudMetadata.items || {}).filter(
           (id) => id.startsWith("CHAT_") && !cloudMetadata.items[id].deleted
         ).length;
-
-        // Generate table rows
         const rows = [
           {
             type: "📱 Local Items",
@@ -3897,7 +3550,6 @@ if (window.typingMindCloudSync) {
             status: hasCloudChanges ? "🟡" : "✅",
           },
         ];
-
         const tableHTML = rows
           .map(
             (row) => `
@@ -3909,20 +3561,14 @@ if (window.typingMindCloudSync) {
         `
           )
           .join("");
-
-        // Calculate overall status
         const hasIssues =
           localCount !== metadataActive ||
           localCount !== cloudActive ||
           chatItems !== cloudChatItems;
         const overallStatus = hasIssues ? "⚠️" : "✅";
         const summaryText = hasIssues ? "Issues detected" : "All systems OK";
-
-        // Update header status
         if (overallStatusEl) overallStatusEl.textContent = overallStatus;
         if (summaryEl) summaryEl.textContent = summaryText;
-
-        // Add warning row if there are mismatches
         let warningRow = "";
         if (hasIssues) {
           warningRow = `
@@ -3933,7 +3579,6 @@ if (window.typingMindCloudSync) {
             </tr>
           `;
         }
-
         setContent(tableHTML + warningRow);
       } catch (error) {
         console.error("Failed to load sync diagnostics:", error);
@@ -3950,9 +3595,7 @@ if (window.typingMindCloudSync) {
       const header = modal.querySelector("#sync-diagnostics-header");
       const content = modal.querySelector("#sync-diagnostics-content");
       const chevron = modal.querySelector("#sync-diagnostics-chevron");
-
       if (!header || !content || !chevron) return;
-
       const setVisibility = (expanded) => {
         if (expanded) {
           content.classList.remove("hidden");
@@ -3962,24 +3605,18 @@ if (window.typingMindCloudSync) {
           chevron.style.transform = "rotate(0deg)";
         }
       };
-
       setVisibility(this.diagnosticsExpanded);
-
       const toggleDiagnostics = () => {
         this.diagnosticsExpanded = !this.diagnosticsExpanded;
         setVisibility(this.diagnosticsExpanded);
       };
-
       const clickHandler = toggleDiagnostics;
       const touchHandler = (e) => {
         e.preventDefault();
         toggleDiagnostics();
       };
-
       header.addEventListener("click", clickHandler);
       header.addEventListener("touchend", touchHandler);
-
-      // Add cleanup callback
       this.modalCleanupCallbacks.push(() => {
         if (header) {
           header.removeEventListener("click", clickHandler);
@@ -4124,29 +3761,22 @@ if (window.typingMindCloudSync) {
         );
         return;
       }
-
       const name = prompt("Enter snapshot name:");
       if (!name) return;
-
       const modal = document.querySelector(".cloud-sync-modal");
       const snapshotButton = modal?.querySelector("#create-snapshot");
-
       if (snapshotButton) {
         const originalText = snapshotButton.textContent;
         snapshotButton.disabled = true;
         snapshotButton.textContent = "In Progress...";
-
         try {
           await this.backupService.createSnapshot(name);
           snapshotButton.textContent = "Success!";
-
           await this.loadBackupList(modal);
-
           setTimeout(() => {
             snapshotButton.textContent = originalText;
             snapshotButton.disabled = false;
           }, 2000);
-
           alert("Snapshot created successfully!");
         } catch (error) {
           this.logger.log("error", "Failed to create snapshot", error.message);
@@ -4169,20 +3799,16 @@ if (window.typingMindCloudSync) {
     }
     async deleteBackupWithChunks(key) {
       this.logger.log("start", `Deleting backup: ${key}`);
-
       if (key.endsWith("-metadata.json")) {
         this.logger.log("info", "Deleting chunked backup with all chunks");
-
         try {
           const metadata = await this.s3Service.download(key, true);
           let deletedCount = 0;
-
           if (metadata.chunkList && metadata.chunkList.length > 0) {
             this.logger.log(
               "info",
               `Deleting ${metadata.chunkList.length} chunk files`
             );
-
             const deletePromises = metadata.chunkList.map(async (chunkInfo) => {
               try {
                 await this.s3Service.delete(chunkInfo.filename);
@@ -4195,10 +3821,8 @@ if (window.typingMindCloudSync) {
                 );
               }
             });
-
             await Promise.allSettled(deletePromises);
           }
-
           await this.s3Service.delete(key);
           this.logger.log(
             "success",
@@ -4217,12 +3841,9 @@ if (window.typingMindCloudSync) {
         this.logger.log("success", `Deleted simple backup: ${key}`);
       }
     }
-
     startAutoSync() {
       if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
-
       const interval = Math.max(this.config.get("syncInterval") * 1000, 15000);
-
       this.autoSyncInterval = setInterval(async () => {
         if (
           this.config.isConfigured() &&
@@ -4235,7 +3856,6 @@ if (window.typingMindCloudSync) {
           }
         }
       }, interval);
-
       this.logger.log("info", "Auto-sync started");
     }
     async getCloudMetadata() {
@@ -4260,12 +3880,10 @@ if (window.typingMindCloudSync) {
     }
     cleanup() {
       this.logger.log("info", "🧹 Starting comprehensive cleanup");
-
       if (this.autoSyncInterval) {
         clearInterval(this.autoSyncInterval);
         this.autoSyncInterval = null;
       }
-
       this.modalCleanupCallbacks.forEach((cleanup) => {
         try {
           cleanup();
@@ -4274,7 +3892,6 @@ if (window.typingMindCloudSync) {
         }
       });
       this.modalCleanupCallbacks = [];
-
       this.eventListeners.forEach(({ element, event, handler }) => {
         try {
           element.removeEventListener(event, handler);
@@ -4283,28 +3900,22 @@ if (window.typingMindCloudSync) {
         }
       });
       this.eventListeners = [];
-
       const existingModal = document.querySelector(".cloud-sync-modal");
       if (existingModal) {
         existingModal.closest(".modal-overlay")?.remove();
       }
-
       if (this.operationQueue) {
         this.operationQueue.cleanup();
       }
-
       if (this.dataService) {
         this.dataService.cleanup();
       }
-
       if (this.cryptoService) {
         this.cryptoService.cleanup();
       }
-
       if (this.syncOrchestrator) {
         this.syncOrchestrator.cleanup();
       }
-
       this.logger.log("success", "✅ Cleanup completed");
       this.config = null;
       this.dataService = null;
@@ -4316,7 +3927,6 @@ if (window.typingMindCloudSync) {
       this.logger = null;
     }
   }
-
   const styleSheet = document.createElement("style");
   styleSheet.textContent = `
     .modal-overlay {
@@ -4461,11 +4071,9 @@ if (window.typingMindCloudSync) {
     }
   `;
   document.head.appendChild(styleSheet);
-
   const app = new CloudSyncApp();
   app.initialize();
   window.cloudSyncApp = app;
-
   const cleanupHandler = () => {
     if (app && app.cleanup) {
       try {
@@ -4475,25 +4083,21 @@ if (window.typingMindCloudSync) {
       }
     }
   };
-
   window.addEventListener("beforeunload", cleanupHandler);
   window.addEventListener("unload", cleanupHandler);
   window.addEventListener("pagehide", cleanupHandler);
-
   window.createTombstone = (itemId, type, source = "manual") => {
     if (app && app.dataService) {
       return app.dataService.createTombstone(itemId, type, source);
     }
     return null;
   };
-
   window.getTombstones = () => {
     if (app && app.dataService) {
       return Array.from(app.dataService.getAllTombstones().entries());
     }
     return [];
   };
-
   window.getMemoryStats = () => {
     if (app) {
       return {
@@ -4505,7 +4109,6 @@ if (window.typingMindCloudSync) {
     }
     return {};
   };
-
   window.estimateBackupSize = async () => {
     if (app && app.backupService) {
       const size = await app.backupService.estimateDataSize();
