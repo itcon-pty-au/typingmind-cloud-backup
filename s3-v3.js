@@ -3197,7 +3197,7 @@ if (window.typingMindCloudSync) {
           backups.forEach((backup) => {
             const option = document.createElement("option");
             option.value = backup.key;
-            const size = this.formatFileSize(backup.size || 0);
+            const size = this.backupService.formatFileSize(backup.size || 0);
             const date = new Date(backup.modified).toLocaleString();
             const formatLabel =
               backup.format === "chunked" ? ` [${backup.chunks} chunks]` : "";
@@ -3458,13 +3458,6 @@ if (window.typingMindCloudSync) {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-    }
-    formatFileSize(bytes) {
-      if (bytes === 0) return "0 B";
-      const k = 1024;
-      const sizes = ["B", "KB", "MB", "GB"];
-      const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
     }
     async loadSyncDiagnostics(modal) {
       const diagnosticsBody = modal.querySelector("#sync-diagnostics-body");
