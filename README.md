@@ -196,6 +196,12 @@ For large datasets (>50MB), the system automatically:
 
 ### 🚀 Migration to V3
 
+Before starting the migration, ensure you take the native typingmind export of your app data by going to
+
+Settings > App Data & Storage > Export
+
+Ensure all check boxes are selected and Download the file. Ensure this is safely stored in case you need to reload the data.
+
 V3 is a major rewrite with a new architecture and is **not backward compatible** with backups created by older versions (V1 or V2). However, migrating your live data is designed to be a seamless, automatic process.
 
 #### What to Expect During Migration
