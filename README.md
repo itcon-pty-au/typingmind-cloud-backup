@@ -330,7 +330,7 @@ If you are using typingmind cloud, use the below
 ]
 ```
 
-Update "https://\*.hostname.com" with your specific hostname in case you are self hosting Typingmind (e.g. https://chat.yourhostname.com). If you are using Typingmind cloud, hostname should be https://www.typingmind.com. This restricts executing S3 commands from only the specified hostname providing better security.
+Update "https://\*.hostname.com" with your specific hostname in case you are self hosting Typingmind (e.g. `https://chat.yourhostname.com`). If you are using Typingmind cloud, hostname should be `https://www.typingmind.com`. This restricts executing S3 commands from only the specified hostname providing better security.
 
 ### S3 compatible storage services setup
 
@@ -369,7 +369,7 @@ For troubleshooting, enable detailed logging:
 
 - Identify which device has the complete/correct dataset
 - On that device only:
-  Right click > Inspect > Application > Local Storage > Remove 'tcs_local-metadata' and 'tcs_last-cloud-sync'
+  Right click > Inspect > Application > Local Storage > Remove `tcs_local-metadata` and `tcs_last-cloud-sync`
   Reload Page
 - This forces re-upload of all items to cloud
 - Other devices will then download missing items
@@ -377,7 +377,7 @@ For troubleshooting, enable detailed logging:
 **Solution 2: Reset metadata on device with MISSING data**
 
 - On device with fewer items:
-  Right click > Inspect > Application > Local Storage > Remove 'tcs_local-metadata' and 'tcs_last-cloud-sync'
+  Right click > Inspect > Application > Local Storage > Remove `tcs_local-metadata` and `tcs_last-cloud-sync`
   Reload Page
 - This forces download of missing items from cloud
 
@@ -385,7 +385,7 @@ For troubleshooting, enable detailed logging:
 
 - Create backup/snapshot first on device with most data
 - On ALL devices:
-  Right click > Inspect > Application > Local Storage > Remove 'tcs_local-metadata', 'tcs_last-daily-backup' and 'tcs_last-cloud-sync'
+  Right click > Inspect > Application > Local Storage > Remove `tcs_local-metadata`, `tcs_last-daily-backup` and `tcs_last-cloud-sync`
   Reload Page
 
 **Prevention**:
