@@ -369,34 +369,24 @@ For troubleshooting, enable detailed logging:
 
 - Identify which device has the complete/correct dataset
 - On that device only:
-  ```javascript
-  localStorage.removeItem("tcs_local-metadata");
-  localStorage.removeItem("tcs_last-cloud-sync");
-  // Reload page
-  ```
+  Right click > Inspect > Application > Local Storage > Remove 'tcs_local-metadata' and 'tcs_last-cloud-sync'
+  Reload Page
 - This forces re-upload of all items to cloud
 - Other devices will then download missing items
 
 **Solution 2: Reset metadata on device with MISSING data**
 
 - On device with fewer items:
-  ```javascript
-  localStorage.removeItem("tcs_local-metadata");
-  localStorage.removeItem("tcs_last-cloud-sync");
-  // Reload page
-  ```
+  Right click > Inspect > Application > Local Storage > Remove 'tcs_local-metadata' and 'tcs_last-cloud-sync'
+  Reload Page
 - This forces download of missing items from cloud
 
 **Solution 3: Complete sync reset** (if Solutions 1-2 don't work)
 
 - Create backup/snapshot first on device with most data
 - On ALL devices:
-  ```javascript
-  localStorage.removeItem("tcs_local-metadata");
-  localStorage.removeItem("tcs_last-cloud-sync");
-  localStorage.removeItem("tcs_last-daily-backup");
-  // Reload all devices
-  ```
+  Right click > Inspect > Application > Local Storage > Remove 'tcs_local-metadata', 'tcs_last-daily-backup' and 'tcs_last-cloud-sync'
+  Reload Page
 
 **Prevention**:
 
