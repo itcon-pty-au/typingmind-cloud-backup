@@ -416,7 +416,7 @@ The extension encrypts the AWS credentials while its stored in the browser datab
 
 ## About me
 
-I am a passionate developer dedicated to creating useful tools that can benefit the community. My goal is to distribute all of my projects as open source, enabling others to learn, contribute, and innovate together. If you appreciate my work and want to support my efforts, feel free to [buy me a coffee](https://buymeacoffee.com/itcon) :heart:!
+I am a passionate developer dedicated to creating useful tools that can benefit the community. My goal is to distribute all of my projects as open source, enabling others to learn, contribute, and innovate together. If you appreciate my work and want to support my efforts, [consider buying me a coffee.](https://buymeacoffee.com/itcon) :heart:!
 
 ## License
 
