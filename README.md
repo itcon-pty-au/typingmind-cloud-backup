@@ -401,15 +401,6 @@ For troubleshooting, enable detailed logging:
 
 > The extension will work reliably only when one device is active at a time. So if you are facing issues, ensure the app is active only on one device at a time.
 
-### New Chats Disappearing
-
-> - **Have you checked the setting**: "Alert if cloud backup is smaller during import"?
->   **Implication of not checking this**: Assuming you have the extension in "Sync" mode.
->   - You create a new chat.
->   - You immediately swap to a different tab/window (Backup to S3 did not happen yet).
->   - You come back to the app - At this point, data has been freshly imported from S3 and your new chat is now disappeared.
-> - **Resolution**: Make the extension work in **Backup mode** (Not an option if you are using the app on multiple devices), then check the setting "Alert if cloud backup is smaller during import". This will prompt the user for confirmation if the cloud backup size is less than the local backup size. In the above scenario, the prompt will appear. You should click **Cancel** as you are certain that the local data is newer, and it will skip the cloud import.
-
 ## Warning
 
 The extension encrypts the AWS credentials while its stored in the browser database. However, since the encryption key is still stored in plain text, sophisticated hackers who can get access to your browser data and could theoretically get access to your AWS credentials. So, be sure to provide minimum permissions to the AWS credentials. For Amazon S3, I have provided access policy above. However, for other S3 compatible providers, its up to you to setup proper access policies.
