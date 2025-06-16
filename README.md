@@ -221,6 +221,14 @@ When you load the V3 extension for the first time, it will automatically:
 
 There is no manual migration required—the extension handles everything automatically on the first load. Just install, configure, and let it work.
 
+#### Migration Steps
+- **Remove V1/V2**: Go to Settings > Extension and remove the existing version.
+- **Backup**: Go To Settings > App Data & Storage > Export (Ensure all checkboxes are selected, save the exported file)
+- **Load app using logging parameter**: Add the following URL parameter `?log` and reload the app. e.g. https://typingmind.com?log or https://chat.customdomain.com?log
+- **Install**: Install V3 extension `https://itcon-pty-au.github.io/typingmind-cloud-backup/s3-v3.js`. Since all S3 parameters are already present, the sync should immediately start
+- **Check logs**: Look at the console logs to see if you see any errors.
+- **Sync Diagnostics**: Check the new Sync diagnostics at the top of the Sync Config popup and you should see the latest sync status and if there are any issues.
+
 ### Error Handling & Recovery
 
 - **Operation Queue**: Failed operations are retried automatically
