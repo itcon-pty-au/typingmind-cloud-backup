@@ -228,16 +228,6 @@ There is no manual migration required—the extension handles everything automat
 - **Graceful Degradation**: Continues working even with partial failures
 - **Comprehensive Logging**: Detailed logs help diagnose issues
 
-## 🐛 Troubleshooting
-
-### Enable Logging
-
-For troubleshooting, enable detailed logging:
-
-1. **Startup Logging**: Add `?log=true` to your URL
-2. **Runtime Logging**: Toggle "Console Logging" in the config modal
-3. Check browser console for detailed sync information
-
 ## ☁️ Cloud Storage Setup
 
 ### AWS Config
@@ -340,6 +330,14 @@ Cloudflare R2 provides S3 compatible API with a generous 10GB free storage per m
 iDrive E2 provides S3 compatible API with a generous 10GB free storage per month. Refer [How to setup iDrive E2 and use with this extension](https://github.com/itcon-pty-au/typingmind-cloud-backup/blob/main/HowTo/iDrive_E2_HowTo.docx)
 
 ## 🐛 Troubleshooting
+
+### Enable Logging
+
+For troubleshooting, enable detailed logging:
+
+1. **Startup Logging**: Add `?log=true` to your URL
+2. **Runtime Logging**: Toggle "Console Logging" in the config modal
+3. Check browser console for detailed sync information
 
 ### Sync Issues Between Devices
 
