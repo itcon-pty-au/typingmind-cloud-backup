@@ -3797,7 +3797,15 @@ if (window.typingMindCloudSync) {
             const total = backup.totalItems ?? "N/A";
             const copied = backup.copiedItems ?? total;
             const suffix = `(${copied}/${total})`;
-            option.text = `${backup.displayName || backup.name} ${suffix}`;
+            let prefix = "";
+            if (backup.type === "snapshot") {
+              prefix = "📸 ";
+            } else if (backup.type === "daily") {
+              prefix = "🗓️ ";
+            }
+            option.text = `${prefix}${
+              backup.displayName || backup.name
+            } ${suffix}`;
             backupList.appendChild(option);
           });
         }
