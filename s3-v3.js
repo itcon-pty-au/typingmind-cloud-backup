@@ -7,6 +7,7 @@ Features:
 - Automatic daily backups
 - Backup management in Extension config UI
 - Detailed logging in console
+- Memory-efficient data processing
 */
 if (window.typingMindCloudSync) {
   console.log("TypingMind Cloud Sync already loaded");
