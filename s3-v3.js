@@ -2801,20 +2801,12 @@ if (window.typingMindCloudSync) {
                   manifest.backupFolder ||
                   obj.Key.replace("/backup-manifest.json", "");
                 const backupName = backupFolder.replace("backups/", "");
-                const backupFiles = objects.filter((o) =>
-                  o.Key.startsWith(backupFolder + "/")
-                );
-                const totalSize = backupFiles.reduce(
-                  (sum, file) => sum + (file.Size || 0),
-                  0
-                );
                 const backupType = this.getBackupType(backupName);
 
                 backups.push({
                   key: obj.Key,
                   name: backupName,
                   displayName: backupName,
-                  size: totalSize,
                   modified: obj.LastModified,
                   format: "server-side",
                   totalItems: manifest.totalItems,
@@ -3799,12 +3791,7 @@ if (window.typingMindCloudSync) {
           backups.forEach((backup) => {
             const option = document.createElement("option");
             option.value = backup.key;
-            const size = this.backupService.formatFileSize(backup.size || 0);
-            const formatLabel =
-              backup.format === "chunked" ? ` [${backup.chunks} chunks]` : "";
-            option.text = `${
-              backup.displayName || backup.name
-            } - ${size}${formatLabel}`;
+            option.text = `${backup.displayName || backup.name}`;
             backupList.appendChild(option);
           });
         }
