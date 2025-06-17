@@ -1870,11 +1870,12 @@ if (window.typingMindCloudSync) {
       const cloudMetadataEmpty =
         Object.keys(cloudMetadata.items || {}).length === 0;
       if (localMetadataEmpty && cloudMetadataEmpty) {
-        const allItems = await this.dataService.getAllItems();
-        if (allItems.length > 0) {
+        const { totalSize, itemCount } =
+          await this.dataService.estimateDataSize();
+        if (itemCount > 0) {
           this.logger.log(
             "info",
-            `🚀 Fresh setup detected: ${allItems.length} local items found with empty metadata. Triggering initial sync.`
+            `🚀 Fresh setup detected: ${itemCount} local items found with empty metadata. Triggering initial sync.`
           );
           await this.createInitialSync();
         } else {
@@ -2198,11 +2199,24 @@ if (window.typingMindCloudSync) {
     }
     async updateSyncDiagnosticsCache() {
       try {
-        const localItems = await this.dataService.getAllItems();
-        const localCount = localItems.length;
-        const chatItems = localItems.filter((item) =>
-          item.id.startsWith("CHAT_")
-        ).length;
+        const { totalSize, itemCount } =
+          await this.dataService.estimateDataSize();
+        const localCount = itemCount;
+        let chatItems = 0;
+        if (totalSize > this.dataService.memoryThreshold) {
+          for await (const batch of this.dataService.streamAllItemsInternal()) {
+            for (const item of batch) {
+              if (item.id.startsWith("CHAT_")) {
+                chatItems++;
+              }
+            }
+          }
+        } else {
+          const allItems = await this.dataService.getAllItems();
+          chatItems = allItems.filter((item) =>
+            item.id.startsWith("CHAT_")
+          ).length;
+        }
         const metadataCount = Object.keys(this.metadata.items || {}).length;
         const metadataDeleted = Object.values(this.metadata.items || {}).filter(
           (item) => item.deleted
@@ -2360,7 +2374,16 @@ if (window.typingMindCloudSync) {
         /[^a-zA-Z0-9]/g,
         "-"
       )}-${timestamp}.zip`;
-      const allItems = await this.dataService.getAllItems();
+      const dataResults = await this.dataService.getAllItemsEfficient();
+      const allItems =
+        Array.isArray(dataResults) && Array.isArray(dataResults[0])
+          ? dataResults[0]
+          : [];
+      if (allItems.length === 0) {
+        for await (const batch of dataResults) {
+          allItems.push(...batch);
+        }
+      }
       const indexedDBData = {};
       allItems
         .filter((item) => item.type === "idb")
@@ -2548,7 +2571,16 @@ if (window.typingMindCloudSync) {
         today.getMonth() + 1
       ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
       const filename = `typingmind-backup-${dateString}.zip`;
-      const allItems = await this.dataService.getAllItems();
+      const dataResults = await this.dataService.getAllItemsEfficient();
+      const allItems =
+        Array.isArray(dataResults) && Array.isArray(dataResults[0])
+          ? dataResults[0]
+          : [];
+      if (allItems.length === 0) {
+        for await (const batch of dataResults) {
+          allItems.push(...batch);
+        }
+      }
       const indexedDBData = {};
       allItems
         .filter((item) => item.type === "idb")
