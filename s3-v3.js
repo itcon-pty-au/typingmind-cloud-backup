@@ -185,48 +185,91 @@ if (window.typingMindCloudSync) {
       }
       return this.dbPromise;
     }
-    async processAllItems(itemProcessor) {
+    async getAllItems() {
+      const items = new Map();
       const db = await this.getDB();
       const transaction = db.transaction(["keyval"], "readonly");
       const store = transaction.objectStore("keyval");
-      await new Promise((resolve, reject) => {
+      let totalIDB = 0;
+      let includedIDB = 0;
+      let excludedIDB = 0;
+      await new Promise((resolve) => {
         const request = store.openCursor();
-        request.onerror = (event) => reject(request.error);
-        request.onsuccess = async (event) => {
+        request.onsuccess = (event) => {
           const cursor = event.target.result;
           if (cursor) {
-            try {
-              const key = cursor.key;
-              const value = cursor.value;
-              if (
-                typeof key === "string" &&
-                value !== undefined &&
-                !this.config.shouldExclude(key)
-              ) {
-                await itemProcessor({ id: key, data: value, type: "idb" });
-              }
-              cursor.continue();
-            } catch (e) {
-              reject(e);
+            const key = cursor.key;
+            const value = cursor.value;
+            totalIDB++;
+            if (
+              typeof key === "string" &&
+              value !== undefined &&
+              !this.config.shouldExclude(key)
+            ) {
+              items.set(key, {
+                id: key,
+                data: value,
+                type: "idb",
+              });
+              includedIDB++;
+            } else {
+              excludedIDB++;
             }
+            cursor.continue();
           } else {
             resolve();
           }
         };
+        request.onerror = () => resolve();
       });
+      const urlParams = new URLSearchParams(window.location.search);
+      const debugEnabled =
+        urlParams.get("log") === "true" || urlParams.has("log");
+      let totalLS = 0;
+      let excludedLS = 0;
+      let includedLS = 0;
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
+        totalLS++;
         if (key && !this.config.shouldExclude(key)) {
           const value = localStorage.getItem(key);
           if (value !== null) {
-            await itemProcessor({
-              id: key,
-              data: { key, value },
-              type: "ls",
-            });
+            items.set(key, { id: key, data: { key, value }, type: "ls" });
+            includedLS++;
           }
+        } else {
+          excludedLS++;
         }
       }
+      if (debugEnabled) {
+        console.log(
+          `📊 IndexedDB Stats: Total=${totalIDB}, Included=${includedIDB}, Excluded=${excludedIDB}`
+        );
+        console.log(
+          `📊 localStorage Stats: Total=${totalLS}, Included=${includedLS}, Excluded=${excludedLS}`
+        );
+        console.log(`📊 Total items to sync: ${items.size} (IDB + LS)`);
+      }
+      const chatItems = Array.from(items.keys()).filter((id) =>
+        id.startsWith("CHAT_")
+      );
+      const otherItems = Array.from(items.keys()).filter(
+        (id) => !id.startsWith("CHAT_")
+      );
+      this.logger.log("success", "📋 Retrieved all items for deletion check", {
+        totalItems: items.size,
+        idbStats: {
+          total: totalIDB,
+          included: includedIDB,
+          excluded: excludedIDB,
+        },
+        lsStats: { total: totalLS, included: includedLS, excluded: excludedLS },
+        chatCount: chatItems.length,
+        otherCount: otherItems.length,
+        sampleChatItems: chatItems.slice(0, 5),
+        sampleOtherItems: otherItems.slice(0, 5),
+      });
+      return Array.from(items.values());
     }
     async getAllItemKeys() {
       const itemKeys = new Set();
@@ -256,61 +299,6 @@ if (window.typingMindCloudSync) {
         }
       }
       return itemKeys;
-    }
-    async getItemCounts() {
-      let totalCount = 0;
-      let chatCount = 0;
-      const db = await this.getDB();
-      const transaction = db.transaction(["keyval"], "readonly");
-      const store = transaction.objectStore("keyval");
-      await new Promise((resolve) => {
-        const request = store.openKeyCursor();
-        request.onsuccess = (event) => {
-          const cursor = event.target.result;
-          if (cursor) {
-            const key = cursor.key;
-            if (typeof key === "string" && !this.config.shouldExclude(key)) {
-              totalCount++;
-              if (key.startsWith("CHAT_")) {
-                chatCount++;
-              }
-            }
-            cursor.continue();
-          } else {
-            resolve();
-          }
-        };
-        request.onerror = () => resolve();
-      });
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && !this.config.shouldExclude(key)) {
-          totalCount++;
-          if (key.startsWith("CHAT_")) {
-            chatCount++;
-          }
-        }
-      }
-      return { totalCount, chatCount };
-    }
-    async initializeMetadataFromItems() {
-      let itemCount = 0;
-      await this.processAllItems((item) => {
-        if (item.id && item.data) {
-          const key = item.id;
-          const orchestrator = window.cloudSyncApp?.syncOrchestrator;
-          if (orchestrator) {
-            orchestrator.metadata.items[key] = {
-              synced: 0,
-              type: item.type,
-              size: orchestrator.getItemSize(item.data),
-              lastModified: 0,
-            };
-            itemCount++;
-          }
-        }
-      });
-      return itemCount;
     }
     async getItem(itemId, type) {
       if (type === "idb") {
@@ -1454,11 +1442,11 @@ if (window.typingMindCloudSync) {
       const cloudMetadataEmpty =
         Object.keys(cloudMetadata.items || {}).length === 0;
       if (localMetadataEmpty && cloudMetadataEmpty) {
-        const { totalCount } = await this.dataService.getItemCounts();
-        if (totalCount > 0) {
+        const allItems = await this.dataService.getAllItems();
+        if (allItems.length > 0) {
           this.logger.log(
             "info",
-            `🚀 Fresh setup detected: ${totalCount} local items found with empty metadata. Triggering initial sync.`
+            `🚀 Fresh setup detected: ${allItems.length} local items found with empty metadata. Triggering initial sync.`
           );
           await this.createInitialSync();
         } else {
@@ -1496,9 +1484,22 @@ if (window.typingMindCloudSync) {
         "start",
         "🔧 Initializing local metadata from database contents"
       );
-      const itemCount = await this.dataService.initializeMetadataFromItems();
+      const allItems = await this.dataService.getAllItems();
       const tombstones = this.dataService.getAllTombstones();
+      let itemCount = 0;
       let tombstoneCount = 0;
+      for (const item of allItems) {
+        if (item.id && item.data) {
+          const key = item.id;
+          this.metadata.items[key] = {
+            synced: 0,
+            type: item.type,
+            size: this.getItemSize(item.data),
+            lastModified: 0,
+          };
+          itemCount++;
+        }
+      }
       for (const [itemId, tombstone] of tombstones.entries()) {
         if (!this.metadata.items[itemId]) {
           this.metadata.items[itemId] = {
@@ -1812,8 +1813,9 @@ if (window.typingMindCloudSync) {
     }
     async estimateDataSize() {
       try {
+        const items = await this.dataService.getAllItems();
         let totalSize = 0;
-        await this.dataService.processAllItems((item) => {
+        items.forEach((item) => {
           try {
             const itemStr = JSON.stringify(item.data);
             totalSize += itemStr.length * 2;
@@ -1853,20 +1855,28 @@ if (window.typingMindCloudSync) {
         /[^a-zA-Z0-9]/g,
         "-"
       )}-${timestamp}.zip`;
+      const allItems = await this.dataService.getAllItems();
+      const indexedDBData = {};
+      allItems
+        .filter((item) => item.type === "idb")
+        .forEach((item) => {
+          if (item.data) {
+            indexedDBData[item.id] = item.data;
+          }
+        });
+      const localStorageData = {};
+      allItems
+        .filter((item) => item.type === "ls")
+        .forEach((item) => {
+          localStorageData[item.data.key] = item.data.value;
+        });
       const snapshot = {
-        localStorage: {},
-        indexedDB: {},
+        localStorage: localStorageData,
+        indexedDB: indexedDBData,
         created: Date.now(),
         name,
         format: "simple",
       };
-      await this.dataService.processAllItems((item) => {
-        if (item.type === "idb" && item.data) {
-          snapshot.indexedDB[item.id] = item.data;
-        } else if (item.type === "ls") {
-          snapshot.localStorage[item.data.key] = item.data.value;
-        }
-      });
       await this.createCompressedBackup(filename, snapshot);
       this.logger.log("success", `Simple snapshot created: ${filename}`);
       return true;
@@ -1887,74 +1897,59 @@ if (window.typingMindCloudSync) {
         "-"
       )}-${timestamp}`;
       try {
-        const chunkFileNames = [];
-        let chunkIndex = 0;
-        const processAndUploadChunk = async (chunkItems) => {
-          if (chunkItems.length === 0) return;
-          const chunkFilename = `${baseFilename}-chunk-${chunkIndex
-            .toString()
-            .padStart(3, "0")}.zip`;
-          chunkFileNames.push({
-            index: chunkIndex,
-            filename: chunkFilename,
-            itemCount: chunkItems.length,
-          });
-          const chunkData = {
-            chunkIndex: chunkIndex,
-            totalChunks: -1,
-            items: chunkItems,
-            created: Date.now(),
-          };
-          this.logger.log(
-            "info",
-            `Uploading chunk ${chunkIndex + 1} (${chunkItems.length} items)`
-          );
-          await this.createCompressedBackup(chunkFilename, chunkData);
-          chunkIndex++;
-        };
-        let currentChunk = [];
-        let currentChunkSize = 0;
-        await this.dataService.processAllItems(async (item) => {
-          try {
-            const itemStr = JSON.stringify(item);
-            const itemSize = itemStr.length * 2;
-            if (
-              currentChunkSize + itemSize > this.chunkSizeLimit &&
-              currentChunk.length > 0
-            ) {
-              await processAndUploadChunk([...currentChunk]);
-              currentChunk = [];
-              currentChunkSize = 0;
-            }
-            currentChunk.push(item);
-            currentChunkSize += itemSize;
-          } catch (error) {
-            this.logger.log(
-              "warning",
-              `Skipping problematic item ${item.id}: ${error.message}`
-            );
-          }
-        });
-        if (currentChunk.length > 0) {
-          await processAndUploadChunk(currentChunk);
-        }
-        this.logger.log("info", `Created ${chunkIndex} chunks for upload`);
+        const allItems = await this.dataService.getAllItems();
+        const chunks = await this.createDataChunks(allItems);
+        this.logger.log("info", `Created ${chunks.length} chunks for upload`);
         const metadata = {
           format: "chunked",
           created: Date.now(),
           name,
-          totalChunks: chunkIndex,
+          totalChunks: chunks.length,
           estimatedSize,
-          chunkList: chunkFileNames,
+          chunkList: chunks.map((chunk, index) => ({
+            index,
+            filename: `${baseFilename}-chunk-${index
+              .toString()
+              .padStart(3, "0")}.zip`,
+            itemCount: chunk.length,
+          })),
         };
         await this.s3Service.upload(
           `${baseFilename}-metadata.json`,
           metadata,
           true
         );
+        for (let i = 0; i < chunks.length; i++) {
+          const chunkFilename = `${baseFilename}-chunk-${i
+            .toString()
+            .padStart(3, "0")}.zip`;
+          const chunkData = {
+            chunkIndex: i,
+            totalChunks: chunks.length,
+            items: chunks[i],
+            created: Date.now(),
+          };
+          this.logger.log(
+            "info",
+            `Uploading chunk ${i + 1}/${chunks.length} (${
+              chunks[i].length
+            } items)`
+          );
+          try {
+            await this.createCompressedBackup(chunkFilename, chunkData);
+          } catch (error) {
+            this.logger.log(
+              "error",
+              `Failed to upload chunk ${i + 1}: ${error.message}`
+            );
+            throw new Error(
+              `Chunked snapshot failed at chunk ${i + 1}/${chunks.length}`
+            );
+          }
+        }
         this.logger.log(
           "success",
-          `Chunked snapshot created: ${baseFilename} (${chunkIndex} chunks)`
+          `Chunked snapshot created: ${baseFilename} (${chunks.length} chunks)`
         );
         return true;
       } catch (error) {
@@ -1965,6 +1960,36 @@ if (window.typingMindCloudSync) {
         );
         throw error;
       }
+    }
+    async createDataChunks(allItems) {
+      const chunks = [];
+      let currentChunk = [];
+      let currentChunkSize = 0;
+      for (const item of allItems) {
+        try {
+          const itemStr = JSON.stringify(item);
+          const itemSize = itemStr.length * 2;
+          if (
+            currentChunkSize + itemSize > this.chunkSizeLimit &&
+            currentChunk.length > 0
+          ) {
+            chunks.push([...currentChunk]);
+            currentChunk = [];
+            currentChunkSize = 0;
+          }
+          currentChunk.push(item);
+          currentChunkSize += itemSize;
+        } catch (error) {
+          this.logger.log(
+            "warning",
+            `Skipping problematic item ${item.id}: ${error.message}`
+          );
+        }
+      }
+      if (currentChunk.length > 0) {
+        chunks.push(currentChunk);
+      }
+      return chunks;
     }
     async checkAndPerformDailyBackup() {
       const lastBackupStr = localStorage.getItem("tcs_last-daily-backup");
@@ -1998,20 +2023,28 @@ if (window.typingMindCloudSync) {
         today.getMonth() + 1
       ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
       const filename = `typingmind-backup-${dateString}.zip`;
+      const allItems = await this.dataService.getAllItems();
+      const indexedDBData = {};
+      allItems
+        .filter((item) => item.type === "idb")
+        .forEach((item) => {
+          if (item.data) {
+            indexedDBData[item.id] = item.data;
+          }
+        });
+      const localStorageData = {};
+      allItems
+        .filter((item) => item.type === "ls")
+        .forEach((item) => {
+          localStorageData[item.data.key] = item.data.value;
+        });
       const backup = {
-        localStorage: {},
-        indexedDB: {},
+        localStorage: localStorageData,
+        indexedDB: indexedDBData,
         created: Date.now(),
         name: "daily-auto",
         format: "simple",
       };
-      await this.dataService.processAllItems((item) => {
-        if (item.type === "idb" && item.data) {
-          backup.indexedDB[item.id] = item.data;
-        } else if (item.type === "ls") {
-          backup.localStorage[item.data.key] = item.data.value;
-        }
-      });
       await this.createCompressedBackup(filename, backup);
       this.logger.log("success", `Simple daily backup completed: ${filename}`);
       await this.cleanupOldBackups();
@@ -2029,78 +2062,51 @@ if (window.typingMindCloudSync) {
       ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
       const baseFilename = `typingmind-backup-${dateString}`;
       try {
-        const chunkFileNames = [];
-        let chunkIndex = 0;
-        const processAndUploadChunk = async (chunkItems) => {
-          if (chunkItems.length === 0) return;
-          const chunkFilename = `${baseFilename}-chunk-${chunkIndex
-            .toString()
-            .padStart(3, "0")}.zip`;
-          chunkFileNames.push({
-            index: chunkIndex,
-            filename: chunkFilename,
-            itemCount: chunkItems.length,
-          });
-          const chunkData = {
-            chunkIndex: chunkIndex,
-            totalChunks: -1,
-            items: chunkItems,
-            created: Date.now(),
-          };
-          this.logger.log(
-            "info",
-            `Uploading daily backup chunk ${chunkIndex + 1}`
-          );
-          await this.createCompressedBackup(chunkFilename, chunkData);
-          chunkIndex++;
-        };
-        let currentChunk = [];
-        let currentChunkSize = 0;
-        await this.dataService.processAllItems(async (item) => {
-          try {
-            const itemStr = JSON.stringify(item);
-            const itemSize = itemStr.length * 2;
-            if (
-              currentChunkSize + itemSize > this.chunkSizeLimit &&
-              currentChunk.length > 0
-            ) {
-              await processAndUploadChunk([...currentChunk]);
-              currentChunk = [];
-              currentChunkSize = 0;
-            }
-            currentChunk.push(item);
-            currentChunkSize += itemSize;
-          } catch (error) {
-            this.logger.log(
-              "warning",
-              `Skipping problematic item ${item.id}: ${error.message}`
-            );
-          }
-        });
-        if (currentChunk.length > 0) {
-          await processAndUploadChunk(currentChunk);
-        }
+        const allItems = await this.dataService.getAllItems();
+        const chunks = await this.createDataChunks(allItems);
         this.logger.log(
           "info",
-          `Created ${chunkIndex} chunks for daily backup`
+          `Created ${chunks.length} chunks for daily backup`
         );
         const metadata = {
           format: "chunked",
           created: Date.now(),
           name: "daily-auto",
           type: "daily-backup",
-          totalChunks: chunkIndex,
+          totalChunks: chunks.length,
           estimatedSize,
-          chunkList: chunkFileNames,
+          chunkList: chunks.map((chunk, index) => ({
+            index,
+            filename: `${baseFilename}-chunk-${index
+              .toString()
+              .padStart(3, "0")}.zip`,
+            itemCount: chunk.length,
+          })),
         };
         await this.s3Service.upload(
           `${baseFilename}-metadata.json`,
           metadata,
           true
         );
+        for (let i = 0; i < chunks.length; i++) {
+          const chunkFilename = `${baseFilename}-chunk-${i
+            .toString()
+            .padStart(3, "0")}.zip`;
+          const chunkData = {
+            chunkIndex: i,
+            totalChunks: chunks.length,
+            items: chunks[i],
+            created: Date.now(),
+          };
+          this.logger.log(
+            "info",
+            `Uploading daily backup chunk ${i + 1}/${chunks.length}`
+          );
+          await this.createCompressedBackup(chunkFilename, chunkData);
+        }
         this.logger.log(
           "success",
-          `Chunked daily backup completed: ${baseFilename} (${chunkIndex} chunks)`
+          `Chunked daily backup completed: ${baseFilename} (${chunks.length} chunks)`
         );
         await this.cleanupOldBackups();
       } catch (error) {
@@ -3479,8 +3485,11 @@ if (window.typingMindCloudSync) {
         overallStatusEl.textContent = "🔄";
       }
       try {
-        const { totalCount: localCount, chatCount: chatItems } =
-          await this.dataService.getItemCounts();
+        const localItems = await this.dataService.getAllItems();
+        const localCount = localItems.length;
+        const chatItems = localItems.filter((item) =>
+          item.id.startsWith("CHAT_")
+        ).length;
         const metadataCount = Object.keys(
           this.syncOrchestrator.metadata.items || {}
         ).length;
