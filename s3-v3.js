@@ -2207,6 +2207,86 @@ if (window.typingMindCloudSync) {
       const { metadata } = await this.getCloudMetadataWithETag();
       return metadata;
     }
+    async getSyncDiagnostics() {
+      try {
+        const { totalSize, itemCount } =
+          await this.dataService.estimateDataSize();
+        const localCount = itemCount;
+        let chatItems = 0;
+        if (totalSize > this.dataService.memoryThreshold) {
+          for await (const batch of this.dataService.streamAllItemsInternal()) {
+            for (const item of batch) {
+              if (item.id.startsWith("CHAT_")) {
+                chatItems++;
+              }
+            }
+          }
+        } else {
+          const allItems = await this.dataService.getAllItems();
+          chatItems = allItems.filter((item) =>
+            item.id.startsWith("CHAT_")
+          ).length;
+        }
+
+        const metadataCount = Object.keys(this.metadata.items || {}).length;
+        const metadataDeleted = Object.values(this.metadata.items || {}).filter(
+          (item) => item.deleted
+        ).length;
+        const metadataActive = metadataCount - metadataDeleted;
+
+        const cloudMetadata = await this.getCloudMetadata();
+        const cloudCount = Object.keys(cloudMetadata.items || {}).length;
+        const cloudDeleted = Object.values(cloudMetadata.items || {}).filter(
+          (item) => item.deleted
+        ).length;
+        const cloudActive = cloudCount - cloudDeleted;
+        const cloudChatItems = Object.keys(cloudMetadata.items || {}).filter(
+          (id) => id.startsWith("CHAT_") && !cloudMetadata.items[id].deleted
+        ).length;
+
+        const hasIssues =
+          localCount !== metadataActive ||
+          metadataActive !== cloudActive ||
+          chatItems !== cloudChatItems;
+
+        const overallStatus = hasIssues ? "⚠️" : "✅";
+        const lastUpdated = new Date().toLocaleTimeString();
+        const summary = `Updated: ${lastUpdated}`;
+
+        const details = [
+          { type: "📱 Local Items", count: localCount },
+          { type: "📋 Local Metadata", count: metadataActive },
+          { type: "☁️ Cloud Metadata", count: cloudActive },
+          { type: "💬 Chat Sync", count: `${chatItems} ⟷ ${cloudChatItems}` },
+        ];
+
+        const diagnosticsData = {
+          timestamp: Date.now(),
+          localItems: localCount,
+          localMetadata: metadataActive,
+          cloudMetadata: cloudActive,
+          chatSyncLocal: chatItems,
+          chatSyncCloud: cloudChatItems,
+        };
+        localStorage.setItem(
+          "tcs_sync_diagnostics",
+          JSON.stringify(diagnosticsData)
+        );
+
+        return { overallStatus, summary, details };
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "Failed to get sync diagnostics",
+          error.message
+        );
+        return {
+          overallStatus: "❌",
+          summary: "Error fetching diagnostics",
+          details: [],
+        };
+      }
+    }
     async updateSyncDiagnosticsCache() {
       try {
         const { totalSize, itemCount } =
@@ -2266,6 +2346,138 @@ if (window.typingMindCloudSync) {
           error.message
         );
       }
+    }
+    async loadSyncDiagnostics(modal) {
+      const diagnosticsBody = modal.querySelector("#sync-diagnostics-body");
+      if (!diagnosticsBody) return;
+      const overallStatusEl = modal.querySelector("#sync-overall-status");
+      const summaryEl = modal.querySelector("#sync-diagnostics-summary");
+      const setContent = (html) => {
+        diagnosticsBody.innerHTML = html;
+      };
+
+      if (!this.config.isConfigured()) {
+        setContent(
+          '<tr><td colspan="2" class="text-center py-2 text-zinc-500">AWS Not Configured</td></tr>'
+        );
+        if (overallStatusEl) overallStatusEl.textContent = "⚙️";
+        if (summaryEl) summaryEl.textContent = "Setup required";
+        return;
+      }
+
+      try {
+        const diagnosticsData = localStorage.getItem("tcs_sync_diagnostics");
+        if (!diagnosticsData) {
+          setContent(
+            '<tr><td colspan="2" class="text-center py-2 text-zinc-500">No diagnostics data available. Run a sync.</td></tr>'
+          );
+          if (overallStatusEl) overallStatusEl.textContent = "⚠️";
+          if (summaryEl) summaryEl.textContent = "Waiting for first sync";
+          return;
+        }
+
+        const data = JSON.parse(diagnosticsData);
+        const rows = [
+          {
+            type: "📱 Local Items",
+            count: data.localItems || 0,
+          },
+          {
+            type: "📋 Local Metadata",
+            count: data.localMetadata || 0,
+          },
+          {
+            type: "☁️ Cloud Metadata",
+            count: data.cloudMetadata || 0,
+          },
+          {
+            type: "💬 Chat Sync",
+            count: `${data.chatSyncLocal || 0} ⟷ ${data.chatSyncCloud || 0}`,
+          },
+        ];
+
+        const tableHTML = rows
+          .map(
+            (row) => `
+          <tr class="border-b border-zinc-700 hover:bg-zinc-700/30">
+            <td class="py-1 px-2">${row.type}</td>
+            <td class="text-right py-1 px-2">${row.count}</td>
+          </tr>
+        `
+          )
+          .join("");
+
+        const hasIssues =
+          data.localItems !== data.localMetadata ||
+          data.localMetadata !== data.cloudMetadata ||
+          data.chatSyncLocal !== data.chatSyncCloud;
+
+        const overallStatus = hasIssues ? "⚠️" : "✅";
+        const lastUpdated = new Date(data.timestamp || 0).toLocaleTimeString();
+        const summaryText = `Updated: ${lastUpdated}`;
+
+        if (overallStatusEl) overallStatusEl.textContent = overallStatus;
+        if (summaryEl) summaryEl.textContent = summaryText;
+        setContent(tableHTML);
+      } catch (error) {
+        console.error("Failed to load sync diagnostics:", error);
+        setContent(
+          '<tr><td colspan="2" class="text-center py-2 text-red-400">Error loading diagnostics from storage</td></tr>'
+        );
+        if (overallStatusEl) overallStatusEl.textContent = "❌";
+        if (summaryEl) summaryEl.textContent = "Error";
+      }
+    }
+    setupDiagnosticsToggle(modal) {
+      const header = modal.querySelector("#sync-diagnostics-header");
+      const content = modal.querySelector("#sync-diagnostics-content");
+      const chevron = modal.querySelector("#sync-diagnostics-chevron");
+      if (!header || !content || !chevron) return;
+      const setVisibility = (expanded) => {
+        if (expanded) {
+          content.classList.remove("hidden");
+          chevron.style.transform = "rotate(180deg)";
+        } else {
+          content.classList.add("hidden");
+          chevron.style.transform = "rotate(0deg)";
+        }
+      };
+      setVisibility(this.diagnosticsExpanded);
+      const toggleDiagnostics = () => {
+        this.diagnosticsExpanded = !this.diagnosticsExpanded;
+        setVisibility(this.diagnosticsExpanded);
+      };
+      const clickHandler = toggleDiagnostics;
+      const touchHandler = (e) => {
+        e.preventDefault();
+        toggleDiagnostics();
+      };
+      header.addEventListener("click", clickHandler);
+      header.addEventListener("touchend", touchHandler);
+      this.modalCleanupCallbacks.push(() => {
+        if (header) {
+          header.removeEventListener("click", clickHandler);
+          header.removeEventListener("touchend", touchHandler);
+        }
+      });
+    }
+    setupDiagnosticsRefresh(modal) {
+      const refreshButton = modal.querySelector("#sync-diagnostics-refresh");
+      if (!refreshButton) return;
+      const refreshHandler = (e) => {
+        e.stopPropagation();
+        this.loadSyncDiagnostics(modal);
+        refreshButton.style.transform = "rotate(360deg)";
+        setTimeout(() => {
+          refreshButton.style.transform = "rotate(0deg)";
+        }, 300);
+      };
+      refreshButton.addEventListener("click", refreshHandler);
+      this.modalCleanupCallbacks.push(() => {
+        if (refreshButton) {
+          refreshButton.removeEventListener("click", refreshHandler);
+        }
+      });
     }
     cleanup() {
       if (this.autoSyncInterval) {
@@ -3709,114 +3921,82 @@ if (window.typingMindCloudSync) {
       const diagnosticsBody = modal.querySelector("#sync-diagnostics-body");
       if (!diagnosticsBody) return;
       const overallStatusEl = modal.querySelector("#sync-overall-status");
-      const diagnosticsSummary = modal.querySelector(
-        "#sync-diagnostics-summary"
-      );
-      const diagnosticsChevron = modal.querySelector(
-        "#sync-diagnostics-chevron"
-      );
-      const diagnosticsContent = modal.querySelector(
-        "#sync-diagnostics-content"
-      );
-      const diagnosticsHeader = modal.querySelector("#sync-diagnostics-header");
-      const diagnosticsTable = modal.querySelector("#sync-diagnostics-table");
-      const diagnosticsRefresh = modal.querySelector(
-        "#sync-diagnostics-refresh"
-      );
-      const updateDiagnostics = async () => {
-        try {
-          const diagnostics = await this.syncOrchestrator.getSyncDiagnostics();
-          const { overallStatus, summary, details } = diagnostics;
-          overallStatusEl.textContent = overallStatus;
-          const summaryEl = modal.querySelector("#sync-diagnostics-summary");
-          const setContent = (html) => {
-            diagnosticsBody.innerHTML = html;
-          };
-          if (!this.config.isConfigured()) {
-            setContent(
-              '<tr><td colspan="2" class="text-center py-2 text-zinc-500">AWS Not Configured</td></tr>'
-            );
-            if (overallStatusEl) overallStatusEl.textContent = "⚙️";
-            if (summaryEl) summaryEl.textContent = "Setup required";
-            return;
-          }
-          try {
-            const diagnosticsData = localStorage.getItem(
-              "tcs_sync_diagnostics"
-            );
-            if (!diagnosticsData) {
-              setContent(
-                '<tr><td colspan="2" class="text-center py-2 text-zinc-500">No diagnostics data available</td></tr>'
-              );
-              if (overallStatusEl) overallStatusEl.textContent = "⚠️";
-              if (summaryEl) summaryEl.textContent = "Waiting for first sync";
-              return;
-            }
-            const data = JSON.parse(diagnosticsData);
-            const rows = [
-              {
-                type: "📱 Local Items",
-                count: data.localItems || 0,
-              },
-              {
-                type: "📋 Local Metadata",
-                count: data.localMetadata || 0,
-              },
-              {
-                type: "☁️ Cloud Metadata",
-                count: data.cloudMetadata || 0,
-              },
-              {
-                type: "💬 Chat Sync",
-                count: `${data.chatSyncLocal || 0} ⟷ ${
-                  data.chatSyncCloud || 0
-                }`,
-              },
-            ];
-            const tableHTML = rows
-              .map(
-                (row) => `
-              <tr class="border-b border-zinc-700 hover:bg-zinc-700/30">
-                <td class="py-1 px-2">${row.type}</td>
-                <td class="text-right py-1 px-2">${row.count}</td>
-              </tr>
-            `
-              )
-              .join("");
-            const hasIssues =
-              data.localItems !== data.localMetadata ||
-              data.localItems !== data.cloudMetadata ||
-              data.chatSyncLocal !== data.chatSyncCloud;
-            const overallStatus = hasIssues ? "⚠️" : "✅";
-            const lastUpdated = new Date(
-              data.timestamp || 0
-            ).toLocaleTimeString();
-            const summaryText = `Updated: ${lastUpdated}`;
-            if (overallStatusEl) overallStatusEl.textContent = overallStatus;
-            if (summaryEl) summaryEl.textContent = summaryText;
-            setContent(tableHTML);
-          } catch (error) {
-            console.error("Failed to load sync diagnostics:", error);
-            if (diagnosticsBody) {
-              setContent(
-                '<tr><td colspan="2" class="text-center py-2 text-red-400">Error loading diagnostics</td></tr>'
-              );
-            }
-            if (overallStatusEl) overallStatusEl.textContent = "❌";
-            if (summaryEl) summaryEl.textContent = "Error";
-          }
-        } catch (error) {
-          console.error("Failed to load sync diagnostics:", error);
-          if (diagnosticsBody) {
-            setContent(
-              '<tr><td colspan="2" class="text-center py-2 text-red-400">Error loading diagnostics</td></tr>'
-            );
-          }
-          if (overallStatusEl) overallStatusEl.textContent = "❌";
-          if (summaryEl) summaryEl.textContent = "Error";
-        }
+      const summaryEl = modal.querySelector("#sync-diagnostics-summary");
+      const setContent = (html) => {
+        diagnosticsBody.innerHTML = html;
       };
-      updateDiagnostics();
+
+      if (!this.config.isConfigured()) {
+        setContent(
+          '<tr><td colspan="2" class="text-center py-2 text-zinc-500">AWS Not Configured</td></tr>'
+        );
+        if (overallStatusEl) overallStatusEl.textContent = "⚙️";
+        if (summaryEl) summaryEl.textContent = "Setup required";
+        return;
+      }
+
+      try {
+        const diagnosticsData = localStorage.getItem("tcs_sync_diagnostics");
+        if (!diagnosticsData) {
+          setContent(
+            '<tr><td colspan="2" class="text-center py-2 text-zinc-500">No diagnostics data available. Run a sync.</td></tr>'
+          );
+          if (overallStatusEl) overallStatusEl.textContent = "⚠️";
+          if (summaryEl) summaryEl.textContent = "Waiting for first sync";
+          return;
+        }
+
+        const data = JSON.parse(diagnosticsData);
+        const rows = [
+          {
+            type: "📱 Local Items",
+            count: data.localItems || 0,
+          },
+          {
+            type: "📋 Local Metadata",
+            count: data.localMetadata || 0,
+          },
+          {
+            type: "☁️ Cloud Metadata",
+            count: data.cloudMetadata || 0,
+          },
+          {
+            type: "💬 Chat Sync",
+            count: `${data.chatSyncLocal || 0} ⟷ ${data.chatSyncCloud || 0}`,
+          },
+        ];
+
+        const tableHTML = rows
+          .map(
+            (row) => `
+          <tr class="border-b border-zinc-700 hover:bg-zinc-700/30">
+            <td class="py-1 px-2">${row.type}</td>
+            <td class="text-right py-1 px-2">${row.count}</td>
+          </tr>
+        `
+          )
+          .join("");
+
+        const hasIssues =
+          data.localItems !== data.localMetadata ||
+          data.localMetadata !== data.cloudMetadata ||
+          data.chatSyncLocal !== data.chatSyncCloud;
+
+        const overallStatus = hasIssues ? "⚠️" : "✅";
+        const lastUpdated = new Date(data.timestamp || 0).toLocaleTimeString();
+        const summaryText = `Updated: ${lastUpdated}`;
+
+        if (overallStatusEl) overallStatusEl.textContent = overallStatus;
+        if (summaryEl) summaryEl.textContent = summaryText;
+        setContent(tableHTML);
+      } catch (error) {
+        console.error("Failed to load sync diagnostics:", error);
+        setContent(
+          '<tr><td colspan="2" class="text-center py-2 text-red-400">Error loading diagnostics from storage</td></tr>'
+        );
+        if (overallStatusEl) overallStatusEl.textContent = "❌";
+        if (summaryEl) summaryEl.textContent = "Error";
+      }
     }
     setupDiagnosticsToggle(modal) {
       const header = modal.querySelector("#sync-diagnostics-header");
@@ -4100,24 +4280,8 @@ if (window.typingMindCloudSync) {
       this.logger.log("info", "Auto-sync started");
     }
     async getCloudMetadata() {
-      try {
-        const cloudMetadata = await this.s3Service.download(
-          "metadata.json",
-          true
-        );
-        if (!cloudMetadata || typeof cloudMetadata !== "object") {
-          return { lastSync: 0, items: {} };
-        }
-        if (!cloudMetadata.items) {
-          cloudMetadata.items = {};
-        }
-        return cloudMetadata;
-      } catch (error) {
-        if (error.code === "NoSuchKey" || error.statusCode === 404) {
-          return { lastSync: 0, items: {} };
-        }
-        throw error;
-      }
+      const { metadata } = await this.getCloudMetadataWithETag();
+      return metadata;
     }
     cleanup() {
       this.logger.log("info", "🧹 Starting comprehensive cleanup");
