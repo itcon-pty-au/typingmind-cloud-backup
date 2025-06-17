@@ -174,6 +174,9 @@ if (window.typingMindCloudSync) {
       this.logger = logger;
       this.operationQueue = operationQueue;
       this.dbPromise = null;
+      this.streamBatchSize = 1000;
+      this.memoryThreshold = 100 * 1024 * 1024;
+      this.throttleDelay = 10;
     }
     async getDB() {
       if (!this.dbPromise) {
@@ -184,6 +187,306 @@ if (window.typingMindCloudSync) {
         });
       }
       return this.dbPromise;
+    }
+    async estimateDataSize() {
+      let totalSize = 0;
+      let itemCount = 0;
+      const db = await this.getDB();
+      const transaction = db.transaction(["keyval"], "readonly");
+      const store = transaction.objectStore("keyval");
+      await new Promise((resolve) => {
+        const request = store.openCursor();
+        request.onsuccess = (event) => {
+          const cursor = event.target.result;
+          if (cursor) {
+            const key = cursor.key;
+            const value = cursor.value;
+            if (
+              typeof key === "string" &&
+              value !== undefined &&
+              !this.config.shouldExclude(key)
+            ) {
+              try {
+                const itemSize = JSON.stringify(value).length * 2;
+                totalSize += itemSize;
+                itemCount++;
+              } catch (e) {
+                this.logger.log("warning", `Error estimating size for ${key}`);
+              }
+            }
+            cursor.continue();
+          } else {
+            resolve();
+          }
+        };
+        request.onerror = () => resolve();
+      });
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && !this.config.shouldExclude(key)) {
+          const value = localStorage.getItem(key);
+          if (value !== null) {
+            totalSize += value.length * 2;
+            itemCount++;
+          }
+        }
+      }
+      return { totalSize, itemCount };
+    }
+    async *streamAllItems() {
+      const batchSize = this.streamBatchSize;
+      let batch = [];
+      let batchSize_bytes = 0;
+      const processItem = (item) => {
+        const itemSize = JSON.stringify(item).length * 2;
+        if (
+          batchSize_bytes + itemSize > this.memoryThreshold &&
+          batch.length > 0
+        ) {
+          const currentBatch = [...batch];
+          batch = [item];
+          batchSize_bytes = itemSize;
+          return currentBatch;
+        }
+        batch.push(item);
+        batchSize_bytes += itemSize;
+        if (batch.length >= batchSize) {
+          const currentBatch = [...batch];
+          batch = [];
+          batchSize_bytes = 0;
+          return currentBatch;
+        }
+        return null;
+      };
+      const db = await this.getDB();
+      const transaction = db.transaction(["keyval"], "readonly");
+      const store = transaction.objectStore("keyval");
+      await new Promise((resolve) => {
+        const request = store.openCursor();
+        request.onsuccess = (event) => {
+          const cursor = event.target.result;
+          if (cursor) {
+            const key = cursor.key;
+            const value = cursor.value;
+            if (
+              typeof key === "string" &&
+              value !== undefined &&
+              !this.config.shouldExclude(key)
+            ) {
+              const item = { id: key, data: value, type: "idb" };
+              const batchToYield = processItem(item);
+              if (batchToYield) {
+                this.streamYield(batchToYield);
+              }
+            }
+            cursor.continue();
+          } else {
+            resolve();
+          }
+        };
+        request.onerror = () => resolve();
+      });
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && !this.config.shouldExclude(key)) {
+          const value = localStorage.getItem(key);
+          if (value !== null) {
+            const item = { id: key, data: { key, value }, type: "ls" };
+            const batchToYield = processItem(item);
+            if (batchToYield) {
+              yield batchToYield;
+            }
+          }
+        }
+      }
+      if (batch.length > 0) {
+        yield batch;
+      }
+    }
+    streamYield = null;
+    async *streamAllItemsInternal() {
+      const batchSize = this.streamBatchSize;
+      let batch = [];
+      let batchSize_bytes = 0;
+      let db = null;
+      let transaction = null;
+      let pendingBatches = [];
+      let currentBatchIndex = 0;
+      try {
+        const processItem = (item) => {
+          try {
+            const itemSize = JSON.stringify(item).length * 2;
+            if (
+              batchSize_bytes + itemSize > this.memoryThreshold &&
+              batch.length > 0
+            ) {
+              const currentBatch = [...batch];
+              batch = [item];
+              batchSize_bytes = itemSize;
+              return currentBatch;
+            }
+            batch.push(item);
+            batchSize_bytes += itemSize;
+            if (batch.length >= batchSize) {
+              const currentBatch = [...batch];
+              batch = [];
+              batchSize_bytes = 0;
+              return currentBatch;
+            }
+            return null;
+          } catch (error) {
+            this.logger.log(
+              "warning",
+              `Error processing item: ${error.message}`
+            );
+            return null;
+          }
+        };
+        db = await this.getDB();
+        transaction = db.transaction(["keyval"], "readonly");
+        const store = transaction.objectStore("keyval");
+        let idbProcessed = 0;
+        await new Promise((resolve, reject) => {
+          const request = store.openCursor();
+          request.onsuccess = (event) => {
+            try {
+              const cursor = event.target.result;
+              if (cursor) {
+                const key = cursor.key;
+                const value = cursor.value;
+                if (
+                  typeof key === "string" &&
+                  value !== undefined &&
+                  !this.config.shouldExclude(key)
+                ) {
+                  const item = { id: key, data: value, type: "idb" };
+                  const batchToYield = processItem(item);
+                  if (batchToYield) {
+                    pendingBatches.push(batchToYield);
+                    if (pendingBatches.length >= 10) {
+                      this.logger.log(
+                        "warning",
+                        `Large number of pending batches (${pendingBatches.length}), potential memory issue`
+                      );
+                    }
+                  }
+                  idbProcessed++;
+                  if (idbProcessed % 5000 === 0) {
+                    this.logger.log(
+                      "info",
+                      `Processed ${idbProcessed} IndexedDB items`
+                    );
+                  }
+                }
+                cursor.continue();
+              } else {
+                resolve();
+              }
+            } catch (error) {
+              this.logger.log(
+                "error",
+                `Error in cursor processing: ${error.message}`
+              );
+              reject(error);
+            }
+          };
+          request.onerror = () => {
+            this.logger.log("error", "IndexedDB cursor error");
+            reject(request.error);
+          };
+        });
+        for (let i = 0; i < pendingBatches.length; i++) {
+          yield pendingBatches[i];
+          pendingBatches[i] = null;
+          currentBatchIndex = i + 1;
+          if (i % 5 === 0) {
+            await this.forceGarbageCollection();
+          }
+        }
+        pendingBatches = null;
+        let lsProcessed = 0;
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && !this.config.shouldExclude(key)) {
+            const value = localStorage.getItem(key);
+            if (value !== null) {
+              const item = { id: key, data: { key, value }, type: "ls" };
+              const batchToYield = processItem(item);
+              if (batchToYield) {
+                yield batchToYield;
+                await this.forceGarbageCollection();
+              }
+              lsProcessed++;
+              if (lsProcessed % 1000 === 0) {
+                this.logger.log(
+                  "info",
+                  `Processed ${lsProcessed} localStorage items`
+                );
+              }
+            }
+          }
+        }
+        if (batch && batch.length > 0) {
+          yield batch;
+          await this.forceGarbageCollection();
+        }
+      } catch (error) {
+        this.logger.log(
+          "error",
+          `Error in streamAllItemsInternal: ${error.message}`
+        );
+        throw error;
+      } finally {
+        try {
+          if (pendingBatches) {
+            for (let i = currentBatchIndex; i < pendingBatches.length; i++) {
+              pendingBatches[i] = null;
+            }
+            pendingBatches = null;
+          }
+          batch = null;
+          transaction = null;
+          db = null;
+          await this.forceGarbageCollection();
+        } catch (cleanupError) {
+          this.logger.log("warning", `Cleanup error: ${cleanupError.message}`);
+        }
+      }
+    }
+    async getAllItemsEfficient() {
+      const { totalSize } = await this.estimateDataSize();
+      if (totalSize > this.memoryThreshold) {
+        this.logger.log(
+          "info",
+          `Large dataset detected (${this.formatSize(
+            totalSize
+          )}), using memory-efficient processing`
+        );
+        return this.streamAllItemsInternal();
+      } else {
+        this.logger.log(
+          "info",
+          `Small dataset (${this.formatSize(
+            totalSize
+          )}), using standard loading`
+        );
+        return [await this.getAllItems()];
+      }
+    }
+    formatSize(bytes) {
+      if (bytes === 0) return "0 B";
+      const k = 1024;
+      const sizes = ["B", "KB", "MB", "GB"];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+    }
+    async forceGarbageCollection() {
+      if (global?.gc) {
+        global.gc();
+      } else if (window?.gc) {
+        window.gc();
+      }
+      await new Promise((resolve) => setTimeout(resolve, this.throttleDelay));
     }
     async getAllItems() {
       const items = new Map();
@@ -503,17 +806,35 @@ if (window.typingMindCloudSync) {
       }
     }
     cleanup() {
-      if (this.dbPromise) {
-        this.dbPromise
-          .then((db) => {
-            db?.close();
-          })
-          .catch(() => {});
+      this.logger?.log("info", "🧹 DataService cleanup starting");
+      try {
+        if (this.dbPromise) {
+          this.dbPromise
+            .then((db) => {
+              if (db) {
+                db.close();
+                this.logger?.log("info", "✅ IndexedDB connection closed");
+              }
+            })
+            .catch((error) => {
+              this.logger?.log(
+                "warning",
+                `IndexedDB close error: ${error.message}`
+              );
+            });
+        }
+        this.dbPromise = null;
+        this.streamYield = null;
+        this.config = null;
+        this.operationQueue = null;
+        if (this.forceGarbageCollection) {
+          this.forceGarbageCollection().catch(() => {});
+        }
+        this.logger?.log("success", "✅ DataService cleanup completed");
+        this.logger = null;
+      } catch (error) {
+        console.warn("DataService cleanup error:", error);
       }
-      this.dbPromise = null;
-      this.config = null;
-      this.logger = null;
-      this.operationQueue = null;
     }
   }
   class CryptoService {
@@ -654,9 +975,19 @@ if (window.typingMindCloudSync) {
       return new Uint8Array(decrypted);
     }
     cleanup() {
-      this.keyCache.clear();
-      this.lastCacheCleanup = 0;
-      this.config = null;
+      this.logger?.log("info", "🧹 CryptoService cleanup starting");
+      try {
+        if (this.keyCache) {
+          this.keyCache.clear();
+        }
+        this.keyCache = null;
+        this.lastCacheCleanup = 0;
+        this.config = null;
+        this.logger?.log("success", "✅ CryptoService cleanup completed");
+        this.logger = null;
+      } catch (error) {
+        console.warn("CryptoService cleanup error:", error);
+      }
     }
   }
   class S3Service {
@@ -869,135 +1200,217 @@ if (window.typingMindCloudSync) {
       const now = Date.now();
       const idbKeys = new Set();
       const lsKeys = new Set();
-      const db = await this.dataService.getDB();
-      const transaction = db.transaction(["keyval"], "readonly");
-      const store = transaction.objectStore("keyval");
-      await new Promise((resolve) => {
-        const request = store.openCursor();
-        request.onsuccess = (event) => {
-          const cursor = event.target.result;
-          if (cursor) {
-            const key = cursor.key;
-            const value = cursor.value;
-            if (
-              typeof key === "string" &&
-              value !== undefined &&
-              !this.config.shouldExclude(key)
-            ) {
+      const { totalSize } = await this.dataService.estimateDataSize();
+      const useStreaming = totalSize > this.dataService.memoryThreshold;
+      if (useStreaming) {
+        this.logger.log(
+          "info",
+          `Using memory-efficient change detection for large dataset (${this.dataService.formatSize(
+            totalSize
+          )})`
+        );
+        for await (const batch of this.dataService.streamAllItemsInternal()) {
+          for (const item of batch) {
+            const key = item.id;
+            const value = item.data;
+            if (item.type === "idb") {
               idbKeys.add(key);
-              const existingItem = this.metadata.items[key];
-              const currentSize = this.getItemSize(value);
-              if (!existingItem?.deleted) {
-                if (!existingItem) {
-                  changedItems.push({
-                    id: key,
-                    type: "idb",
-                    size: currentSize,
-                    lastModified: now,
-                    reason: "new",
-                  });
-                } else if (currentSize !== existingItem.size) {
-                  if (key.startsWith("CHAT_")) {
-                    this.logger.log(
-                      "warning",
-                      `Size change detected for ${key}`,
-                      {
-                        currentSize,
-                        existingSize: existingItem.size,
-                        lastSynced: existingItem.synced
-                          ? new Date(existingItem.synced).toISOString()
-                          : "never",
-                      }
-                    );
-                  }
-                  changedItems.push({
-                    id: key,
-                    type: "idb",
-                    size: currentSize,
-                    lastModified: now,
-                    reason: "size",
-                  });
-                } else if (!existingItem.synced) {
-                  if (key.startsWith("CHAT_")) {
-                    this.logger.log(
-                      "warning",
-                      `Never-synced item detected for ${key}`,
-                      {
-                        hasMetadata: !!existingItem,
-                        synced: existingItem.synced,
-                        size: currentSize,
-                      }
-                    );
-                  }
-                  changedItems.push({
-                    id: key,
-                    type: "idb",
-                    size: currentSize,
-                    lastModified: now,
-                    reason: "never-synced",
-                  });
+            } else {
+              lsKeys.add(key);
+            }
+            const existingItem = this.metadata.items[key];
+            const currentSize = this.getItemSize(value);
+            if (!existingItem?.deleted) {
+              if (!existingItem) {
+                changedItems.push({
+                  id: key,
+                  type: item.type,
+                  size: currentSize,
+                  lastModified: now,
+                  reason: "new",
+                });
+              } else if (currentSize !== existingItem.size) {
+                if (key.startsWith("CHAT_")) {
+                  this.logger.log(
+                    "warning",
+                    `Size change detected for ${key}`,
+                    {
+                      currentSize,
+                      existingSize: existingItem.size,
+                      lastSynced: existingItem.synced
+                        ? new Date(existingItem.synced).toISOString()
+                        : "never",
+                    }
+                  );
                 }
+                changedItems.push({
+                  id: key,
+                  type: item.type,
+                  size: currentSize,
+                  lastModified: now,
+                  reason: "size",
+                });
+              } else if (!existingItem.synced) {
+                if (key.startsWith("CHAT_")) {
+                  this.logger.log(
+                    "warning",
+                    `Never-synced item detected for ${key}`,
+                    {
+                      hasMetadata: !!existingItem,
+                      synced: existingItem.synced,
+                      size: currentSize,
+                    }
+                  );
+                }
+                changedItems.push({
+                  id: key,
+                  type: item.type,
+                  size: currentSize,
+                  lastModified: now,
+                  reason: "never-synced",
+                });
               }
             }
-            cursor.continue();
-          } else {
-            resolve();
           }
-        };
-        request.onerror = () => resolve();
-      });
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && !this.config.shouldExclude(key)) {
-          lsKeys.add(key);
-          const value = localStorage.getItem(key);
-          const existingItem = this.metadata.items[key];
-          const currentSize = this.getItemSize(value);
-          if (!existingItem?.deleted) {
-            if (!existingItem) {
-              changedItems.push({
-                id: key,
-                type: "ls",
-                size: currentSize,
-                lastModified: now,
-                reason: "new",
-              });
-            } else if (currentSize !== existingItem.size) {
-              this.logger.log(
-                "warning",
-                `localStorage size change detected for ${key}`,
-                {
-                  currentSize,
-                  existingSize: existingItem.size,
-                  lastSynced: existingItem.synced
-                    ? new Date(existingItem.synced).toISOString()
-                    : "never",
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      } else {
+        this.logger.log(
+          "info",
+          `Using standard change detection for small dataset (${this.dataService.formatSize(
+            totalSize
+          )})`
+        );
+        const db = await this.dataService.getDB();
+        const transaction = db.transaction(["keyval"], "readonly");
+        const store = transaction.objectStore("keyval");
+        await new Promise((resolve) => {
+          const request = store.openCursor();
+          request.onsuccess = (event) => {
+            const cursor = event.target.result;
+            if (cursor) {
+              const key = cursor.key;
+              const value = cursor.value;
+              if (
+                typeof key === "string" &&
+                value !== undefined &&
+                !this.config.shouldExclude(key)
+              ) {
+                idbKeys.add(key);
+                const existingItem = this.metadata.items[key];
+                const currentSize = this.getItemSize(value);
+                if (!existingItem?.deleted) {
+                  if (!existingItem) {
+                    changedItems.push({
+                      id: key,
+                      type: "idb",
+                      size: currentSize,
+                      lastModified: now,
+                      reason: "new",
+                    });
+                  } else if (currentSize !== existingItem.size) {
+                    if (key.startsWith("CHAT_")) {
+                      this.logger.log(
+                        "warning",
+                        `Size change detected for ${key}`,
+                        {
+                          currentSize,
+                          existingSize: existingItem.size,
+                          lastSynced: existingItem.synced
+                            ? new Date(existingItem.synced).toISOString()
+                            : "never",
+                        }
+                      );
+                    }
+                    changedItems.push({
+                      id: key,
+                      type: "idb",
+                      size: currentSize,
+                      lastModified: now,
+                      reason: "size",
+                    });
+                  } else if (!existingItem.synced) {
+                    if (key.startsWith("CHAT_")) {
+                      this.logger.log(
+                        "warning",
+                        `Never-synced item detected for ${key}`,
+                        {
+                          hasMetadata: !!existingItem,
+                          synced: existingItem.synced,
+                          size: currentSize,
+                        }
+                      );
+                    }
+                    changedItems.push({
+                      id: key,
+                      type: "idb",
+                      size: currentSize,
+                      lastModified: now,
+                      reason: "never-synced",
+                    });
+                  }
                 }
-              );
-              changedItems.push({
-                id: key,
-                type: "ls",
-                size: currentSize,
-                lastModified: now,
-                reason: "size",
-              });
-            } else if (!existingItem.synced) {
-              this.logger.log(
-                "warning",
-                `localStorage never-synced item detected for ${key}`,
-                {
-                  hasMetadata: !!existingItem,
-                  synced: existingItem.synced,
+              }
+              cursor.continue();
+            } else {
+              resolve();
+            }
+          };
+          request.onerror = () => resolve();
+        });
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && !this.config.shouldExclude(key)) {
+            lsKeys.add(key);
+            const value = localStorage.getItem(key);
+            const existingItem = this.metadata.items[key];
+            const currentSize = this.getItemSize(value);
+            if (!existingItem?.deleted) {
+              if (!existingItem) {
+                changedItems.push({
+                  id: key,
+                  type: "ls",
                   size: currentSize,
-                }
-              );
-              changedItems.push({
-                id: key,
-                type: "ls",
-                size: currentSize,
-                lastModified: now,
-                reason: "never-synced",
-              });
+                  lastModified: now,
+                  reason: "new",
+                });
+              } else if (currentSize !== existingItem.size) {
+                this.logger.log(
+                  "warning",
+                  `localStorage size change detected for ${key}`,
+                  {
+                    currentSize,
+                    existingSize: existingItem.size,
+                    lastSynced: existingItem.synced
+                      ? new Date(existingItem.synced).toISOString()
+                      : "never",
+                  }
+                );
+                changedItems.push({
+                  id: key,
+                  type: "ls",
+                  size: currentSize,
+                  lastModified: now,
+                  reason: "size",
+                });
+              } else if (!existingItem.synced) {
+                this.logger.log(
+                  "warning",
+                  `localStorage never-synced item detected for ${key}`,
+                  {
+                    hasMetadata: !!existingItem,
+                    synced: existingItem.synced,
+                    size: currentSize,
+                  }
+                );
+                changedItems.push({
+                  id: key,
+                  type: "ls",
+                  size: currentSize,
+                  lastModified: now,
+                  reason: "never-synced",
+                });
+              }
             }
           }
         }
@@ -1484,20 +1897,58 @@ if (window.typingMindCloudSync) {
         "start",
         "🔧 Initializing local metadata from database contents"
       );
-      const allItems = await this.dataService.getAllItems();
+      const { totalSize } = await this.dataService.estimateDataSize();
+      const useStreaming = totalSize > this.dataService.memoryThreshold;
       const tombstones = this.dataService.getAllTombstones();
       let itemCount = 0;
       let tombstoneCount = 0;
-      for (const item of allItems) {
-        if (item.id && item.data) {
-          const key = item.id;
-          this.metadata.items[key] = {
-            synced: 0,
-            type: item.type,
-            size: this.getItemSize(item.data),
-            lastModified: 0,
-          };
-          itemCount++;
+      if (useStreaming) {
+        this.logger.log(
+          "info",
+          `Using memory-efficient metadata initialization for large dataset (${this.dataService.formatSize(
+            totalSize
+          )})`
+        );
+        for await (const batch of this.dataService.streamAllItemsInternal()) {
+          for (const item of batch) {
+            if (item.id && item.data) {
+              const key = item.id;
+              this.metadata.items[key] = {
+                synced: 0,
+                type: item.type,
+                size: this.getItemSize(item.data),
+                lastModified: 0,
+              };
+              itemCount++;
+            }
+          }
+          if (itemCount % 1000 === 0) {
+            this.logger.log(
+              "info",
+              `Processed ${itemCount} items for metadata initialization`
+            );
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+        }
+      } else {
+        this.logger.log(
+          "info",
+          `Using standard metadata initialization for small dataset (${this.dataService.formatSize(
+            totalSize
+          )})`
+        );
+        const allItems = await this.dataService.getAllItems();
+        for (const item of allItems) {
+          if (item.id && item.data) {
+            const key = item.id;
+            this.metadata.items[key] = {
+              synced: 0,
+              type: item.type,
+              size: this.getItemSize(item.data),
+              lastModified: 0,
+            };
+            itemCount++;
+          }
         }
       }
       for (const [itemId, tombstone] of tombstones.entries()) {
@@ -1813,19 +2264,7 @@ if (window.typingMindCloudSync) {
     }
     async estimateDataSize() {
       try {
-        const items = await this.dataService.getAllItems();
-        let totalSize = 0;
-        items.forEach((item) => {
-          try {
-            const itemStr = JSON.stringify(item.data);
-            totalSize += itemStr.length * 2;
-          } catch (error) {
-            this.logger.log(
-              "warning",
-              `Skipping item ${item.id} in size estimation: ${error.message}`
-            );
-          }
-        });
+        const { totalSize } = await this.dataService.estimateDataSize();
         return totalSize;
       } catch (error) {
         this.logger.log("error", "Failed to estimate data size", error.message);
@@ -1897,8 +2336,19 @@ if (window.typingMindCloudSync) {
         "-"
       )}-${timestamp}`;
       try {
-        const allItems = await this.dataService.getAllItems();
-        const chunks = await this.createDataChunks(allItems);
+        const chunks = [];
+        let chunkIndex = 0;
+        for await (const batch of this.dataService.streamAllItemsInternal()) {
+          chunks.push(batch);
+          this.logger.log(
+            "info",
+            `Processed batch ${chunkIndex + 1} (${batch.length} items)`
+          );
+          chunkIndex++;
+          if (chunkIndex % 10 === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+        }
         this.logger.log("info", `Created ${chunks.length} chunks for upload`);
         const metadata = {
           format: "chunked",
@@ -1937,6 +2387,10 @@ if (window.typingMindCloudSync) {
           );
           try {
             await this.createCompressedBackup(chunkFilename, chunkData);
+            chunks[i] = null;
+            if (global.gc) {
+              global.gc();
+            }
           } catch (error) {
             this.logger.log(
               "error",
@@ -2062,8 +2516,21 @@ if (window.typingMindCloudSync) {
       ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
       const baseFilename = `typingmind-backup-${dateString}`;
       try {
-        const allItems = await this.dataService.getAllItems();
-        const chunks = await this.createDataChunks(allItems);
+        const chunks = [];
+        let chunkIndex = 0;
+        for await (const batch of this.dataService.streamAllItemsInternal()) {
+          chunks.push(batch);
+          this.logger.log(
+            "info",
+            `Processed daily backup batch ${chunkIndex + 1} (${
+              batch.length
+            } items)`
+          );
+          chunkIndex++;
+          if (chunkIndex % 10 === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+        }
         this.logger.log(
           "info",
           `Created ${chunks.length} chunks for daily backup`
@@ -2103,6 +2570,10 @@ if (window.typingMindCloudSync) {
             `Uploading daily backup chunk ${i + 1}/${chunks.length}`
           );
           await this.createCompressedBackup(chunkFilename, chunkData);
+          chunks[i] = null;
+          if (global.gc) {
+            global.gc();
+          }
         }
         this.logger.log(
           "success",
@@ -2586,9 +3057,17 @@ if (window.typingMindCloudSync) {
       return this.queue.size;
     }
     cleanup() {
-      this.clear();
-      this.lastCleanup = 0;
-      this.logger = null;
+      this.logger?.log("info", "🧹 OperationQueue cleanup starting");
+      try {
+        this.clear();
+        this.lastCleanup = 0;
+        this.maxRetries = 0;
+        this.maxQueueSize = 0;
+        this.logger?.log("success", "✅ OperationQueue cleanup completed");
+        this.logger = null;
+      } catch (error) {
+        console.warn("OperationQueue cleanup error:", error);
+      }
     }
   }
   class CloudSyncApp {
@@ -2631,6 +3110,25 @@ if (window.typingMindCloudSync) {
       const urlParams = new URLSearchParams(window.location.search);
       this.noSyncMode =
         urlParams.get("nosync") === "true" || urlParams.has("nosync");
+      try {
+        const { totalSize, itemCount } =
+          await this.dataService.estimateDataSize();
+        const useStreaming = totalSize > this.dataService.memoryThreshold;
+        this.logger.log(
+          "info",
+          `Dataset size: ${this.dataService.formatSize(
+            totalSize
+          )} (${itemCount} items)${
+            useStreaming ? " - Memory-efficient mode enabled" : ""
+          }`
+        );
+      } catch (error) {
+        this.logger.log(
+          "warning",
+          "Could not estimate dataset size",
+          error.message
+        );
+      }
       const urlConfig = this.getConfigFromUrlParams();
       if (urlConfig.hasParams) {
         Object.keys(urlConfig.config).forEach((key) => {
@@ -4067,9 +4565,42 @@ if (window.typingMindCloudSync) {
       console.warn("Cleanup error:", error);
     }
   };
-  window.addEventListener("beforeunload", cleanupHandler);
-  window.addEventListener("unload", cleanupHandler);
-  window.addEventListener("pagehide", cleanupHandler);
+  const visibilityChangeHandler = () => {
+    if (document.hidden) {
+      try {
+        if (app?.operationQueue) {
+          app.operationQueue.cleanupStaleOperations(Date.now());
+        }
+        if (app?.cryptoService) {
+          app.cryptoService.cleanupKeyCache();
+        }
+      } catch (error) {
+        console.warn("Visibility change cleanup error:", error);
+      }
+    }
+  };
+  window.addEventListener("beforeunload", cleanupHandler, { passive: true });
+  window.addEventListener("unload", cleanupHandler, { passive: true });
+  window.addEventListener("pagehide", cleanupHandler, { passive: true });
+  document.addEventListener("visibilitychange", visibilityChangeHandler, {
+    passive: true,
+  });
+  window.addEventListener(
+    "error",
+    (event) => {
+      if (
+        event.error?.message?.includes("memory") ||
+        event.error?.message?.includes("heap")
+      ) {
+        console.warn(
+          "🚨 Potential memory-related error detected:",
+          event.error
+        );
+        window.forceMemoryCleanup?.();
+      }
+    },
+    { passive: true }
+  );
   window.createTombstone = (itemId, type, source = "manual") => {
     if (app?.dataService) {
       return app.dataService.createTombstone(itemId, type, source);
@@ -4094,21 +4625,129 @@ if (window.typingMindCloudSync) {
     return {};
   };
   window.estimateBackupSize = async () => {
-    if (app?.backupService) {
-      const size = await app.backupService.estimateDataSize();
+    if (app?.backupService && app?.dataService) {
+      const { totalSize, itemCount } = await app.dataService.estimateDataSize();
       const chunkLimit = app.backupService.chunkSizeLimit;
-      const willUseChunks = size > chunkLimit;
+      const willUseChunks = totalSize > chunkLimit;
+      const willUseStreaming = totalSize > app.dataService.memoryThreshold;
       return {
-        estimatedSize: size,
-        formattedSize: app.backupService.formatFileSize(size),
+        estimatedSize: totalSize,
+        formattedSize: app.dataService.formatSize(totalSize),
+        itemCount: itemCount,
         chunkLimit: chunkLimit,
-        formattedChunkLimit: app.backupService.formatFileSize(chunkLimit),
+        formattedChunkLimit: app.dataService.formatSize(chunkLimit),
+        memoryThreshold: app.dataService.memoryThreshold,
+        formattedMemoryThreshold: app.dataService.formatSize(
+          app.dataService.memoryThreshold
+        ),
         willUseChunks: willUseChunks,
+        willUseStreaming: willUseStreaming,
         backupMethod: willUseChunks ? "chunked" : "simple",
+        processingMethod: willUseStreaming ? "streaming" : "in-memory",
         compressionNote:
           "Size shown is before ZIP compression (expect ~70% reduction)",
       };
     }
-    return { error: "Backup service not available" };
+    return { error: "Services not available" };
+  };
+  window.getMemoryDiagnostics = () => {
+    const diagnostics = {
+      timestamp: new Date().toISOString(),
+      performance: {},
+      app: {},
+      browser: {},
+    };
+    try {
+      if (performance?.memory) {
+        diagnostics.performance = {
+          usedJSHeapSize: performance.memory.usedJSHeapSize,
+          totalJSHeapSize: performance.memory.totalJSHeapSize,
+          jsHeapSizeLimit: performance.memory.jsHeapSizeLimit,
+          usedHeapMB: Math.round(
+            performance.memory.usedJSHeapSize / 1024 / 1024
+          ),
+          totalHeapMB: Math.round(
+            performance.memory.totalJSHeapSize / 1024 / 1024
+          ),
+          limitHeapMB: Math.round(
+            performance.memory.jsHeapSizeLimit / 1024 / 1024
+          ),
+          heapUsagePercent: Math.round(
+            (performance.memory.usedJSHeapSize /
+              performance.memory.jsHeapSizeLimit) *
+              100
+          ),
+        };
+      }
+      if (app) {
+        diagnostics.app = {
+          hasDataService: !!app.dataService,
+          hasCryptoService: !!app.cryptoService,
+          hasS3Service: !!app.s3Service,
+          hasSyncOrchestrator: !!app.syncOrchestrator,
+          hasBackupService: !!app.backupService,
+          hasOperationQueue: !!app.operationQueue,
+          operationQueueSize: app.operationQueue?.size() || 0,
+          eventListenersCount: app.eventListeners?.length || 0,
+          modalCallbacksCount: app.modalCleanupCallbacks?.length || 0,
+          cryptoKeyCacheSize: app.cryptoService?.keyCache?.size || 0,
+          syncInProgress: app.syncOrchestrator?.syncInProgress || false,
+          autoSyncInterval: !!app.autoSyncInterval,
+          diagnosticsInterval: !!app.diagnosticsInterval,
+        };
+      }
+      diagnostics.browser = {
+        userAgent: navigator.userAgent,
+        language: navigator.language,
+        platform: navigator.platform,
+        hardwareConcurrency: navigator.hardwareConcurrency,
+        cookieEnabled: navigator.cookieEnabled,
+        onLine: navigator.onLine,
+        doNotTrack: navigator.doNotTrack,
+      };
+      if (window.gc) {
+        diagnostics.performance.gcAvailable = true;
+      }
+    } catch (error) {
+      diagnostics.error = error.message;
+    }
+    return diagnostics;
+  };
+  window.forceMemoryCleanup = async () => {
+    console.log("🧹 Starting forced memory cleanup...");
+    try {
+      if (app?.dataService?.forceGarbageCollection) {
+        await app.dataService.forceGarbageCollection();
+      }
+      if (app?.cryptoService?.cleanupKeyCache) {
+        app.cryptoService.cleanupKeyCache();
+      }
+      if (app?.operationQueue?.cleanupStaleOperations) {
+        app.operationQueue.cleanupStaleOperations(Date.now());
+      }
+      const modal = document.querySelector(".cloud-sync-modal");
+      if ((modal && !modal.style.display) || modal.style.display !== "none") {
+        console.log("Modal is open, skipping DOM cleanup");
+      } else {
+        const orphanedElements = document.querySelectorAll(
+          "[data-temporary='true']"
+        );
+        orphanedElements.forEach((el) => el.remove());
+      }
+      if (window.gc) {
+        window.gc();
+        console.log("✅ Manual garbage collection triggered");
+      } else if (global?.gc) {
+        global.gc();
+        console.log("✅ Manual garbage collection triggered (global)");
+      } else {
+        console.log("⚠️ Manual garbage collection not available");
+      }
+      console.log("✅ Memory cleanup completed");
+      return window.getMemoryDiagnostics();
+    } catch (error) {
+      console.error("❌ Memory cleanup failed:", error);
+      return { error: error.message };
+    }
   };
 }
