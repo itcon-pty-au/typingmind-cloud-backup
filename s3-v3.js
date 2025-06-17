@@ -2273,6 +2273,7 @@ if (window.typingMindCloudSync) {
       this.s3Service = s3Service;
       this.logger = logger;
       this.chunkSizeLimit = 50 * 1024 * 1024;
+      this.maxStringLength = 200 * 1024 * 1024;
       this.jsZipLoaded = false;
     }
     async loadJSZip() {
@@ -2299,8 +2300,37 @@ if (window.typingMindCloudSync) {
     async createCompressedBackup(filename, data) {
       try {
         const JSZip = await this.loadJSZip();
-        const stringifiedData = JSON.stringify(data);
+        let stringifiedData;
+        try {
+          stringifiedData = JSON.stringify(data);
+        } catch (stringifyError) {
+          if (
+            stringifyError.message?.includes("string length") ||
+            stringifyError.message?.includes("Invalid string length") ||
+            stringifyError.message?.includes("out of memory") ||
+            stringifyError.message?.includes("Maximum call stack") ||
+            stringifyError.name === "RangeError"
+          ) {
+            this.logger.log(
+              "warning",
+              `JSON.stringify failed (${stringifyError.message}), data too large for simple backup`
+            );
+            throw new Error("DATA_TOO_LARGE_FOR_SIMPLE_BACKUP");
+          }
+          throw stringifyError;
+        }
         const uncompressedSize = stringifiedData.length;
+        if (uncompressedSize > this.maxStringLength) {
+          this.logger.log(
+            "warning",
+            `Stringified data is ${this.formatFileSize(
+              uncompressedSize
+            )}, exceeds safe string length limit (${this.formatFileSize(
+              this.maxStringLength
+            )})`
+          );
+          throw new Error("DATA_TOO_LARGE_FOR_SIMPLE_BACKUP");
+        }
         const textEncoder = new TextEncoder();
         const stringifiedDataBytes = textEncoder.encode(stringifiedData);
         const zip = new JSZip();
@@ -2340,8 +2370,22 @@ if (window.typingMindCloudSync) {
     }
     async estimateDataSize() {
       try {
-        const { totalSize } = await this.dataService.estimateDataSize();
-        return totalSize;
+        const { totalSize, itemCount } =
+          await this.dataService.estimateDataSize();
+        const jsonOverhead = itemCount * 50;
+        const structureOverhead = 1000;
+        const safetyMargin = Math.max(totalSize * 0.2, 5 * 1024 * 1024);
+        const conservativeEstimate =
+          totalSize + jsonOverhead + structureOverhead + safetyMargin;
+        this.logger.log(
+          "info",
+          `Size estimation: Raw=${this.formatFileSize(
+            totalSize
+          )}, WithOverhead=${this.formatFileSize(
+            conservativeEstimate
+          )} (${itemCount} items)`
+        );
+        return conservativeEstimate;
       } catch (error) {
         this.logger.log("error", "Failed to estimate data size", error.message);
         return 0;
@@ -2354,10 +2398,29 @@ if (window.typingMindCloudSync) {
         "info",
         `Estimated data size: ${this.formatFileSize(estimatedSize)}`
       );
-      if (estimatedSize > this.chunkSizeLimit) {
+      const conservativeLimit = Math.min(this.chunkSizeLimit, 30 * 1024 * 1024);
+      if (estimatedSize > conservativeLimit) {
+        this.logger.log(
+          "info",
+          `Data size exceeds conservative limit (${this.formatFileSize(
+            conservativeLimit
+          )}), using chunked backup`
+        );
         return await this.createChunkedSnapshot(name, estimatedSize);
       } else {
-        return await this.createSimpleSnapshot(name);
+        try {
+          this.logger.log("info", "Attempting simple snapshot first");
+          return await this.createSimpleSnapshot(name);
+        } catch (error) {
+          if (error.message === "DATA_TOO_LARGE_FOR_SIMPLE_BACKUP") {
+            this.logger.log(
+              "warning",
+              "Simple snapshot failed due to size, falling back to chunked backup"
+            );
+            return await this.createChunkedSnapshot(name, estimatedSize);
+          }
+          throw error;
+        }
       }
     }
     async createSimpleSnapshot(name) {
@@ -2550,10 +2613,29 @@ if (window.typingMindCloudSync) {
         "info",
         `Estimated data size: ${this.formatFileSize(estimatedSize)}`
       );
-      if (estimatedSize > this.chunkSizeLimit) {
+      const conservativeLimit = Math.min(this.chunkSizeLimit, 30 * 1024 * 1024);
+      if (estimatedSize > conservativeLimit) {
+        this.logger.log(
+          "info",
+          `Data size exceeds conservative limit (${this.formatFileSize(
+            conservativeLimit
+          )}), using chunked daily backup`
+        );
         return await this.performChunkedDailyBackup(estimatedSize);
       } else {
-        return await this.performSimpleDailyBackup();
+        try {
+          this.logger.log("info", "Attempting simple daily backup first");
+          return await this.performSimpleDailyBackup();
+        } catch (error) {
+          if (error.message === "DATA_TOO_LARGE_FOR_SIMPLE_BACKUP") {
+            this.logger.log(
+              "warning",
+              "Simple daily backup failed due to size, falling back to chunked backup"
+            );
+            return await this.performChunkedDailyBackup(estimatedSize);
+          }
+          throw error;
+        }
       }
     }
     async performSimpleDailyBackup() {
