@@ -196,6 +196,12 @@ For large datasets (>50MB), the system automatically:
 
 ### 🚀 Migration to V3
 
+Before starting the migration, ensure you take the native typingmind export of your app data by going to
+
+Settings > App Data & Storage > Export
+
+Ensure all check boxes are selected and Download the file. Ensure this is safely stored in case you need to reload the data.
+
 V3 is a major rewrite with a new architecture and is **not backward compatible** with backups created by older versions (V1 or V2). However, migrating your live data is designed to be a seamless, automatic process.
 
 #### What to Expect During Migration
@@ -215,22 +221,20 @@ When you load the V3 extension for the first time, it will automatically:
 
 There is no manual migration required—the extension handles everything automatically on the first load. Just install, configure, and let it work.
 
+#### Migration Steps
+- **Remove V1/V2**: Go to Settings > Extension and remove the existing version.
+- **Backup**: Go To Settings > App Data & Storage > Export (Ensure all checkboxes are selected, save the exported file)
+- **Load app using logging parameter**: Add the following URL parameter `?log` and reload the app. e.g. `https://typingmind.com?log` or `https://chat.customdomain.com?log`
+- **Install**: Install V3 extension `https://itcon-pty-au.github.io/typingmind-cloud-backup/s3-v3.js`. Since all S3 parameters are already present, the sync should immediately start
+- **Check logs**: Look at the console logs to see if you see any errors.
+- **Sync Diagnostics**: Check the new Sync diagnostics at the top of the Sync Config popup and you should see the latest sync status and if there are any issues.
+
 ### Error Handling & Recovery
 
 - **Operation Queue**: Failed operations are retried automatically
 - **Exponential Backoff**: Smart retry delays prevent service overload
 - **Graceful Degradation**: Continues working even with partial failures
 - **Comprehensive Logging**: Detailed logs help diagnose issues
-
-## 🐛 Troubleshooting
-
-### Enable Logging
-
-For troubleshooting, enable detailed logging:
-
-1. **Startup Logging**: Add `?log=true` to your URL
-2. **Runtime Logging**: Toggle "Console Logging" in the config modal
-3. Check browser console for detailed sync information
 
 ## ☁️ Cloud Storage Setup
 
@@ -326,7 +330,7 @@ If you are using typingmind cloud, use the below
 ]
 ```
 
-Update "https://\*.hostname.com" with your specific hostname in case you are self hosting Typingmind (e.g. https://chat.yourhostname.com). If you are using Typingmind cloud, hostname should be https://www.typingmind.com. This restricts executing S3 commands from only the specified hostname providing better security.
+Update "https://\*.hostname.com" with your specific hostname in case you are self hosting Typingmind (e.g. `https://chat.yourhostname.com`). If you are using Typingmind cloud, hostname should be `https://www.typingmind.com`. This restricts executing S3 commands from only the specified hostname providing better security.
 
 ### S3 compatible storage services setup
 
@@ -334,6 +338,14 @@ Cloudflare R2 provides S3 compatible API with a generous 10GB free storage per m
 iDrive E2 provides S3 compatible API with a generous 10GB free storage per month. Refer [How to setup iDrive E2 and use with this extension](https://github.com/itcon-pty-au/typingmind-cloud-backup/blob/main/HowTo/iDrive_E2_HowTo.docx)
 
 ## 🐛 Troubleshooting
+
+### Enable Logging
+
+For troubleshooting, enable detailed logging:
+
+1. **Startup Logging**: Add `?log=true` to your URL
+2. **Runtime Logging**: Toggle "Console Logging" in the config modal
+3. Check browser console for detailed sync information
 
 ### Sync Issues Between Devices
 
@@ -357,34 +369,24 @@ iDrive E2 provides S3 compatible API with a generous 10GB free storage per month
 
 - Identify which device has the complete/correct dataset
 - On that device only:
-  ```javascript
-  localStorage.removeItem("tcs_local-metadata");
-  localStorage.removeItem("tcs_last-cloud-sync");
-  // Reload page
-  ```
+  Right click > Inspect > Application > Local Storage > Remove `tcs_local-metadata` and `tcs_last-cloud-sync`
+  Reload Page
 - This forces re-upload of all items to cloud
 - Other devices will then download missing items
 
 **Solution 2: Reset metadata on device with MISSING data**
 
 - On device with fewer items:
-  ```javascript
-  localStorage.removeItem("tcs_local-metadata");
-  localStorage.removeItem("tcs_last-cloud-sync");
-  // Reload page
-  ```
+  Right click > Inspect > Application > Local Storage > Remove `tcs_local-metadata` and `tcs_last-cloud-sync`
+  Reload Page
 - This forces download of missing items from cloud
 
 **Solution 3: Complete sync reset** (if Solutions 1-2 don't work)
 
 - Create backup/snapshot first on device with most data
 - On ALL devices:
-  ```javascript
-  localStorage.removeItem("tcs_local-metadata");
-  localStorage.removeItem("tcs_last-cloud-sync");
-  localStorage.removeItem("tcs_last-daily-backup");
-  // Reload all devices
-  ```
+  Right click > Inspect > Application > Local Storage > Remove `tcs_local-metadata`, `tcs_last-daily-backup` and `tcs_last-cloud-sync`
+  Reload Page
 
 **Prevention**:
 
@@ -397,22 +399,13 @@ iDrive E2 provides S3 compatible API with a generous 10GB free storage per month
 
 > The extension will work reliably only when one device is active at a time. So if you are facing issues, ensure the app is active only on one device at a time.
 
-### New Chats Disappearing
-
-> - **Have you checked the setting**: "Alert if cloud backup is smaller during import"?
->   **Implication of not checking this**: Assuming you have the extension in "Sync" mode.
->   - You create a new chat.
->   - You immediately swap to a different tab/window (Backup to S3 did not happen yet).
->   - You come back to the app - At this point, data has been freshly imported from S3 and your new chat is now disappeared.
-> - **Resolution**: Make the extension work in **Backup mode** (Not an option if you are using the app on multiple devices), then check the setting "Alert if cloud backup is smaller during import". This will prompt the user for confirmation if the cloud backup size is less than the local backup size. In the above scenario, the prompt will appear. You should click **Cancel** as you are certain that the local data is newer, and it will skip the cloud import.
-
 ## Warning
 
 The extension encrypts the AWS credentials while its stored in the browser database. However, since the encryption key is still stored in plain text, sophisticated hackers who can get access to your browser data and could theoretically get access to your AWS credentials. So, be sure to provide minimum permissions to the AWS credentials. For Amazon S3, I have provided access policy above. However, for other S3 compatible providers, its up to you to setup proper access policies.
 
 ## About me
 
-I am a passionate developer dedicated to creating useful tools that can benefit the community. My goal is to distribute all of my projects as open source, enabling others to learn, contribute, and innovate together. If you appreciate my work and want to support my efforts, feel free to [buy me a coffee](https://buymeacoffee.com/itcon) :heart:!
+I am a passionate developer dedicated to creating useful tools that can benefit the community. My goal is to distribute all of my projects as open source, enabling others to learn, contribute, and innovate together. If you appreciate my work and want to support my efforts, [consider buying me a coffee.](https://buymeacoffee.com/itcon) :heart:!
 
 ## License
 
