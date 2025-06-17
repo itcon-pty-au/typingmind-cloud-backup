@@ -2646,7 +2646,6 @@ if (window.typingMindCloudSync) {
 
     formatBackupDisplayName(filename, metadata = null) {
       const type = this.getBackupType(filename);
-      const isServerSide = metadata?.format === "server-side";
 
       if (type === "snapshot") {
         const cleanName = filename
@@ -2654,8 +2653,7 @@ if (window.typingMindCloudSync) {
           .replace(/-\d{8}T\d{6}.*$/, "");
         const timestamp = filename.match(/-(\d{8}T\d{6})/);
 
-        let versionLabel = isServerSide ? " (Server-Side)" : "";
-        let displayName = `📸 Snapshot${versionLabel}: ${cleanName}`;
+        let displayName = `📸 Snapshot: ${cleanName}`;
 
         if (timestamp) {
           const dateStr = timestamp[1];
@@ -2668,7 +2666,7 @@ if (window.typingMindCloudSync) {
               15
             )}`
           );
-          displayName += ` (${date.toLocaleDateString()})`;
+          displayName += ` (${date.toLocaleString()})`;
         }
         return displayName;
       } else if (type === "daily") {
@@ -2681,11 +2679,9 @@ if (window.typingMindCloudSync) {
               8
             )}`
           );
-          const versionSuffix = isServerSide ? " (Server-Side)" : "";
-          return `🗓️ Daily Backup${versionSuffix} (${date.toLocaleDateString()})`;
+          return `🗓️ Daily Backup (${date.toLocaleDateString()})`;
         }
-        const versionSuffix = isServerSide ? " (Server-Side)" : "";
-        return `🗓️ Daily Backup${versionSuffix}`;
+        return `🗓️ Daily Backup`;
       }
       return filename;
     }
@@ -3640,12 +3636,11 @@ if (window.typingMindCloudSync) {
             const option = document.createElement("option");
             option.value = backup.key;
             const size = this.backupService.formatFileSize(backup.size || 0);
-            const date = new Date(backup.modified).toLocaleString();
             const formatLabel =
               backup.format === "chunked" ? ` [${backup.chunks} chunks]` : "";
             option.text = `${
               backup.displayName || backup.name
-            } - ${size}${formatLabel} (${date})`;
+            } - ${size}${formatLabel}`;
             backupList.appendChild(option);
           });
         }
