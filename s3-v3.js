@@ -239,11 +239,7 @@ if (window.typingMindCloudSync) {
       let batch = [];
       let batchSize_bytes = 0;
       const processItem = (item) => {
-        const estimatedSize = item.data
-          ? typeof item.data === "string"
-            ? item.data.length * 2
-            : 2000
-          : 1000;
+        const estimatedSize = this.estimateItemSize(item.data);
         if (
           batchSize_bytes + estimatedSize > this.memoryThreshold &&
           batch.length > 0
@@ -320,11 +316,7 @@ if (window.typingMindCloudSync) {
       try {
         const processItem = (item) => {
           try {
-            const estimatedSize = item.data
-              ? typeof item.data === "string"
-                ? item.data.length * 2
-                : 2000
-              : 1000;
+            const estimatedSize = this.estimateItemSize(item.data);
             if (
               batchSize_bytes + estimatedSize > this.memoryThreshold &&
               batch.length > 0
@@ -481,6 +473,13 @@ if (window.typingMindCloudSync) {
         );
         return [await this.getAllItems()];
       }
+    }
+    estimateItemSize(data) {
+      if (typeof data === "string") return data.length * 2;
+      if (data && typeof data === "object") {
+        return Object.keys(data).length * 50;
+      }
+      return 1000;
     }
     formatSize(bytes) {
       if (bytes === 0) return "0 B";
@@ -1200,12 +1199,9 @@ if (window.typingMindCloudSync) {
       localStorage.setItem("tcs_last-cloud-sync", timestamp.toString());
     }
     getItemSize(data) {
-      if (typeof data === "string") return data.length;
-      if (data && typeof data === "object") {
-        return Object.keys(data).length * 50;
-      }
-      return 100;
+      return JSON.stringify(data).length;
     }
+
     async detectChanges() {
       const changedItems = [];
       const now = Date.now();
@@ -2512,11 +2508,7 @@ if (window.typingMindCloudSync) {
       let currentChunkSize = 0;
       for (const item of allItems) {
         try {
-          const estimatedSize = item.data
-            ? typeof item.data === "string"
-              ? item.data.length * 2
-              : 5000
-            : 2000;
+          const estimatedSize = this.dataService.estimateItemSize(item.data);
           if (
             currentChunkSize + estimatedSize > this.chunkSizeLimit &&
             currentChunk.length > 0
