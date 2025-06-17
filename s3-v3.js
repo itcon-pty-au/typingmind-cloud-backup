@@ -1602,6 +1602,7 @@ if (window.typingMindCloudSync) {
           this.metadata.lastSync = cloudMetadata.lastSync;
           this.setLastCloudSync(cloudMetadata.lastSync);
           this.saveMetadata();
+          await this.updateSyncDiagnosticsCache();
           this.logger.log(
             "success",
             `Sync to cloud completed - ${itemsSynced} items synced`
@@ -1641,6 +1642,7 @@ if (window.typingMindCloudSync) {
       cloudMetadata.items[item.id] = { ...tombstoneData };
       await this.s3Service.upload("metadata.json", cloudMetadata, true);
       this.saveMetadata();
+      await this.updateSyncDiagnosticsCache();
       this.logger.log(
         "success",
         `✅ Retry tombstone sync completed for key "${item.id}"`
@@ -1769,6 +1771,7 @@ if (window.typingMindCloudSync) {
         this.setLastCloudSync(cloudLastSync);
         localStorage.setItem("tcs_metadata_etag", cloudMetadataETag);
         this.saveMetadata();
+        await this.updateSyncDiagnosticsCache();
         this.logger.log("success", "Sync from cloud completed");
       } catch (error) {
         this.logger.log("error", "Failed to sync from cloud", error.message);
@@ -1821,6 +1824,7 @@ if (window.typingMindCloudSync) {
         this.metadata.lastSync = cloudMetadata.lastSync;
         this.setLastCloudSync(cloudMetadata.lastSync);
         this.saveMetadata();
+        await this.updateSyncDiagnosticsCache();
         this.logger.log(
           "success",
           `Initial sync completed - ${changedItems.length} items uploaded`
@@ -1877,7 +1881,7 @@ if (window.typingMindCloudSync) {
       const cleanupInterval = 24 * 60 * 60 * 1000;
       if (!lastCleanup || now - parseInt(lastCleanup) > cleanupInterval) {
         this.logger.log("info", "🧹 Starting periodic tombstone cleanup");
-        const localCleaned = this.cleanupOldTombstones();
+        const localCleaned = await this.cleanupOldTombstones();
         const cloudCleaned = await this.cleanupCloudTombstones();
         localStorage.setItem("tcs_last-tombstone-cleanup", now.toString());
         if (localCleaned > 0 || cloudCleaned > 0) {
@@ -1887,6 +1891,7 @@ if (window.typingMindCloudSync) {
           );
         }
       }
+      await this.updateSyncDiagnosticsCache();
     }
     async initializeLocalMetadata() {
       const isEmptyMetadata =
@@ -1966,6 +1971,7 @@ if (window.typingMindCloudSync) {
       }
       if (itemCount > 0 || tombstoneCount > 0) {
         this.saveMetadata();
+        await this.updateSyncDiagnosticsCache();
         this.logger.log(
           "success",
           `✅ Local metadata initialized: ${itemCount} items, ${tombstoneCount} tombstones`
@@ -2047,6 +2053,7 @@ if (window.typingMindCloudSync) {
           }
           if (restoredCount > 0) {
             this.saveMetadata();
+            await this.updateSyncDiagnosticsCache();
             this.logger.log(
               "success",
               `🔄 Restored ${restoredCount} missing items and tombstones from cloud`
@@ -2116,7 +2123,7 @@ if (window.typingMindCloudSync) {
       }, interval);
       this.logger.log("info", "Auto-sync started");
     }
-    cleanupOldTombstones() {
+    async cleanupOldTombstones() {
       const now = Date.now();
       const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
       let cleanupCount = 0;
@@ -2149,6 +2156,7 @@ if (window.typingMindCloudSync) {
       }
       if (cleanupCount > 0) {
         this.saveMetadata();
+        await this.updateSyncDiagnosticsCache();
         this.logger.log("info", `🧹 Cleaned up ${cleanupCount} old tombstones`);
       }
       return cleanupCount;
@@ -2177,6 +2185,52 @@ if (window.typingMindCloudSync) {
     async getCloudMetadata() {
       const { metadata } = await this.getCloudMetadataWithETag();
       return metadata;
+    }
+    async updateSyncDiagnosticsCache() {
+      try {
+        const localItems = await this.dataService.getAllItems();
+        const localCount = localItems.length;
+        const chatItems = localItems.filter((item) =>
+          item.id.startsWith("CHAT_")
+        ).length;
+        const metadataCount = Object.keys(this.metadata.items || {}).length;
+        const metadataDeleted = Object.values(this.metadata.items || {}).filter(
+          (item) => item.deleted
+        ).length;
+        const metadataActive = metadataCount - metadataDeleted;
+        const cloudMetadata = await this.getCloudMetadata();
+        const cloudCount = Object.keys(cloudMetadata.items || {}).length;
+        const cloudDeleted = Object.values(cloudMetadata.items || {}).filter(
+          (item) => item.deleted
+        ).length;
+        const cloudActive = cloudCount - cloudDeleted;
+        const cloudChatItems = Object.keys(cloudMetadata.items || {}).filter(
+          (id) => id.startsWith("CHAT_") && !cloudMetadata.items[id].deleted
+        ).length;
+        const diagnosticsData = {
+          timestamp: Date.now(),
+          localItems: localCount,
+          localMetadata: metadataActive,
+          cloudMetadata: cloudActive,
+          chatSyncLocal: chatItems,
+          chatSyncCloud: cloudChatItems,
+        };
+        localStorage.setItem(
+          "tcs_sync_diagnostics",
+          JSON.stringify(diagnosticsData)
+        );
+        this.logger.log(
+          "info",
+          "📊 Sync diagnostics cache updated",
+          diagnosticsData
+        );
+      } catch (error) {
+        this.logger.log(
+          "warning",
+          "Failed to update sync diagnostics cache",
+          error.message
+        );
+      }
     }
     cleanup() {
       if (this.autoSyncInterval) {
@@ -3107,7 +3161,6 @@ if (window.typingMindCloudSync) {
       this.eventListeners = [];
       this.modalCleanupCallbacks = [];
       this.noSyncMode = false;
-      this.diagnosticsInterval = null;
       this.diagnosticsExpanded = false;
     }
     async initialize() {
@@ -3381,13 +3434,6 @@ if (window.typingMindCloudSync) {
       if (document.querySelector(".cloud-sync-modal")) return;
       this.logger.log("start", "Opening sync modal");
       this.createModal();
-      const modal = document.querySelector(".cloud-sync-modal");
-      if (modal && !this.diagnosticsInterval) {
-        this.diagnosticsInterval = setInterval(
-          () => this.loadSyncDiagnostics(modal),
-          5000
-        );
-      }
     }
     createModal() {
       const overlay = document.createElement("div");
@@ -3419,6 +3465,11 @@ if (window.typingMindCloudSync) {
               <div class="flex items-center gap-2">
                 <label class="block text-sm font-medium text-zinc-300">Sync Diagnostics</label>
                 <span id="sync-overall-status" class="text-lg">✅</span>
+                <button id="sync-diagnostics-refresh" class="text-zinc-400 hover:text-white transition-colors p-1 rounded" title="Refresh diagnostics">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                  </svg>
+                </button>
               </div>
               <div class="flex items-center gap-1">
                 <span id="sync-diagnostics-summary" class="text-xs text-zinc-400">Tap to view details</span>
@@ -3433,11 +3484,10 @@ if (window.typingMindCloudSync) {
                   <tr class="border-b border-zinc-600">
                     <th class="text-left py-1 px-2 font-medium">Type</th>
                     <th class="text-right py-1 px-2 font-medium">Count</th>
-                    <th class="text-right py-1 px-2 font-medium">Status</th>
                   </tr>
                 </thead>
                 <tbody id="sync-diagnostics-body">
-                  <tr><td colspan="3" class="text-center py-2 text-zinc-500">Loading...</td></tr>
+                  <tr><td colspan="2" class="text-center py-2 text-zinc-500">Loading...</td></tr>
                 </tbody>
               </table>
             </div>
@@ -3607,6 +3657,7 @@ if (window.typingMindCloudSync) {
       this.setupBackupListHandlers(modal);
       this.loadSyncDiagnostics(modal);
       this.setupDiagnosticsToggle(modal);
+      this.setupDiagnosticsRefresh(modal);
     }
     populateFormFromUrlParams(modal) {
       const urlConfig = this.getConfigFromUrlParams();
@@ -3978,65 +4029,39 @@ if (window.typingMindCloudSync) {
       };
       if (!this.config.isConfigured()) {
         setContent(
-          '<tr><td colspan="3" class="text-center py-2 text-zinc-500">AWS Not Configured</td></tr>'
+          '<tr><td colspan="2" class="text-center py-2 text-zinc-500">AWS Not Configured</td></tr>'
         );
         if (overallStatusEl) overallStatusEl.textContent = "⚙️";
         if (summaryEl) summaryEl.textContent = "Setup required";
         return;
       }
-      if (overallStatusEl) {
-        overallStatusEl.textContent = "🔄";
-      }
       try {
-        const localItems = await this.dataService.getAllItems();
-        const localCount = localItems.length;
-        const chatItems = localItems.filter((item) =>
-          item.id.startsWith("CHAT_")
-        ).length;
-        const metadataCount = Object.keys(
-          this.syncOrchestrator.metadata.items || {}
-        ).length;
-        const metadataDeleted = Object.values(
-          this.syncOrchestrator.metadata.items || {}
-        ).filter((item) => item.deleted).length;
-        const metadataActive = metadataCount - metadataDeleted;
-        const cloudMetadata = await this.syncOrchestrator.getCloudMetadata();
-        const cloudCount = Object.keys(cloudMetadata.items || {}).length;
-        const cloudDeleted = Object.values(cloudMetadata.items || {}).filter(
-          (item) => item.deleted
-        ).length;
-        const cloudActive = cloudCount - cloudDeleted;
-        const localLastSync = localStorage.getItem("tcs_last-cloud-sync");
-        const cloudLastSync = cloudMetadata.lastSync || 0;
-        const hasCloudChanges = cloudLastSync > parseInt(localLastSync || "0");
-        const cloudChatItems = Object.keys(cloudMetadata.items || {}).filter(
-          (id) => id.startsWith("CHAT_") && !cloudMetadata.items[id].deleted
-        ).length;
+        const diagnosticsData = localStorage.getItem("tcs_sync_diagnostics");
+        if (!diagnosticsData) {
+          setContent(
+            '<tr><td colspan="2" class="text-center py-2 text-zinc-500">No diagnostics data available</td></tr>'
+          );
+          if (overallStatusEl) overallStatusEl.textContent = "⚠️";
+          if (summaryEl) summaryEl.textContent = "Waiting for first sync";
+          return;
+        }
+        const data = JSON.parse(diagnosticsData);
         const rows = [
           {
             type: "📱 Local Items",
-            count: localCount,
-            status: localCount > 0 ? "✅" : "⚠️",
-          },
-          {
-            type: "💬 Chat Sync",
-            count: `${chatItems} ⟷ ${cloudChatItems}`,
-            status: chatItems === cloudChatItems ? "✅" : "⚠️",
+            count: data.localItems || 0,
           },
           {
             type: "📋 Local Metadata",
-            count: metadataActive,
-            status: metadataActive === localCount ? "✅" : "⚠️",
+            count: data.localMetadata || 0,
           },
           {
-            type: "☁️ Cloud Items",
-            count: cloudActive,
-            status: cloudActive > 0 ? "✅" : "⚠️",
+            type: "☁️ Cloud Metadata",
+            count: data.cloudMetadata || 0,
           },
           {
-            type: "🔄 Sync Status",
-            count: hasCloudChanges ? "Pending" : "Current",
-            status: hasCloudChanges ? "🟡" : "✅",
+            type: "💬 Chat Sync",
+            count: `${data.chatSyncLocal || 0} ⟷ ${data.chatSyncCloud || 0}`,
           },
         ];
         const tableHTML = rows
@@ -4045,35 +4070,25 @@ if (window.typingMindCloudSync) {
           <tr class="border-b border-zinc-700 hover:bg-zinc-700/30">
             <td class="py-1 px-2">${row.type}</td>
             <td class="text-right py-1 px-2">${row.count}</td>
-            <td class="text-center py-1 px-2">${row.status}</td>
           </tr>
         `
           )
           .join("");
         const hasIssues =
-          localCount !== metadataActive ||
-          localCount !== cloudActive ||
-          chatItems !== cloudChatItems;
+          data.localItems !== data.localMetadata ||
+          data.localItems !== data.cloudMetadata ||
+          data.chatSyncLocal !== data.chatSyncCloud;
         const overallStatus = hasIssues ? "⚠️" : "✅";
-        const summaryText = hasIssues ? "Issues detected" : "All systems OK";
+        const lastUpdated = new Date(data.timestamp || 0).toLocaleTimeString();
+        const summaryText = `Updated: ${lastUpdated}`;
         if (overallStatusEl) overallStatusEl.textContent = overallStatus;
         if (summaryEl) summaryEl.textContent = summaryText;
-        let warningRow = "";
-        if (hasIssues) {
-          warningRow = `
-            <tr class="bg-orange-900/20 border-b border-orange-600">
-              <td class="py-1 px-2 text-orange-300">⚠️ Mismatch Detected</td>
-              <td class="text-right py-1 px-2 text-orange-300">Check README</td>
-              <td class="text-center py-1 px-2">🔧</td>
-            </tr>
-          `;
-        }
-        setContent(tableHTML + warningRow);
+        setContent(tableHTML);
       } catch (error) {
         console.error("Failed to load sync diagnostics:", error);
         if (diagnosticsBody) {
           setContent(
-            '<tr><td colspan="3" class="text-center py-2 text-red-400">Error loading diagnostics</td></tr>'
+            '<tr><td colspan="2" class="text-center py-2 text-red-400">Error loading diagnostics</td></tr>'
           );
         }
         if (overallStatusEl) overallStatusEl.textContent = "❌";
@@ -4113,11 +4128,25 @@ if (window.typingMindCloudSync) {
         }
       });
     }
+    setupDiagnosticsRefresh(modal) {
+      const refreshButton = modal.querySelector("#sync-diagnostics-refresh");
+      if (!refreshButton) return;
+      const refreshHandler = (e) => {
+        e.stopPropagation();
+        this.loadSyncDiagnostics(modal);
+        refreshButton.style.transform = "rotate(360deg)";
+        setTimeout(() => {
+          refreshButton.style.transform = "rotate(0deg)";
+        }, 300);
+      };
+      refreshButton.addEventListener("click", refreshHandler);
+      this.modalCleanupCallbacks.push(() => {
+        if (refreshButton) {
+          refreshButton.removeEventListener("click", refreshHandler);
+        }
+      });
+    }
     closeModal(overlay) {
-      if (this.diagnosticsInterval) {
-        clearInterval(this.diagnosticsInterval);
-        this.diagnosticsInterval = null;
-      }
       this.diagnosticsExpanded = false;
       this.modalCleanupCallbacks.forEach((cleanup) => {
         try {
@@ -4525,6 +4554,10 @@ if (window.typingMindCloudSync) {
     
     #sync-diagnostics-chevron {
       transition: transform 0.2s ease;
+    }
+    
+    #sync-diagnostics-refresh {
+      transition: transform 0.3s ease;
     }
     
     #sync-diagnostics-content {
