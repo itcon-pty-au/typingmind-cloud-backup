@@ -2647,7 +2647,8 @@ if (window.typingMindCloudSync) {
           type: "server-side-snapshot",
           name: name,
           created: Date.now(),
-          totalItems: copiedItems,
+          totalItems: itemsToProcess.length,
+          copiedItems: copiedItems,
           format: "server-side",
           version: "3.0",
           backupFolder: backupFolder,
@@ -2752,7 +2753,8 @@ if (window.typingMindCloudSync) {
           type: "server-side-daily-backup",
           name: "daily-auto",
           created: Date.now(),
-          totalItems: copiedItems,
+          totalItems: itemsToProcess.length,
+          copiedItems: copiedItems,
           format: "server-side",
           version: "3.0",
           backupFolder: backupFolder,
@@ -2810,6 +2812,7 @@ if (window.typingMindCloudSync) {
                   modified: obj.LastModified,
                   format: "server-side",
                   totalItems: manifest.totalItems,
+                  copiedItems: manifest.copiedItems,
                   type: backupType,
                   backupFolder: backupFolder,
                   sortOrder: backupType === "snapshot" ? 1 : 2,
@@ -3791,7 +3794,10 @@ if (window.typingMindCloudSync) {
           backups.forEach((backup) => {
             const option = document.createElement("option");
             option.value = backup.key;
-            option.text = `${backup.displayName || backup.name}`;
+            const total = backup.totalItems ?? "N/A";
+            const copied = backup.copiedItems ?? total;
+            const suffix = `(${copied}/${total})`;
+            option.text = `${backup.displayName || backup.name} ${suffix}`;
             backupList.appendChild(option);
           });
         }
