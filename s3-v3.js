@@ -239,18 +239,22 @@ if (window.typingMindCloudSync) {
       let batch = [];
       let batchSize_bytes = 0;
       const processItem = (item) => {
-        const itemSize = JSON.stringify(item).length * 2;
+        const estimatedSize = item.data
+          ? typeof item.data === "string"
+            ? item.data.length * 2
+            : 2000
+          : 1000;
         if (
-          batchSize_bytes + itemSize > this.memoryThreshold &&
+          batchSize_bytes + estimatedSize > this.memoryThreshold &&
           batch.length > 0
         ) {
           const currentBatch = [...batch];
           batch = [item];
-          batchSize_bytes = itemSize;
+          batchSize_bytes = estimatedSize;
           return currentBatch;
         }
         batch.push(item);
-        batchSize_bytes += itemSize;
+        batchSize_bytes += estimatedSize;
         if (batch.length >= batchSize) {
           const currentBatch = [...batch];
           batch = [];
@@ -316,18 +320,22 @@ if (window.typingMindCloudSync) {
       try {
         const processItem = (item) => {
           try {
-            const itemSize = JSON.stringify(item).length * 2;
+            const estimatedSize = item.data
+              ? typeof item.data === "string"
+                ? item.data.length * 2
+                : 2000
+              : 1000;
             if (
-              batchSize_bytes + itemSize > this.memoryThreshold &&
+              batchSize_bytes + estimatedSize > this.memoryThreshold &&
               batch.length > 0
             ) {
               const currentBatch = [...batch];
               batch = [item];
-              batchSize_bytes = itemSize;
+              batchSize_bytes = estimatedSize;
               return currentBatch;
             }
             batch.push(item);
-            batchSize_bytes += itemSize;
+            batchSize_bytes += estimatedSize;
             if (batch.length >= batchSize) {
               const currentBatch = [...batch];
               batch = [];
@@ -570,8 +578,6 @@ if (window.typingMindCloudSync) {
         lsStats: { total: totalLS, included: includedLS, excluded: excludedLS },
         chatCount: chatItems.length,
         otherCount: otherItems.length,
-        sampleChatItems: chatItems.slice(0, 5),
-        sampleOtherItems: otherItems.slice(0, 5),
       });
       return Array.from(items.values());
     }
@@ -1194,7 +1200,11 @@ if (window.typingMindCloudSync) {
       localStorage.setItem("tcs_last-cloud-sync", timestamp.toString());
     }
     getItemSize(data) {
-      return JSON.stringify(data).length;
+      if (typeof data === "string") return data.length;
+      if (data && typeof data === "object") {
+        return Object.keys(data).length * 50;
+      }
+      return 100;
     }
     async detectChanges() {
       const changedItems = [];
@@ -2219,11 +2229,12 @@ if (window.typingMindCloudSync) {
           "tcs_sync_diagnostics",
           JSON.stringify(diagnosticsData)
         );
-        this.logger.log(
-          "info",
-          "📊 Sync diagnostics cache updated",
-          diagnosticsData
-        );
+        this.logger.log("info", "📊 Sync diagnostics cache updated", {
+          localItems: diagnosticsData.localItems,
+          cloudItems: diagnosticsData.cloudMetadata,
+          chatSync: `${diagnosticsData.chatSyncLocal}/${diagnosticsData.chatSyncCloud}`,
+          timestamp: new Date(diagnosticsData.timestamp).toLocaleTimeString(),
+        });
       } catch (error) {
         this.logger.log(
           "warning",
@@ -2478,10 +2489,13 @@ if (window.typingMindCloudSync) {
       let currentChunkSize = 0;
       for (const item of allItems) {
         try {
-          const itemStr = JSON.stringify(item);
-          const itemSize = itemStr.length * 2;
+          const estimatedSize = item.data
+            ? typeof item.data === "string"
+              ? item.data.length * 2
+              : 5000
+            : 2000;
           if (
-            currentChunkSize + itemSize > this.chunkSizeLimit &&
+            currentChunkSize + estimatedSize > this.chunkSizeLimit &&
             currentChunk.length > 0
           ) {
             chunks.push([...currentChunk]);
@@ -2489,7 +2503,7 @@ if (window.typingMindCloudSync) {
             currentChunkSize = 0;
           }
           currentChunk.push(item);
-          currentChunkSize += itemSize;
+          currentChunkSize += estimatedSize;
         } catch (error) {
           this.logger.log(
             "warning",
