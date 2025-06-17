@@ -1165,6 +1165,20 @@ if (window.typingMindCloudSync) {
         return result;
       });
     }
+
+    async copyObject(sourceKey, destinationKey) {
+      return this.withRetry(async () => {
+        const result = await this.client
+          .copyObject({
+            Bucket: this.config.get("bucketName"),
+            CopySource: `${this.config.get("bucketName")}/${sourceKey}`,
+            Key: destinationKey,
+          })
+          .promise();
+        this.logger.log("success", `Copied ${sourceKey} → ${destinationKey}`);
+        return result;
+      });
+    }
   }
   class SyncOrchestrator {
     constructor(
@@ -2272,328 +2286,23 @@ if (window.typingMindCloudSync) {
       this.dataService = dataService;
       this.s3Service = s3Service;
       this.logger = logger;
-      this.chunkSizeLimit = 50 * 1024 * 1024;
-      this.maxStringLength = 200 * 1024 * 1024;
-      this.jsZipLoaded = false;
     }
-    async loadJSZip() {
-      if (this.jsZipLoaded || window.JSZip) {
-        this.jsZipLoaded = true;
-        return window.JSZip;
-      }
-      return new Promise((resolve, reject) => {
-        const script = document.createElement("script");
-        script.src =
-          "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
-        script.onload = () => {
-          this.jsZipLoaded = true;
-          this.logger.log("success", "JSZip library loaded successfully");
-          resolve(window.JSZip);
-        };
-        script.onerror = () => {
-          this.logger.log("error", "Failed to load JSZip library");
-          reject(new Error("Failed to load JSZip library"));
-        };
-        document.head.appendChild(script);
-      });
-    }
-    async createCompressedBackup(filename, data) {
-      try {
-        const JSZip = await this.loadJSZip();
-        let stringifiedData;
-        try {
-          stringifiedData = JSON.stringify(data);
-        } catch (stringifyError) {
-          if (
-            stringifyError.message?.includes("string length") ||
-            stringifyError.message?.includes("Invalid string length") ||
-            stringifyError.message?.includes("out of memory") ||
-            stringifyError.message?.includes("Maximum call stack") ||
-            stringifyError.name === "RangeError"
-          ) {
-            this.logger.log(
-              "warning",
-              `JSON.stringify failed (${stringifyError.message}), data too large for simple backup`
-            );
-            throw new Error("DATA_TOO_LARGE_FOR_SIMPLE_BACKUP");
-          }
-          throw stringifyError;
-        }
-        const uncompressedSize = stringifiedData.length;
-        if (uncompressedSize > this.maxStringLength) {
-          this.logger.log(
-            "warning",
-            `Stringified data is ${this.formatFileSize(
-              uncompressedSize
-            )}, exceeds safe string length limit (${this.formatFileSize(
-              this.maxStringLength
-            )})`
-          );
-          throw new Error("DATA_TOO_LARGE_FOR_SIMPLE_BACKUP");
-        }
-        const textEncoder = new TextEncoder();
-        const stringifiedDataBytes = textEncoder.encode(stringifiedData);
-        const zip = new JSZip();
-        const jsonFileName = filename.replace(".zip", ".json");
-        zip.file(jsonFileName, stringifiedDataBytes, {
-          compression: "DEFLATE",
-          compressionOptions: { level: 9 },
-        });
-        const compressedData = await zip.generateAsync({ type: "uint8array" });
-        if (compressedData.length < 100) {
-          throw new Error(
-            "Backup file is too small or empty. Upload cancelled."
-          );
-        }
-        const encryptedData = await this.s3Service.crypto.encryptBytes(
-          compressedData
-        );
-        await this.s3Service.uploadRaw(filename, encryptedData);
-        this.logger.log(
-          "info",
-          `Compression: ${this.formatFileSize(
-            uncompressedSize
-          )} → ${this.formatFileSize(compressedData.length)} ` +
-            `(${Math.round(
-              (1 - compressedData.length / uncompressedSize) * 100
-            )}% reduction)`
-        );
-        return true;
-      } catch (error) {
-        this.logger.log(
-          "error",
-          "Failed to create compressed backup",
-          error.message
-        );
-        throw error;
-      }
-    }
-    async estimateDataSize() {
-      try {
-        const { totalSize, itemCount } =
-          await this.dataService.estimateDataSize();
-        const jsonOverhead = itemCount * 50;
-        const structureOverhead = 1000;
-        const safetyMargin = Math.max(totalSize * 0.2, 5 * 1024 * 1024);
-        const conservativeEstimate =
-          totalSize + jsonOverhead + structureOverhead + safetyMargin;
-        this.logger.log(
-          "info",
-          `Size estimation: Raw=${this.formatFileSize(
-            totalSize
-          )}, WithOverhead=${this.formatFileSize(
-            conservativeEstimate
-          )} (${itemCount} items)`
-        );
-        return conservativeEstimate;
-      } catch (error) {
-        this.logger.log("error", "Failed to estimate data size", error.message);
-        return 0;
-      }
-    }
+
     async createSnapshot(name) {
-      this.logger.log("start", `Creating snapshot: ${name}`);
-      const estimatedSize = await this.estimateDataSize();
-      this.logger.log(
-        "info",
-        `Estimated data size: ${this.formatFileSize(estimatedSize)}`
-      );
-      const conservativeLimit = Math.min(this.chunkSizeLimit, 30 * 1024 * 1024);
-      if (estimatedSize > conservativeLimit) {
-        this.logger.log(
-          "info",
-          `Data size exceeds conservative limit (${this.formatFileSize(
-            conservativeLimit
-          )}), using chunked backup`
-        );
-        return await this.createChunkedSnapshot(name, estimatedSize);
-      } else {
-        try {
-          this.logger.log("info", "Attempting simple snapshot first");
-          return await this.createSimpleSnapshot(name);
-        } catch (error) {
-          if (error.message === "DATA_TOO_LARGE_FOR_SIMPLE_BACKUP") {
-            this.logger.log(
-              "warning",
-              "Simple snapshot failed due to size, falling back to chunked backup"
-            );
-            return await this.createChunkedSnapshot(name, estimatedSize);
-          }
-          throw error;
-        }
-      }
-    }
-    async createSimpleSnapshot(name) {
-      this.logger.log("info", "Using simple snapshot method for small dataset");
-      const timestamp = new Date()
-        .toISOString()
-        .replace(/[-:]/g, "")
-        .replace(/\..+/, "");
-      const filename = `s-${name.replace(
-        /[^a-zA-Z0-9]/g,
-        "-"
-      )}-${timestamp}.zip`;
-      const dataResults = await this.dataService.getAllItemsEfficient();
-      const allItems =
-        Array.isArray(dataResults) && Array.isArray(dataResults[0])
-          ? dataResults[0]
-          : [];
-      if (allItems.length === 0) {
-        for await (const batch of dataResults) {
-          allItems.push(...batch);
-        }
-      }
-      const indexedDBData = {};
-      allItems
-        .filter((item) => item.type === "idb")
-        .forEach((item) => {
-          if (item.data) {
-            indexedDBData[item.id] = item.data;
-          }
-        });
-      const localStorageData = {};
-      allItems
-        .filter((item) => item.type === "ls")
-        .forEach((item) => {
-          localStorageData[item.data.key] = item.data.value;
-        });
-      const snapshot = {
-        localStorage: localStorageData,
-        indexedDB: indexedDBData,
-        created: Date.now(),
-        name,
-        format: "simple",
-      };
-      await this.createCompressedBackup(filename, snapshot);
-      this.logger.log("success", `Simple snapshot created: ${filename}`);
-      return true;
-    }
-    async createChunkedSnapshot(name, estimatedSize) {
-      this.logger.log(
-        "info",
-        `Using chunked snapshot method for large dataset (${this.formatFileSize(
-          estimatedSize
-        )})`
-      );
-      const timestamp = new Date()
-        .toISOString()
-        .replace(/[-:]/g, "")
-        .replace(/\..+/, "");
-      const baseFilename = `s-${name.replace(
-        /[^a-zA-Z0-9]/g,
-        "-"
-      )}-${timestamp}`;
+      this.logger.log("start", `Creating server-side snapshot: ${name}`);
       try {
-        const chunks = [];
-        let chunkIndex = 0;
-        for await (const batch of this.dataService.streamAllItemsInternal()) {
-          chunks.push(batch);
-          this.logger.log(
-            "info",
-            `Processed batch ${chunkIndex + 1} (${batch.length} items)`
-          );
-          chunkIndex++;
-          if (chunkIndex % 10 === 0) {
-            await new Promise((resolve) => setTimeout(resolve, 100));
-          }
-        }
-        this.logger.log("info", `Created ${chunks.length} chunks for upload`);
-        const metadata = {
-          format: "chunked",
-          created: Date.now(),
-          name,
-          totalChunks: chunks.length,
-          estimatedSize,
-          chunkList: chunks.map((chunk, index) => ({
-            index,
-            filename: `${baseFilename}-chunk-${index
-              .toString()
-              .padStart(3, "0")}.zip`,
-            itemCount: chunk.length,
-          })),
-        };
-        await this.s3Service.upload(
-          `${baseFilename}-metadata.json`,
-          metadata,
-          true
-        );
-        for (let i = 0; i < chunks.length; i++) {
-          const chunkFilename = `${baseFilename}-chunk-${i
-            .toString()
-            .padStart(3, "0")}.zip`;
-          const chunkData = {
-            chunkIndex: i,
-            totalChunks: chunks.length,
-            items: chunks[i],
-            created: Date.now(),
-          };
-          this.logger.log(
-            "info",
-            `Uploading chunk ${i + 1}/${chunks.length} (${
-              chunks[i].length
-            } items)`
-          );
-          try {
-            await this.createCompressedBackup(chunkFilename, chunkData);
-            chunks[i] = null;
-            if (window?.gc) {
-              window.gc();
-            } else if (typeof global !== "undefined" && global?.gc) {
-              global.gc();
-            }
-          } catch (error) {
-            this.logger.log(
-              "error",
-              `Failed to upload chunk ${i + 1}: ${error.message}`
-            );
-            throw new Error(
-              `Chunked snapshot failed at chunk ${i + 1}/${chunks.length}`
-            );
-          }
-        }
-        this.logger.log(
-          "success",
-          `Chunked snapshot created: ${baseFilename} (${chunks.length} chunks)`
-        );
-        return true;
+        await this.ensureSyncIsCurrent();
+        return await this.createServerSideSnapshot(name);
       } catch (error) {
         this.logger.log(
           "error",
-          "Chunked snapshot creation failed",
+          "Server-side snapshot creation failed",
           error.message
         );
         throw error;
       }
     }
-    async createDataChunks(allItems) {
-      const chunks = [];
-      let currentChunk = [];
-      let currentChunkSize = 0;
-      for (const item of allItems) {
-        try {
-          const estimatedSize = this.dataService.estimateItemSize(item.data);
-          if (
-            currentChunkSize + estimatedSize > this.chunkSizeLimit &&
-            currentChunk.length > 0
-          ) {
-            chunks.push([...currentChunk]);
-            currentChunk = [];
-            currentChunkSize = 0;
-          }
-          currentChunk.push(item);
-          currentChunkSize += estimatedSize;
-        } catch (error) {
-          this.logger.log(
-            "warning",
-            `Skipping problematic item ${item.id}: ${error.message}`
-          );
-        }
-      }
-      if (currentChunk.length > 0) {
-        chunks.push(currentChunk);
-      }
-      return chunks;
-    }
+
     async checkAndPerformDailyBackup() {
       const lastBackupStr = localStorage.getItem("tcs_last-daily-backup");
       const now = new Date();
@@ -2607,163 +2316,257 @@ if (window.typingMindCloudSync) {
         this.logger.log("success", "Daily backup completed");
       }
     }
+
     async performDailyBackup() {
-      const estimatedSize = await this.estimateDataSize();
-      this.logger.log(
-        "info",
-        `Estimated data size: ${this.formatFileSize(estimatedSize)}`
-      );
-      const conservativeLimit = Math.min(this.chunkSizeLimit, 30 * 1024 * 1024);
-      if (estimatedSize > conservativeLimit) {
-        this.logger.log(
-          "info",
-          `Data size exceeds conservative limit (${this.formatFileSize(
-            conservativeLimit
-          )}), using chunked daily backup`
-        );
-        return await this.performChunkedDailyBackup(estimatedSize);
-      } else {
-        try {
-          this.logger.log("info", "Attempting simple daily backup first");
-          return await this.performSimpleDailyBackup();
-        } catch (error) {
-          if (error.message === "DATA_TOO_LARGE_FOR_SIMPLE_BACKUP") {
-            this.logger.log(
-              "warning",
-              "Simple daily backup failed due to size, falling back to chunked backup"
-            );
-            return await this.performChunkedDailyBackup(estimatedSize);
-          }
-          throw error;
-        }
-      }
-    }
-    async performSimpleDailyBackup() {
-      this.logger.log("info", "Using simple daily backup method");
-      const today = new Date();
-      const dateString = `${today.getFullYear()}${String(
-        today.getMonth() + 1
-      ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-      const filename = `typingmind-backup-${dateString}.zip`;
-      const dataResults = await this.dataService.getAllItemsEfficient();
-      const allItems =
-        Array.isArray(dataResults) && Array.isArray(dataResults[0])
-          ? dataResults[0]
-          : [];
-      if (allItems.length === 0) {
-        for await (const batch of dataResults) {
-          allItems.push(...batch);
-        }
-      }
-      const indexedDBData = {};
-      allItems
-        .filter((item) => item.type === "idb")
-        .forEach((item) => {
-          if (item.data) {
-            indexedDBData[item.id] = item.data;
-          }
-        });
-      const localStorageData = {};
-      allItems
-        .filter((item) => item.type === "ls")
-        .forEach((item) => {
-          localStorageData[item.data.key] = item.data.value;
-        });
-      const backup = {
-        localStorage: localStorageData,
-        indexedDB: indexedDBData,
-        created: Date.now(),
-        name: "daily-auto",
-        format: "simple",
-      };
-      await this.createCompressedBackup(filename, backup);
-      this.logger.log("success", `Simple daily backup completed: ${filename}`);
-      await this.cleanupOldBackups();
-    }
-    async performChunkedDailyBackup(estimatedSize) {
-      this.logger.log(
-        "info",
-        `Using chunked daily backup method (${this.formatFileSize(
-          estimatedSize
-        )})`
-      );
-      const today = new Date();
-      const dateString = `${today.getFullYear()}${String(
-        today.getMonth() + 1
-      ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-      const baseFilename = `typingmind-backup-${dateString}`;
+      this.logger.log("info", "Starting server-side daily backup");
       try {
-        const chunks = [];
-        let chunkIndex = 0;
-        for await (const batch of this.dataService.streamAllItemsInternal()) {
-          chunks.push(batch);
-          this.logger.log(
-            "info",
-            `Processed daily backup batch ${chunkIndex + 1} (${
-              batch.length
-            } items)`
-          );
-          chunkIndex++;
-          if (chunkIndex % 10 === 0) {
-            await new Promise((resolve) => setTimeout(resolve, 100));
-          }
-        }
-        this.logger.log(
-          "info",
-          `Created ${chunks.length} chunks for daily backup`
-        );
-        const metadata = {
-          format: "chunked",
-          created: Date.now(),
-          name: "daily-auto",
-          type: "daily-backup",
-          totalChunks: chunks.length,
-          estimatedSize,
-          chunkList: chunks.map((chunk, index) => ({
-            index,
-            filename: `${baseFilename}-chunk-${index
-              .toString()
-              .padStart(3, "0")}.zip`,
-            itemCount: chunk.length,
-          })),
-        };
-        await this.s3Service.upload(
-          `${baseFilename}-metadata.json`,
-          metadata,
-          true
-        );
-        for (let i = 0; i < chunks.length; i++) {
-          const chunkFilename = `${baseFilename}-chunk-${i
-            .toString()
-            .padStart(3, "0")}.zip`;
-          const chunkData = {
-            chunkIndex: i,
-            totalChunks: chunks.length,
-            items: chunks[i],
-            created: Date.now(),
-          };
-          this.logger.log(
-            "info",
-            `Uploading daily backup chunk ${i + 1}/${chunks.length}`
-          );
-          await this.createCompressedBackup(chunkFilename, chunkData);
-          chunks[i] = null;
-          if (window?.gc) {
-            window.gc();
-          } else if (typeof global !== "undefined" && global?.gc) {
-            global.gc();
-          }
-        }
-        this.logger.log(
-          "success",
-          `Chunked daily backup completed: ${baseFilename} (${chunks.length} chunks)`
-        );
-        await this.cleanupOldBackups();
+        await this.ensureSyncIsCurrent();
+        return await this.createServerSideDailyBackup();
       } catch (error) {
-        this.logger.log("error", "Chunked daily backup failed", error.message);
+        this.logger.log(
+          "error",
+          "Server-side daily backup failed",
+          error.message
+        );
         throw error;
       }
     }
+
+    async ensureSyncIsCurrent() {
+      this.logger.log("info", "Ensuring sync is current before backup");
+      const orchestrator = window.cloudSyncApp?.syncOrchestrator;
+      if (orchestrator && !orchestrator.syncInProgress) {
+        try {
+          await orchestrator.performFullSync();
+          this.logger.log("success", "Sync completed before backup");
+        } catch (error) {
+          this.logger.log(
+            "warning",
+            `Pre-backup sync failed: ${error.message}, proceeding with backup anyway`
+          );
+        }
+      } else {
+        this.logger.log(
+          "info",
+          "Sync already in progress or not available, proceeding with backup"
+        );
+      }
+    }
+
+    async createServerSideSnapshot(name) {
+      this.logger.log(
+        "info",
+        "Creating server-side snapshot using S3 copy operations"
+      );
+      const timestamp = new Date()
+        .toISOString()
+        .replace(/[-:]/g, "")
+        .replace(/\..+/, "");
+      const backupFolder = `backups/s-${name.replace(
+        /[^a-zA-Z0-9]/g,
+        "-"
+      )}-${timestamp}`;
+
+      try {
+        const itemsList = await this.s3Service.list("items/");
+        this.logger.log(
+          "info",
+          `Found ${itemsList.length} items to backup via server-side copy`
+        );
+
+        let copiedItems = 0;
+        const concurrency = 20;
+        const itemsToProcess = itemsList.filter(
+          (item) => item.Key && item.Key.startsWith("items/")
+        );
+
+        for (let i = 0; i < itemsToProcess.length; i += concurrency) {
+          const batch = itemsToProcess.slice(i, i + concurrency);
+          const copyPromises = batch.map(async (item) => {
+            try {
+              const destinationKey = `${backupFolder}/${item.Key}`;
+              await this.s3Service.copyObject(item.Key, destinationKey);
+              return { success: true, key: item.Key };
+            } catch (copyError) {
+              this.logger.log(
+                "warning",
+                `Failed to copy item ${item.Key}: ${copyError.message}`
+              );
+              return {
+                success: false,
+                key: item.Key,
+                error: copyError.message,
+              };
+            }
+          });
+
+          const batchResults = await Promise.allSettled(copyPromises);
+          const successfulCopies = batchResults.filter(
+            (result) => result.status === "fulfilled" && result.value?.success
+          ).length;
+          copiedItems += successfulCopies;
+
+          if (
+            copiedItems % 200 === 0 ||
+            i + concurrency >= itemsToProcess.length
+          ) {
+            this.logger.log(
+              "info",
+              `Server-side copied ${copiedItems}/${itemsToProcess.length} items`
+            );
+          }
+        }
+
+        try {
+          const metadataDestination = `${backupFolder}/metadata.json`;
+          await this.s3Service.copyObject("metadata.json", metadataDestination);
+          this.logger.log(
+            "info",
+            "Server-side copied metadata.json to snapshot"
+          );
+        } catch (metadataError) {
+          this.logger.log(
+            "warning",
+            `Failed to copy metadata: ${metadataError.message}`
+          );
+        }
+
+        const manifest = {
+          type: "server-side-snapshot",
+          name: name,
+          created: Date.now(),
+          totalItems: copiedItems,
+          format: "server-side",
+          version: "3.0",
+          backupFolder: backupFolder,
+        };
+
+        await this.s3Service.upload(
+          `${backupFolder}/backup-manifest.json`,
+          manifest,
+          true
+        );
+
+        this.logger.log(
+          "success",
+          `Server-side snapshot created: ${backupFolder} (${copiedItems} items copied)`
+        );
+        return true;
+      } catch (error) {
+        this.logger.log(
+          "error",
+          `Server-side snapshot failed: ${error.message}`
+        );
+        throw error;
+      }
+    }
+
+    async createServerSideDailyBackup() {
+      this.logger.log(
+        "info",
+        "Creating server-side daily backup using S3 copy operations"
+      );
+      const today = new Date();
+      const dateString = `${today.getFullYear()}${String(
+        today.getMonth() + 1
+      ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+      const backupFolder = `backups/typingmind-backup-${dateString}`;
+
+      try {
+        const itemsList = await this.s3Service.list("items/");
+        this.logger.log(
+          "info",
+          `Found ${itemsList.length} items for server-side daily backup`
+        );
+
+        let copiedItems = 0;
+        const concurrency = 20;
+        const itemsToProcess = itemsList.filter(
+          (item) => item.Key && item.Key.startsWith("items/")
+        );
+
+        for (let i = 0; i < itemsToProcess.length; i += concurrency) {
+          const batch = itemsToProcess.slice(i, i + concurrency);
+          const copyPromises = batch.map(async (item) => {
+            try {
+              const destinationKey = `${backupFolder}/${item.Key}`;
+              await this.s3Service.copyObject(item.Key, destinationKey);
+              return { success: true, key: item.Key };
+            } catch (copyError) {
+              this.logger.log(
+                "warning",
+                `Failed to copy item ${item.Key}: ${copyError.message}`
+              );
+              return {
+                success: false,
+                key: item.Key,
+                error: copyError.message,
+              };
+            }
+          });
+
+          const batchResults = await Promise.allSettled(copyPromises);
+          const successfulCopies = batchResults.filter(
+            (result) => result.status === "fulfilled" && result.value?.success
+          ).length;
+          copiedItems += successfulCopies;
+
+          if (
+            copiedItems % 200 === 0 ||
+            i + concurrency >= itemsToProcess.length
+          ) {
+            this.logger.log(
+              "info",
+              `Daily backup: server-side copied ${copiedItems}/${itemsToProcess.length} items`
+            );
+          }
+        }
+
+        try {
+          const metadataDestination = `${backupFolder}/metadata.json`;
+          await this.s3Service.copyObject("metadata.json", metadataDestination);
+          this.logger.log(
+            "info",
+            "Server-side copied metadata.json to daily backup"
+          );
+        } catch (metadataError) {
+          this.logger.log(
+            "warning",
+            `Failed to copy metadata to daily backup: ${metadataError.message}`
+          );
+        }
+
+        const manifest = {
+          type: "server-side-daily-backup",
+          name: "daily-auto",
+          created: Date.now(),
+          totalItems: copiedItems,
+          format: "server-side",
+          version: "3.0",
+          backupFolder: backupFolder,
+        };
+
+        await this.s3Service.upload(
+          `${backupFolder}/backup-manifest.json`,
+          manifest,
+          true
+        );
+
+        this.logger.log(
+          "success",
+          `Server-side daily backup created: ${backupFolder} (${copiedItems} items copied)`
+        );
+        await this.cleanupOldBackups();
+        return true;
+      } catch (error) {
+        this.logger.log(
+          "error",
+          `Server-side daily backup failed: ${error.message}`
+        );
+        throw error;
+      }
+    }
+
     formatFileSize(bytes) {
       if (bytes === 0) return "0 B";
       const k = 1024;
@@ -2771,70 +2574,55 @@ if (window.typingMindCloudSync) {
       const i = Math.floor(Math.log(bytes) / Math.log(k));
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
     }
+
     async loadBackupList() {
       try {
-        const objects = await this.s3Service.list("");
+        const objects = await this.s3Service.list("backups/");
         const backups = [];
+
         for (const obj of objects) {
-          if (!obj.Key.includes("/")) {
-            const isValidBackupFile =
-              obj.Key.startsWith("typingmind-backup-") ||
-              obj.Key.startsWith("s-");
-            if (isValidBackupFile) {
-              if (obj.Key.endsWith("-metadata.json")) {
-                try {
-                  const metadata = await this.s3Service.download(obj.Key, true);
-                  if (metadata.format === "chunked") {
-                    const backupType = this.getBackupType(obj.Key);
-                    const baseName = obj.Key.replace("-metadata.json", "");
-                    const chunkFiles = objects.filter(
-                      (o) =>
-                        o.Key.startsWith(baseName) && o.Key.includes("-chunk-")
-                    );
-                    const totalChunkSize = chunkFiles.reduce(
-                      (sum, chunk) => sum + chunk.Size,
-                      0
-                    );
-                    backups.push({
-                      key: obj.Key,
-                      name: obj.Key.replace("-metadata.json", ""),
-                      displayName: this.formatBackupDisplayName(
-                        obj.Key,
-                        metadata
-                      ),
-                      size: totalChunkSize,
-                      modified: obj.LastModified,
-                      format: "chunked",
-                      chunks: metadata.totalChunks,
-                      type: backupType,
-                      sortOrder: backupType === "snapshot" ? 1 : 2,
-                    });
-                  }
-                } catch (error) {
-                  this.logger.log(
-                    "warning",
-                    `Failed to read metadata for ${obj.Key}`
-                  );
-                }
-              } else if (
-                obj.Key.match(/\.(zip|json)$/) &&
-                !obj.Key.includes("-chunk-")
-              ) {
-                const backupType = this.getBackupType(obj.Key);
+          if (obj.Key.endsWith("/backup-manifest.json")) {
+            try {
+              const manifest = await this.s3Service.download(obj.Key, true);
+              if (manifest.format === "server-side") {
+                const backupFolder =
+                  manifest.backupFolder ||
+                  obj.Key.replace("/backup-manifest.json", "");
+                const backupName = backupFolder.replace("backups/", "");
+                const backupFiles = objects.filter((o) =>
+                  o.Key.startsWith(backupFolder + "/")
+                );
+                const totalSize = backupFiles.reduce(
+                  (sum, file) => sum + (file.Size || 0),
+                  0
+                );
+                const backupType = this.getBackupType(backupName);
+
                 backups.push({
                   key: obj.Key,
-                  name: obj.Key.replace(/\.(zip|json)$/, ""),
-                  displayName: this.formatBackupDisplayName(obj.Key),
-                  size: obj.Size,
+                  name: backupName,
+                  displayName: this.formatBackupDisplayName(
+                    backupName,
+                    manifest
+                  ),
+                  size: totalSize,
                   modified: obj.LastModified,
-                  format: "simple",
+                  format: "server-side",
+                  totalItems: manifest.totalItems,
                   type: backupType,
+                  backupFolder: backupFolder,
                   sortOrder: backupType === "snapshot" ? 1 : 2,
                 });
               }
+            } catch (error) {
+              this.logger.log(
+                "warning",
+                `Failed to read server-side manifest for ${obj.Key}`
+              );
             }
           }
         }
+
         return backups.sort((a, b) => {
           if (a.sortOrder !== b.sortOrder) {
             return a.sortOrder - b.sortOrder;
@@ -2846,6 +2634,7 @@ if (window.typingMindCloudSync) {
         return [];
       }
     }
+
     getBackupType(filename) {
       if (filename.startsWith("s-")) {
         return "snapshot";
@@ -2854,30 +2643,30 @@ if (window.typingMindCloudSync) {
       }
       return "unknown";
     }
+
     formatBackupDisplayName(filename, metadata = null) {
       const type = this.getBackupType(filename);
+      const isServerSide = metadata?.format === "server-side";
+
       if (type === "snapshot") {
         const cleanName = filename
           .replace(/^s-/, "")
-          .replace(/-\d{8}T\d{6}.*$/, "")
-          .replace("-metadata.json", "")
-          .replace(/\.(zip|json)$/, "");
+          .replace(/-\d{8}T\d{6}.*$/, "");
         const timestamp = filename.match(/-(\d{8}T\d{6})/);
-        let displayName = `📸 Snapshot: ${cleanName}`;
+
+        let versionLabel = isServerSide ? " (Server-Side)" : "";
+        let displayName = `📸 Snapshot${versionLabel}: ${cleanName}`;
+
         if (timestamp) {
           const dateStr = timestamp[1];
           const date = new Date(
-            dateStr.slice(0, 4) +
-              "-" +
-              dateStr.slice(4, 6) +
-              "-" +
-              dateStr.slice(6, 8) +
-              "T" +
-              dateStr.slice(9, 11) +
-              ":" +
-              dateStr.slice(11, 13) +
-              ":" +
-              dateStr.slice(13, 15)
+            `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(
+              6,
+              8
+            )}T${dateStr.slice(9, 11)}:${dateStr.slice(11, 13)}:${dateStr.slice(
+              13,
+              15
+            )}`
           );
           displayName += ` (${date.toLocaleDateString()})`;
         }
@@ -2887,233 +2676,206 @@ if (window.typingMindCloudSync) {
         if (dateMatch) {
           const dateStr = dateMatch[1];
           const date = new Date(
-            dateStr.slice(0, 4) +
-              "-" +
-              dateStr.slice(4, 6) +
-              "-" +
-              dateStr.slice(6, 8)
+            `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(
+              6,
+              8
+            )}`
           );
-          return `🗓️ Daily Backup (${date.toLocaleDateString()})`;
+          const versionSuffix = isServerSide ? " (Server-Side)" : "";
+          return `🗓️ Daily Backup${versionSuffix} (${date.toLocaleDateString()})`;
         }
-        return "🗓️ Daily Backup";
+        const versionSuffix = isServerSide ? " (Server-Side)" : "";
+        return `🗓️ Daily Backup${versionSuffix}`;
       }
-      return filename
-        .replace(/\.(zip|json)$/, "")
-        .replace("-metadata.json", "");
+      return filename;
     }
-    async restoreFromBackup(key, cryptoService) {
+
+    async restoreFromBackup(key) {
       this.logger.log("start", `Restoring from backup: ${key}`);
       try {
-        if (key.endsWith("-metadata.json")) {
-          return await this.restoreFromChunkedBackup(key, cryptoService);
+        if (key.endsWith("/backup-manifest.json")) {
+          return await this.restoreFromServerSideBackup(key);
         } else {
-          return await this.restoreFromSimpleBackup(key, cryptoService);
+          this.logger.log(
+            "error",
+            "Invalid or unsupported backup format selected for restore."
+          );
+          throw new Error("Unsupported backup format");
         }
       } catch (error) {
         this.logger.log("error", "Backup restoration failed", error.message);
         throw error;
       }
     }
-    async restoreFromSimpleBackup(key, cryptoService) {
-      this.logger.log("info", "Restoring from simple backup format");
-      const backup = await this.restoreFromZipBackup(key, cryptoService);
-      if (!backup) {
-        throw new Error("Backup not found");
-      }
-      if (!backup.localStorage && !backup.indexedDB) {
-        throw new Error(
-          "Invalid backup format - missing localStorage and indexedDB data"
-        );
-      }
-      await this.restoreData(backup);
-      this.logger.log("success", "Simple backup restored successfully");
-      setTimeout(() => {
-        window.location.reload();
-      }, 3000);
-      return true;
-    }
-    async restoreFromZipBackup(key, cryptoService) {
+
+    async restoreFromServerSideBackup(manifestKey) {
+      this.logger.log("info", "Restoring from server-side backup format");
+
       try {
-        const JSZip = await this.loadJSZip();
-        const zipData = await this.s3Service.downloadRaw(key);
-        const decryptedZipBytes = await cryptoService.decryptBytes(zipData);
-        const zip = await JSZip.loadAsync(decryptedZipBytes);
-        const jsonFile = Object.keys(zip.files).find((f) =>
-          f.endsWith(".json")
+        const manifest = await this.s3Service.download(manifestKey, true);
+        if (!manifest || manifest.format !== "server-side") {
+          throw new Error("Invalid server-side backup manifest");
+        }
+
+        const backupFolder = manifest.backupFolder;
+        this.logger.log(
+          "info",
+          `Restoring server-side backup: ${manifest.name} (${manifest.totalItems} items)`
         );
-        if (!jsonFile) throw new Error("No JSON file found in ZIP backup");
-        const jsonContent = await zip.file(jsonFile).async("string");
-        return JSON.parse(jsonContent);
+
+        const backupFiles = await this.s3Service.list(backupFolder + "/");
+        const itemFiles = backupFiles.filter(
+          (file) =>
+            file.Key.startsWith(backupFolder + "/items/") &&
+            file.Key.endsWith(".json")
+        );
+
+        this.logger.log(
+          "info",
+          `Found ${itemFiles.length} items to restore via server-side copy`
+        );
+
+        this.logger.log(
+          "warning",
+          "⚠️ CRITICAL: This will overwrite ALL cloud data."
+        );
+
+        let restoredCount = 0;
+        const concurrency = 20;
+
+        for (let i = 0; i < itemFiles.length; i += concurrency) {
+          const batch = itemFiles.slice(i, i + concurrency);
+          const copyPromises = batch.map(async (file) => {
+            try {
+              const itemFilename = file.Key.replace(backupFolder + "/", "");
+              await this.s3Service.copyObject(file.Key, itemFilename);
+              return { success: true, key: file.Key };
+            } catch (copyError) {
+              this.logger.log(
+                "warning",
+                `Failed to restore item ${file.Key}: ${copyError.message}`
+              );
+              return {
+                success: false,
+                key: file.Key,
+                error: copyError.message,
+              };
+            }
+          });
+
+          const batchResults = await Promise.allSettled(copyPromises);
+          const successfulRestores = batchResults.filter(
+            (result) => result.status === "fulfilled" && result.value?.success
+          ).length;
+          restoredCount += successfulRestores;
+
+          if (
+            restoredCount % 200 === 0 ||
+            i + concurrency >= itemFiles.length
+          ) {
+            this.logger.log(
+              "info",
+              `Server-side restored ${restoredCount}/${itemFiles.length} items`
+            );
+          }
+        }
+
+        const metadataFile = backupFiles.find(
+          (file) => file.Key === backupFolder + "/metadata.json"
+        );
+        if (metadataFile) {
+          try {
+            await this.s3Service.copyObject(metadataFile.Key, "metadata.json");
+            this.logger.log("info", "Server-side restored metadata.json");
+          } catch (metadataError) {
+            this.logger.log(
+              "warning",
+              `Failed to restore metadata: ${metadataError.message}`
+            );
+          }
+        }
+
+        localStorage.removeItem("tcs_local-metadata");
+        localStorage.removeItem("tcs_last-cloud-sync");
+        localStorage.removeItem("tcs_metadata_etag");
+
+        this.logger.log(
+          "success",
+          `Server-side backup restore completed: ${restoredCount} items restored via S3 copy`
+        );
+        this.logger.log(
+          "success",
+          "Page will reload in 3 seconds to sync restored data."
+        );
+
+        setTimeout(() => {
+          window.location.reload();
+        }, 3000);
+
+        return true;
       } catch (error) {
         this.logger.log(
           "error",
-          "Failed to restore from ZIP backup",
-          error.message
+          `Server-side backup restore failed: ${error.message}`
         );
         throw error;
       }
     }
-    async restoreFromChunkedBackup(metadataKey, cryptoService) {
-      this.logger.log("info", "Restoring from chunked backup format");
-      const metadata = await this.s3Service.download(metadataKey, true);
-      if (!metadata || metadata.format !== "chunked") {
-        throw new Error("Invalid chunked backup metadata");
-      }
-      this.logger.log(
-        "info",
-        `Restoring chunked backup: ${metadata.totalChunks} chunks`
-      );
-      const allData = {
-        localStorage: {},
-        indexedDB: {},
-      };
-      for (let i = 0; i < metadata.totalChunks; i++) {
-        const chunkInfo = metadata.chunkList[i];
-        this.logger.log(
-          "info",
-          `Processing chunk ${i + 1}/${metadata.totalChunks}`
-        );
-        try {
-          const chunkData = await this.restoreFromZipBackup(
-            chunkInfo.filename,
-            cryptoService
-          );
-          if (chunkData?.items) {
-            for (const item of chunkData.items) {
-              if (item.type === "idb" && item.data) {
-                allData.indexedDB[item.id] = item.data;
-              } else if (item.type === "ls" && item.data) {
-                allData.localStorage[item.data.key] = item.data.value;
-              }
-            }
-          }
-        } catch (error) {
-          this.logger.log(
-            "error",
-            `Failed to process chunk ${i + 1}: ${error.message}`
-          );
-          throw new Error(
-            `Chunked backup restoration failed at chunk ${i + 1}`
-          );
-        }
-      }
-      await this.restoreData(allData);
-      this.logger.log(
-        "success",
-        `Chunked backup restored successfully (${metadata.totalChunks} chunks)`
-      );
-      setTimeout(() => {
-        window.location.reload();
-      }, 3000);
-      return true;
-    }
-    async restoreData(data) {
-      this.logger.log("info", "Restoring data to local storage");
-      if (!data || typeof data !== "object") {
-        throw new Error("Invalid restore data: data must be an object");
-      }
-      if (!data.localStorage && !data.indexedDB) {
-        throw new Error(
-          "Invalid restore data: missing localStorage and indexedDB sections"
-        );
-      }
-      this.logger.log(
-        "warning",
-        "⚠️ CRITICAL: This restore will overwrite ALL local data. Page will reload after restore."
-      );
-      const promises = [];
-      if (data.indexedDB && typeof data.indexedDB === "object") {
-        Object.entries(data.indexedDB).forEach(([key, itemData]) => {
-          if (key && itemData !== undefined && itemData !== null) {
-            promises.push(this.dataService.saveItem(itemData, "idb", key));
-            this.logger.log("info", `🔄 Restoring IndexedDB item: ${key}`);
-          } else {
-            this.logger.log(
-              "warning",
-              `Skipping invalid IndexedDB item: ${key}`
-            );
-          }
-        });
-      }
-      if (data.localStorage && typeof data.localStorage === "object") {
-        Object.entries(data.localStorage).forEach(([key, value]) => {
-          if (key && value !== undefined && value !== null) {
-            promises.push(this.dataService.saveItem({ key, value }, "ls"));
-            this.logger.log("info", `🔄 Restoring localStorage item: ${key}`);
-          } else {
-            this.logger.log(
-              "warning",
-              `Skipping invalid localStorage item: ${key}`
-            );
-          }
-        });
-      }
-      await Promise.all(promises);
-      this.logger.log(
-        "info",
-        "✅ Data restore completed. Clearing sync metadata to force fresh sync."
-      );
-      localStorage.removeItem("tcs_cloud-metadata");
-      localStorage.removeItem("tcs_last-cloud-sync");
-      this.logger.log(
-        "success",
-        "Restore completed successfully. Page will reload in 3 seconds."
-      );
-    }
+
     async cleanupOldBackups() {
       try {
-        const objects = await this.s3Service.list("");
+        const objects = await this.s3Service.list("backups/");
         const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
         let deletedBackups = 0;
-        const backupMetadataFiles = objects.filter(
-          (obj) =>
-            (obj.Key.startsWith("typingmind-backup-") ||
-              obj.Key.startsWith("s-")) &&
-            (obj.Key.endsWith("-metadata.json") || obj.Key.endsWith(".zip"))
+
+        const serverSideManifests = objects.filter((obj) =>
+          obj.Key.endsWith("/backup-manifest.json")
         );
-        for (const obj of backupMetadataFiles) {
+
+        for (const manifestObj of serverSideManifests) {
           const isOldBackup =
-            new Date(obj.LastModified).getTime() < thirtyDaysAgo;
+            new Date(manifestObj.LastModified).getTime() < thirtyDaysAgo;
           if (isOldBackup) {
             try {
-              if (obj.Key.endsWith("-metadata.json")) {
-                try {
-                  const metadata = await this.s3Service.download(obj.Key, true);
-                  if (metadata?.chunkList?.length > 0) {
-                    for (const chunkInfo of metadata.chunkList) {
-                      try {
-                        await this.s3Service.delete(chunkInfo.filename);
-                        this.logger.log(
-                          "info",
-                          `Cleaned up old chunk: ${chunkInfo.filename}`
-                        );
-                      } catch (chunkError) {
-                        this.logger.log(
-                          "warning",
-                          `Failed to delete chunk: ${chunkInfo.filename}`
-                        );
-                      }
-                    }
+              const manifest = await this.s3Service.download(
+                manifestObj.Key,
+                true
+              );
+              if (manifest?.format === "server-side") {
+                const backupFolder = manifest.backupFolder;
+
+                const backupFiles = objects.filter((obj) =>
+                  obj.Key.startsWith(backupFolder + "/")
+                );
+                for (const file of backupFiles) {
+                  try {
+                    await this.s3Service.delete(file.Key);
+                  } catch (fileError) {
+                    this.logger.log(
+                      "warning",
+                      `Failed to delete server-side backup file: ${file.Key}`
+                    );
                   }
-                } catch (metadataError) {
-                  this.logger.log(
-                    "warning",
-                    `Failed to read metadata for cleanup: ${obj.Key}`
-                  );
                 }
+                deletedBackups++;
+                this.logger.log(
+                  "info",
+                  `Cleaned up server-side backup: ${backupFolder}`
+                );
               }
-              await this.s3Service.delete(obj.Key);
-              deletedBackups++;
-              this.logger.log("info", `Cleaned up old backup: ${obj.Key}`);
             } catch (error) {
-              this.logger.log("warning", `Failed to delete backup: ${obj.Key}`);
+              this.logger.log(
+                "warning",
+                `Failed to cleanup server-side backup: ${manifestObj.Key}`
+              );
             }
           }
         }
+
         if (deletedBackups > 0) {
           this.logger.log(
             "success",
-            `Cleaned up ${deletedBackups} old backups with their chunks`
+            `Cleaned up ${deletedBackups} old backups`
           );
         }
       } catch (error) {
