@@ -482,10 +482,10 @@ if (window.typingMindCloudSync) {
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
     }
     async forceGarbageCollection() {
-      if (global?.gc) {
-        global.gc();
-      } else if (window?.gc) {
+      if (window?.gc) {
         window.gc();
+      } else if (typeof global !== "undefined" && global?.gc) {
+        global.gc();
       }
       await new Promise((resolve) => setTimeout(resolve, this.throttleDelay));
     }
@@ -2389,7 +2389,9 @@ if (window.typingMindCloudSync) {
           try {
             await this.createCompressedBackup(chunkFilename, chunkData);
             chunks[i] = null;
-            if (global.gc) {
+            if (window?.gc) {
+              window.gc();
+            } else if (typeof global !== "undefined" && global?.gc) {
               global.gc();
             }
           } catch (error) {
@@ -2572,7 +2574,9 @@ if (window.typingMindCloudSync) {
           );
           await this.createCompressedBackup(chunkFilename, chunkData);
           chunks[i] = null;
-          if (global.gc) {
+          if (window?.gc) {
+            window.gc();
+          } else if (typeof global !== "undefined" && global?.gc) {
             global.gc();
           }
         }
@@ -4706,7 +4710,7 @@ if (window.typingMindCloudSync) {
         onLine: navigator.onLine,
         doNotTrack: navigator.doNotTrack,
       };
-      if (window.gc) {
+      if (window?.gc || (typeof global !== "undefined" && global?.gc)) {
         diagnostics.performance.gcAvailable = true;
       }
     } catch (error) {
@@ -4735,10 +4739,10 @@ if (window.typingMindCloudSync) {
         );
         orphanedElements.forEach((el) => el.remove());
       }
-      if (window.gc) {
+      if (window?.gc) {
         window.gc();
         console.log("✅ Manual garbage collection triggered");
-      } else if (global?.gc) {
+      } else if (typeof global !== "undefined" && global?.gc) {
         global.gc();
         console.log("✅ Manual garbage collection triggered (global)");
       } else {
