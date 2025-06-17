@@ -2601,10 +2601,7 @@ if (window.typingMindCloudSync) {
                 backups.push({
                   key: obj.Key,
                   name: backupName,
-                  displayName: this.formatBackupDisplayName(
-                    backupName,
-                    manifest
-                  ),
+                  displayName: backupName,
                   size: totalSize,
                   modified: obj.LastModified,
                   format: "server-side",
@@ -2642,48 +2639,6 @@ if (window.typingMindCloudSync) {
         return "daily";
       }
       return "unknown";
-    }
-
-    formatBackupDisplayName(filename, metadata = null) {
-      const type = this.getBackupType(filename);
-
-      if (type === "snapshot") {
-        const cleanName = filename
-          .replace(/^s-/, "")
-          .replace(/-\d{8}T\d{6}.*$/, "");
-        const timestamp = filename.match(/-(\d{8}T\d{6})/);
-
-        let displayName = `📸 Snapshot: ${cleanName}`;
-
-        if (timestamp) {
-          const dateStr = timestamp[1];
-          const date = new Date(
-            `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(
-              6,
-              8
-            )}T${dateStr.slice(9, 11)}:${dateStr.slice(11, 13)}:${dateStr.slice(
-              13,
-              15
-            )}`
-          );
-          displayName += ` (${date.toLocaleString()})`;
-        }
-        return displayName;
-      } else if (type === "daily") {
-        const dateMatch = filename.match(/typingmind-backup-(\d{8})/);
-        if (dateMatch) {
-          const dateStr = dateMatch[1];
-          const date = new Date(
-            `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(
-              6,
-              8
-            )}`
-          );
-          return `🗓️ Daily Backup (${date.toLocaleDateString()})`;
-        }
-        return `🗓️ Daily Backup`;
-      }
-      return filename;
     }
 
     async restoreFromBackup(key) {
