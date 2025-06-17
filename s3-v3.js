@@ -3381,9 +3381,6 @@ if (window.typingMindCloudSync) {
                 </select>
               </div>
               <div class="flex justify-end space-x-2">
-                <button id="download-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>
-                  Download
-                </button>
                 <button id="restore-backup-btn" class="z-1 px-2 py-1.5 text-sm text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>
                   Restore
                 </button>
@@ -3660,7 +3657,6 @@ if (window.typingMindCloudSync) {
     updateBackupButtonStates(modal) {
       const backupList = modal.querySelector("#backup-files");
       const selectedValue = backupList.value || "";
-      const downloadButton = modal.querySelector("#download-backup-btn");
       const restoreButton = modal.querySelector("#restore-backup-btn");
       const deleteButton = modal.querySelector("#delete-backup-btn");
       const isSnapshot = selectedValue.includes("s-");
@@ -3668,9 +3664,6 @@ if (window.typingMindCloudSync) {
       const isChunkedBackup = selectedValue.endsWith("-metadata.json");
       const isMetadataFile = selectedValue === "metadata.json";
       const isItemsFile = selectedValue.startsWith("items/");
-      if (downloadButton) {
-        downloadButton.disabled = !selectedValue;
-      }
       if (restoreButton) {
         const canRestore =
           selectedValue && (isSnapshot || isDailyBackup || isChunkedBackup);
@@ -3682,82 +3675,9 @@ if (window.typingMindCloudSync) {
       }
     }
     setupBackupListHandlers(modal) {
-      const downloadButton = modal.querySelector("#download-backup-btn");
       const restoreButton = modal.querySelector("#restore-backup-btn");
       const deleteButton = modal.querySelector("#delete-backup-btn");
       const backupList = modal.querySelector("#backup-files");
-      if (downloadButton) {
-        downloadButton.addEventListener("click", async () => {
-          const key = backupList.value;
-          if (!key) {
-            alert("Please select a backup to download");
-            return;
-          }
-          downloadButton.disabled = true;
-          downloadButton.textContent = "Downloading...";
-          try {
-            if (key.endsWith("-metadata.json")) {
-              this.logger.log(
-                "start",
-                `Starting chunked backup download for ${key}`
-              );
-              const JSZip = await this.backupService.loadJSZip();
-              const finalZip = new JSZip();
-              const metadata = await this.s3Service.download(key, true);
-              finalZip.file(key, JSON.stringify(metadata, null, 2));
-              if (metadata.chunkList && metadata.chunkList.length > 0) {
-                let processedChunks = 0;
-                for (const chunkInfo of metadata.chunkList) {
-                  const chunkKey = chunkInfo.filename;
-                  downloadButton.textContent = `Chunk ${processedChunks + 1}/${
-                    metadata.chunkList.length
-                  }`;
-                  try {
-                    const chunkJsonData = await this.downloadAndDecryptChunk(
-                      chunkKey
-                    );
-                    const chunkJsonFilename = chunkKey.replace(".zip", ".json");
-                    finalZip.file(
-                      chunkJsonFilename,
-                      JSON.stringify(chunkJsonData, null, 2)
-                    );
-                  } catch (chunkError) {
-                    finalZip.file(
-                      `${chunkKey}.error.txt`,
-                      `Failed to process this chunk: ${chunkError.message}`
-                    );
-                  }
-                  processedChunks++;
-                }
-              }
-              downloadButton.textContent = "Zipping...";
-              const zipBlob = await finalZip.generateAsync({ type: "blob" });
-              const finalZipFilename = key.replace(
-                "-metadata.json",
-                "-decrypted-package.zip"
-              );
-              this.downloadFile(finalZipFilename, zipBlob);
-              downloadButton.textContent = "Downloaded!";
-            } else {
-              const backup = await this.s3Service.downloadRaw(key);
-              if (backup) {
-                await this.handleBackupDownload(backup, key);
-                downloadButton.textContent = "Downloaded!";
-              }
-            }
-          } catch (error) {
-            console.error("Failed to download backup:", error);
-            alert("Failed to download backup: " + error.message);
-            downloadButton.textContent = "Failed";
-          } finally {
-            setTimeout(() => {
-              downloadButton.textContent = "Download";
-              downloadButton.disabled = false;
-              this.updateBackupButtonStates(modal);
-            }, 2000);
-          }
-        });
-      }
       if (restoreButton) {
         restoreButton.addEventListener("click", async () => {
           const key = backupList.value;
@@ -3830,147 +3750,118 @@ if (window.typingMindCloudSync) {
         });
       }
     }
-    async handleBackupDownload(backupData, key) {
-      try {
-        const JSZip = await this.backupService.loadJSZip();
-        const decryptedZipBytes = await this.cryptoService.decryptBytes(
-          backupData
-        );
-        const zip = await JSZip.loadAsync(decryptedZipBytes);
-        const jsonFile = Object.keys(zip.files).find((f) =>
-          f.endsWith(".json")
-        );
-        if (!jsonFile) throw new Error("No JSON file found in ZIP backup");
-        const jsonContent = await zip.file(jsonFile).async("string");
-        const content = JSON.stringify(JSON.parse(jsonContent), null, 2);
-        this.downloadFile(key.replace(".zip", ".json"), content);
-      } catch (error) {
-        this.logger.log(
-          "error",
-          "Failed to process backup for download",
-          error.message
-        );
-        throw error;
-      }
-    }
-    async downloadAndDecryptChunk(chunkKey) {
-      try {
-        const JSZip = await this.backupService.loadJSZip();
-        const zipData = await this.s3Service.downloadRaw(chunkKey);
-        const decryptedZipBytes = await this.cryptoService.decryptBytes(
-          zipData
-        );
-        const zip = await JSZip.loadAsync(decryptedZipBytes);
-        const jsonFile = Object.keys(zip.files).find((f) =>
-          f.endsWith(".json")
-        );
-        if (!jsonFile) throw new Error("No JSON file found in chunk ZIP");
-        const jsonContent = await zip.file(jsonFile).async("string");
-        return JSON.parse(jsonContent);
-      } catch (error) {
-        this.logger.log(
-          "error",
-          `Failed to download and decrypt chunk ${chunkKey}`,
-          error.message
-        );
-        throw error;
-      }
-    }
-    downloadFile(filename, content) {
-      let blob;
-      if (content instanceof Blob) {
-        blob = content;
-      } else if (typeof content === "string") {
-        blob = new Blob([content], { type: "application/json" });
-      } else {
-        blob = new Blob([JSON.stringify(content, null, 2)], {
-          type: "application/json",
-        });
-      }
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }
     async loadSyncDiagnostics(modal) {
       const diagnosticsBody = modal.querySelector("#sync-diagnostics-body");
       if (!diagnosticsBody) return;
       const overallStatusEl = modal.querySelector("#sync-overall-status");
-      const summaryEl = modal.querySelector("#sync-diagnostics-summary");
-      const setContent = (html) => {
-        diagnosticsBody.innerHTML = html;
+      const diagnosticsSummary = modal.querySelector(
+        "#sync-diagnostics-summary"
+      );
+      const diagnosticsChevron = modal.querySelector(
+        "#sync-diagnostics-chevron"
+      );
+      const diagnosticsContent = modal.querySelector(
+        "#sync-diagnostics-content"
+      );
+      const diagnosticsHeader = modal.querySelector("#sync-diagnostics-header");
+      const diagnosticsTable = modal.querySelector("#sync-diagnostics-table");
+      const diagnosticsRefresh = modal.querySelector(
+        "#sync-diagnostics-refresh"
+      );
+      const updateDiagnostics = async () => {
+        try {
+          const diagnostics = await this.syncOrchestrator.getSyncDiagnostics();
+          const { overallStatus, summary, details } = diagnostics;
+          overallStatusEl.textContent = overallStatus;
+          const summaryEl = modal.querySelector("#sync-diagnostics-summary");
+          const setContent = (html) => {
+            diagnosticsBody.innerHTML = html;
+          };
+          if (!this.config.isConfigured()) {
+            setContent(
+              '<tr><td colspan="2" class="text-center py-2 text-zinc-500">AWS Not Configured</td></tr>'
+            );
+            if (overallStatusEl) overallStatusEl.textContent = "⚙️";
+            if (summaryEl) summaryEl.textContent = "Setup required";
+            return;
+          }
+          try {
+            const diagnosticsData = localStorage.getItem(
+              "tcs_sync_diagnostics"
+            );
+            if (!diagnosticsData) {
+              setContent(
+                '<tr><td colspan="2" class="text-center py-2 text-zinc-500">No diagnostics data available</td></tr>'
+              );
+              if (overallStatusEl) overallStatusEl.textContent = "⚠️";
+              if (summaryEl) summaryEl.textContent = "Waiting for first sync";
+              return;
+            }
+            const data = JSON.parse(diagnosticsData);
+            const rows = [
+              {
+                type: "📱 Local Items",
+                count: data.localItems || 0,
+              },
+              {
+                type: "📋 Local Metadata",
+                count: data.localMetadata || 0,
+              },
+              {
+                type: "☁️ Cloud Metadata",
+                count: data.cloudMetadata || 0,
+              },
+              {
+                type: "💬 Chat Sync",
+                count: `${data.chatSyncLocal || 0} ⟷ ${
+                  data.chatSyncCloud || 0
+                }`,
+              },
+            ];
+            const tableHTML = rows
+              .map(
+                (row) => `
+              <tr class="border-b border-zinc-700 hover:bg-zinc-700/30">
+                <td class="py-1 px-2">${row.type}</td>
+                <td class="text-right py-1 px-2">${row.count}</td>
+              </tr>
+            `
+              )
+              .join("");
+            const hasIssues =
+              data.localItems !== data.localMetadata ||
+              data.localItems !== data.cloudMetadata ||
+              data.chatSyncLocal !== data.chatSyncCloud;
+            const overallStatus = hasIssues ? "⚠️" : "✅";
+            const lastUpdated = new Date(
+              data.timestamp || 0
+            ).toLocaleTimeString();
+            const summaryText = `Updated: ${lastUpdated}`;
+            if (overallStatusEl) overallStatusEl.textContent = overallStatus;
+            if (summaryEl) summaryEl.textContent = summaryText;
+            setContent(tableHTML);
+          } catch (error) {
+            console.error("Failed to load sync diagnostics:", error);
+            if (diagnosticsBody) {
+              setContent(
+                '<tr><td colspan="2" class="text-center py-2 text-red-400">Error loading diagnostics</td></tr>'
+              );
+            }
+            if (overallStatusEl) overallStatusEl.textContent = "❌";
+            if (summaryEl) summaryEl.textContent = "Error";
+          }
+        } catch (error) {
+          console.error("Failed to load sync diagnostics:", error);
+          if (diagnosticsBody) {
+            setContent(
+              '<tr><td colspan="2" class="text-center py-2 text-red-400">Error loading diagnostics</td></tr>'
+            );
+          }
+          if (overallStatusEl) overallStatusEl.textContent = "❌";
+          if (summaryEl) summaryEl.textContent = "Error";
+        }
       };
-      if (!this.config.isConfigured()) {
-        setContent(
-          '<tr><td colspan="2" class="text-center py-2 text-zinc-500">AWS Not Configured</td></tr>'
-        );
-        if (overallStatusEl) overallStatusEl.textContent = "⚙️";
-        if (summaryEl) summaryEl.textContent = "Setup required";
-        return;
-      }
-      try {
-        const diagnosticsData = localStorage.getItem("tcs_sync_diagnostics");
-        if (!diagnosticsData) {
-          setContent(
-            '<tr><td colspan="2" class="text-center py-2 text-zinc-500">No diagnostics data available</td></tr>'
-          );
-          if (overallStatusEl) overallStatusEl.textContent = "⚠️";
-          if (summaryEl) summaryEl.textContent = "Waiting for first sync";
-          return;
-        }
-        const data = JSON.parse(diagnosticsData);
-        const rows = [
-          {
-            type: "📱 Local Items",
-            count: data.localItems || 0,
-          },
-          {
-            type: "📋 Local Metadata",
-            count: data.localMetadata || 0,
-          },
-          {
-            type: "☁️ Cloud Metadata",
-            count: data.cloudMetadata || 0,
-          },
-          {
-            type: "💬 Chat Sync",
-            count: `${data.chatSyncLocal || 0} ⟷ ${data.chatSyncCloud || 0}`,
-          },
-        ];
-        const tableHTML = rows
-          .map(
-            (row) => `
-          <tr class="border-b border-zinc-700 hover:bg-zinc-700/30">
-            <td class="py-1 px-2">${row.type}</td>
-            <td class="text-right py-1 px-2">${row.count}</td>
-          </tr>
-        `
-          )
-          .join("");
-        const hasIssues =
-          data.localItems !== data.localMetadata ||
-          data.localItems !== data.cloudMetadata ||
-          data.chatSyncLocal !== data.chatSyncCloud;
-        const overallStatus = hasIssues ? "⚠️" : "✅";
-        const lastUpdated = new Date(data.timestamp || 0).toLocaleTimeString();
-        const summaryText = `Updated: ${lastUpdated}`;
-        if (overallStatusEl) overallStatusEl.textContent = overallStatus;
-        if (summaryEl) summaryEl.textContent = summaryText;
-        setContent(tableHTML);
-      } catch (error) {
-        console.error("Failed to load sync diagnostics:", error);
-        if (diagnosticsBody) {
-          setContent(
-            '<tr><td colspan="2" class="text-center py-2 text-red-400">Error loading diagnostics</td></tr>'
-          );
-        }
-        if (overallStatusEl) overallStatusEl.textContent = "❌";
-        if (summaryEl) summaryEl.textContent = "Error";
-      }
+      updateDiagnostics();
     }
     setupDiagnosticsToggle(modal) {
       const header = modal.querySelector("#sync-diagnostics-header");
