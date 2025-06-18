@@ -178,13 +178,11 @@ Ideally, all counts should match after a successful sync.
 
 ### Sync Status Indicator
 
-The sync button in the sidebar shows a colored dot indicating the current status:
+The sync button in the sidebar shows a colored dot indicating the current status. The dot is only visible when the extension is configured and has performed a sync operation.
 
-- 🟢 **Green** - Sync successful.
-- 🔴 **Red** - Sync error occurred.
-- 🟡 **Yellow** - A warning was reported. Check the console for details.
+- 🟢 **Green** - Sync successful. The dot will remain green while idle.
+- 🔴 **Red** - A sync error occurred. Check the browser console for details.
 - 🔵 **Blue** - Sync in progress.
-- ⚫ **Gray** - Not configured or idle.
 
 ## 🚀 Migration to V3
 
