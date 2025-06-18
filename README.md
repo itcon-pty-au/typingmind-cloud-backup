@@ -156,7 +156,6 @@ The **Available Backups** section shows all your cloud backups.
 
 - **Restore** - Restores the selected backup. **This overwrites all current cloud data with the backup's contents** and will trigger a full sync to your local machine.
 - **Delete** - Permanently removes the selected backup from your cloud storage.
-- **Download** - Downloads and decrypts backup as JSON
 
 ### Sync Diagnostics
 
