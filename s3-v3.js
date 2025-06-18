@@ -3169,6 +3169,187 @@ if (window.typingMindCloudSync) {
       }
     }
   }
+  class LeaderElection {
+    constructor(channelName, logger) {
+      this.channelName = channelName;
+      this.logger = logger;
+      this.tabId = `tab_${Date.now()}_${Math.random()
+        .toString(36)
+        .substring(2, 9)}`;
+      this.leaderId = null;
+      this.isLeader = false;
+      this.channel = null;
+      this.heartbeatInterval = null;
+      this.electionTimeout = null;
+      this.leaderTimeout = null;
+      this.onBecameLeaderCallback = () => {};
+      this.onBecameFollowerCallback = () => {};
+      this.HEARTBEAT_INTERVAL = 5000;
+      this.LEADER_TIMEOUT = 12000;
+      this.ELECTION_TIMEOUT = 100;
+      try {
+        if ("BroadcastChannel" in window) {
+          this.channel = new BroadcastChannel(this.channelName);
+          this.channel.onmessage = this.handleMessage.bind(this);
+        } else {
+          this.logger.log(
+            "warning",
+            "BroadcastChannel not supported. Multi-tab sync will not be safe."
+          );
+          this.becomeLeader();
+        }
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "Failed to create BroadcastChannel.",
+          error.message
+        );
+      }
+    }
+    elect() {
+      if (!this.channel) {
+        this.becomeLeader();
+        return;
+      }
+      this.logger.log(
+        "info",
+        `[LeaderElection] Tab ${this.tabId} starting election.`
+      );
+      this.clearElectionTimeout();
+      this.postMessage({ type: "request-leader" });
+      this.electionTimeout = setTimeout(() => {
+        this.logger.log(
+          "info",
+          `[LeaderElection] No leader responded within ${this.ELECTION_TIMEOUT}ms.`
+        );
+        this.becomeLeader();
+      }, this.ELECTION_TIMEOUT);
+    }
+    becomeLeader() {
+      this.logger.log(
+        "info",
+        `[LeaderElection] 👑 Tab ${this.tabId} is now the LEADER.`
+      );
+      this.isLeader = true;
+      this.leaderId = this.tabId;
+      this.clearElectionTimeout();
+      this.clearLeaderTimeout();
+      if (this.channel) {
+        this.postMessage({ type: "iam-leader", id: this.tabId });
+        if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+        this.heartbeatInterval = setInterval(() => {
+          this.postMessage({ type: "ping", id: this.tabId });
+        }, this.HEARTBEAT_INTERVAL);
+      }
+      this.onBecameLeaderCallback();
+    }
+    becomeFollower(leaderId) {
+      if (this.isLeader) {
+        this.logger.log(
+          "info",
+          `[LeaderElection] 🚶‍♀️ Tab ${this.tabId} is now a FOLLOWER.`
+        );
+      }
+      this.isLeader = false;
+      this.leaderId = leaderId;
+      this.clearElectionTimeout();
+      if (this.heartbeatInterval) {
+        clearInterval(this.heartbeatInterval);
+        this.heartbeatInterval = null;
+      }
+      this.resetLeaderTimeout();
+      this.onBecameFollowerCallback();
+    }
+    handleMessage(event) {
+      const msg = event.data;
+      if (!msg || !msg.type) return;
+      switch (msg.type) {
+        case "request-leader":
+          if (this.isLeader) {
+            this.postMessage({ type: "pong", id: this.tabId });
+          }
+          break;
+        case "iam-leader":
+          if (msg.id !== this.tabId) {
+            this.becomeFollower(msg.id);
+          }
+          break;
+        case "leader-unloading":
+          if (msg.id === this.leaderId) {
+            this.logger.log(
+              "info",
+              `[LeaderElection] Leader ${msg.id} is unloading. Starting new election immediately.`
+            );
+            this.leaderId = null;
+            this.elect();
+          }
+          break;
+        case "pong":
+          if (msg.id !== this.tabId) {
+            this.becomeFollower(msg.id);
+          }
+          break;
+        case "ping":
+          if (msg.id !== this.tabId && msg.id === this.leaderId) {
+            this.resetLeaderTimeout();
+          }
+          break;
+      }
+    }
+    resetLeaderTimeout() {
+      this.clearLeaderTimeout();
+      this.leaderTimeout = setTimeout(() => {
+        this.logger.log(
+          "warning",
+          `[LeaderElection] Leader ${this.leaderId} timed out. Starting new election.`
+        );
+        this.leaderId = null;
+        this.elect();
+      }, this.LEADER_TIMEOUT);
+    }
+    clearElectionTimeout() {
+      if (this.electionTimeout) {
+        clearTimeout(this.electionTimeout);
+        this.electionTimeout = null;
+      }
+    }
+    clearLeaderTimeout() {
+      if (this.leaderTimeout) {
+        clearTimeout(this.leaderTimeout);
+        this.leaderTimeout = null;
+      }
+    }
+    postMessage(msg) {
+      try {
+        this.channel?.postMessage(msg);
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "[LeaderElection] Failed to post message.",
+          error.message
+        );
+      }
+    }
+    onBecameLeader(callback) {
+      this.onBecameLeaderCallback = callback;
+    }
+    onBecameFollower(callback) {
+      this.onBecameFollowerCallback = callback;
+    }
+    cleanup() {
+      this.logger.log("info", "[LeaderElection] Cleaning up.");
+      if (this.isLeader) {
+        this.postMessage({ type: "leader-unloading", id: this.tabId });
+      }
+      if (this.channel) {
+        this.channel.close();
+        this.channel = null;
+      }
+      if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+      this.clearElectionTimeout();
+      this.clearLeaderTimeout();
+    }
+  }
   class CloudSyncApp {
     constructor() {
       this.logger = new Logger();
@@ -3202,9 +3383,31 @@ if (window.typingMindCloudSync) {
       this.modalCleanupCallbacks = [];
       this.noSyncMode = false;
       this.diagnosticsExpanded = false;
+      this.leaderElection = null;
     }
     async initialize() {
       this.logger.log("start", "Initializing TypingmindCloud Sync V3");
+      this.leaderElection = new LeaderElection(
+        "tcs-leader-election",
+        this.logger
+      );
+      this.leaderElection.onBecameLeader(() => {
+        this.logger.log(
+          "info",
+          "👑 This tab is now the leader. Starting background tasks."
+        );
+        this.runLeaderTasks();
+      });
+      this.leaderElection.onBecameFollower(() => {
+        this.logger.log(
+          "info",
+          "🚶‍♀️ This tab is now a follower. Stopping background tasks."
+        );
+        if (this.autoSyncInterval) {
+          clearInterval(this.autoSyncInterval);
+          this.autoSyncInterval = null;
+        }
+      });
       const urlParams = new URLSearchParams(window.location.search);
       this.noSyncMode =
         urlParams.get("nosync") === "true" || urlParams.has("nosync");
@@ -3274,26 +3477,7 @@ if (window.typingMindCloudSync) {
         if (this.config.isConfigured()) {
           try {
             await this.s3Service.initialize();
-            this.updateSyncStatus("syncing");
-            setTimeout(async () => {
-              try {
-                await this.backupService.checkAndPerformDailyBackup();
-                await this.syncOrchestrator.performFullSync();
-                this.startAutoSync();
-                this.updateSyncStatus("success");
-                this.logger.log(
-                  "success",
-                  "Cloud Sync initialized successfully"
-                );
-              } catch (error) {
-                this.logger.log(
-                  "error",
-                  "Background sync/backup failed",
-                  error.message
-                );
-                this.updateSyncStatus("error");
-              }
-            }, 1000);
+            this.leaderElection.elect();
           } catch (error) {
             this.logger.log("error", "Initialization failed", error.message);
             this.updateSyncStatus("error");
@@ -4331,6 +4515,29 @@ if (window.typingMindCloudSync) {
       this.backupService = null;
       this.operationQueue = null;
       this.logger = null;
+      this.leaderElection = null;
+    }
+    async runLeaderTasks() {
+      if (!this.noSyncMode && this.config.isConfigured()) {
+        this.updateSyncStatus("syncing");
+        try {
+          await this.backupService.checkAndPerformDailyBackup();
+          await this.syncOrchestrator.performFullSync();
+          this.startAutoSync();
+          this.updateSyncStatus("success");
+          this.logger.log(
+            "success",
+            "Cloud Sync initialized successfully on leader tab."
+          );
+        } catch (error) {
+          this.logger.log(
+            "error",
+            "Background sync/backup failed on leader tab",
+            error.message
+          );
+          this.updateSyncStatus("error");
+        }
+      }
     }
   }
   const styleSheet = document.createElement("style");
