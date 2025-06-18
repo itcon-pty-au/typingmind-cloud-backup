@@ -216,8 +216,8 @@ There is no manual data migration required—the extension handles everything au
 To help you safely clean up old files from previous versions, here is a breakdown of the file structure used by V3 in your S3 bucket. Any files or folders not matching this structure are likely from an older version and can be removed.
 
 - **`metadata.json`**: This is the most critical file for synchronization. It acts as the central index for all your data, tracking every item's sync status, version, and deletions (tombstones). It resides at the root of your bucket.
-- **/`items`/**: This directory contains the actual encrypted data for every individual item in your TypingMind application (chats, settings, etc.). Each item is stored as a separate file within this folder.
-- **/`backups`/**: This directory holds all your on-demand snapshots and automatic daily backups.
+- **`/items`**: This directory contains the actual encrypted data for every individual item in your TypingMind application (chats, settings, etc.). Each item is stored as a separate file within this folder.
+- **`/backups`**: This directory holds all your on-demand snapshots and automatic daily backups.
   - Each backup is stored in its own sub-folder (e.g., `backups/s-my-snapshot-20231027T120000/` or `backups/typingmind-backup-20231027/`).
   - Inside each backup folder, you will find a copy of `metadata.json` and an `items/` directory, representing the state of your data at the time of the backup.
 
