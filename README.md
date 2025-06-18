@@ -193,7 +193,7 @@ When you load the V3 extension for the first time, the process is largely automa
 
 - **Your Data is Safe**: Your existing local TypingMind data (chats, folders, etc.) is preserved and used as the source for the first sync.
 - **Automatic Configuration Upgrade**: Old configuration keys from V2 are automatically read and used.
-- **New Cloud Structure**: V3 uses a new, more efficient data structure in your S3 bucket. Old `V2/` folders or `TMDATA/` files are ignored.
+- **New Cloud Structure**: V3 uses a new, more efficient data structure in your S3 bucket. Old extension files and backups are ignored.
 - **First Sync**: The extension will treat your current local data as the source of truth and upload it to the new cloud structure.
 
 #### ⚠️ Important Compatibility Notes
@@ -210,6 +210,18 @@ There is no manual data migration required—the extension handles everything au
 3.  **Install V3**: Load the V3 extension URL: `https://itcon-pty-au.github.io/typingmind-cloud-backup/s3-v3.js`.
 4.  **Configure**: Open the **Sync** modal. Your previous settings should be pre-filled. Enter your **Encryption Key** again and click **Save**.
 5.  **Verify**: The first sync will begin. You can monitor its progress in the browser console (enable logging for more detail) and by using the **Sync Diagnostics** panel.
+
+### Understanding the V3 File Structure
+
+To help you safely clean up old files from previous versions, here is a breakdown of the file structure used by V3 in your S3 bucket. Any files or folders not matching this structure are likely from an older version and can be removed.
+
+- **`metadata.json`**: This is the most critical file for synchronization. It acts as the central index for all your data, tracking every item's sync status, version, and deletions (tombstones). It resides at the root of your bucket.
+- **/`items`/**: This directory contains the actual encrypted data for every individual item in your TypingMind application (chats, settings, etc.). Each item is stored as a separate file within this folder.
+- **/`backups`/**: This directory holds all your on-demand snapshots and automatic daily backups.
+  - Each backup is stored in its own sub-folder (e.g., `backups/s-my-snapshot-20231027T120000/` or `backups/typingmind-backup-20231027/`).
+  - Inside each backup folder, you will find a copy of `metadata.json` and an `items/` directory, representing the state of your data at the time of the backup.
+
+Any other files or folders at the root of your bucket, are no longer used by V3 and can be safely deleted once you have successfully migrated.
 
 ## ☁️ Cloud Storage Setup
 
