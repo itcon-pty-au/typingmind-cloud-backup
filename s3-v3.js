@@ -15,8 +15,33 @@ if (window.typingMindCloudSync) {
   window.typingMindCloudSync = true;
   class ConfigManager {
     constructor() {
+      this.PEPPER = "tcs-v3-pepper-!@#$%^&*()";
       this.config = this.loadConfig();
       this.exclusions = this.loadExclusions();
+    }
+    _obfuscate(str, key) {
+      if (!str || !key) return str;
+      const combinedKey = key + this.PEPPER;
+      let output = "";
+      for (let i = 0; i < str.length; i++) {
+        const charCode =
+          str.charCodeAt(i) ^ combinedKey.charCodeAt(i % combinedKey.length);
+        output += String.fromCharCode(charCode);
+      }
+      return btoa(output);
+    }
+    _deobfuscate(b64str, key) {
+      if (!b64str || !key) return b64str;
+      const combinedKey = key + this.PEPPER;
+      let output = "";
+      const decodedStr = atob(b64str);
+      for (let i = 0; i < decodedStr.length; i++) {
+        const charCode =
+          decodedStr.charCodeAt(i) ^
+          combinedKey.charCodeAt(i % combinedKey.length);
+        output += String.fromCharCode(charCode);
+      }
+      return output;
     }
     loadConfig() {
       const defaults = {
@@ -29,12 +54,31 @@ if (window.typingMindCloudSync) {
         encryptionKey: "",
       };
       const stored = {};
+      const encryptionKey = localStorage.getItem("tcs_encryptionkey") || "";
       Object.keys(defaults).forEach((key) => {
         const storageKey =
           key === "encryptionKey"
             ? "tcs_encryptionkey"
             : `tcs_aws_${key.toLowerCase()}`;
-        const value = localStorage.getItem(storageKey);
+        let value = localStorage.getItem(storageKey);
+        if (
+          (key === "accessKey" || key === "secretKey") &&
+          value?.startsWith("enc::")
+        ) {
+          if (encryptionKey) {
+            try {
+              value = this._deobfuscate(value.substring(5), encryptionKey);
+            } catch (e) {
+              console.warn(
+                `[TCS] Could not decrypt key "${key}". It might be corrupted or the encryption key is wrong.`
+              );
+            }
+          } else {
+            console.warn(
+              `[TCS] Found encrypted key "${key}" but no encryption key is configured.`
+            );
+          }
+        }
         stored[key] =
           key === "syncInterval" ? parseInt(value) || 15 : value || "";
       });
@@ -78,12 +122,21 @@ if (window.typingMindCloudSync) {
       this.config[key] = value;
     }
     save() {
+      const encryptionKey = this.config.encryptionKey;
       Object.keys(this.config).forEach((key) => {
         const storageKey =
           key === "encryptionKey"
             ? "tcs_encryptionkey"
             : `tcs_aws_${key.toLowerCase()}`;
-        localStorage.setItem(storageKey, this.config[key].toString());
+        let valueToStore = this.config[key].toString();
+        if (
+          (key === "accessKey" || key === "secretKey") &&
+          valueToStore &&
+          encryptionKey
+        ) {
+          valueToStore = "enc::" + this._obfuscate(valueToStore, encryptionKey);
+        }
+        localStorage.setItem(storageKey, valueToStore);
       });
     }
     isConfigured() {
