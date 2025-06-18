@@ -221,7 +221,9 @@ To help you safely clean up old files from previous versions, here is a breakdow
   - Each backup is stored in its own sub-folder (e.g., `backups/s-my-snapshot-20231027T120000/` or `backups/typingmind-backup-20231027/`).
   - Inside each backup folder, you will find a copy of `metadata.json` and an `items/` directory, representing the state of your data at the time of the backup.
 
-Any other files or folders at the root of your bucket, are no longer used by V3 and can be safely deleted once you have successfully migrated.
+Any other files or folders at the root of your bucket, are no longer used by V3 and can be safely deleted once you have successfully migrated. This is how your S3 bucket should look like.
+
+<img src="Admin/s3-file-structure.png" alt="S3 File Structure" />
 
 ## ☁️ Cloud Storage Setup
 
