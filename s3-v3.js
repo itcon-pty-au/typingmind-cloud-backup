@@ -3185,12 +3185,18 @@ if (window.typingMindCloudSync) {
       this.onBecameLeaderCallback = () => {};
       this.onBecameFollowerCallback = () => {};
       this.HEARTBEAT_INTERVAL = 5000;
-      this.LEADER_TIMEOUT = 12000;
+      this.FAST_LEADER_TIMEOUT = 12000;
+      this.SLOW_LEADER_TIMEOUT = 70000;
       this.ELECTION_TIMEOUT = 100;
+      this.visibilityChangeHandler = this.handleVisibilityChange.bind(this);
       try {
         if ("BroadcastChannel" in window) {
           this.channel = new BroadcastChannel(this.channelName);
           this.channel.onmessage = this.handleMessage.bind(this);
+          document.addEventListener(
+            "visibilitychange",
+            this.visibilityChangeHandler
+          );
         } else {
           this.logger.log(
             "warning",
@@ -3225,6 +3231,15 @@ if (window.typingMindCloudSync) {
         this.becomeLeader();
       }, this.ELECTION_TIMEOUT);
     }
+    handleVisibilityChange() {
+      if (this.isLeader) {
+        this.postMessage({
+          type: "ping",
+          id: this.tabId,
+          visibilityState: document.visibilityState,
+        });
+      }
+    }
     becomeLeader() {
       this.logger.log(
         "info",
@@ -3238,7 +3253,11 @@ if (window.typingMindCloudSync) {
         this.postMessage({ type: "iam-leader", id: this.tabId });
         if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
         this.heartbeatInterval = setInterval(() => {
-          this.postMessage({ type: "ping", id: this.tabId });
+          this.postMessage({
+            type: "ping",
+            id: this.tabId,
+            visibilityState: document.visibilityState,
+          });
         }, this.HEARTBEAT_INTERVAL);
       }
       this.onBecameLeaderCallback();
@@ -3291,21 +3310,25 @@ if (window.typingMindCloudSync) {
           break;
         case "ping":
           if (msg.id !== this.tabId && msg.id === this.leaderId) {
-            this.resetLeaderTimeout();
+            this.resetLeaderTimeout(msg.visibilityState);
           }
           break;
       }
     }
-    resetLeaderTimeout() {
+    resetLeaderTimeout(leaderVisibilityState = "visible") {
       this.clearLeaderTimeout();
+      const timeout =
+        leaderVisibilityState === "visible"
+          ? this.FAST_LEADER_TIMEOUT
+          : this.SLOW_LEADER_TIMEOUT;
       this.leaderTimeout = setTimeout(() => {
         this.logger.log(
           "warning",
-          `[LeaderElection] Leader ${this.leaderId} timed out. Starting new election.`
+          `[LeaderElection] Leader ${this.leaderId} timed out (state: ${leaderVisibilityState}). Starting new election.`
         );
         this.leaderId = null;
         this.elect();
-      }, this.LEADER_TIMEOUT);
+      }, timeout);
     }
     clearElectionTimeout() {
       if (this.electionTimeout) {
@@ -3345,6 +3368,10 @@ if (window.typingMindCloudSync) {
         this.channel.close();
         this.channel = null;
       }
+      document.removeEventListener(
+        "visibilitychange",
+        this.visibilityChangeHandler
+      );
       if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
       this.clearElectionTimeout();
       this.clearLeaderTimeout();
