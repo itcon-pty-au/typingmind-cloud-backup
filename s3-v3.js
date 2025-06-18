@@ -1062,32 +1062,47 @@ if (window.typingMindCloudSync) {
         throw new Error("AWS configuration incomplete");
       await this.loadSDK();
       const config = this.config.config;
+      const { S3Client } = window.aws_sdk_client_s3;
       const s3Config = {
-        accessKeyId: config.accessKey,
-        secretAccessKey: config.secretKey,
         region: config.region,
+        credentials: {
+          accessKeyId: config.accessKey,
+          secretAccessKey: config.secretKey,
+        },
       };
       if (config.endpoint) {
         s3Config.endpoint = config.endpoint;
-        s3Config.s3ForcePathStyle = true;
+        s3Config.forcePathStyle = true;
       }
-      AWS.config.update(s3Config);
-      this.client = new AWS.S3();
+      this.client = new S3Client(s3Config);
     }
     async loadSDK() {
-      if (this.sdkLoaded || window.AWS) {
+      if (
+        this.sdkLoaded ||
+        (window.aws_sdk_client_s3 && window.aws_sdk_lib_storage)
+      ) {
         this.sdkLoaded = true;
         return;
       }
       return new Promise((resolve, reject) => {
-        const script = document.createElement("script");
-        script.src = "https://sdk.amazonaws.com/js/aws-sdk-2.1692.0.min.js";
-        script.onload = () => {
-          this.sdkLoaded = true;
-          resolve();
+        const s3ClientScript = document.createElement("script");
+        s3ClientScript.src =
+          "https://cdn.jsdelivr.net/npm/@aws-sdk/client-s3@3.588.0/dist/umd/client-s3.js";
+        s3ClientScript.onload = () => {
+          const libStorageScript = document.createElement("script");
+          libStorageScript.src =
+            "https://cdn.jsdelivr.net/npm/@aws-sdk/lib-storage@3.588.0/dist/umd/lib-storage.js";
+          libStorageScript.onload = () => {
+            this.sdkLoaded = true;
+            resolve();
+          };
+          libStorageScript.onerror = () =>
+            reject(new Error("Failed to load AWS SDK v3 lib-storage"));
+          document.head.appendChild(libStorageScript);
         };
-        script.onerror = () => reject(new Error("Failed to load AWS SDK"));
-        document.head.appendChild(script);
+        s3ClientScript.onerror = () =>
+          reject(new Error("Failed to load AWS SDK v3 S3 client"));
+        document.head.appendChild(s3ClientScript);
       });
     }
     async withRetry(operation, maxRetries = 3) {
@@ -1097,14 +1112,14 @@ if (window.typingMindCloudSync) {
           return await operation();
         } catch (error) {
           lastError = error;
-          if (error.code === "NoSuchKey" || error.statusCode === 404)
+          if (error.name === "NoSuchKey" || error.statusCode === 404)
             throw error;
           if (attempt === maxRetries) break;
           const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
           this.logger.log(
             "warning",
             `Retry ${attempt + 1}/${maxRetries} in ${delay}ms - Error: ${
-              error.message || error.code || "Unknown error"
+              error.message || error.name || "Unknown error"
             }`
           );
           await new Promise((resolve) => setTimeout(resolve, delay));
@@ -1115,6 +1130,7 @@ if (window.typingMindCloudSync) {
     async upload(key, data, isMetadata = false) {
       return this.withRetry(async () => {
         try {
+          const { Upload } = window.aws_sdk_lib_storage;
           const body = isMetadata
             ? JSON.stringify(data)
             : await this.crypto.encrypt(data);
@@ -1130,14 +1146,18 @@ if (window.typingMindCloudSync) {
             params.CacheControl =
               "no-cache, no-store, max-age=0, must-revalidate";
           }
-          const result = await this.client.upload(params).promise();
+          const upload = new Upload({
+            client: this.client,
+            params: params,
+          });
+          const result = await upload.done();
           this.logger.log("success", `Uploaded ${key}`, { ETag: result.ETag });
           return result;
         } catch (error) {
           this.logger.log(
             "error",
             `Failed to upload ${key}: ${
-              error.message || error.code || "Unknown error"
+              error.message || error.name || "Unknown error"
             }`
           );
           throw error;
@@ -1147,16 +1167,19 @@ if (window.typingMindCloudSync) {
     async uploadRaw(key, data) {
       return this.withRetry(async () => {
         try {
-          const result = await this.client
-            .upload({
+          const { Upload } = window.aws_sdk_lib_storage;
+          const upload = new Upload({
+            client: this.client,
+            params: {
               Bucket: this.config.get("bucketName"),
               Key: key,
               Body: data,
               ContentType: key.endsWith(".zip")
                 ? "application/zip"
                 : "application/octet-stream",
-            })
-            .promise();
+            },
+          });
+          const result = await upload.done();
           this.logger.log("success", `Uploaded raw ${key}`, {
             ETag: result.ETag,
           });
@@ -1165,7 +1188,7 @@ if (window.typingMindCloudSync) {
           this.logger.log(
             "error",
             `Failed to upload raw ${key}: ${
-              error.message || error.code || "Unknown error"
+              error.message || error.name || "Unknown error"
             }`
           );
           throw error;
@@ -1174,60 +1197,77 @@ if (window.typingMindCloudSync) {
     }
     async download(key, isMetadata = false) {
       return this.withRetry(async () => {
-        const result = await this.client
-          .getObject({ Bucket: this.config.get("bucketName"), Key: key })
-          .promise();
+        const { GetObjectCommand } = window.aws_sdk_client_s3;
+        const command = new GetObjectCommand({
+          Bucket: this.config.get("bucketName"),
+          Key: key,
+        });
+        const result = await this.client.send(command);
+        const bodyBytes = await result.Body.transformToByteArray();
         const data = isMetadata
-          ? JSON.parse(result.Body.toString())
-          : await this.crypto.decrypt(new Uint8Array(result.Body));
+          ? JSON.parse(new TextDecoder().decode(bodyBytes))
+          : await this.crypto.decrypt(bodyBytes);
         return data;
       });
     }
     async downloadRaw(key) {
       return this.withRetry(async () => {
-        const result = await this.client
-          .getObject({ Bucket: this.config.get("bucketName"), Key: key })
-          .promise();
-        return new Uint8Array(result.Body);
+        const { GetObjectCommand } = window.aws_sdk_client_s3;
+        const command = new GetObjectCommand({
+          Bucket: this.config.get("bucketName"),
+          Key: key,
+        });
+        const result = await this.client.send(command);
+        return await result.Body.transformToByteArray();
       });
     }
     async delete(key) {
       return this.withRetry(async () => {
-        await this.client
-          .deleteObject({ Bucket: this.config.get("bucketName"), Key: key })
-          .promise();
+        const { DeleteObjectCommand } = window.aws_sdk_client_s3;
+        const command = new DeleteObjectCommand({
+          Bucket: this.config.get("bucketName"),
+          Key: key,
+        });
+        await this.client.send(command);
         this.logger.log("success", `Deleted ${key}`);
       });
     }
     async list(prefix = "") {
       return this.withRetry(async () => {
-        const result = await this.client
-          .listObjectsV2({
-            Bucket: this.config.get("bucketName"),
-            Prefix: prefix,
-          })
-          .promise();
+        const { ListObjectsV2Command } = window.aws_sdk_client_s3;
+        const command = new ListObjectsV2Command({
+          Bucket: this.config.get("bucketName"),
+          Prefix: prefix,
+        });
+        const result = await this.client.send(command);
         return result.Contents || [];
       });
     }
     async downloadWithResponse(key) {
       return this.withRetry(async () => {
-        const result = await this.client
-          .getObject({ Bucket: this.config.get("bucketName"), Key: key })
-          .promise();
-        return result;
+        const { GetObjectCommand } = window.aws_sdk_client_s3;
+        const command = new GetObjectCommand({
+          Bucket: this.config.get("bucketName"),
+          Key: key,
+        });
+        const result = await this.client.send(command);
+        const bodyBytes = await result.Body.transformToByteArray();
+        return {
+          ...result,
+          Body: bodyBytes,
+        };
       });
     }
 
     async copyObject(sourceKey, destinationKey) {
       return this.withRetry(async () => {
-        const result = await this.client
-          .copyObject({
-            Bucket: this.config.get("bucketName"),
-            CopySource: `${this.config.get("bucketName")}/${sourceKey}`,
-            Key: destinationKey,
-          })
-          .promise();
+        const { CopyObjectCommand } = window.aws_sdk_client_s3;
+        const command = new CopyObjectCommand({
+          Bucket: this.config.get("bucketName"),
+          CopySource: `${this.config.get("bucketName")}/${sourceKey}`,
+          Key: destinationKey,
+        });
+        const result = await this.client.send(command);
         this.logger.log("success", `Copied ${sourceKey} → ${destinationKey}`);
         return result;
       });
@@ -2240,7 +2280,7 @@ if (window.typingMindCloudSync) {
         const result = await this.s3Service.downloadWithResponse(
           "metadata.json"
         );
-        const metadata = JSON.parse(result.Body.toString());
+        const metadata = JSON.parse(new TextDecoder().decode(result.Body));
         const etag = result.ETag;
         if (!metadata || typeof metadata !== "object") {
           return { metadata: { lastSync: 0, items: {} }, etag };
