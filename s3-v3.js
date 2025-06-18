@@ -1087,11 +1087,11 @@ if (window.typingMindCloudSync) {
       return new Promise((resolve, reject) => {
         const s3ClientScript = document.createElement("script");
         s3ClientScript.src =
-          "https://cdn.jsdelivr.net/npm/@aws-sdk/client-s3@3.588.0/dist/umd/client-s3.js";
+          "https://cdn.jsdelivr.net/npm/@aws-sdk/client-s3@3.832.0/dist-cjs/index.min.js";
         s3ClientScript.onload = () => {
           const libStorageScript = document.createElement("script");
           libStorageScript.src =
-            "https://cdn.jsdelivr.net/npm/@aws-sdk/lib-storage@3.588.0/dist/umd/lib-storage.js";
+            "https://cdn.jsdelivr.net/npm/@aws-sdk/lib-storage@3.832.0/dist-cjs/index.min.js";
           libStorageScript.onload = () => {
             this.sdkLoaded = true;
             resolve();
