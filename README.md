@@ -223,7 +223,7 @@ To help you safely clean up old files from previous versions, here is a breakdow
 
 Any other files or folders at the root of your bucket, are no longer used by V3 and can be safely deleted once you have successfully migrated. This is how your S3 bucket should look like.
 
-<img src="Admin/s3-file-structure.png" alt="S3 File Structure" />
+<img src="Admin/s3-file-structure.PNG" alt="S3 File Structure" />
 
 ## ☁️ Cloud Storage Setup
 
