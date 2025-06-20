@@ -3069,7 +3069,6 @@ if (window.typingMindCloudSync) {
       this.logger.log("info", "Restoring from server-side backup format");
 
       try {
-        // MODIFIED: Use the generic storageService
         const manifest = await this.storageService.download(manifestKey, true);
         if (!manifest || manifest.format !== "server-side") {
           throw new Error("Invalid server-side backup manifest");
@@ -3081,7 +3080,6 @@ if (window.typingMindCloudSync) {
           `Restoring server-side backup: ${manifest.name} (${manifest.totalItems} items)`
         );
 
-        // MODIFIED: Use the generic storageService
         const backupFiles = await this.storageService.list(backupFolder + "/");
         const itemFiles = backupFiles.filter(
           (file) =>
@@ -3093,7 +3091,6 @@ if (window.typingMindCloudSync) {
           "info",
           `Found ${itemFiles.length} items to restore via provider copy`
         );
-
         this.logger.log(
           "warning",
           "⚠️ CRITICAL: This will overwrite ALL cloud data."
@@ -3107,7 +3104,6 @@ if (window.typingMindCloudSync) {
           const copyPromises = batch.map(async (file) => {
             try {
               const itemFilename = file.Key.replace(backupFolder + "/", "");
-              // MODIFIED: Use the generic storageService
               await this.storageService.copyObject(file.Key, itemFilename);
               return { success: true, key: file.Key };
             } catch (copyError) {
@@ -3145,7 +3141,6 @@ if (window.typingMindCloudSync) {
         );
         if (metadataFile) {
           try {
-            // MODIFIED: Use the generic storageService
             await this.storageService.copyObject(
               metadataFile.Key,
               "metadata.json"
@@ -3158,6 +3153,65 @@ if (window.typingMindCloudSync) {
             );
           }
         }
+
+        // --- START OF THE NEW, SAFER FIX ---
+        this.logger.log(
+          "start",
+          "🧹 Starting local data reconciliation post-restore..."
+        );
+
+        // 1. Fetch the just-restored metadata, which is our new source of truth.
+        const restoredCloudMetadata = await this.storageService.download(
+          "metadata.json",
+          true
+        );
+        const validCloudKeys = new Set(
+          Object.keys(restoredCloudMetadata.items || {})
+        );
+        this.logger.log(
+          "info",
+          `Restored state contains ${validCloudKeys.size} valid items.`
+        );
+
+        // 2. Get all items currently in the local database.
+        // We use getAllItems() as it efficiently provides the type needed for deletion.
+        const allLocalItems = await this.dataService.getAllItems();
+        this.logger.log(
+          "info",
+          `Found ${allLocalItems.length} items in local DB to check.`
+        );
+
+        // 3. Compare and delete any local items that are NOT in the new source of truth.
+        let cleanedItemCount = 0;
+        const deletionPromises = [];
+        for (const localItem of allLocalItems) {
+          if (!validCloudKeys.has(localItem.id)) {
+            this.logger.log(
+              "info",
+              `- Deleting extraneous local item: ${localItem.id}`
+            );
+            // The performDelete method is robust and won't fail if the item doesn't exist.
+            deletionPromises.push(
+              this.dataService.performDelete(localItem.id, localItem.type)
+            );
+            cleanedItemCount++;
+          }
+        }
+
+        await Promise.all(deletionPromises);
+
+        if (cleanedItemCount > 0) {
+          this.logger.log(
+            "success",
+            `✅ Successfully cleaned up ${cleanedItemCount} extraneous local items.`
+          );
+        } else {
+          this.logger.log(
+            "info",
+            "✅ No extraneous local items found. Local DB is clean."
+          );
+        }
+        // --- END OF THE NEW, SAFER FIX ---
 
         localStorage.removeItem("tcs_local-metadata");
         localStorage.removeItem("tcs_last-cloud-sync");
