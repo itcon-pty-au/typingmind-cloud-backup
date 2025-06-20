@@ -1393,16 +1393,7 @@ if (window.typingMindCloudSync) {
         client_id: this.config.get("googleClientId"),
         scope: this.DRIVE_SCOPES,
         callback: (tokenResponse) => {
-          if (tokenResponse.error) {
-            this.logger.log("error", "Google Auth Error", tokenResponse.error);
-            return;
-          }
-          const tokenToStore = { ...tokenResponse, iat: Date.now() };
-          gapi.client.setToken(tokenResponse);
-          localStorage.setItem(
-            "tcs_google_access_token",
-            JSON.stringify(tokenResponse)
-          );
+          this._storeToken(tokenResponse);
         },
       });
 
@@ -1464,6 +1455,11 @@ if (window.typingMindCloudSync) {
       if (!this.isConfigured() || !this.tokenClient) {
         throw new Error("Google Drive is not configured or initialized.");
       }
+
+      if (gapi.client.getToken()?.access_token) {
+        return Promise.resolve();
+      }
+
       return new Promise((resolve, reject) => {
         const callback = (tokenResponse) => {
           if (tokenResponse.error) {
@@ -1475,11 +1471,9 @@ if (window.typingMindCloudSync) {
             );
             return;
           }
-          gapi.client.setToken(tokenResponse);
-          localStorage.setItem(
-            "tcs_google_access_token",
-            JSON.stringify(tokenResponse)
-          );
+
+          this._storeToken(tokenResponse);
+
           this.logger.log("success", "Google Drive authentication successful.");
           resolve();
         };
