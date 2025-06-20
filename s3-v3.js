@@ -1419,6 +1419,29 @@ if (window.typingMindCloudSync) {
         this.logger.log("skip", "Sync to cloud already in progress");
         return;
       }
+      if (!this.config.isConfigured()) {
+        this.logger.log(
+          "skip",
+          "Sync to cloud skipped: AWS is not configured."
+        );
+        return;
+      }
+      if (!this.s3Service.client) {
+        try {
+          this.logger.log(
+            "info",
+            "S3 client not ready, initializing on-demand..."
+          );
+          await this.s3Service.initialize();
+        } catch (error) {
+          this.logger.log(
+            "error",
+            "On-demand S3 initialization failed.",
+            error.message
+          );
+          return;
+        }
+      }
       this.syncInProgress = true;
       try {
         const { changedItems } = await this.detectChanges();
