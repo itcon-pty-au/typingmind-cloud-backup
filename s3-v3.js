@@ -1297,293 +1297,123 @@ if (window.typingMindCloudSync) {
       return JSON.stringify(data).length;
     }
 
+    /**
+     * Detects changes between local storage and the last known sync state.
+     * This uses a combined strategy:
+     * - For CHAT items (key starts with 'CHAT_'): Uses the `updatedAt` timestamp for fast, memory-safe change detection.
+     * - For all other items: Uses the original `size`-based comparison.
+     * This prevents memory crashes caused by stringifying large chat objects.
+     */
     async detectChanges() {
       const changedItems = [];
       const now = Date.now();
-      const idbKeys = new Set();
-      const lsKeys = new Set();
+
+      // Use memory-efficient streaming for iterating through all local items
       const { totalSize } = await this.dataService.estimateDataSize();
-      const useStreaming = totalSize > this.dataService.memoryThreshold;
-      if (useStreaming) {
-        this.logger.log(
-          "info",
-          `Using memory-efficient change detection for large dataset (${this.dataService.formatSize(
-            totalSize
-          )})`
-        );
-        for await (const batch of this.dataService.streamAllItemsInternal()) {
-          for (const item of batch) {
-            const key = item.id;
-            const value = item.data;
-            if (item.type === "idb") {
-              idbKeys.add(key);
-            } else {
-              lsKeys.add(key);
-            }
-            const existingItem = this.metadata.items[key];
-            const currentSize = this.getItemSize(value);
-            if (!existingItem?.deleted) {
-              if (!existingItem) {
-                changedItems.push({
-                  id: key,
-                  type: item.type,
-                  size: currentSize,
-                  lastModified: now,
-                  reason: "new",
-                });
-              } else if (currentSize !== existingItem.size) {
-                if (key.startsWith("CHAT_")) {
-                  this.logger.log(
-                    "warning",
-                    `Size change detected for ${key}`,
-                    {
-                      currentSize,
-                      existingSize: existingItem.size,
-                      lastSynced: existingItem.synced
-                        ? new Date(existingItem.synced).toISOString()
-                        : "never",
-                    }
-                  );
-                }
-                changedItems.push({
-                  id: key,
-                  type: item.type,
-                  size: currentSize,
-                  lastModified: now,
-                  reason: "size",
-                });
-              } else if (!existingItem.synced) {
-                if (key.startsWith("CHAT_")) {
-                  this.logger.log(
-                    "warning",
-                    `Never-synced item detected for ${key}`,
-                    {
-                      hasMetadata: !!existingItem,
-                      synced: existingItem.synced,
-                      size: currentSize,
-                    }
-                  );
-                }
-                changedItems.push({
-                  id: key,
-                  type: item.type,
-                  size: currentSize,
-                  lastModified: now,
-                  reason: "never-synced",
-                });
-              }
+      const itemsIterator =
+        totalSize > this.dataService.memoryThreshold
+          ? this.dataService.streamAllItemsInternal()
+          : [await this.dataService.getAllItems()];
+
+      for await (const batch of itemsIterator) {
+        for (const item of batch) {
+          const key = item.id;
+          const value = item.data;
+          const existingItem = this.metadata.items[key];
+
+          // Skip items that are already marked for deletion in local metadata
+          if (existingItem?.deleted) {
+            continue;
+          }
+
+          let hasChanged = false;
+          let changeReason = "unknown";
+          let itemLastModified = now;
+          let currentSize = 0;
+
+          // ================== START: COMBINED DETECTION STRATEGY ==================
+
+          // STRATEGY 1: Timestamp-based detection for CHAT items
+          if (
+            key.startsWith("CHAT_") &&
+            item.type === "idb" &&
+            value?.updatedAt
+          ) {
+            itemLastModified = value.updatedAt; // Use the timestamp from the object itself
+
+            if (!existingItem) {
+              hasChanged = true;
+              changeReason = "new-chat";
+            } else if (itemLastModified > (existingItem.lastModified || 0)) {
+              hasChanged = true;
+              changeReason = "timestamp";
+            } else if (!existingItem.synced) {
+              hasChanged = true;
+              changeReason = "never-synced-chat";
             }
           }
-          await new Promise((resolve) => setTimeout(resolve, 10));
-        }
-      } else {
-        this.logger.log(
-          "info",
-          `Using standard change detection for small dataset (${this.dataService.formatSize(
-            totalSize
-          )})`
-        );
-        const db = await this.dataService.getDB();
-        const transaction = db.transaction(["keyval"], "readonly");
-        const store = transaction.objectStore("keyval");
-        await new Promise((resolve) => {
-          const request = store.openCursor();
-          request.onsuccess = (event) => {
-            const cursor = event.target.result;
-            if (cursor) {
-              const key = cursor.key;
-              const value = cursor.value;
-              if (
-                typeof key === "string" &&
-                value !== undefined &&
-                !this.config.shouldExclude(key)
-              ) {
-                idbKeys.add(key);
-                const existingItem = this.metadata.items[key];
-                const currentSize = this.getItemSize(value);
-                if (!existingItem?.deleted) {
-                  if (!existingItem) {
-                    changedItems.push({
-                      id: key,
-                      type: "idb",
-                      size: currentSize,
-                      lastModified: now,
-                      reason: "new",
-                    });
-                  } else if (currentSize !== existingItem.size) {
-                    if (key.startsWith("CHAT_")) {
-                      this.logger.log(
-                        "warning",
-                        `Size change detected for ${key}`,
-                        {
-                          currentSize,
-                          existingSize: existingItem.size,
-                          lastSynced: existingItem.synced
-                            ? new Date(existingItem.synced).toISOString()
-                            : "never",
-                        }
-                      );
-                    }
-                    changedItems.push({
-                      id: key,
-                      type: "idb",
-                      size: currentSize,
-                      lastModified: now,
-                      reason: "size",
-                    });
-                  } else if (!existingItem.synced) {
-                    if (key.startsWith("CHAT_")) {
-                      this.logger.log(
-                        "warning",
-                        `Never-synced item detected for ${key}`,
-                        {
-                          hasMetadata: !!existingItem,
-                          synced: existingItem.synced,
-                          size: currentSize,
-                        }
-                      );
-                    }
-                    changedItems.push({
-                      id: key,
-                      type: "idb",
-                      size: currentSize,
-                      lastModified: now,
-                      reason: "never-synced",
-                    });
-                  }
-                }
-              }
-              cursor.continue();
-            } else {
-              resolve();
-            }
-          };
-          request.onerror = () => resolve();
-        });
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && !this.config.shouldExclude(key)) {
-            lsKeys.add(key);
-            const value = localStorage.getItem(key);
-            const existingItem = this.metadata.items[key];
-            const currentSize = this.getItemSize(value);
-            if (!existingItem?.deleted) {
-              if (!existingItem) {
-                changedItems.push({
-                  id: key,
-                  type: "ls",
-                  size: currentSize,
-                  lastModified: now,
-                  reason: "new",
-                });
-              } else if (currentSize !== existingItem.size) {
-                this.logger.log(
-                  "warning",
-                  `localStorage size change detected for ${key}`,
-                  {
-                    currentSize,
-                    existingSize: existingItem.size,
-                    lastSynced: existingItem.synced
-                      ? new Date(existingItem.synced).toISOString()
-                      : "never",
-                  }
-                );
-                changedItems.push({
-                  id: key,
-                  type: "ls",
-                  size: currentSize,
-                  lastModified: now,
-                  reason: "size",
-                });
-              } else if (!existingItem.synced) {
-                this.logger.log(
-                  "warning",
-                  `localStorage never-synced item detected for ${key}`,
-                  {
-                    hasMetadata: !!existingItem,
-                    synced: existingItem.synced,
-                    size: currentSize,
-                  }
-                );
-                changedItems.push({
-                  id: key,
-                  type: "ls",
-                  size: currentSize,
-                  lastModified: now,
-                  reason: "never-synced",
-                });
-              }
+          // STRATEGY 2: Size-based detection for all other items (the original, safe logic)
+          else {
+            currentSize = this.getItemSize(value);
+            itemLastModified = existingItem?.lastModified || 0; // Preserve existing timestamp if any
+
+            if (!existingItem) {
+              hasChanged = true;
+              changeReason = "new";
+            } else if (currentSize !== existingItem.size) {
+              hasChanged = true;
+              changeReason = "size";
+              itemLastModified = now; // Update timestamp on size change
+            } else if (!existingItem.synced) {
+              hasChanged = true;
+              changeReason = "never-synced";
             }
           }
+
+          if (hasChanged) {
+            const change = {
+              id: key,
+              type: item.type,
+              lastModified: itemLastModified,
+              reason: changeReason,
+            };
+            // Only attach size if it was part of the detection logic
+            if (currentSize > 0) {
+              change.size = currentSize;
+            }
+            changedItems.push(change);
+          }
+          // =================== END: COMBINED DETECTION STRATEGY ===================
         }
       }
-      const tombstones = this.dataService.getAllTombstones();
-      for (const [itemId, tombstone] of tombstones.entries()) {
-        const existingItem = this.metadata.items[itemId];
-        const needsSync =
-          !existingItem?.deleted ||
-          (existingItem && existingItem.deleted < tombstone.deleted) ||
-          (existingItem &&
-            (existingItem.tombstoneVersion || 0) <
-              (tombstone.tombstoneVersion || 1));
-        if (needsSync) {
-          changedItems.push({
-            id: itemId,
-            type: tombstone.type,
-            deleted: tombstone.deleted,
-            tombstoneVersion: tombstone.tombstoneVersion,
-            reason: "tombstone",
-          });
-        }
-      }
+
       for (const [itemId, metadata] of Object.entries(this.metadata.items)) {
         if (metadata.deleted && metadata.deleted > (metadata.synced || 0)) {
-          changedItems.push({
-            id: itemId,
-            type: metadata.type,
-            deleted: metadata.deleted,
-            tombstoneVersion: metadata.tombstoneVersion || 1,
-            reason: "tombstone",
-          });
-        }
-      }
-      const overlappingKeys = Array.from(idbKeys).filter((key) =>
-        lsKeys.has(key)
-      );
-      if (overlappingKeys.length > 0) {
-        const chatOverlaps = overlappingKeys.filter((key) =>
-          key.startsWith("CHAT_")
-        );
-        if (chatOverlaps.length > 0) {
-          this.logger.log(
-            "error",
-            `🚨 DETECTED DUPLICATE KEYS IN BOTH STORAGE TYPES`,
-            {
-              totalOverlaps: overlappingKeys.length,
-              chatOverlaps: chatOverlaps.slice(0, 10),
-              totalChatOverlaps: chatOverlaps.length,
-              totalIdbKeys: idbKeys.size,
-              totalLsKeys: lsKeys.size,
-            }
-          );
-        }
-      }
-      for (const itemId in this.metadata.items) {
-        if (!idbKeys.has(itemId) && !lsKeys.has(itemId)) {
-          const metadataItem = this.metadata.items[itemId];
-          if (!metadataItem.deleted) {
-            this.logger.log("warning", `Item deleted locally: ${itemId}`);
+          if (
+            !changedItems.some(
+              (item) => item.id === itemId && item.reason === "tombstone"
+            )
+          ) {
             changedItems.push({
               id: itemId,
-              type: metadataItem.type || "unknown",
-              deleted: now,
+              type: metadata.type,
+              deleted: metadata.deleted,
+              tombstoneVersion: metadata.tombstoneVersion || 1,
               reason: "tombstone",
             });
           }
         }
       }
+
       return { changedItems, hasChanges: changedItems.length > 0 };
     }
+
+    /**
+     * Syncs detected changes up to the S3 cloud.
+     * After uploading an item, it updates the local metadata:
+     * - For CHAT items, it stores the `lastModified` timestamp.
+     * - For other items, it stores the `size`.
+     */
     async syncToCloud() {
       if (this.syncInProgress) {
         this.logger.log("skip", "Sync to cloud already in progress");
@@ -1592,62 +1422,42 @@ if (window.typingMindCloudSync) {
       this.syncInProgress = true;
       try {
         const { changedItems } = await this.detectChanges();
-        const cloudMetadata = await this.getCloudMetadata();
         if (changedItems.length === 0) {
-          this.logger.log("info", "No items to sync to cloud");
+          this.logger.log("info", "No local items to sync to cloud");
+          this.syncInProgress = false;
           return;
         }
-        const now = Date.now();
-        const recentlyChangedItems = changedItems.filter((item) => {
-          const synced = this.metadata.items[item.id]?.synced;
-          return synced && now - synced < 60000;
-        });
-        if (recentlyChangedItems.length > 0) {
-          this.logger.log(
-            "warning",
-            `Detected ${recentlyChangedItems.length} items synced recently, potential sync loop`,
-            {
-              items: recentlyChangedItems.map((item) => ({
-                id: item.id,
-                reason: item.reason,
-                currentSize: item.size,
-                lastSynced: this.metadata.items[item.id].synced
-                  ? new Date(this.metadata.items[item.id].synced).toISOString()
-                  : "never",
-                metadataSize: this.metadata.items[item.id]?.size,
-                metadataSynced: this.metadata.items[item.id]?.synced,
-                metadataLastModified:
-                  this.metadata.items[item.id]?.lastModified,
-              })),
-            }
-          );
-        }
+
         this.logger.log(
-          "info",
-          `Syncing ${changedItems.length} items to cloud`
+          "start",
+          `Syncing ${changedItems.length} changed items to cloud...`
         );
+
+        const cloudMetadata = await this.getCloudMetadata();
         let itemsSynced = 0;
+
         const uploadPromises = changedItems.map(async (item) => {
+          // Conflict resolution: if cloud version is newer, skip upload
           const cloudItem = cloudMetadata.items[item.id];
           if (
             cloudItem &&
             !item.deleted &&
-            (cloudItem.lastModified || 0) >
-              (this.metadata.items[item.id]?.lastModified || 0) + 2000
+            (cloudItem.lastModified || 0) > (item.lastModified || 0)
           ) {
             this.logger.log(
               "skip",
-              `Skipping upload for ${item.id}, cloud version is newer`
+              `Skipping upload for ${item.id}, cloud version is newer.`
             );
-            this.metadata.items[item.id] = { ...cloudItem };
+            this.metadata.items[item.id] = { ...cloudItem }; // Update local metadata to match cloud
             return;
           }
+
           try {
+            // Handle TOMBSTONES (deletions)
             if (item.deleted || item.reason === "tombstone") {
               const timestamp = Date.now();
               const tombstoneData = {
                 deleted: item.deleted || timestamp,
-                deletedAt: item.deleted || timestamp,
                 type: item.type,
                 tombstoneVersion: item.tombstoneVersion || 1,
                 synced: timestamp,
@@ -1657,46 +1467,49 @@ if (window.typingMindCloudSync) {
               itemsSynced++;
               this.logger.log(
                 "info",
-                `🗑️ Synced tombstone for key "${item.id}" to cloud (v${tombstoneData.tombstoneVersion})`
+                `🗑️ Synced tombstone for "${item.id}" to cloud.`
               );
-            } else {
+            }
+            // Handle regular item UPLOADS
+            else {
               const data = await this.dataService.getItem(item.id, item.type);
               if (data) {
                 await this.s3Service.upload(`items/${item.id}.json`, data);
-                this.metadata.items[item.id] = {
+
+                // ================== START: UPDATED METADATA SAVING ==================
+                const newMetadataEntry = {
                   synced: Date.now(),
                   type: item.type,
-                  size: item.size,
                   lastModified: item.lastModified,
                 };
-                cloudMetadata.items[item.id] = {
-                  ...this.metadata.items[item.id],
-                };
+
+                // For non-chat items, we must also store the size for future comparisons.
+                if (!item.id.startsWith("CHAT_")) {
+                  newMetadataEntry.size = item.size || this.getItemSize(data);
+                }
+
+                this.metadata.items[item.id] = newMetadataEntry;
+                cloudMetadata.items[item.id] = { ...newMetadataEntry };
+                // =================== END: UPDATED METADATA SAVING ===================
+
                 itemsSynced++;
-                this.logger.log("info", `Synced key "${item.id}" to cloud`);
+                this.logger.log(
+                  "info",
+                  `Synced key "${item.id}" to cloud (reason: ${item.reason}).`
+                );
               }
             }
           } catch (error) {
             this.logger.log(
               "error",
-              `Failed to sync key "${item.id}": ${
-                error.message || error.code || "Unknown error"
-              }`
+              `Failed to sync key "${item.id}": ${error.message}`
             );
-            if (
-              this.operationQueue &&
-              (item.deleted || item.reason === "tombstone")
-            ) {
-              this.operationQueue.add(
-                `retry-tombstone-${item.id}`,
-                () => this.retrySyncTombstone(item),
-                "high"
-              );
-            }
             throw error;
           }
         });
+
         await Promise.allSettled(uploadPromises);
+
         if (itemsSynced > 0) {
           cloudMetadata.lastSync = Date.now();
           await this.s3Service.upload("metadata.json", cloudMetadata, true);
@@ -1706,25 +1519,26 @@ if (window.typingMindCloudSync) {
           await this.updateSyncDiagnosticsCache();
           this.logger.log(
             "success",
-            `Sync to cloud completed - ${itemsSynced} items synced`
+            `Sync to cloud completed - ${itemsSynced} items processed.`
           );
         } else {
-          this.logger.log("info", "Sync to cloud did not upload any items.");
-        }
-      } catch (error) {
-        this.logger.log("error", "Failed to sync to cloud", error.message);
-        if (this.operationQueue) {
-          this.operationQueue.add(
-            "retry-sync-to-cloud",
-            () => this.syncToCloud(),
-            "normal"
+          this.logger.log(
+            "info",
+            "Sync to cloud finished, but no new items were uploaded."
           );
         }
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "An error occurred during syncToCloud",
+          error.message
+        );
         throw error;
       } finally {
         this.syncInProgress = false;
       }
     }
+
     async retrySyncTombstone(item) {
       this.logger.log(
         "info",
