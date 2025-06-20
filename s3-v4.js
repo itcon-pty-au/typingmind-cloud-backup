@@ -4399,7 +4399,7 @@ if (window.typingMindCloudSync) {
                 <div id="googleDrive-settings-block" class="hidden space-y-2">
                   <div>
                     <label for="google-client-id" class="block text-sm font-medium text-zinc-300">Google Cloud Client ID <span class="text-red-400">*</span></label>
-                    <input id="google-client-id" name="google-client-id" type="text" value="${
+                    <input id="google-client-id" name="google-client-id" || '442822999037-qqg90cf5duqdf0un7koe2qqkl2gfljrv.apps.googleusercontent.com' type="text" value="${
                       this.config.get("googleClientId") || ""
                     }" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
                   </div>
