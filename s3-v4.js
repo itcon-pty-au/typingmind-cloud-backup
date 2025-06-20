@@ -1,7 +1,8 @@
-/*TypingMind Cloud Sync v3 by ITCON, AU
+/*TypingMind Cloud Sync v4 by ITCON, AU
 -------------------------
 Features:
-- Sync typingmind database with a cloud storage provider (S3, Google Drive, etc.)
+- Extensible provider architecture (S3, Google Drive, etc.)
+- Sync typingmind database with a cloud storage provider
 - Snapshots on demand
 - Automatic daily backups
 - Backup management in Extension config UI
@@ -45,7 +46,7 @@ if (window.typingMindCloudSync) {
     loadConfig() {
       // MODIFIED: Added storageType and provider-specific keys.
       const defaults = {
-        storageType: "s3", // 's3' or 'googleDrive', etc.
+        storageType: "s3", // 's3' or 'googleDrive'
         syncInterval: 15,
         // S3 specific
         bucketName: "",
@@ -55,7 +56,7 @@ if (window.typingMindCloudSync) {
         endpoint: "",
         // Generic
         encryptionKey: "",
-        // Google Drive specific (placeholders for the future)
+        // NEW: Google Drive specific
         googleClientId: "",
       };
       const stored = {};
@@ -71,6 +72,7 @@ if (window.typingMindCloudSync) {
         secretKey: "tcs_aws_secretkey",
         endpoint: "tcs_aws_endpoint",
         encryptionKey: "tcs_encryptionkey",
+        // NEW: Google Drive key mapping
         googleClientId: "tcs_google_clientid",
       };
 
@@ -120,8 +122,12 @@ if (window.typingMindCloudSync) {
         "tcs_aws_secretkey",
         "tcs_aws_region",
         "tcs_aws_endpoint",
+        // NEW: Google Drive exclusions
         "tcs_google_clientid",
         "tcs_google_access_token",
+        "tcs_google_token_expiry",
+        "gsi_client_id", // Google's own key
+        // ---
         "tcs_encryptionkey",
         "tcs_last-cloud-sync",
         "tcs_last-daily-backup",
@@ -157,6 +163,7 @@ if (window.typingMindCloudSync) {
         secretKey: "tcs_aws_secretkey",
         endpoint: "tcs_aws_endpoint",
         encryptionKey: "tcs_encryptionkey",
+        // NEW: Google Drive key mapping
         googleClientId: "tcs_google_clientid",
       };
 
@@ -176,12 +183,11 @@ if (window.typingMindCloudSync) {
         localStorage.setItem(storageKey, valueToStore);
       });
     }
-    // MODIFIED: isConfigured is now handled by the specific storage provider.
-    // We remove it from here to avoid confusion.
     shouldExclude(key) {
       return (
         this.exclusions.includes(key) ||
         key.startsWith("tcs_") ||
+        key.startsWith("gsi_") || // NEW: Exclude Google Identity Services keys
         key.includes("eruda")
       );
     }
@@ -1087,8 +1093,7 @@ if (window.typingMindCloudSync) {
     }
   }
 
-  // NEW: Abstract base class for all storage providers.
-  // This defines the "contract" that S3Service, GoogleDriveService, etc., must follow.
+  // Abstract base class for all storage providers.
   class IStorageProvider {
     constructor(configManager, cryptoService, logger) {
       if (this.constructor === IStorageProvider) {
@@ -1099,26 +1104,15 @@ if (window.typingMindCloudSync) {
       this.logger = logger;
     }
 
-    /**
-     * Checks if the provider is sufficiently configured to operate.
-     * @returns {boolean}
-     */
     isConfigured() {
       throw new Error("Method 'isConfigured()' must be implemented.");
     }
 
-    /**
-     * Initializes the provider, loading any necessary SDKs or performing authentication.
-     */
     async initialize() {
       throw new Error("Method 'initialize()' must be implemented.");
     }
 
-    /**
-     * A hook for providers that require interactive authentication (like OAuth).
-     */
     async handleAuthentication() {
-      // Default implementation for providers that don't need it (like S3 with keys).
       this.logger.log(
         "info",
         `${this.constructor.name} does not require interactive authentication.`
@@ -1126,73 +1120,35 @@ if (window.typingMindCloudSync) {
       return Promise.resolve();
     }
 
-    /**
-     * Uploads data to the cloud.
-     * @param {string} key - The logical path or key for the data.
-     * @param {any} data - The data to upload (will be encrypted if not metadata).
-     * @param {boolean} [isMetadata=false] - If true, uploads as raw JSON.
-     * @returns {Promise<any>} - A promise that resolves with the result from the cloud provider.
-     */
     async upload(key, data, isMetadata = false) {
       throw new Error("Method 'upload()' must be implemented.");
     }
 
-    /**
-     * Downloads data from the cloud.
-     * @param {string} key - The logical path or key for the data.
-     * @param {boolean} [isMetadata=false] - If true, expects raw JSON.
-     * @returns {Promise<any>} - A promise that resolves with the downloaded and decrypted data.
-     */
     async download(key, isMetadata = false) {
       throw new Error("Method 'download()' must be implemented.");
     }
 
-    /**
-     * Deletes an object from the cloud.
-     * @param {string} key - The logical path or key of the object to delete.
-     * @returns {Promise<void>}
-     */
     async delete(key) {
       throw new Error("Method 'delete()' must be implemented.");
     }
 
-    /**
-     * Lists objects in the cloud, optionally filtered by a prefix.
-     * @param {string} [prefix=""] - The prefix to filter by.
-     * @returns {Promise<Array<any>>} - A promise that resolves with a list of objects.
-     */
     async list(prefix = "") {
       throw new Error("Method 'list()' must be implemented.");
     }
 
-    /**
-     * Downloads an object and returns the full response, including metadata like ETag.
-     * @param {string} key - The logical path or key of the object.
-     * @returns {Promise<any>} - The full response object from the provider.
-     */
     async downloadWithResponse(key) {
       throw new Error("Method 'downloadWithResponse()' must be implemented.");
     }
 
-    /**
-     * Performs a server-side copy of an object.
-     * @param {string} sourceKey - The key of the object to copy.
-     * @param {string} destinationKey - The key for the new copied object.
-     * @returns {Promise<any>}
-     */
     async copyObject(sourceKey, destinationKey) {
       throw new Error("Method 'copyObject()' must be implemented.");
     }
 
-    /**
-     * A method to verify credentials and connectivity.
-     */
     async verify() {
       this.logger.log(
         "info",
         `Verifying connection for ${this.constructor.name}...`
       );
-      // A simple list operation is a good verification test.
       await this.list("");
       this.logger.log(
         "success",
@@ -1201,15 +1157,14 @@ if (window.typingMindCloudSync) {
     }
   }
 
-  // MODIFIED: S3Service now extends the abstract base class.
+  // S3Service now extends the abstract base class.
   class S3Service extends IStorageProvider {
     constructor(configManager, cryptoService, logger) {
-      super(configManager, cryptoService, logger); // NEW: Call the parent constructor
+      super(configManager, cryptoService, logger);
       this.client = null;
       this.sdkLoaded = false;
     }
 
-    // NEW: Implementation of the abstract method
     isConfigured() {
       return !!(
         this.config.get("accessKey") &&
@@ -1361,30 +1316,23 @@ if (window.typingMindCloudSync) {
       });
     }
     async list(prefix = "") {
-      // This is the paginated version that will fetch all objects, not just the first 1000.
       return this.withRetry(async () => {
         const allContents = [];
         let continuationToken = undefined;
-
         this.logger.log(
           "info",
           `[S3Service] Starting paginated list for prefix: "${prefix}"`
         );
-
         do {
           const params = {
             Bucket: this.config.get("bucketName"),
             Prefix: prefix,
             ContinuationToken: continuationToken,
           };
-
-          // Await the promise to get the result for the current page
           const result = await this.client.listObjectsV2(params).promise();
-
           if (result.Contents) {
             allContents.push(...result.Contents);
           }
-
           this.logger.log(
             "info",
             `[S3Service] Fetched page with ${
@@ -1393,20 +1341,17 @@ if (window.typingMindCloudSync) {
               result.IsTruncated
             }`
           );
-
-          // Check if the list was truncated and get the token for the next page
           if (result.IsTruncated) {
             continuationToken = result.NextContinuationToken;
           } else {
-            continuationToken = undefined; // No more pages, loop will end
+            continuationToken = undefined;
           }
-        } while (continuationToken); // Continue looping as long as there is a next page token
-
+        } while (continuationToken);
         this.logger.log(
           "success",
           `[S3Service] Paginated list complete. Total objects found: ${allContents.length}`
         );
-        return allContents; // Return the complete list of all objects
+        return allContents;
       });
     }
     async downloadWithResponse(key) {
@@ -1432,19 +1377,446 @@ if (window.typingMindCloudSync) {
     }
   }
 
-  // MODIFIED: SyncOrchestrator is now decoupled from S3.
-  // It accepts a generic `storageService` that adheres to the `IStorageProvider` contract.
+  // NEW: GoogleDriveService implementation
+  class GoogleDriveService extends IStorageProvider {
+    constructor(configManager, cryptoService, logger) {
+      super(configManager, cryptoService, logger);
+      this.DRIVE_SCOPES = "https://www.googleapis.com/auth/drive.file";
+      this.APP_FOLDER_NAME = "TypingMind-Cloud-Sync";
+      this.gapiReady = false;
+      this.gisReady = false;
+      this.tokenClient = null;
+      this.pathIdCache = new Map();
+    }
+
+    isConfigured() {
+      return !!this.config.get("googleClientId");
+    }
+
+    async initialize() {
+      if (!this.isConfigured())
+        throw new Error("Google Drive configuration incomplete");
+      await this._loadGapiAndGis();
+      await new Promise((resolve) => gapi.load("client", resolve));
+      await gapi.client.init({});
+
+      this.tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: this.config.get("googleClientId"),
+        scope: this.DRIVE_SCOPES,
+        callback: (tokenResponse) => {
+          // This callback is used for the interactive flow. We will set the token here.
+          if (tokenResponse.error) {
+            this.logger.log("error", "Google Auth Error", tokenResponse.error);
+            return;
+          }
+          gapi.client.setToken(tokenResponse);
+          localStorage.setItem(
+            "tcs_google_access_token",
+            JSON.stringify(tokenResponse)
+          );
+        },
+      });
+
+      // Attempt to set token from localStorage on initialization
+      const storedToken = localStorage.getItem("tcs_google_access_token");
+      if (storedToken) {
+        try {
+          const token = JSON.parse(storedToken);
+          // Simple check for expiry, does not handle refresh yet
+          if (
+            token.expires_in &&
+            Date.now() < token.iat + token.expires_in * 1000
+          ) {
+            gapi.client.setToken(token);
+            this.logger.log(
+              "info",
+              "Successfully restored Google Drive session from storage."
+            );
+          } else {
+            this.logger.log(
+              "info",
+              "Google Drive token from storage has expired."
+            );
+            localStorage.removeItem("tcs_google_access_token");
+          }
+        } catch (e) {
+          localStorage.removeItem("tcs_google_access_token");
+        }
+      }
+    }
+
+    async _loadScript(id, src) {
+      if (document.getElementById(id)) return;
+      return new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.id = id;
+        script.src = src;
+        script.async = true;
+        script.defer = true;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+
+    async _loadGapiAndGis() {
+      if (this.gapiReady && this.gisReady) return;
+      await this._loadScript(
+        "gapi-client-script",
+        "https://apis.google.com/js/api.js"
+      );
+      await this._loadScript(
+        "gis-client-script",
+        "https://accounts.google.com/gsi/client"
+      );
+      this.gapiReady = true;
+      this.gisReady = true;
+    }
+
+    async handleAuthentication() {
+      if (!this.isConfigured() || !this.tokenClient) {
+        throw new Error("Google Drive is not configured or initialized.");
+      }
+      return new Promise((resolve, reject) => {
+        const callback = (tokenResponse) => {
+          if (tokenResponse.error) {
+            this.logger.log("error", "Google Auth Error", tokenResponse);
+            reject(
+              new Error(
+                tokenResponse.error_description || "Authentication failed."
+              )
+            );
+            return;
+          }
+          gapi.client.setToken(tokenResponse);
+          localStorage.setItem(
+            "tcs_google_access_token",
+            JSON.stringify(tokenResponse)
+          );
+          this.logger.log("success", "Google Drive authentication successful.");
+          resolve();
+        };
+
+        // Override the client's callback for this specific request
+        this.tokenClient.callback = callback;
+
+        // If gapi has a token but it's expired, it should be refreshed.
+        // For simplicity, we just request a new one. The user might see a brief popup.
+        if (gapi.client.getToken() === null) {
+          this.tokenClient.requestAccessToken({ prompt: "consent" });
+        } else {
+          this.tokenClient.requestAccessToken({ prompt: "" });
+        }
+      });
+    }
+
+    async _getAppFolderId() {
+      if (this.pathIdCache.has(this.APP_FOLDER_NAME)) {
+        return this.pathIdCache.get(this.APP_FOLDER_NAME);
+      }
+
+      try {
+        const response = await gapi.client.drive.files.list({
+          q: `mimeType='application/vnd.google-apps.folder' and name='${this.APP_FOLDER_NAME}' and trashed=false`,
+          fields: "files(id, name)",
+          spaces: "drive",
+        });
+
+        if (response.result.files.length > 0) {
+          const folderId = response.result.files[0].id;
+          this.pathIdCache.set(this.APP_FOLDER_NAME, folderId);
+          return folderId;
+        } else {
+          this.logger.log(
+            "info",
+            `App folder '${this.APP_FOLDER_NAME}' not found, creating it.`
+          );
+          const fileMetadata = {
+            name: this.APP_FOLDER_NAME,
+            mimeType: "application/vnd.google-apps.folder",
+          };
+          const createResponse = await gapi.client.drive.files.create({
+            resource: fileMetadata,
+            fields: "id",
+          });
+          const folderId = createResponse.result.id;
+          this.pathIdCache.set(this.APP_FOLDER_NAME, folderId);
+          return folderId;
+        }
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "Failed to get/create app folder.",
+          error.result.error
+        );
+        throw new Error(
+          "Could not access or create the application folder in Google Drive."
+        );
+      }
+    }
+
+    async _getPathId(path, createIfNotExists = false) {
+      if (this.pathIdCache.has(path)) return this.pathIdCache.get(path);
+
+      const parts = path.split("/").filter((p) => p);
+      let parentId = await this._getAppFolderId();
+      let currentPath = this.APP_FOLDER_NAME;
+
+      for (const part of parts) {
+        currentPath += `/${part}`;
+        if (this.pathIdCache.has(currentPath)) {
+          parentId = this.pathIdCache.get(currentPath);
+          continue;
+        }
+
+        const response = await gapi.client.drive.files.list({
+          q: `mimeType='application/vnd.google-apps.folder' and name='${part}' and '${parentId}' in parents and trashed=false`,
+          fields: "files(id)",
+          spaces: "drive",
+        });
+
+        if (response.result.files.length > 0) {
+          parentId = response.result.files[0].id;
+          this.pathIdCache.set(currentPath, parentId);
+        } else if (createIfNotExists) {
+          this.logger.log(
+            "info",
+            `Creating folder '${part}' inside parent ID ${parentId}.`
+          );
+          const fileMetadata = {
+            name: part,
+            mimeType: "application/vnd.google-apps.folder",
+            parents: [parentId],
+          };
+          const createResponse = await gapi.client.drive.files.create({
+            resource: fileMetadata,
+            fields: "id",
+          });
+          parentId = createResponse.result.id;
+          this.pathIdCache.set(currentPath, parentId);
+        } else {
+          return null; // Path does not exist and we shouldn't create it
+        }
+      }
+      return parentId;
+    }
+
+    async _getFileMetadata(path) {
+      const parts = path.split("/").filter((p) => p);
+      const filename = parts.pop();
+      const folderPath = parts.join("/");
+
+      const parentId = await this._getPathId(folderPath);
+      if (!parentId) return null;
+
+      const response = await gapi.client.drive.files.list({
+        q: `name='${filename}' and '${parentId}' in parents and trashed=false`,
+        fields: "files(id, name, etag, size, modifiedTime)",
+        spaces: "drive",
+      });
+
+      return response.result.files.length > 0 ? response.result.files[0] : null;
+    }
+
+    async upload(key, data, isMetadata = false) {
+      await this.handleAuthentication(); // Ensure token is valid
+      const parts = key.split("/").filter((p) => p);
+      const filename = parts.pop();
+      const folderPath = parts.join("/");
+
+      const parentId = await this._getPathId(folderPath, true); // Create folder path if it doesn't exist
+      const existingFile = await this._getFileMetadata(key);
+
+      const body = isMetadata
+        ? JSON.stringify(data)
+        : await this.crypto.encrypt(data);
+      const blob = new Blob([body], {
+        type: isMetadata ? "application/json" : "application/octet-stream",
+      });
+
+      const metadata = {
+        name: filename,
+        mimeType: isMetadata ? "application/json" : "application/octet-stream",
+      };
+      if (!existingFile) {
+        metadata.parents = [parentId];
+      }
+
+      const formData = new FormData();
+      formData.append(
+        "metadata",
+        new Blob([JSON.stringify(metadata)], { type: "application/json" })
+      );
+      formData.append("file", blob);
+
+      const uploadUrl = existingFile
+        ? `https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=multipart`
+        : "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart";
+
+      const method = existingFile ? "PATCH" : "POST";
+
+      const response = await fetch(uploadUrl, {
+        method: method,
+        headers: new Headers({
+          Authorization: "Bearer " + gapi.client.getToken().access_token,
+        }),
+        body: formData,
+      });
+
+      const result = await response.json();
+      if (result.error) {
+        this.logger.log(
+          "error",
+          `Google Drive upload failed for ${key}`,
+          result.error
+        );
+        throw new Error(result.error.message);
+      }
+      this.logger.log("success", `Uploaded ${key} to Google Drive`, {
+        ETag: result.etag,
+      });
+      return { ETag: result.etag, ...result };
+    }
+
+    async download(key, isMetadata = false) {
+      await this.handleAuthentication();
+      const file = await this._getFileMetadata(key);
+      if (!file) {
+        const error = new Error(`File not found in Google Drive: ${key}`);
+        error.code = "NoSuchKey"; // Mimic S3 error
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const response = await gapi.client.drive.files.get({
+        fileId: file.id,
+        alt: "media",
+      });
+
+      if (response.status !== 200) {
+        this.logger.log(
+          "error",
+          `Google Drive download failed for ${key}`,
+          response.result
+        );
+        throw new Error(`Download failed with status ${response.status}`);
+      }
+
+      const body = response.body;
+      const result = isMetadata
+        ? JSON.parse(body)
+        : await this.crypto.decrypt(new TextEncoder().encode(body).buffer); // A bit of a hack to get ArrayBuffer
+      return result;
+    }
+
+    async delete(key) {
+      await this.handleAuthentication();
+      const file = await this._getFileMetadata(key);
+      if (!file) {
+        this.logger.log("warning", `File to delete not found: ${key}`);
+        return;
+      }
+
+      await gapi.client.drive.files.delete({ fileId: file.id });
+      this.logger.log("success", `Deleted ${key} from Google Drive.`);
+    }
+
+    async list(prefix = "") {
+      await this.handleAuthentication();
+      const parentId = await this._getPathId(prefix);
+      if (!parentId) return []; // Prefix folder doesn't exist
+
+      let pageToken = null;
+      const allFiles = [];
+      do {
+        const response = await gapi.client.drive.files.list({
+          q: `'${parentId}' in parents and trashed=false`,
+          fields: "nextPageToken, files(id, name, size, modifiedTime)",
+          spaces: "drive",
+          pageSize: 1000,
+          pageToken: pageToken,
+        });
+        allFiles.push(...response.result.files);
+        pageToken = response.result.nextPageToken;
+      } while (pageToken);
+
+      // Adapt to S3-like response structure
+      return allFiles.map((file) => ({
+        Key: `${prefix}${file.name}`,
+        LastModified: new Date(file.modifiedTime),
+        Size: file.size,
+      }));
+    }
+
+    async downloadWithResponse(key) {
+      await this.handleAuthentication();
+      const file = await this._getFileMetadata(key);
+      if (!file) {
+        const error = new Error(`File not found in Google Drive: ${key}`);
+        error.code = "NoSuchKey";
+        error.statusCode = 404;
+        throw error;
+      }
+
+      // GAPI v3 doesn't easily return body and metadata in one go like S3 SDK.
+      // We'll construct a similar object.
+      const contentResponse = await gapi.client.drive.files.get({
+        fileId: file.id,
+        alt: "media",
+      });
+
+      return {
+        Body: contentResponse.body,
+        ETag: file.etag,
+        ...file, // Include other metadata like size, modifiedTime etc.
+      };
+    }
+
+    async copyObject(sourceKey, destinationKey) {
+      await this.handleAuthentication();
+      const sourceFile = await this._getFileMetadata(sourceKey);
+      if (!sourceFile) throw new Error(`Source file not found: ${sourceKey}`);
+
+      const destParts = destinationKey.split("/").filter((p) => p);
+      const destFilename = destParts.pop();
+      const destFolderPath = destParts.join("/");
+
+      const destParentId = await this._getPathId(destFolderPath, true);
+
+      const copyMetadata = {
+        name: destFilename,
+        parents: [destParentId],
+      };
+
+      const response = await gapi.client.drive.files.copy({
+        fileId: sourceFile.id,
+        resource: copyMetadata,
+      });
+
+      this.logger.log("success", `Copied ${sourceKey} → ${destinationKey}`);
+      return response.result;
+    }
+
+    async verify() {
+      this.logger.log("info", "Verifying Google Drive connection...");
+      await this.handleAuthentication();
+      await this._getAppFolderId(); // This will try to list or create the folder, a good verification step.
+      this.logger.log("success", "Google Drive connection verified.");
+    }
+  }
+
+  // SyncOrchestrator is decoupled from S3 and works with any IStorageProvider.
   class SyncOrchestrator {
     constructor(
       configManager,
       dataService,
-      storageService, // MODIFIED: was s3Service
+      storageService, // was s3Service
       logger,
       operationQueue = null
     ) {
       this.config = configManager;
       this.dataService = dataService;
-      this.storageService = storageService; // MODIFIED: was s3Service
+      this.storageService = storageService; // was s3Service
       this.logger = logger;
       this.operationQueue = operationQueue;
       this.metadata = this.loadMetadata();
@@ -1835,7 +2207,6 @@ if (window.typingMindCloudSync) {
             } else {
               const data = await this.dataService.getItem(item.id, item.type);
               if (data) {
-                // MODIFIED: Use the generic storageService
                 await this.storageService.upload(`items/${item.id}.json`, data);
                 this.metadata.items[item.id] = {
                   synced: Date.now(),
@@ -1873,7 +2244,6 @@ if (window.typingMindCloudSync) {
         await Promise.allSettled(uploadPromises);
         if (itemsSynced > 0) {
           cloudMetadata.lastSync = Date.now();
-          // MODIFIED: Use the generic storageService
           await this.storageService.upload(
             "metadata.json",
             cloudMetadata,
@@ -1920,7 +2290,6 @@ if (window.typingMindCloudSync) {
       };
       this.metadata.items[item.id] = tombstoneData;
       cloudMetadata.items[item.id] = { ...tombstoneData };
-      // MODIFIED: Use the generic storageService
       await this.storageService.upload("metadata.json", cloudMetadata, true);
       this.saveMetadata();
       await this.updateSyncDiagnosticsCache();
@@ -2032,7 +2401,6 @@ if (window.typingMindCloudSync) {
               this.metadata.items[key] = { ...cloudItem };
               this.logger.log("info", `Synced key "${key}" from cloud`);
             } else {
-              // MODIFIED: Use the generic storageService
               const data = await this.storageService.download(
                 `items/${key}.json`
               );
@@ -2090,7 +2458,6 @@ if (window.typingMindCloudSync) {
           } else {
             const data = await this.dataService.getItem(item.id, item.type);
             if (data) {
-              // MODIFIED: Use the generic storageService
               await this.storageService.upload(`items/${item.id}.json`, data);
               this.metadata.items[item.id] = {
                 synced: Date.now(),
@@ -2105,7 +2472,6 @@ if (window.typingMindCloudSync) {
           }
         });
         await Promise.allSettled(uploadPromises);
-        // MODIFIED: Use the generic storageService
         await this.storageService.upload("metadata.json", cloudMetadata, true);
         this.metadata.lastSync = cloudMetadata.lastSync;
         this.setLastCloudSync(cloudMetadata.lastSync);
@@ -2125,7 +2491,6 @@ if (window.typingMindCloudSync) {
       }
     }
     async performFullSync() {
-      // This check is important. We don't run sync logic if the provider isn't configured.
       if (!this.storageService || !this.storageService.isConfigured()) {
         this.logger.log(
           "skip",
@@ -2276,7 +2641,6 @@ if (window.typingMindCloudSync) {
       } else {
         this.logger.log("info", "No local items found to initialize metadata");
       }
-      // MODIFIED: Use the generic storageService
       if (this.storageService && this.storageService.isConfigured()) {
         try {
           this.logger.log(
@@ -2290,7 +2654,6 @@ if (window.typingMindCloudSync) {
           )) {
             if (!cloudItem.deleted && !this.metadata.items[cloudItemId]) {
               try {
-                // MODIFIED: Use the generic storageService
                 const data = await this.storageService.download(
                   `items/${cloudItemId}.json`
                 );
@@ -2391,7 +2754,6 @@ if (window.typingMindCloudSync) {
             }
           }
           if (cleanupCount > 0) {
-            // MODIFIED: Use the generic storageService
             await this.storageService.upload(
               "metadata.json",
               cloudMetadata,
@@ -2417,7 +2779,6 @@ if (window.typingMindCloudSync) {
       if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
       const interval = Math.max(this.config.get("syncInterval") * 1000, 15000);
       this.autoSyncInterval = setInterval(async () => {
-        // MODIFIED: Use the generic storageService
         if (
           this.storageService &&
           this.storageService.isConfigured() &&
@@ -2472,12 +2833,10 @@ if (window.typingMindCloudSync) {
       return cleanupCount;
     }
     async getCloudMetadataWithETag() {
-      // MODIFIED: Check for storage service existence first.
       if (!this.storageService) {
         return { metadata: { lastSync: 0, items: {} }, etag: null };
       }
       try {
-        // MODIFIED: Use the generic storageService
         const result = await this.storageService.downloadWithResponse(
           "metadata.json"
         );
@@ -2491,8 +2850,15 @@ if (window.typingMindCloudSync) {
         }
         return { metadata, etag };
       } catch (error) {
-        // MODIFIED: Error handling for S3 specifically, may need generalization for other providers.
         if (error.code === "NoSuchKey" || error.statusCode === 404) {
+          return { metadata: { lastSync: 0, items: {} }, etag: null };
+        }
+        // NEW: Handle Google Drive's not found error
+        if (
+          error.result &&
+          error.result.error &&
+          error.result.error.code === 404
+        ) {
           return { metadata: { lastSync: 0, items: {} }, etag: null };
         }
         throw error;
@@ -2652,7 +3018,6 @@ if (window.typingMindCloudSync) {
       this.syncInProgress = false;
       this.config = null;
       this.dataService = null;
-      // MODIFIED: Use the generic storageService
       this.storageService = null;
       this.logger = null;
       this.operationQueue = null;
@@ -2660,13 +3025,11 @@ if (window.typingMindCloudSync) {
     }
   }
 
-  // MODIFIED: BackupService is now decoupled from S3.
-  // It accepts a generic `storageService`.
+  // BackupService is now decoupled from S3 and works with any IStorageProvider.
   class BackupService {
     constructor(dataService, storageService, logger) {
-      // MODIFIED: was s3Service
       this.dataService = dataService;
-      this.storageService = storageService; // MODIFIED: was s3Service
+      this.storageService = storageService;
       this.logger = logger;
     }
 
@@ -2686,7 +3049,6 @@ if (window.typingMindCloudSync) {
     }
 
     async checkAndPerformDailyBackup() {
-      // MODIFIED: Check if a provider is even configured.
       if (!this.storageService || !this.storageService.isConfigured()) {
         this.logger.log(
           "skip",
@@ -2758,7 +3120,6 @@ if (window.typingMindCloudSync) {
       )}-${timestamp}`;
 
       try {
-        // MODIFIED: Use the generic storageService
         const itemsList = await this.storageService.list("items/");
         this.logger.log(
           "info",
@@ -2776,7 +3137,6 @@ if (window.typingMindCloudSync) {
           const copyPromises = batch.map(async (item) => {
             try {
               const destinationKey = `${backupFolder}/${item.Key}`;
-              // MODIFIED: Use the generic storageService
               await this.storageService.copyObject(item.Key, destinationKey);
               return { success: true, key: item.Key };
             } catch (copyError) {
@@ -2811,7 +3171,6 @@ if (window.typingMindCloudSync) {
 
         try {
           const metadataDestination = `${backupFolder}/metadata.json`;
-          // MODIFIED: Use the generic storageService
           await this.storageService.copyObject(
             "metadata.json",
             metadataDestination
@@ -2838,7 +3197,6 @@ if (window.typingMindCloudSync) {
           backupFolder: backupFolder,
         };
 
-        // MODIFIED: Use the generic storageService
         await this.storageService.upload(
           `${backupFolder}/backup-manifest.json`,
           manifest,
@@ -2871,7 +3229,6 @@ if (window.typingMindCloudSync) {
       const backupFolder = `backups/typingmind-backup-${dateString}`;
 
       try {
-        // MODIFIED: Use the generic storageService
         const itemsList = await this.storageService.list("items/");
         this.logger.log(
           "info",
@@ -2889,7 +3246,6 @@ if (window.typingMindCloudSync) {
           const copyPromises = batch.map(async (item) => {
             try {
               const destinationKey = `${backupFolder}/${item.Key}`;
-              // MODIFIED: Use the generic storageService
               await this.storageService.copyObject(item.Key, destinationKey);
               return { success: true, key: item.Key };
             } catch (copyError) {
@@ -2924,7 +3280,6 @@ if (window.typingMindCloudSync) {
 
         try {
           const metadataDestination = `${backupFolder}/metadata.json`;
-          // MODIFIED: Use the generic storageService
           await this.storageService.copyObject(
             "metadata.json",
             metadataDestination
@@ -2951,7 +3306,6 @@ if (window.typingMindCloudSync) {
           backupFolder: backupFolder,
         };
 
-        // MODIFIED: Use the generic storageService
         await this.storageService.upload(
           `${backupFolder}/backup-manifest.json`,
           manifest,
@@ -2984,14 +3338,12 @@ if (window.typingMindCloudSync) {
 
     async loadBackupList() {
       try {
-        // MODIFIED: Use the generic storageService
         const objects = await this.storageService.list("backups/");
         const backups = [];
 
         for (const obj of objects) {
           if (obj.Key.endsWith("/backup-manifest.json")) {
             try {
-              // MODIFIED: Use the generic storageService
               const manifest = await this.storageService.download(
                 obj.Key,
                 true
@@ -3242,7 +3594,6 @@ if (window.typingMindCloudSync) {
 
     async cleanupOldBackups() {
       try {
-        // MODIFIED: Use the generic storageService
         const objects = await this.storageService.list("backups/");
         const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
         let deletedBackups = 0;
@@ -3256,7 +3607,6 @@ if (window.typingMindCloudSync) {
             new Date(manifestObj.LastModified).getTime() < thirtyDaysAgo;
           if (isOldBackup) {
             try {
-              // MODIFIED: Use the generic storageService
               const manifest = await this.storageService.download(
                 manifestObj.Key,
                 true
@@ -3269,7 +3619,6 @@ if (window.typingMindCloudSync) {
                 );
                 for (const file of backupFiles) {
                   try {
-                    // MODIFIED: Use the generic storageService
                     await this.storageService.delete(file.Key);
                   } catch (fileError) {
                     this.logger.log(
@@ -3644,6 +3993,7 @@ if (window.typingMindCloudSync) {
       this.clearLeaderTimeout();
     }
   }
+
   // MODIFIED: This is the main application class, now acting as the factory for storage providers.
   class CloudSyncApp {
     constructor() {
@@ -3657,7 +4007,7 @@ if (window.typingMindCloudSync) {
       );
       this.cryptoService = new CryptoService(this.config, this.logger);
 
-      // NEW: The generic storage service instance. Will be S3Service, GoogleDriveService, etc.
+      // MODIFIED: The generic storage service instance. Will be S3Service, GoogleDriveService, etc.
       this.storageService = null;
 
       this.syncOrchestrator = null; // Will be initialized later
@@ -3675,7 +4025,7 @@ if (window.typingMindCloudSync) {
     async initialize() {
       this.logger.log(
         "start",
-        "Initializing TypingmindCloud Sync V3 (Extensible Arch)"
+        "Initializing TypingmindCloud Sync V4 (Extensible Arch)"
       );
 
       const urlParams = new URLSearchParams(window.location.search);
@@ -3714,11 +4064,14 @@ if (window.typingMindCloudSync) {
             this.logger
           );
         }
-        // NEW: Future providers will be added here
-        // else if (storageType === 'googleDrive') {
-        //   this.storageService = new GoogleDriveService(this.config, this.cryptoService, this.logger);
-        // }
-        else {
+        // NEW: Instantiate GoogleDriveService
+        else if (storageType === "googleDrive") {
+          this.storageService = new GoogleDriveService(
+            this.config,
+            this.cryptoService,
+            this.logger
+          );
+        } else {
           throw new Error(`Unsupported storage type: '${storageType}'`);
         }
       } catch (error) {
@@ -3810,7 +4163,6 @@ if (window.typingMindCloudSync) {
             "info",
             "Storage provider not configured. Running in limited capacity."
           );
-          // NEW: Alert if mandatory keys for the *current* provider are missing
           if (!this.checkMandatoryConfig()) {
             alert(
               "⚠️ Cloud Sync Configuration Required\n\nPlease click the Sync button to open settings and configure your chosen cloud provider, then reload the page."
@@ -3832,14 +4184,15 @@ if (window.typingMindCloudSync) {
           this.config.get("encryptionKey")
         );
       }
-      // Example for future Google Drive implementation
-      // if (storageType === 'googleDrive') {
-      //     return !!(this.config.get('googleClientId') && this.config.get('encryptionKey'));
-      // }
+      // NEW: Check for Google Drive config
+      if (storageType === "googleDrive") {
+        return !!(
+          this.config.get("googleClientId") && this.config.get("encryptionKey")
+        );
+      }
       return false;
     }
 
-    // MODIFIED: Snapshot availability depends on the generic storage service.
     isSnapshotAvailable() {
       return this.storageService && this.storageService.isConfigured();
     }
@@ -3849,7 +4202,7 @@ if (window.typingMindCloudSync) {
       const config = {};
       const autoOpen = urlParams.has("config") || urlParams.has("autoconfig");
       const paramMap = {
-        storagetype: "storageType", // NEW
+        storagetype: "storageType",
         bucket: "bucketName",
         bucketname: "bucketName",
         region: "region",
@@ -3859,7 +4212,7 @@ if (window.typingMindCloudSync) {
         encryptionkey: "encryptionKey",
         syncinterval: "syncInterval",
         exclusions: "exclusions",
-        googleclientid: "googleClientId", // NEW
+        googleclientid: "googleClientId",
       };
       let hasConfigParams = false;
       for (const [urlParam, configKey] of Object.entries(paramMap)) {
@@ -4001,7 +4354,7 @@ if (window.typingMindCloudSync) {
             <label for="storage-type-select" class="block text-sm font-medium text-zinc-300">Storage Provider</label>
             <select id="storage-type-select" class="mt-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white">
               <option value="s3">Amazon S3 (or S3-Compatible)</option>
-              <!-- <option value="googleDrive">Google Drive</option> -->
+              <option value="googleDrive">Google Drive</option>
             </select>
           </div>
 
@@ -4043,10 +4396,18 @@ if (window.typingMindCloudSync) {
               </div>
             </div>
 
-            <!-- Google Drive Settings (Future) -->
+            <!-- NEW: Google Drive Settings -->
             <div id="googleDrive-settings-block" class="hidden space-y-2 mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
-                <!-- Google Drive fields and auth button will go here -->
-                <p class="text-center text-zinc-400">Google Drive integration coming soon!</p>
+                 <div>
+                    <label for="google-client-id" class="block text-sm font-medium text-zinc-300">Google Cloud Client ID <span class="text-red-400">*</span></label>
+                    <input id="google-client-id" name="google-client-id" type="text" value="${
+                      this.config.get("googleClientId") || ""
+                    }" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
+                 </div>
+                 <div class="pt-1">
+                    <button id="google-auth-btn" class="w-full inline-flex items-center justify-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 disabled:cursor-default transition-colors">Sign in with Google</button>
+                    <div id="google-auth-status" class="text-xs text-center text-zinc-400 pt-2"></div>
+                 </div>
             </div>
           </div>
           
@@ -4075,7 +4436,7 @@ if (window.typingMindCloudSync) {
             </div>
           </div>
 
-          <!-- Diagnostics & Backups (Unchanged) -->
+          <!-- Diagnostics & Backups -->
           <div id="diagnostics-and-backups-container">
             <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
               <div class="flex items-center justify-between mb-2 cursor-pointer select-none" id="sync-diagnostics-header">
@@ -4175,25 +4536,81 @@ if (window.typingMindCloudSync) {
       const diagnosticsAndBackupsBlock = modal.querySelector(
         "#diagnostics-and-backups-container"
       );
+      const googleAuthBtn = modal.querySelector("#google-auth-btn");
+      const googleAuthStatus = modal.querySelector("#google-auth-status");
 
       const updateVisibleSettings = () => {
         const selectedType = storageSelect.value;
         s3Block.classList.toggle("hidden", selectedType !== "s3");
         gdBlock.classList.toggle("hidden", selectedType !== "googleDrive");
 
-        // Hide backups/diagnostics if the provider is not configured
-        const isProviderConfigured =
-          this.storageService &&
-          this.storageService.isConfigured() &&
-          this.config.get("storageType") === selectedType;
-        diagnosticsAndBackupsBlock.classList.toggle(
-          "hidden",
-          !isProviderConfigured
-        );
+        const isConfigured = this.storageService?.isConfigured();
+        diagnosticsAndBackupsBlock.classList.toggle("hidden", !isConfigured);
+
+        if (selectedType === "googleDrive") {
+          googleAuthBtn.disabled = !modal
+            .querySelector("#google-client-id")
+            .value.trim();
+          if (
+            isConfigured &&
+            this.storageService instanceof GoogleDriveService &&
+            gapi.client.getToken()
+          ) {
+            googleAuthStatus.textContent = "Status: Signed in.";
+            googleAuthStatus.style.color = "#22c55e";
+          } else {
+            googleAuthStatus.textContent = isConfigured
+              ? "Status: Not signed in."
+              : "Status: Client ID required.";
+            googleAuthStatus.style.color = "";
+          }
+        }
+      };
+
+      const handleGoogleAuth = async () => {
+        const clientId = modal.querySelector("#google-client-id").value.trim();
+        if (!clientId) {
+          alert("Please enter a Google Client ID first.");
+          return;
+        }
+        // Temporarily set the client ID for the auth process
+        this.config.set("googleClientId", clientId);
+
+        try {
+          googleAuthBtn.disabled = true;
+          googleAuthBtn.textContent = "Authenticating...";
+          googleAuthStatus.textContent =
+            "Please follow the Google sign-in prompt...";
+
+          // We need a provider instance to call handleAuthentication
+          const tempProvider = new GoogleDriveService(
+            this.config,
+            this.cryptoService,
+            this.logger
+          );
+          await tempProvider.initialize(); // This sets up the tokenClient
+          await tempProvider.handleAuthentication();
+
+          googleAuthStatus.textContent =
+            "✅ Authentication successful! Please Save & Verify.";
+          googleAuthStatus.style.color = "#22c55e";
+          googleAuthBtn.textContent = "Re-authenticate";
+        } catch (error) {
+          this.logger.log("error", "Google authentication failed", error);
+          googleAuthStatus.textContent = `❌ Auth failed: ${error.message}`;
+          googleAuthStatus.style.color = "#ef4444";
+          googleAuthBtn.textContent = "Sign in with Google";
+        } finally {
+          googleAuthBtn.disabled = false;
+        }
       };
 
       storageSelect.value = this.config.get("storageType") || "s3";
       storageSelect.addEventListener("change", updateVisibleSettings);
+      googleAuthBtn.addEventListener("click", handleGoogleAuth);
+      modal
+        .querySelector("#google-client-id")
+        .addEventListener("input", updateVisibleSettings);
       updateVisibleSettings();
 
       this.modalCleanupCallbacks.push(() => {
@@ -4214,6 +4631,10 @@ if (window.typingMindCloudSync) {
           .querySelector("#console-logging-toggle")
           ?.removeEventListener("change", consoleLoggingHandler);
         storageSelect.removeEventListener("change", updateVisibleSettings);
+        googleAuthBtn.removeEventListener("click", handleGoogleAuth);
+        modal
+          .querySelector("#google-client-id")
+          ?.removeEventListener("input", updateVisibleSettings);
       });
 
       const consoleLoggingCheckbox = modal.querySelector(
@@ -4232,7 +4653,6 @@ if (window.typingMindCloudSync) {
     }
 
     populateFormFromUrlParams(modal) {
-      // (This method is unchanged but will now handle new URL params like `storagetype`)
       const urlConfig = this.getConfigFromUrlParams();
       if (!urlConfig.hasParams) {
         this.logger.log("info", "No URL config parameters to populate");
@@ -4253,6 +4673,7 @@ if (window.typingMindCloudSync) {
         encryptionKey: "encryption-key",
         syncInterval: "sync-interval",
         exclusions: "sync-exclusions",
+        googleClientId: "google-client-id",
       };
       let populatedCount = 0;
       for (const [configKey, fieldId] of Object.entries(fieldMap)) {
@@ -4283,7 +4704,6 @@ if (window.typingMindCloudSync) {
     }
 
     handleSyncNow(modal) {
-      // (No changes needed in this method)
       if (this.noSyncMode) {
         alert(
           "⚠️ Sync operations are disabled in NoSync mode.\n\nTo enable sync operations, remove the ?nosync parameter from the URL and reload the page."
@@ -4309,7 +4729,6 @@ if (window.typingMindCloudSync) {
     }
 
     async loadBackupList(modal) {
-      // MODIFIED: Use the generic isSnapshotAvailable check
       const backupList = modal.querySelector("#backup-files");
       if (!backupList) return;
       backupList.innerHTML = '<option value="">Loading backups...</option>';
@@ -4363,7 +4782,6 @@ if (window.typingMindCloudSync) {
     }
 
     updateBackupButtonStates(modal) {
-      // (No changes needed in this method)
       const backupList = modal.querySelector("#backup-files");
       const selectedValue = backupList.value || "";
       const restoreButton = modal.querySelector("#restore-backup-btn");
@@ -4385,7 +4803,6 @@ if (window.typingMindCloudSync) {
     }
 
     setupBackupListHandlers(modal) {
-      // (No changes needed in this method)
       const restoreButton = modal.querySelector("#restore-backup-btn");
       const deleteButton = modal.querySelector("#delete-backup-btn");
       const backupList = modal.querySelector("#backup-files");
@@ -4463,7 +4880,7 @@ if (window.typingMindCloudSync) {
     }
 
     async loadSyncDiagnostics(modal) {
-      // ... (no changes in this method's logic, but will display differently based on config)
+      // ... (no changes in this method's logic)
       const diagnosticsBody = modal.querySelector("#sync-diagnostics-body");
       if (!diagnosticsBody) return;
       const overallStatusEl = modal.querySelector("#sync-overall-status");
@@ -4472,7 +4889,6 @@ if (window.typingMindCloudSync) {
         diagnosticsBody.innerHTML = html;
       };
 
-      // MODIFIED: Use the generic storageService
       if (!this.storageService || !this.storageService.isConfigured()) {
         setContent(
           '<tr><td colspan="2" class="text-center py-2 text-zinc-500">Provider Not Configured</td></tr>'
@@ -4641,8 +5057,11 @@ if (window.typingMindCloudSync) {
         newConfig.endpoint = document
           .getElementById("aws-endpoint")
           .value.trim();
+      } else if (storageType === "googleDrive") {
+        newConfig.googleClientId = document
+          .getElementById("google-client-id")
+          .value.trim();
       }
-      // else if (storageType === 'googleDrive') { ... }
 
       const exclusions = document.getElementById("sync-exclusions").value;
 
@@ -4675,9 +5094,13 @@ if (window.typingMindCloudSync) {
             this.cryptoService,
             this.logger
           );
-        }
-        // else if (storageType === 'googleDrive') { ... }
-        else {
+        } else if (storageType === "googleDrive") {
+          tempProvider = new GoogleDriveService(
+            tempConfigManager,
+            this.cryptoService,
+            this.logger
+          );
+        } else {
           throw new Error(`Cannot verify unknown storage type: ${storageType}`);
         }
 
@@ -4688,7 +5111,7 @@ if (window.typingMindCloudSync) {
         }
 
         await tempProvider.initialize();
-        await tempProvider.verify(); // Use the new verify method
+        await tempProvider.verify();
 
         actionMsg.textContent =
           "✅ Credentials verified! Saving configuration...";
@@ -4722,7 +5145,6 @@ if (window.typingMindCloudSync) {
     }
 
     async createSnapshot() {
-      // (No changes needed in this method)
       if (!this.isSnapshotAvailable()) {
         alert(
           "⚠️ Snapshot Unavailable\n\nPlease configure and save your storage provider settings first."
@@ -4769,7 +5191,6 @@ if (window.typingMindCloudSync) {
     async deleteBackupWithChunks(key) {
       this.logger.log("start", `Deleting backup: ${key}`);
       if (key.endsWith("-metadata.json")) {
-        // This logic is for an old, deprecated backup format. Can be kept for backward compatibility.
         this.logger.log("info", "Deleting chunked backup with all chunks");
         try {
           const metadata = await this.storageService.download(key, true);
@@ -4805,9 +5226,7 @@ if (window.typingMindCloudSync) {
           await this.storageService.delete(key);
         }
       } else {
-        // This handles the new server-side copy backup format.
         this.logger.log("info", "Deleting server-side copy backup");
-        // We need to list all files in the backup "folder" and delete them.
         const backupFolder = key.replace("/backup-manifest.json", "");
         const filesToDelete = await this.storageService.list(
           backupFolder + "/"
@@ -4815,7 +5234,7 @@ if (window.typingMindCloudSync) {
         for (const file of filesToDelete) {
           await this.storageService.delete(file.Key);
         }
-        await this.storageService.delete(key); // delete the manifest itself
+        await this.storageService.delete(key);
         this.logger.log("success", `Deleted server-side backup: ${key}`);
       }
     }
@@ -4839,7 +5258,6 @@ if (window.typingMindCloudSync) {
       this.logger.log("info", "Auto-sync started");
     }
 
-    // MODIFIED: This is now just a pass-through
     async getCloudMetadata() {
       return this.syncOrchestrator.getCloudMetadata();
     }
