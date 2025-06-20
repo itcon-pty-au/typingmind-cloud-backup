@@ -2778,6 +2778,195 @@ if (window.typingMindCloudSync) {
         );
       }
     }
+    async forceExportToCloud() {
+      this.logger.log(
+        "warning",
+        "⚠️ User initiated Force Export. Cloud will be overwritten."
+      );
+      this.syncInProgress = true;
+      try {
+        const localKeys = await this.dataService.getAllItemKeys();
+        const cloudObjects = await this.storageService.list("items/");
+        const cloudKeys = new Set(
+          cloudObjects.map((obj) =>
+            obj.Key.replace(/^items\/(.*)\.json$/, "$1")
+          )
+        );
+        this.logger.log(
+          "info",
+          `[Force Export] Found ${localKeys.size} local items and ${cloudKeys.size} cloud items.`
+        );
+
+        this.logger.log("start", "[Force Export] Uploading all local items...");
+        let uploadedCount = 0;
+        for await (const batch of this.dataService.streamAllItemsInternal()) {
+          const uploadPromises = batch.map((item) =>
+            this.storageService.upload(`items/${item.id}.json`, item.data)
+          );
+          await Promise.allSettled(uploadPromises);
+          uploadedCount += batch.length;
+          this.logger.log(
+            "info",
+            `[Force Export] Uploaded batch. Total: ${uploadedCount}/${localKeys.size}`
+          );
+        }
+        this.logger.log("success", "[Force Export] All local items uploaded.");
+
+        const keysToDelete = [...cloudKeys].filter(
+          (key) => !localKeys.has(key)
+        );
+        if (keysToDelete.length > 0) {
+          this.logger.log(
+            "start",
+            `[Force Export] Deleting ${keysToDelete.length} extraneous cloud items...`
+          );
+          const deletePromises = keysToDelete.map((key) =>
+            this.storageService.delete(`items/${key}.json`)
+          );
+          await Promise.allSettled(deletePromises);
+          this.logger.log("success", "[Force Export] Cloud cleanup complete.");
+        }
+
+        this.logger.log(
+          "start",
+          "[Force Export] Rebuilding and uploading new metadata..."
+        );
+        const newMetadata = { lastSync: Date.now(), items: {} };
+        const now = Date.now();
+        for await (const batch of this.dataService.streamAllItemsInternal()) {
+          for (const item of batch) {
+            const metadataEntry = {
+              synced: now,
+              type: item.type,
+            };
+            if (
+              item.id.startsWith("CHAT_") &&
+              item.type === "idb" &&
+              item.data?.updatedAt
+            ) {
+              metadataEntry.lastModified = item.data.updatedAt;
+            } else {
+              metadataEntry.size = this.getItemSize(item.data);
+              metadataEntry.lastModified = now;
+            }
+            newMetadata.items[item.id] = metadataEntry;
+          }
+        }
+        await this.storageService.upload("metadata.json", newMetadata, true);
+
+        this.metadata = newMetadata;
+        this.saveMetadata();
+        localStorage.removeItem("tcs_metadata_etag");
+        this.setLastCloudSync(newMetadata.lastSync);
+        this.logger.log(
+          "success",
+          "✅ [Force Export] Operation completed successfully."
+        );
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "❌ [Force Export] An error occurred during the operation.",
+          error
+        );
+        throw error;
+      } finally {
+        this.syncInProgress = false;
+        await this.updateSyncDiagnosticsCache();
+      }
+    }
+
+    async forceImportFromCloud() {
+      this.logger.log(
+        "warning",
+        "⚠️ User initiated Force Import. Local data will be overwritten."
+      );
+      this.syncInProgress = true;
+      try {
+        const cloudMetadata = await this.getCloudMetadata();
+        if (Object.keys(cloudMetadata.items).length === 0) {
+          this.logger.log(
+            "warning",
+            "[Force Import] Cloud metadata is empty. Aborting to prevent data loss."
+          );
+          throw new Error("Cloud contains no data; import aborted.");
+        }
+        const cloudKeys = new Set(Object.keys(cloudMetadata.items));
+        const localKeys = await this.dataService.getAllItemKeys();
+        this.logger.log(
+          "info",
+          `[Force Import] Found ${cloudKeys.size} items in cloud and ${localKeys.size} items locally.`
+        );
+
+        const keysToDelete = [...localKeys].filter(
+          (key) => !cloudKeys.has(key)
+        );
+        if (keysToDelete.length > 0) {
+          this.logger.log(
+            "start",
+            `[Force Import] Deleting ${keysToDelete.length} extraneous local items...`
+          );
+          const deletePromises = [];
+          for (const key of keysToDelete) {
+            const item = (await this.dataService.getItem(key, "idb"))
+              ? { type: "idb" }
+              : { type: "ls" };
+            deletePromises.push(this.dataService.performDelete(key, item.type));
+          }
+          await Promise.allSettled(deletePromises);
+          this.logger.log("success", "[Force Import] Local cleanup complete.");
+        }
+
+        this.logger.log(
+          "start",
+          `[Force Import] Applying ${cloudKeys.size} cloud items locally...`
+        );
+        const allCloudItems = Object.entries(cloudMetadata.items);
+        const concurrency = 20;
+        for (let i = 0; i < allCloudItems.length; i += concurrency) {
+          const batch = allCloudItems.slice(i, i + concurrency);
+          const downloadPromises = batch.map(async ([key, cloudItem]) => {
+            if (cloudItem.deleted) {
+              await this.dataService.performDelete(key, cloudItem.type);
+            } else {
+              const data = await this.storageService.download(
+                `items/${key}.json`
+              );
+              await this.dataService.saveItem(data, cloudItem.type, key);
+            }
+          });
+          await Promise.allSettled(downloadPromises);
+          this.logger.log(
+            "info",
+            `[Force Import] Processed batch. Total: ${i + batch.length}/${
+              allCloudItems.length
+            }`
+          );
+        }
+        this.logger.log(
+          "success",
+          "[Force Import] All cloud items applied locally."
+        );
+
+        this.metadata = cloudMetadata;
+        this.saveMetadata();
+        localStorage.removeItem("tcs_metadata_etag");
+        this.setLastCloudSync(cloudMetadata.lastSync);
+        this.logger.log(
+          "success",
+          "✅ [Force Import] Operation completed successfully. Page will reload."
+        );
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "❌ [Force Import] An error occurred during the operation.",
+          error
+        );
+        throw error;
+      } finally {
+        this.syncInProgress = false;
+        await this.updateSyncDiagnosticsCache();
+      }
+    }
     cleanup() {
       if (this.autoSyncInterval) {
         clearInterval(this.autoSyncInterval);
@@ -4184,9 +4373,13 @@ if (window.typingMindCloudSync) {
                 <div class="flex items-center gap-2">
                   <label class="block text-sm font-medium text-zinc-300">Sync Diagnostics</label>
                   <span id="sync-overall-status" class="text-lg">✅</span>
-                  <button id="sync-diagnostics-refresh" class="text-zinc-400 hover:text-white transition-colors p-1 rounded" title="Refresh diagnostics">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                  </button>
+                  <div class="flex items-center gap-1 border-l border-zinc-600 pl-2">
+                    <button id="force-import-btn" class="px-2 py-1 text-xs text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Import from Cloud\nOverwrites local data with cloud data.">Import ↙</button>
+                    <button id="force-export-btn" class="px-2 py-1 text-xs text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Export to Cloud\nOverwrites cloud data with local data.">Export ↗</button>
+                    <button id="sync-diagnostics-refresh" class="text-zinc-400 hover:text-white transition-colors p-1 rounded" title="Refresh diagnostics">
+                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    </button>
+                  </div>
                 </div>
                 <div class="flex items-center gap-1">
                   <span id="sync-diagnostics-summary" class="text-xs text-zinc-400">Tap to view details</span>
@@ -4285,6 +4478,10 @@ if (window.typingMindCloudSync) {
 
         const isConfigured = this.storageService?.isConfigured();
         diagnosticsAndBackupsBlock.classList.toggle("hidden", !isConfigured);
+        if (modal.querySelector("#force-import-btn")) {
+          modal.querySelector("#force-import-btn").disabled = !isConfigured;
+          modal.querySelector("#force-export-btn").disabled = !isConfigured;
+        }
 
         if (selectedType === "googleDrive") {
           googleAuthBtn.disabled = !modal
@@ -4350,6 +4547,67 @@ if (window.typingMindCloudSync) {
         .addEventListener("input", updateVisibleSettings);
       updateVisibleSettings();
 
+      const forceExportBtn = modal.querySelector("#force-export-btn");
+      const forceImportBtn = modal.querySelector("#force-import-btn");
+
+      const handleForceExport = async () => {
+        if (
+          !confirm(
+            "⚠️ WARNING: This will completely overwrite the data in your cloud storage with the data from THIS BROWSER.\n\nAny changes made on other devices that have not been synced here will be PERMANENTLY LOST.\n\nAre you sure you want to proceed?"
+          )
+        )
+          return;
+
+        const originalText = forceExportBtn.textContent;
+        forceExportBtn.disabled = true;
+        forceExportBtn.textContent = "Exporting...";
+        try {
+          await this.syncOrchestrator.forceExportToCloud();
+          forceExportBtn.textContent = "Success!";
+          alert("Force Export to Cloud completed successfully.");
+        } catch (error) {
+          forceExportBtn.textContent = "Failed";
+          alert(`Force Export failed: ${error.message}`);
+        } finally {
+          setTimeout(() => {
+            forceExportBtn.textContent = originalText;
+            forceExportBtn.disabled = false;
+            this.loadSyncDiagnostics(modal);
+          }, 2000);
+        }
+      };
+
+      const handleForceImport = async () => {
+        if (
+          !confirm(
+            "⚠️ WARNING: This will completely overwrite the data in THIS BROWSER with the data from your cloud storage.\n\nAny local changes you have made that are not saved in the cloud will be PERMANENTLY LOST. This cannot be undone.\n\nAre you sure you want to proceed?"
+          )
+        )
+          return;
+
+        const originalText = forceImportBtn.textContent;
+        forceImportBtn.disabled = true;
+        forceImportBtn.textContent = "Importing...";
+        try {
+          await this.syncOrchestrator.forceImportFromCloud();
+          alert(
+            "Force Import from Cloud completed successfully. The page will now reload to apply the new data."
+          );
+          window.location.reload();
+        } catch (error) {
+          forceImportBtn.textContent = "Failed";
+          alert(`Force Import failed: ${error.message}`);
+          setTimeout(() => {
+            forceImportBtn.textContent = originalText;
+            forceImportBtn.disabled = false;
+            this.loadSyncDiagnostics(modal);
+          }, 2000);
+        }
+      };
+
+      forceExportBtn.addEventListener("click", handleForceExport);
+      forceImportBtn.addEventListener("click", handleForceImport);
+
       this.modalCleanupCallbacks.push(() => {
         overlay.removeEventListener("click", closeModalHandler);
         modal
@@ -4372,6 +4630,8 @@ if (window.typingMindCloudSync) {
         modal
           .querySelector("#google-client-id")
           ?.removeEventListener("input", updateVisibleSettings);
+        forceExportBtn.removeEventListener("click", handleForceExport);
+        forceImportBtn.removeEventListener("click", handleForceImport);
       });
 
       const consoleLoggingCheckbox = modal.querySelector(
