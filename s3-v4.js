@@ -1595,7 +1595,7 @@ if (window.typingMindCloudSync) {
 
       const queryParams = new URLSearchParams({
         q: `name='${filename}' and '${parentId}' in parents and trashed=false`,
-        fields: "files(id, name, etag, size, modifiedTime)",
+        fields: "files(id, name, size, modifiedTime)",
         spaces: "drive",
       });
 
@@ -1775,14 +1775,35 @@ if (window.typingMindCloudSync) {
         throw error;
       }
 
-      const contentResponse = await gapi.client.drive.files.get({
-        fileId: file.id,
-        alt: "media",
-      });
+      const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
+        {
+          method: "GET",
+          headers: new Headers({
+            Authorization: "Bearer " + gapi.client.getToken().access_token,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorBody = await response.json();
+        this.logger.log(
+          "error",
+          `Google Drive download failed for ${key}`,
+          errorBody
+        );
+        throw new Error(
+          errorBody.error.message ||
+            `Download failed with status ${response.status}`
+        );
+      }
+
+      const etag = response.headers.get("ETag");
+      const body = await response.text();
 
       return {
-        Body: contentResponse.body,
-        ETag: file.etag,
+        Body: body,
+        ETag: etag,
         ...file,
       };
     }
