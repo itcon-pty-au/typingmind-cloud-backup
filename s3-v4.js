@@ -1397,6 +1397,7 @@ if (window.typingMindCloudSync) {
             this.logger.log("error", "Google Auth Error", tokenResponse.error);
             return;
           }
+          const tokenToStore = { ...tokenResponse, iat: Date.now() };
           gapi.client.setToken(tokenResponse);
           localStorage.setItem(
             "tcs_google_access_token",
@@ -1592,13 +1593,37 @@ if (window.typingMindCloudSync) {
       const parentId = await this._getPathId(folderPath);
       if (!parentId) return null;
 
-      const response = await gapi.client.drive.files.list({
+      const queryParams = new URLSearchParams({
         q: `name='${filename}' and '${parentId}' in parents and trashed=false`,
         fields: "files(id, name, etag, size, modifiedTime)",
         spaces: "drive",
       });
 
-      return response.result.files.length > 0 ? response.result.files[0] : null;
+      const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files?${queryParams.toString()}`,
+        {
+          method: "GET",
+          headers: new Headers({
+            Authorization: "Bearer " + gapi.client.getToken().access_token,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorBody = await response.json();
+        this.logger.log(
+          "error",
+          `Google Drive file list failed for ${path}`,
+          errorBody
+        );
+        throw new Error(
+          errorBody.error.message ||
+            `API request failed with status ${response.status}`
+        );
+      }
+
+      const result = await response.json();
+      return result.files.length > 0 ? result.files[0] : null;
     }
 
     async upload(key, data, isMetadata = false) {
