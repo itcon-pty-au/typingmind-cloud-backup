@@ -1380,7 +1380,13 @@ if (window.typingMindCloudSync) {
       if (!this.isConfigured())
         throw new Error("Google Drive configuration incomplete");
       await this._loadGapiAndGis();
+
       await new Promise((resolve) => gapi.load("client", resolve));
+
+      await gapi.client.load(
+        "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
+      );
+
       await gapi.client.init({});
 
       this.tokenClient = google.accounts.oauth2.initTokenClient({
@@ -1524,7 +1530,7 @@ if (window.typingMindCloudSync) {
         this.logger.log(
           "error",
           "Failed to get/create app folder.",
-          error.result.error
+          error.result ? error.result.error : error
         );
         throw new Error(
           "Could not access or create the application folder in Google Drive."
