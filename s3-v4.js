@@ -4297,7 +4297,6 @@ if (window.typingMindCloudSync) {
                 </div>
               </div>
               <div class="flex items-center gap-1">
-                <span id="sync-diagnostics-summary" class="text-xs text-zinc-400">Tap to expand</span>
                 <svg id="sync-diagnostics-chevron" class="w-4 h-4 text-zinc-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
               </div>
             </div>
@@ -4314,7 +4313,6 @@ if (window.typingMindCloudSync) {
             <div class="flex items-center justify-between mb-2 cursor-pointer select-none" id="available-backups-header">
               <label class="block text-sm font-medium text-zinc-300">Available Backups</label>
               <div class="flex items-center gap-1">
-                <span class="text-xs text-zinc-400">Tap to expand</span>
                 <svg id="available-backups-chevron" class="w-4 h-4 text-zinc-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
               </div>
             </div>
@@ -4336,7 +4334,6 @@ if (window.typingMindCloudSync) {
             <div class="flex items-center justify-between mb-2 cursor-pointer select-none" id="provider-settings-header">
               <label class="block text-sm font-medium text-zinc-300">Storage Provider Settings</label>
               <div class="flex items-center gap-1">
-                <span class="text-xs text-zinc-400">Tap to expand</span>
                 <svg id="provider-settings-chevron" class="w-4 h-4 text-zinc-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
               </div>
             </div>
@@ -4404,7 +4401,6 @@ if (window.typingMindCloudSync) {
             <div class="flex items-center justify-between mb-2 cursor-pointer select-none" id="common-settings-header">
               <label class="block text-sm font-medium text-zinc-300">Common Settings</label>
               <div class="flex items-center gap-1">
-                <span class="text-xs text-zinc-400">Tap to expand</span>
                 <svg id="common-settings-chevron" class="w-4 h-4 text-zinc-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
               </div>
             </div>
