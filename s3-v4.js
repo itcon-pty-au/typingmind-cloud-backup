@@ -2945,47 +2945,89 @@ if (window.typingMindCloudSync) {
     }
 
     async loadBackupList() {
+      // This version includes detailed logging for diagnostics.
+      console.log("[TCS] -----------------------------------------");
+      console.log("[TCS] Starting loadBackupList diagnostics...");
+
       try {
-        // MODIFIED: Use the generic storageService
         const objects = await this.storageService.list("backups/");
+        console.log(
+          `[TCS] Step 1: Found ${objects.length} total objects in backups/ folder.`,
+          objects.map((o) => o.Key)
+        );
         const backups = [];
 
-        for (const obj of objects) {
-          if (obj.Key.endsWith("/backup-manifest.json")) {
-            try {
-              // MODIFIED: Use the generic storageService
-              const manifest = await this.storageService.download(
-                obj.Key,
-                true
-              );
-              if (manifest && manifest.backupFolder) {
-                const backupFolder =
-                  manifest.backupFolder ||
-                  obj.Key.replace("/backup-manifest.json", "");
-                const backupName = backupFolder.replace("backups/", "");
-                const backupType = this.getBackupType(backupName);
+        // Filter for manifest files first to see what we're working with
+        const manifestObjects = objects.filter((obj) =>
+          obj.Key.endsWith("/backup-manifest.json")
+        );
+        console.log(
+          `[TCS] Step 2: Identified ${manifestObjects.length} potential manifest files.`,
+          manifestObjects.map((o) => o.Key)
+        );
 
-                backups.push({
-                  key: obj.Key,
-                  name: backupName,
-                  displayName: backupName,
-                  modified: obj.LastModified,
-                  format: "server-side",
-                  totalItems: manifest.totalItems,
-                  copiedItems: manifest.copiedItems,
-                  type: backupType,
-                  backupFolder: backupFolder,
-                  sortOrder: backupType === "snapshot" ? 1 : 2,
-                });
-              }
-            } catch (error) {
-              this.logger.log(
-                "warning",
-                `Failed to read server-side manifest for ${obj.Key}`
+        if (manifestObjects.length === 0) {
+          console.warn(
+            "[TCS] No manifest files were found. The list will be empty."
+          );
+        }
+
+        for (const obj of manifestObjects) {
+          console.log(`[TCS] ---> Processing manifest: ${obj.Key}`);
+          try {
+            const manifest = await this.storageService.download(obj.Key, true);
+            console.log(
+              `[TCS] Step 3: Downloaded manifest content for ${obj.Key}:`,
+              manifest
+            );
+
+            // This is the critical check. We will see if the daily backups pass this.
+            if (manifest && manifest.backupFolder) {
+              console.log(
+                `[TCS] Step 4: ✅ VALID. Manifest for ${obj.Key} has a 'backupFolder'. Adding to list.`
+              );
+              const backupFolder = manifest.backupFolder; // Use the reliable key
+              const backupName = backupFolder.replace("backups/", "");
+              const backupType = this.getBackupType(backupName);
+
+              backups.push({
+                key: obj.Key,
+                name: backupName,
+                displayName: backupName,
+                modified: obj.LastModified,
+                format: "server-side",
+                totalItems: manifest.totalItems,
+                copiedItems: manifest.copiedItems,
+                type: backupType,
+                backupFolder: backupFolder,
+                sortOrder: backupType === "snapshot" ? 1 : 2,
+              });
+            } else {
+              // This block will tell us exactly why a manifest was skipped
+              console.warn(
+                `[TCS] Step 4: ⏭️ SKIPPING manifest ${obj.Key}. Reason: The downloaded content is either null, empty, or does not contain the required 'backupFolder' key.`
               );
             }
+          } catch (error) {
+            // This will catch errors during download or JSON parsing for a specific file
+            console.error(
+              `[TCS] ❌ ERROR processing ${obj.Key}. It might be corrupted or unreadable.`,
+              error
+            );
+            this.logger.log(
+              "warning",
+              `Failed to read or process manifest for ${obj.Key}`,
+              error
+            );
           }
         }
+
+        console.log(
+          `[TCS] Step 5: Final list contains ${backups.length} backups before sorting.`,
+          backups
+        );
+        console.log("[TCS] loadBackupList diagnostics finished.");
+        console.log("[TCS] -----------------------------------------");
 
         return backups.sort((a, b) => {
           if (a.sortOrder !== b.sortOrder) {
@@ -2995,6 +3037,10 @@ if (window.typingMindCloudSync) {
         });
       } catch (error) {
         this.logger.log("error", "Failed to load backup list", error.message);
+        console.error(
+          "[TCS] A critical error occurred during the main list operation.",
+          error
+        );
         return [];
       }
     }
