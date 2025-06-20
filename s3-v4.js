@@ -1931,13 +1931,6 @@ if (window.typingMindCloudSync) {
         this.logger.log("skip", "Sync to cloud already in progress");
         return;
       }
-      if (!this.config.isConfigured()) {
-        this.logger.log(
-          "skip",
-          "Sync to cloud skipped: AWS is not configured."
-        );
-        return;
-      }
       if (!this.s3Service.client) {
         try {
           this.logger.log(
