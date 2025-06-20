@@ -1982,7 +1982,7 @@ if (window.typingMindCloudSync) {
             } else {
               const data = await this.dataService.getItem(item.id, item.type);
               if (data) {
-                await this.s3Service.upload(`items/${item.id}.json`, data);
+                await this.storageService.upload(`items/${item.id}.json`, data);
 
                 const newMetadataEntry = {
                   synced: Date.now(),
@@ -2017,7 +2017,11 @@ if (window.typingMindCloudSync) {
 
         if (itemsSynced > 0) {
           cloudMetadata.lastSync = Date.now();
-          await this.s3Service.upload("metadata.json", cloudMetadata, true);
+          await this.storageService.upload(
+            "metadata.json",
+            cloudMetadata,
+            true
+          );
           this.metadata.lastSync = cloudMetadata.lastSync;
           this.setLastCloudSync(cloudMetadata.lastSync);
           this.saveMetadata();
