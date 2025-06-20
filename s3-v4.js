@@ -3961,6 +3961,9 @@ if (window.typingMindCloudSync) {
       this.modalCleanupCallbacks = [];
       this.noSyncMode = false;
       this.diagnosticsExpanded = false;
+      this.backupsExpanded = false;
+      this.providerExpanded = false;
+      this.commonExpanded = false;
       this.leaderElection = null;
     }
 
@@ -4279,72 +4282,134 @@ if (window.typingMindCloudSync) {
         ${modeStatus}
         <div class="space-y-3">
 
-          <!-- NEW: Provider Selection -->
-          <div class="mt-2 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
-            <label for="storage-type-select" class="block text-sm font-medium text-zinc-300">Storage Provider</label>
-            <select id="storage-type-select" class="mt-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white">
-              <option value="s3">Amazon S3 (or S3-Compatible)</option>
-              <option value="googleDrive">Google Drive</option>
-            </select>
-          </div>
-
-          <!-- Provider-Specific Settings Blocks -->
-          <div id="provider-settings-container">
-            <!-- S3 Settings -->
-            <div id="s3-settings-block" class="hidden space-y-2 mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
-              <div class="flex space-x-4">
-                <div class="w-2/3">
-                  <label for="aws-bucket" class="block text-sm font-medium text-zinc-300">Bucket Name <span class="text-red-400">*</span></label>
-                  <input id="aws-bucket" name="aws-bucket" type="text" value="${
-                    this.config.get("bucketName") || ""
-                  }" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
-                </div>
-                <div class="w-1/3">
-                  <label for="aws-region" class="block text-sm font-medium text-zinc-300">Region <span class="text-red-400">*</span></label>
-                  <input id="aws-region" name="aws-region" type="text" value="${
-                    this.config.get("region") || ""
-                  }" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
+          <!-- Sync Diagnostics Section -->
+          <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
+            <div class="flex items-center justify-between mb-2 cursor-pointer select-none" id="sync-diagnostics-header">
+              <div class="flex items-center gap-2">
+                <label class="block text-sm font-medium text-zinc-300">Sync Diagnostics</label>
+                <span id="sync-overall-status" class="text-lg">✅</span>
+                <div class="flex items-center gap-1 border-l border-zinc-600 pl-2">
+                  <button id="force-import-btn" class="px-2 py-1 text-xs text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Import from Cloud\nOverwrites local data with cloud data.">Import ↙</button>
+                  <button id="force-export-btn" class="px-2 py-1 text-xs text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Export to Cloud\nOverwrites cloud data with local data.">Export ↗</button>
+                  <button id="sync-diagnostics-refresh" class="text-zinc-400 hover:text-white transition-colors p-1 rounded" title="Refresh diagnostics">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                  </button>
                 </div>
               </div>
-              <div>
-                <label for="aws-access-key" class="block text-sm font-medium text-zinc-300">Access Key <span class="text-red-400">*</span></label>
-                <input id="aws-access-key" name="aws-access-key" type="password" value="${
-                  this.config.get("accessKey") || ""
-                }" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
-              </div>
-              <div>
-                <label for="aws-secret-key" class="block text-sm font-medium text-zinc-300">Secret Key <span class="text-red-400">*</span></label>
-                <input id="aws-secret-key" name="aws-secret-key" type="password" value="${
-                  this.config.get("secretKey") || ""
-                }" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
-              </div>
-              <div>
-                <label for="aws-endpoint" class="block text-sm font-medium text-zinc-300">S3 Compatible Storage Endpoint</label>
-                <input id="aws-endpoint" name="aws-endpoint" type="text" value="${
-                  this.config.get("endpoint") || ""
-                }" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off">
+              <div class="flex items-center gap-1">
+                <span id="sync-diagnostics-summary" class="text-xs text-zinc-400">Tap to expand</span>
+                <svg id="sync-diagnostics-chevron" class="w-4 h-4 text-zinc-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
               </div>
             </div>
+            <div id="sync-diagnostics-content" class="overflow-x-auto hidden">
+              <table id="sync-diagnostics-table" class="w-full text-xs text-zinc-300 border-collapse">
+                <thead><tr class="border-b border-zinc-600"><th class="text-left py-1 px-2 font-medium">Type</th><th class="text-right py-1 px-2 font-medium">Count</th></tr></thead>
+                <tbody id="sync-diagnostics-body"><tr><td colspan="2" class="text-center py-2 text-zinc-500">Loading...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
 
-            <!-- NEW: Google Drive Settings -->
-            <div id="googleDrive-settings-block" class="hidden space-y-2 mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
-                 <div>
+          <!-- Available Backups Section -->
+          <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
+            <div class="flex items-center justify-between mb-2 cursor-pointer select-none" id="available-backups-header">
+              <label class="block text-sm font-medium text-zinc-300">Available Backups</label>
+              <div class="flex items-center gap-1">
+                <span class="text-xs text-zinc-400">Tap to expand</span>
+                <svg id="available-backups-chevron" class="w-4 h-4 text-zinc-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+              </div>
+            </div>
+            <div id="available-backups-content" class="space-y-2 hidden">
+              <div class="w-full">
+                <select id="backup-files" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white">
+                  <option value="">Please configure your provider first</option>
+                </select>
+              </div>
+              <div class="flex justify-end space-x-2">
+                <button id="restore-backup-btn" class="px-2 py-1.5 text-sm text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>Restore</button>
+                <button id="delete-backup-btn" class="px-2 py-1.5 text-sm text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>Delete</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Storage Provider Settings Section -->
+          <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
+            <div class="flex items-center justify-between mb-2 cursor-pointer select-none" id="provider-settings-header">
+              <label class="block text-sm font-medium text-zinc-300">Storage Provider Settings</label>
+              <div class="flex items-center gap-1">
+                <span class="text-xs text-zinc-400">Tap to expand</span>
+                <svg id="provider-settings-chevron" class="w-4 h-4 text-zinc-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+              </div>
+            </div>
+            <div id="provider-settings-content" class="space-y-3 hidden">
+              <div>
+                <label for="storage-type-select" class="block text-sm font-medium text-zinc-300">Storage Provider</label>
+                <select id="storage-type-select" class="mt-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white">
+                  <option value="s3">Amazon S3 (or S3-Compatible)</option>
+                  <option value="googleDrive">Google Drive</option>
+                </select>
+              </div>
+              <div id="provider-settings-container">
+                <div id="s3-settings-block" class="hidden space-y-2">
+                  <div class="flex space-x-4">
+                    <div class="w-2/3">
+                      <label for="aws-bucket" class="block text-sm font-medium text-zinc-300">Bucket Name <span class="text-red-400">*</span></label>
+                      <input id="aws-bucket" name="aws-bucket" type="text" value="${
+                        this.config.get("bucketName") || ""
+                      }" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
+                    </div>
+                    <div class="w-1/3">
+                      <label for="aws-region" class="block text-sm font-medium text-zinc-300">Region <span class="text-red-400">*</span></label>
+                      <input id="aws-region" name="aws-region" type="text" value="${
+                        this.config.get("region") || ""
+                      }" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
+                    </div>
+                  </div>
+                  <div>
+                    <label for="aws-access-key" class="block text-sm font-medium text-zinc-300">Access Key <span class="text-red-400">*</span></label>
+                    <input id="aws-access-key" name="aws-access-key" type="password" value="${
+                      this.config.get("accessKey") || ""
+                    }" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
+                  </div>
+                  <div>
+                    <label for="aws-secret-key" class="block text-sm font-medium text-zinc-300">Secret Key <span class="text-red-400">*</span></label>
+                    <input id="aws-secret-key" name="aws-secret-key" type="password" value="${
+                      this.config.get("secretKey") || ""
+                    }" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
+                  </div>
+                  <div>
+                    <label for="aws-endpoint" class="block text-sm font-medium text-zinc-300">S3 Compatible Storage Endpoint</label>
+                    <input id="aws-endpoint" name="aws-endpoint" type="text" value="${
+                      this.config.get("endpoint") || ""
+                    }" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off">
+                  </div>
+                </div>
+                <div id="googleDrive-settings-block" class="hidden space-y-2">
+                  <div>
                     <label for="google-client-id" class="block text-sm font-medium text-zinc-300">Google Cloud Client ID <span class="text-red-400">*</span></label>
                     <input id="google-client-id" name="google-client-id" type="text" value="${
                       this.config.get("googleClientId") || ""
                     }" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
-                 </div>
-                 <div class="pt-1">
+                  </div>
+                  <div class="pt-1">
                     <button id="google-auth-btn" class="w-full inline-flex items-center justify-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 disabled:cursor-default transition-colors">Sign in with Google</button>
                     <div id="google-auth-status" class="text-xs text-center text-zinc-400 pt-2"></div>
-                 </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-          
-          <!-- Shared Settings -->
+
+          <!-- Common Settings Section -->
           <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
-            <h4 class="text-sm font-medium text-zinc-300 mb-2">Common Settings</h4>
-            <div class="flex space-x-4">
+            <div class="flex items-center justify-between mb-2 cursor-pointer select-none" id="common-settings-header">
+              <label class="block text-sm font-medium text-zinc-300">Common Settings</label>
+              <div class="flex items-center gap-1">
+                <span class="text-xs text-zinc-400">Tap to expand</span>
+                <svg id="common-settings-chevron" class="w-4 h-4 text-zinc-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+              </div>
+            </div>
+            <div id="common-settings-content" class="space-y-3 hidden">
+              <div class="flex space-x-4">
                 <div class="w-1/2">
                   <label for="sync-interval" class="block text-sm font-medium text-zinc-300">Sync Interval (sec)</label>
                   <input id="sync-interval" name="sync-interval" type="number" min="15" value="${this.config.get(
@@ -4357,54 +4422,12 @@ if (window.typingMindCloudSync) {
                     this.config.get("encryptionKey") || ""
                   }" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
                 </div>
-            </div>
-            <div class="mt-2">
+              </div>
+              <div>
                 <label for="sync-exclusions" class="block text-sm font-medium text-zinc-300">Exclusions (Comma separated)</label>
                 <input id="sync-exclusions" name="sync-exclusions" type="text" value="${
                   localStorage.getItem("tcs_sync-exclusions") || ""
                 }" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" placeholder="e.g., my-setting, another-setting" autocomplete="off">
-            </div>
-          </div>
-
-          <!-- Diagnostics & Backups -->
-          <div id="diagnostics-and-backups-container">
-            <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
-              <div class="flex items-center justify-between mb-2 cursor-pointer select-none" id="sync-diagnostics-header">
-                <div class="flex items-center gap-2">
-                  <label class="block text-sm font-medium text-zinc-300">Sync Diagnostics</label>
-                  <span id="sync-overall-status" class="text-lg">✅</span>
-                  <div class="flex items-center gap-1 border-l border-zinc-600 pl-2">
-                    <button id="force-import-btn" class="px-2 py-1 text-xs text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Import from Cloud\nOverwrites local data with cloud data.">Import ↙</button>
-                    <button id="force-export-btn" class="px-2 py-1 text-xs text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Export to Cloud\nOverwrites cloud data with local data.">Export ↗</button>
-                    <button id="sync-diagnostics-refresh" class="text-zinc-400 hover:text-white transition-colors p-1 rounded" title="Refresh diagnostics">
-                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                    </button>
-                  </div>
-                </div>
-                <div class="flex items-center gap-1">
-                  <span id="sync-diagnostics-summary" class="text-xs text-zinc-400">Tap to view details</span>
-                  <svg id="sync-diagnostics-chevron" class="w-4 h-4 text-zinc-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-                </div>
-              </div>
-              <div id="sync-diagnostics-content" class="overflow-x-auto">
-                <table id="sync-diagnostics-table" class="w-full text-xs text-zinc-300 border-collapse">
-                  <thead><tr class="border-b border-zinc-600"><th class="text-left py-1 px-2 font-medium">Type</th><th class="text-right py-1 px-2 font-medium">Count</th></tr></thead>
-                  <tbody id="sync-diagnostics-body"><tr><td colspan="2" class="text-center py-2 text-zinc-500">Loading...</td></tr></tbody>
-                </table>
-              </div>
-            </div>
-            <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
-              <div class="flex items-center justify-between mb-1"><label class="block text-sm font-medium text-zinc-300">Available Backups</label></div>
-              <div class="space-y-2">
-                <div class="w-full">
-                  <select id="backup-files" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white">
-                    <option value="">Please configure your provider first</option>
-                  </select>
-                </div>
-                <div class="flex justify-end space-x-2">
-                  <button id="restore-backup-btn" class="px-2 py-1.5 text-sm text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>Restore</button>
-                  <button id="delete-backup-btn" class="px-2 py-1.5 text-sm text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>Delete</button>
-                </div>
               </div>
             </div>
           </div>
@@ -4465,11 +4488,24 @@ if (window.typingMindCloudSync) {
       const storageSelect = modal.querySelector("#storage-type-select");
       const s3Block = modal.querySelector("#s3-settings-block");
       const gdBlock = modal.querySelector("#googleDrive-settings-block");
-      const diagnosticsAndBackupsBlock = modal.querySelector(
-        "#diagnostics-and-backups-container"
-      );
       const googleAuthBtn = modal.querySelector("#google-auth-btn");
       const googleAuthStatus = modal.querySelector("#google-auth-status");
+
+      this.setupCollapsibleSection(
+        modal,
+        "available-backups",
+        this.backupsExpanded
+      );
+      this.setupCollapsibleSection(
+        modal,
+        "provider-settings",
+        this.providerExpanded
+      );
+      this.setupCollapsibleSection(
+        modal,
+        "common-settings",
+        this.commonExpanded
+      );
 
       const updateVisibleSettings = () => {
         const selectedType = storageSelect.value;
@@ -4477,7 +4513,6 @@ if (window.typingMindCloudSync) {
         gdBlock.classList.toggle("hidden", selectedType !== "googleDrive");
 
         const isConfigured = this.storageService?.isConfigured();
-        diagnosticsAndBackupsBlock.classList.toggle("hidden", !isConfigured);
         if (modal.querySelector("#force-import-btn")) {
           modal.querySelector("#force-import-btn").disabled = !isConfigured;
           modal.querySelector("#force-export-btn").disabled = !isConfigured;
@@ -4957,6 +4992,58 @@ if (window.typingMindCloudSync) {
         if (summaryEl) summaryEl.textContent = "Error";
       }
     }
+    setupCollapsibleSection(modal, sectionName, initialExpanded) {
+      const header = modal.querySelector(`#${sectionName}-header`);
+      const content = modal.querySelector(`#${sectionName}-content`);
+      const chevron = modal.querySelector(`#${sectionName}-chevron`);
+      if (!header || !content || !chevron) return;
+
+      const setVisibility = (expanded) => {
+        if (expanded) {
+          content.classList.remove("hidden");
+          chevron.style.transform = "rotate(180deg)";
+        } else {
+          content.classList.add("hidden");
+          chevron.style.transform = "rotate(0deg)";
+        }
+      };
+
+      setVisibility(initialExpanded);
+
+      const toggleSection = () => {
+        const currentExpanded = !content.classList.contains("hidden");
+        const newExpanded = !currentExpanded;
+        setVisibility(newExpanded);
+
+        switch (sectionName) {
+          case "available-backups":
+            this.backupsExpanded = newExpanded;
+            break;
+          case "provider-settings":
+            this.providerExpanded = newExpanded;
+            break;
+          case "common-settings":
+            this.commonExpanded = newExpanded;
+            break;
+        }
+      };
+
+      const clickHandler = toggleSection;
+      const touchHandler = (e) => {
+        e.preventDefault();
+        toggleSection();
+      };
+
+      header.addEventListener("click", clickHandler);
+      header.addEventListener("touchend", touchHandler);
+      this.modalCleanupCallbacks.push(() => {
+        if (header) {
+          header.removeEventListener("click", clickHandler);
+          header.removeEventListener("touchend", touchHandler);
+        }
+      });
+    }
+
     setupDiagnosticsToggle(modal) {
       const header = modal.querySelector("#sync-diagnostics-header");
       const content = modal.querySelector("#sync-diagnostics-content");
@@ -5011,6 +5098,9 @@ if (window.typingMindCloudSync) {
 
     closeModal(overlay) {
       this.diagnosticsExpanded = false;
+      this.backupsExpanded = false;
+      this.providerExpanded = false;
+      this.commonExpanded = false;
       this.modalCleanupCallbacks.forEach((cleanup) => {
         try {
           cleanup();
