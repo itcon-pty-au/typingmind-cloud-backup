@@ -1671,25 +1671,35 @@ if (window.typingMindCloudSync) {
         throw error;
       }
 
-      const response = await gapi.client.drive.files.get({
-        fileId: file.id,
-        alt: "media",
-      });
+      const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
+        {
+          method: "GET",
+          headers: new Headers({
+            Authorization: "Bearer " + gapi.client.getToken().access_token,
+          }),
+        }
+      );
 
-      if (response.status !== 200) {
+      if (!response.ok) {
+        const errorBody = await response.json();
         this.logger.log(
           "error",
           `Google Drive download failed for ${key}`,
-          response.result
+          errorBody
         );
-        throw new Error(`Download failed with status ${response.status}`);
+        throw new Error(
+          errorBody.error.message ||
+            `Download failed with status ${response.status}`
+        );
       }
 
-      const body = response.body;
-      const result = isMetadata
-        ? JSON.parse(body)
-        : await this.crypto.decrypt(new TextEncoder().encode(body).buffer);
-      return result;
+      if (isMetadata) {
+        return await response.json();
+      } else {
+        const encryptedBuffer = await response.arrayBuffer();
+        return await this.crypto.decrypt(new Uint8Array(encryptedBuffer));
+      }
     }
 
     async delete(key) {
@@ -5167,19 +5177,21 @@ if (window.typingMindCloudSync) {
       actionMsg.style.color = "#3b82f6";
 
       try {
-        const tempConfigManager = new ConfigManager();
-        tempConfigManager.config = { ...this.config.config, ...newConfig };
+        Object.keys(newConfig).forEach((key) =>
+          this.config.set(key, newConfig[key])
+        );
+        localStorage.setItem("tcs_sync-exclusions", exclusions);
+        this.config.reloadExclusions();
 
-        let tempProvider;
         if (storageType === "s3") {
-          tempProvider = new S3Service(
-            tempConfigManager,
+          this.storageService = new S3Service(
+            this.config,
             this.cryptoService,
             this.logger
           );
         } else if (storageType === "googleDrive") {
-          tempProvider = new GoogleDriveService(
-            tempConfigManager,
+          this.storageService = new GoogleDriveService(
+            this.config,
             this.cryptoService,
             this.logger
           );
@@ -5187,24 +5199,19 @@ if (window.typingMindCloudSync) {
           throw new Error(`Cannot verify unknown storage type: ${storageType}`);
         }
 
-        if (!tempProvider.isConfigured()) {
+        if (!this.storageService.isConfigured()) {
           throw new Error(
             "Please fill in all required fields for the selected provider."
           );
         }
 
-        await tempProvider.initialize();
-        await tempProvider.verify();
+        await this.storageService.initialize();
+        await this.storageService.verify();
 
         actionMsg.textContent =
           "✅ Credentials verified! Saving configuration...";
         actionMsg.style.color = "#22c55e";
 
-        Object.keys(newConfig).forEach((key) =>
-          this.config.set(key, newConfig[key])
-        );
-        localStorage.setItem("tcs_sync-exclusions", exclusions);
-        this.config.reloadExclusions();
         this.config.save();
 
         this.logger.log(
