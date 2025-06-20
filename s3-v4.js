@@ -2606,142 +2606,6 @@ if (window.typingMindCloudSync) {
         );
       }
     }
-    async loadSyncDiagnostics(modal) {
-      // ... (no changes in this method's logic, but will display differently based on config)
-      const diagnosticsBody = modal.querySelector("#sync-diagnostics-body");
-      if (!diagnosticsBody) return;
-      const overallStatusEl = modal.querySelector("#sync-overall-status");
-      const summaryEl = modal.querySelector("#sync-diagnostics-summary");
-      const setContent = (html) => {
-        diagnosticsBody.innerHTML = html;
-      };
-
-      // MODIFIED: Use the generic storageService
-      if (!this.storageService || !this.storageService.isConfigured()) {
-        setContent(
-          '<tr><td colspan="2" class="text-center py-2 text-zinc-500">Provider Not Configured</td></tr>'
-        );
-        if (overallStatusEl) overallStatusEl.textContent = "⚙️";
-        if (summaryEl) summaryEl.textContent = "Setup required";
-        return;
-      }
-
-      try {
-        const diagnosticsData = localStorage.getItem("tcs_sync_diagnostics");
-        if (!diagnosticsData) {
-          setContent(
-            '<tr><td colspan="2" class="text-center py-2 text-zinc-500">No diagnostics data available. Run a sync.</td></tr>'
-          );
-          if (overallStatusEl) overallStatusEl.textContent = "⚠️";
-          if (summaryEl) summaryEl.textContent = "Waiting for first sync";
-          return;
-        }
-
-        const data = JSON.parse(diagnosticsData);
-        const rows = [
-          {
-            type: "📱 Local Items",
-            count: data.localItems || 0,
-          },
-          {
-            type: "📋 Local Metadata",
-            count: data.localMetadata || 0,
-          },
-          {
-            type: "☁️ Cloud Metadata",
-            count: data.cloudMetadata || 0,
-          },
-          {
-            type: "💬 Chat Sync",
-            count: `${data.chatSyncLocal || 0} ⟷ ${data.chatSyncCloud || 0}`,
-          },
-        ];
-
-        const tableHTML = rows
-          .map(
-            (row) => `
-          <tr class="border-b border-zinc-700 hover:bg-zinc-700/30">
-            <td class="py-1 px-2">${row.type}</td>
-            <td class="text-right py-1 px-2">${row.count}</td>
-          </tr>
-        `
-          )
-          .join("");
-
-        const hasIssues =
-          data.localItems !== data.localMetadata ||
-          data.localMetadata !== data.cloudMetadata ||
-          data.chatSyncLocal !== data.chatSyncCloud;
-
-        const overallStatus = hasIssues ? "⚠️" : "✅";
-        const lastUpdated = new Date(data.timestamp || 0).toLocaleTimeString();
-        const summaryText = `Updated: ${lastUpdated}`;
-
-        if (overallStatusEl) overallStatusEl.textContent = overallStatus;
-        if (summaryEl) summaryEl.textContent = summaryText;
-        setContent(tableHTML);
-      } catch (error) {
-        console.error("Failed to load sync diagnostics:", error);
-        setContent(
-          '<tr><td colspan="2" class="text-center py-2 text-red-400">Error loading diagnostics from storage</td></tr>'
-        );
-        if (overallStatusEl) overallStatusEl.textContent = "❌";
-        if (summaryEl) summaryEl.textContent = "Error";
-      }
-    }
-    setupDiagnosticsToggle(modal) {
-      // ... (no changes in this method's logic)
-      const header = modal.querySelector("#sync-diagnostics-header");
-      const content = modal.querySelector("#sync-diagnostics-content");
-      const chevron = modal.querySelector("#sync-diagnostics-chevron");
-      if (!header || !content || !chevron) return;
-      const setVisibility = (expanded) => {
-        if (expanded) {
-          content.classList.remove("hidden");
-          chevron.style.transform = "rotate(180deg)";
-        } else {
-          content.classList.add("hidden");
-          chevron.style.transform = "rotate(0deg)";
-        }
-      };
-      setVisibility(this.diagnosticsExpanded);
-      const toggleDiagnostics = () => {
-        this.diagnosticsExpanded = !this.diagnosticsExpanded;
-        setVisibility(this.diagnosticsExpanded);
-      };
-      const clickHandler = toggleDiagnostics;
-      const touchHandler = (e) => {
-        e.preventDefault();
-        toggleDiagnostics();
-      };
-      header.addEventListener("click", clickHandler);
-      header.addEventListener("touchend", touchHandler);
-      this.modalCleanupCallbacks.push(() => {
-        if (header) {
-          header.removeEventListener("click", clickHandler);
-          header.removeEventListener("touchend", touchHandler);
-        }
-      });
-    }
-    setupDiagnosticsRefresh(modal) {
-      // ... (no changes in this method's logic)
-      const refreshButton = modal.querySelector("#sync-diagnostics-refresh");
-      if (!refreshButton) return;
-      const refreshHandler = (e) => {
-        e.stopPropagation();
-        this.loadSyncDiagnostics(modal);
-        refreshButton.style.transform = "rotate(360deg)";
-        setTimeout(() => {
-          refreshButton.style.transform = "rotate(0deg)";
-        }, 300);
-      };
-      refreshButton.addEventListener("click", refreshHandler);
-      this.modalCleanupCallbacks.push(() => {
-        if (refreshButton) {
-          refreshButton.removeEventListener("click", refreshHandler);
-        }
-      });
-    }
     cleanup() {
       if (this.autoSyncInterval) {
         clearInterval(this.autoSyncInterval);
@@ -4506,19 +4370,141 @@ if (window.typingMindCloudSync) {
       }
     }
 
-    // MODIFIED: This method is a placeholder and has no effect in this refactored version
-    loadSyncDiagnostics(modal) {
-      this.syncOrchestrator.loadSyncDiagnostics(modal);
-    }
+    async loadSyncDiagnostics(modal) {
+      // ... (no changes in this method's logic, but will display differently based on config)
+      const diagnosticsBody = modal.querySelector("#sync-diagnostics-body");
+      if (!diagnosticsBody) return;
+      const overallStatusEl = modal.querySelector("#sync-overall-status");
+      const summaryEl = modal.querySelector("#sync-diagnostics-summary");
+      const setContent = (html) => {
+        diagnosticsBody.innerHTML = html;
+      };
 
-    // MODIFIED: This method is a placeholder and has no effect in this refactored version
+      // MODIFIED: Use the generic storageService
+      if (!this.storageService || !this.storageService.isConfigured()) {
+        setContent(
+          '<tr><td colspan="2" class="text-center py-2 text-zinc-500">Provider Not Configured</td></tr>'
+        );
+        if (overallStatusEl) overallStatusEl.textContent = "⚙️";
+        if (summaryEl) summaryEl.textContent = "Setup required";
+        return;
+      }
+
+      try {
+        const diagnosticsData = localStorage.getItem("tcs_sync_diagnostics");
+        if (!diagnosticsData) {
+          setContent(
+            '<tr><td colspan="2" class="text-center py-2 text-zinc-500">No diagnostics data available. Run a sync.</td></tr>'
+          );
+          if (overallStatusEl) overallStatusEl.textContent = "⚠️";
+          if (summaryEl) summaryEl.textContent = "Waiting for first sync";
+          return;
+        }
+
+        const data = JSON.parse(diagnosticsData);
+        const rows = [
+          {
+            type: "📱 Local Items",
+            count: data.localItems || 0,
+          },
+          {
+            type: "📋 Local Metadata",
+            count: data.localMetadata || 0,
+          },
+          {
+            type: "☁️ Cloud Metadata",
+            count: data.cloudMetadata || 0,
+          },
+          {
+            type: "💬 Chat Sync",
+            count: `${data.chatSyncLocal || 0} ⟷ ${data.chatSyncCloud || 0}`,
+          },
+        ];
+
+        const tableHTML = rows
+          .map(
+            (row) => `
+          <tr class="border-b border-zinc-700 hover:bg-zinc-700/30">
+            <td class="py-1 px-2">${row.type}</td>
+            <td class="text-right py-1 px-2">${row.count}</td>
+          </tr>
+        `
+          )
+          .join("");
+
+        const hasIssues =
+          data.localItems !== data.localMetadata ||
+          data.localMetadata !== data.cloudMetadata ||
+          data.chatSyncLocal !== data.chatSyncCloud;
+
+        const overallStatus = hasIssues ? "⚠️" : "✅";
+        const lastUpdated = new Date(data.timestamp || 0).toLocaleTimeString();
+        const summaryText = `Updated: ${lastUpdated}`;
+
+        if (overallStatusEl) overallStatusEl.textContent = overallStatus;
+        if (summaryEl) summaryEl.textContent = summaryText;
+        setContent(tableHTML);
+      } catch (error) {
+        console.error("Failed to load sync diagnostics:", error);
+        setContent(
+          '<tr><td colspan="2" class="text-center py-2 text-red-400">Error loading diagnostics from storage</td></tr>'
+        );
+        if (overallStatusEl) overallStatusEl.textContent = "❌";
+        if (summaryEl) summaryEl.textContent = "Error";
+      }
+    }
     setupDiagnosticsToggle(modal) {
-      this.syncOrchestrator.setupDiagnosticsToggle(modal);
+      // ... (no changes in this method's logic)
+      const header = modal.querySelector("#sync-diagnostics-header");
+      const content = modal.querySelector("#sync-diagnostics-content");
+      const chevron = modal.querySelector("#sync-diagnostics-chevron");
+      if (!header || !content || !chevron) return;
+      const setVisibility = (expanded) => {
+        if (expanded) {
+          content.classList.remove("hidden");
+          chevron.style.transform = "rotate(180deg)";
+        } else {
+          content.classList.add("hidden");
+          chevron.style.transform = "rotate(0deg)";
+        }
+      };
+      setVisibility(this.diagnosticsExpanded);
+      const toggleDiagnostics = () => {
+        this.diagnosticsExpanded = !this.diagnosticsExpanded;
+        setVisibility(this.diagnosticsExpanded);
+      };
+      const clickHandler = toggleDiagnostics;
+      const touchHandler = (e) => {
+        e.preventDefault();
+        toggleDiagnostics();
+      };
+      header.addEventListener("click", clickHandler);
+      header.addEventListener("touchend", touchHandler);
+      this.modalCleanupCallbacks.push(() => {
+        if (header) {
+          header.removeEventListener("click", clickHandler);
+          header.removeEventListener("touchend", touchHandler);
+        }
+      });
     }
-
-    // MODIFIED: This method is a placeholder and has no effect in this refactored version
     setupDiagnosticsRefresh(modal) {
-      this.syncOrchestrator.setupDiagnosticsRefresh(modal);
+      // ... (no changes in this method's logic)
+      const refreshButton = modal.querySelector("#sync-diagnostics-refresh");
+      if (!refreshButton) return;
+      const refreshHandler = (e) => {
+        e.stopPropagation();
+        this.loadSyncDiagnostics(modal);
+        refreshButton.style.transform = "rotate(360deg)";
+        setTimeout(() => {
+          refreshButton.style.transform = "rotate(0deg)";
+        }, 300);
+      };
+      refreshButton.addEventListener("click", refreshHandler);
+      this.modalCleanupCallbacks.push(() => {
+        if (refreshButton) {
+          refreshButton.removeEventListener("click", refreshHandler);
+        }
+      });
     }
 
     closeModal(overlay) {
