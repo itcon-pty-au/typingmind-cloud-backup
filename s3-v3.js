@@ -1201,13 +1201,41 @@ if (window.typingMindCloudSync) {
     }
     async list(prefix = "") {
       return this.withRetry(async () => {
-        const result = await this.client
-          .listObjectsV2({
+        const allContents = [];
+        let continuationToken = undefined;
+        this.logger.log(
+          "info",
+          `[S3Service] Starting paginated list for prefix: "${prefix}"`
+        );
+        do {
+          const params = {
             Bucket: this.config.get("bucketName"),
             Prefix: prefix,
-          })
-          .promise();
-        return result.Contents || [];
+            ContinuationToken: continuationToken,
+          };
+          const result = await this.client.listObjectsV2(params).promise();
+          if (result.Contents) {
+            allContents.push(...result.Contents);
+          }
+          this.logger.log(
+            "info",
+            `[S3Service] Fetched page with ${
+              result.Contents?.length || 0
+            } items. Total so far: ${allContents.length}. IsTruncated: ${
+              result.IsTruncated
+            }`
+          );
+          if (result.IsTruncated) {
+            continuationToken = result.NextContinuationToken;
+          } else {
+            continuationToken = undefined;
+          }
+        } while (continuationToken);
+        this.logger.log(
+          "success",
+          `[S3Service] Paginated list complete. Total objects found: ${allContents.length}`
+        );
+        return allContents;
       });
     }
     async downloadWithResponse(key) {
