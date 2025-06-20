@@ -2958,10 +2958,7 @@ if (window.typingMindCloudSync) {
                 obj.Key,
                 true
               );
-              if (
-                manifest.format === "server-side" ||
-                (manifest.type && manifest.type.startsWith("server-side-"))
-              ) {
+              if (manifest && manifest.backupFolder) {
                 const backupFolder =
                   manifest.backupFolder ||
                   obj.Key.replace("/backup-manifest.json", "");
