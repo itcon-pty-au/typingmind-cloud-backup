@@ -44,35 +44,29 @@ if (window.typingMindCloudSync) {
       return output;
     }
     loadConfig() {
-      // MODIFIED: Added storageType and provider-specific keys.
       const defaults = {
-        storageType: "s3", // 's3' or 'googleDrive'
+        storageType: "s3",
         syncInterval: 15,
-        // S3 specific
         bucketName: "",
         region: "",
         accessKey: "",
         secretKey: "",
         endpoint: "",
-        // Generic
         encryptionKey: "",
-        // NEW: Google Drive specific
         googleClientId: "",
       };
       const stored = {};
       const encryptionKey = localStorage.getItem("tcs_encryptionkey") || "";
 
-      // MODIFIED: A more robust way to map keys to localStorage
       const keyMap = {
         storageType: "tcs_storagetype",
-        syncInterval: "tcs_aws_syncinterval", // Kept old key for backward compatibility
+        syncInterval: "tcs_aws_syncinterval",
         bucketName: "tcs_aws_bucketname",
         region: "tcs_aws_region",
         accessKey: "tcs_aws_accesskey",
         secretKey: "tcs_aws_secretkey",
         endpoint: "tcs_aws_endpoint",
         encryptionKey: "tcs_encryptionkey",
-        // NEW: Google Drive key mapping
         googleClientId: "tcs_google_clientid",
       };
 
@@ -114,7 +108,6 @@ if (window.typingMindCloudSync) {
             .map((item) => item.trim())
             .filter(Boolean)
         : [];
-      // MODIFIED: Add new config keys to system exclusions
       const systemExclusions = [
         "tcs_storagetype",
         "tcs_aws_bucketname",
@@ -122,12 +115,10 @@ if (window.typingMindCloudSync) {
         "tcs_aws_secretkey",
         "tcs_aws_region",
         "tcs_aws_endpoint",
-        // NEW: Google Drive exclusions
         "tcs_google_clientid",
         "tcs_google_access_token",
         "tcs_google_token_expiry",
-        "gsi_client_id", // Google's own key
-        // ---
+        "gsi_client_id",
         "tcs_encryptionkey",
         "tcs_last-cloud-sync",
         "tcs_last-daily-backup",
@@ -153,7 +144,6 @@ if (window.typingMindCloudSync) {
     }
     save() {
       const encryptionKey = this.config.encryptionKey;
-      // MODIFIED: Use the same key map for saving
       const keyMap = {
         storageType: "tcs_storagetype",
         syncInterval: "tcs_aws_syncinterval",
@@ -163,7 +153,6 @@ if (window.typingMindCloudSync) {
         secretKey: "tcs_aws_secretkey",
         endpoint: "tcs_aws_endpoint",
         encryptionKey: "tcs_encryptionkey",
-        // NEW: Google Drive key mapping
         googleClientId: "tcs_google_clientid",
       };
 
@@ -187,7 +176,7 @@ if (window.typingMindCloudSync) {
       return (
         this.exclusions.includes(key) ||
         key.startsWith("tcs_") ||
-        key.startsWith("gsi_") || // NEW: Exclude Google Identity Services keys
+        key.startsWith("gsi_") ||
         key.includes("eruda")
       );
     }
@@ -196,7 +185,6 @@ if (window.typingMindCloudSync) {
     }
   }
 
-  // --- Logger (No changes needed) ---
   class Logger {
     constructor() {
       const urlParams = new URLSearchParams(window.location.search);
@@ -262,7 +250,6 @@ if (window.typingMindCloudSync) {
     }
   }
 
-  // --- DataService (No changes needed) ---
   class DataService {
     constructor(configManager, logger, operationQueue = null) {
       this.config = configManager;
@@ -938,7 +925,6 @@ if (window.typingMindCloudSync) {
     }
   }
 
-  // --- CryptoService (No changes needed) ---
   class CryptoService {
     constructor(configManager, logger) {
       this.config = configManager;
@@ -1093,7 +1079,6 @@ if (window.typingMindCloudSync) {
     }
   }
 
-  // Abstract base class for all storage providers.
   class IStorageProvider {
     constructor(configManager, cryptoService, logger) {
       if (this.constructor === IStorageProvider) {
@@ -1157,7 +1142,6 @@ if (window.typingMindCloudSync) {
     }
   }
 
-  // S3Service now extends the abstract base class.
   class S3Service extends IStorageProvider {
     constructor(configManager, cryptoService, logger) {
       super(configManager, cryptoService, logger);
@@ -1377,7 +1361,6 @@ if (window.typingMindCloudSync) {
     }
   }
 
-  // NEW: GoogleDriveService implementation
   class GoogleDriveService extends IStorageProvider {
     constructor(configManager, cryptoService, logger) {
       super(configManager, cryptoService, logger);
@@ -1404,7 +1387,6 @@ if (window.typingMindCloudSync) {
         client_id: this.config.get("googleClientId"),
         scope: this.DRIVE_SCOPES,
         callback: (tokenResponse) => {
-          // This callback is used for the interactive flow. We will set the token here.
           if (tokenResponse.error) {
             this.logger.log("error", "Google Auth Error", tokenResponse.error);
             return;
@@ -1417,12 +1399,10 @@ if (window.typingMindCloudSync) {
         },
       });
 
-      // Attempt to set token from localStorage on initialization
       const storedToken = localStorage.getItem("tcs_google_access_token");
       if (storedToken) {
         try {
           const token = JSON.parse(storedToken);
-          // Simple check for expiry, does not handle refresh yet
           if (
             token.expires_in &&
             Date.now() < token.iat + token.expires_in * 1000
@@ -1497,11 +1477,8 @@ if (window.typingMindCloudSync) {
           resolve();
         };
 
-        // Override the client's callback for this specific request
         this.tokenClient.callback = callback;
 
-        // If gapi has a token but it's expired, it should be refreshed.
-        // For simplicity, we just request a new one. The user might see a brief popup.
         if (gapi.client.getToken() === null) {
           this.tokenClient.requestAccessToken({ prompt: "consent" });
         } else {
@@ -1595,7 +1572,7 @@ if (window.typingMindCloudSync) {
           parentId = createResponse.result.id;
           this.pathIdCache.set(currentPath, parentId);
         } else {
-          return null; // Path does not exist and we shouldn't create it
+          return null;
         }
       }
       return parentId;
@@ -1619,12 +1596,12 @@ if (window.typingMindCloudSync) {
     }
 
     async upload(key, data, isMetadata = false) {
-      await this.handleAuthentication(); // Ensure token is valid
+      await this.handleAuthentication();
       const parts = key.split("/").filter((p) => p);
       const filename = parts.pop();
       const folderPath = parts.join("/");
 
-      const parentId = await this._getPathId(folderPath, true); // Create folder path if it doesn't exist
+      const parentId = await this._getPathId(folderPath, true);
       const existingFile = await this._getFileMetadata(key);
 
       const body = isMetadata
@@ -1683,7 +1660,7 @@ if (window.typingMindCloudSync) {
       const file = await this._getFileMetadata(key);
       if (!file) {
         const error = new Error(`File not found in Google Drive: ${key}`);
-        error.code = "NoSuchKey"; // Mimic S3 error
+        error.code = "NoSuchKey";
         error.statusCode = 404;
         throw error;
       }
@@ -1705,7 +1682,7 @@ if (window.typingMindCloudSync) {
       const body = response.body;
       const result = isMetadata
         ? JSON.parse(body)
-        : await this.crypto.decrypt(new TextEncoder().encode(body).buffer); // A bit of a hack to get ArrayBuffer
+        : await this.crypto.decrypt(new TextEncoder().encode(body).buffer);
       return result;
     }
 
@@ -1724,7 +1701,7 @@ if (window.typingMindCloudSync) {
     async list(prefix = "") {
       await this.handleAuthentication();
       const parentId = await this._getPathId(prefix);
-      if (!parentId) return []; // Prefix folder doesn't exist
+      if (!parentId) return [];
 
       let pageToken = null;
       const allFiles = [];
@@ -1740,7 +1717,6 @@ if (window.typingMindCloudSync) {
         pageToken = response.result.nextPageToken;
       } while (pageToken);
 
-      // Adapt to S3-like response structure
       return allFiles.map((file) => ({
         Key: `${prefix}${file.name}`,
         LastModified: new Date(file.modifiedTime),
@@ -1758,8 +1734,6 @@ if (window.typingMindCloudSync) {
         throw error;
       }
 
-      // GAPI v3 doesn't easily return body and metadata in one go like S3 SDK.
-      // We'll construct a similar object.
       const contentResponse = await gapi.client.drive.files.get({
         fileId: file.id,
         alt: "media",
@@ -1768,7 +1742,7 @@ if (window.typingMindCloudSync) {
       return {
         Body: contentResponse.body,
         ETag: file.etag,
-        ...file, // Include other metadata like size, modifiedTime etc.
+        ...file,
       };
     }
 
@@ -1800,23 +1774,22 @@ if (window.typingMindCloudSync) {
     async verify() {
       this.logger.log("info", "Verifying Google Drive connection...");
       await this.handleAuthentication();
-      await this._getAppFolderId(); // This will try to list or create the folder, a good verification step.
+      await this._getAppFolderId();
       this.logger.log("success", "Google Drive connection verified.");
     }
   }
 
-  // SyncOrchestrator is decoupled from S3 and works with any IStorageProvider.
   class SyncOrchestrator {
     constructor(
       configManager,
       dataService,
-      storageService, // was s3Service
+      storageService,
       logger,
       operationQueue = null
     ) {
       this.config = configManager;
       this.dataService = dataService;
-      this.storageService = storageService; // was s3Service
+      this.storageService = storageService;
       this.logger = logger;
       this.operationQueue = operationQueue;
       this.metadata = this.loadMetadata();
@@ -1841,7 +1814,6 @@ if (window.typingMindCloudSync) {
     getItemSize(data) {
       return JSON.stringify(data).length;
     }
-    // In class SyncOrchestrator
 
     /**
      * Detects changes between local storage and the last known sync state.
@@ -1854,7 +1826,6 @@ if (window.typingMindCloudSync) {
       const changedItems = [];
       const now = Date.now();
 
-      // Use memory-efficient streaming for iterating through all local items
       const { totalSize } = await this.dataService.estimateDataSize();
       const itemsIterator =
         totalSize > this.dataService.memoryThreshold
@@ -1867,7 +1838,6 @@ if (window.typingMindCloudSync) {
           const value = item.data;
           const existingItem = this.metadata.items[key];
 
-          // Skip items that are already marked for deletion in local metadata
           if (existingItem?.deleted) {
             continue;
           }
@@ -1877,15 +1847,13 @@ if (window.typingMindCloudSync) {
           let itemLastModified = now;
           let currentSize = 0;
 
-          // ================== START: COMBINED DETECTION STRATEGY ==================
-
           // STRATEGY 1: Timestamp-based detection for CHAT items
           if (
             key.startsWith("CHAT_") &&
             item.type === "idb" &&
             value?.updatedAt
           ) {
-            itemLastModified = value.updatedAt; // Use the timestamp from the object itself
+            itemLastModified = value.updatedAt;
 
             if (!existingItem) {
               hasChanged = true;
@@ -1901,7 +1869,7 @@ if (window.typingMindCloudSync) {
           // STRATEGY 2: Size-based detection for all other items (the original, safe logic)
           else {
             currentSize = this.getItemSize(value);
-            itemLastModified = existingItem?.lastModified || 0; // Preserve existing timestamp if any
+            itemLastModified = existingItem?.lastModified || 0;
 
             if (!existingItem) {
               hasChanged = true;
@@ -1909,7 +1877,7 @@ if (window.typingMindCloudSync) {
             } else if (currentSize !== existingItem.size) {
               hasChanged = true;
               changeReason = "size";
-              itemLastModified = now; // Update timestamp on size change
+              itemLastModified = now;
             } else if (!existingItem.synced) {
               hasChanged = true;
               changeReason = "never-synced";
@@ -1923,20 +1891,16 @@ if (window.typingMindCloudSync) {
               lastModified: itemLastModified,
               reason: changeReason,
             };
-            // Only attach size if it was part of the detection logic
             if (currentSize > 0) {
               change.size = currentSize;
             }
             changedItems.push(change);
           }
-          // =================== END: COMBINED DETECTION STRATEGY ===================
         }
       }
 
-      // This part remains the same: check for local deletions (tombstones) that need syncing.
       for (const [itemId, metadata] of Object.entries(this.metadata.items)) {
         if (metadata.deleted && metadata.deleted > (metadata.synced || 0)) {
-          // Check if this tombstone is already in the list to avoid duplicates
           if (
             !changedItems.some(
               (item) => item.id === itemId && item.reason === "tombstone"
@@ -1955,7 +1919,6 @@ if (window.typingMindCloudSync) {
 
       return { changedItems, hasChanges: changedItems.length > 0 };
     }
-    // In class SyncOrchestrator
 
     /**
      * Syncs detected changes up to the S3 cloud.
@@ -1986,7 +1949,6 @@ if (window.typingMindCloudSync) {
         let itemsSynced = 0;
 
         const uploadPromises = changedItems.map(async (item) => {
-          // Conflict resolution: if cloud version is newer, skip upload
           const cloudItem = cloudMetadata.items[item.id];
           if (
             cloudItem &&
@@ -1997,12 +1959,11 @@ if (window.typingMindCloudSync) {
               "skip",
               `Skipping upload for ${item.id}, cloud version is newer.`
             );
-            this.metadata.items[item.id] = { ...cloudItem }; // Update local metadata to match cloud
+            this.metadata.items[item.id] = { ...cloudItem };
             return;
           }
 
           try {
-            // Handle TOMBSTONES (deletions)
             if (item.deleted || item.reason === "tombstone") {
               const timestamp = Date.now();
               const tombstoneData = {
@@ -2018,28 +1979,23 @@ if (window.typingMindCloudSync) {
                 "info",
                 `🗑️ Synced tombstone for "${item.id}" to cloud.`
               );
-            }
-            // Handle regular item UPLOADS
-            else {
+            } else {
               const data = await this.dataService.getItem(item.id, item.type);
               if (data) {
                 await this.s3Service.upload(`items/${item.id}.json`, data);
 
-                // ================== START: UPDATED METADATA SAVING ==================
                 const newMetadataEntry = {
                   synced: Date.now(),
                   type: item.type,
                   lastModified: item.lastModified,
                 };
 
-                // For non-chat items, we must also store the size for future comparisons.
                 if (!item.id.startsWith("CHAT_")) {
                   newMetadataEntry.size = item.size || this.getItemSize(data);
                 }
 
                 this.metadata.items[item.id] = newMetadataEntry;
                 cloudMetadata.items[item.id] = { ...newMetadataEntry };
-                // =================== END: UPDATED METADATA SAVING ===================
 
                 itemsSynced++;
                 this.logger.log(
@@ -2053,7 +2009,6 @@ if (window.typingMindCloudSync) {
               "error",
               `Failed to sync key "${item.id}": ${error.message}`
             );
-            // Re-queueing logic can be added here if needed
             throw error;
           }
         });
@@ -2369,7 +2324,6 @@ if (window.typingMindCloudSync) {
       await this.updateSyncDiagnosticsCache();
     }
     async initializeLocalMetadata() {
-      // ... (no changes in this method's logic)
       const isEmptyMetadata =
         Object.keys(this.metadata.items || {}).length === 0;
       if (!isEmptyMetadata) {
@@ -2608,7 +2562,6 @@ if (window.typingMindCloudSync) {
       this.logger.log("info", "Auto-sync started");
     }
     async cleanupOldTombstones() {
-      // ... (no changes in this method's logic)
       const now = Date.now();
       const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
       let cleanupCount = 0;
@@ -2667,7 +2620,6 @@ if (window.typingMindCloudSync) {
         if (error.code === "NoSuchKey" || error.statusCode === 404) {
           return { metadata: { lastSync: 0, items: {} }, etag: null };
         }
-        // NEW: Handle Google Drive's not found error
         if (
           error.result &&
           error.result.error &&
@@ -2683,7 +2635,6 @@ if (window.typingMindCloudSync) {
       return metadata;
     }
     async getSyncDiagnostics() {
-      // ... (no changes in this method's logic)
       try {
         const { totalSize, itemCount } =
           await this.dataService.estimateDataSize();
@@ -2764,7 +2715,6 @@ if (window.typingMindCloudSync) {
       }
     }
     async updateSyncDiagnosticsCache() {
-      // ... (no changes in this method's logic)
       try {
         const { totalSize, itemCount } =
           await this.dataService.estimateDataSize();
@@ -2839,7 +2789,6 @@ if (window.typingMindCloudSync) {
     }
   }
 
-  // BackupService is now decoupled from S3 and works with any IStorageProvider.
   class BackupService {
     constructor(dataService, storageService, logger) {
       this.dataService = dataService;
@@ -3142,7 +3091,6 @@ if (window.typingMindCloudSync) {
     }
 
     formatFileSize(bytes) {
-      // ... (no changes in this method's logic)
       if (bytes === 0) return "0 B";
       const k = 1024;
       const sizes = ["B", "KB", "MB", "GB"];
@@ -3204,7 +3152,6 @@ if (window.typingMindCloudSync) {
     }
 
     getBackupType(filename) {
-      // ... (no changes in this method's logic)
       if (filename.startsWith("s-")) {
         return "snapshot";
       } else if (filename.startsWith("typingmind-backup-")) {
@@ -3320,13 +3267,11 @@ if (window.typingMindCloudSync) {
           }
         }
 
-        // --- START OF THE NEW, SAFER FIX ---
         this.logger.log(
           "start",
           "🧹 Starting local data reconciliation post-restore..."
         );
 
-        // 1. Fetch the just-restored metadata, which is our new source of truth.
         const restoredCloudMetadata = await this.storageService.download(
           "metadata.json",
           true
@@ -3339,15 +3284,12 @@ if (window.typingMindCloudSync) {
           `Restored state contains ${validCloudKeys.size} valid items.`
         );
 
-        // 2. Get all items currently in the local database.
-        // We use getAllItems() as it efficiently provides the type needed for deletion.
         const allLocalItems = await this.dataService.getAllItems();
         this.logger.log(
           "info",
           `Found ${allLocalItems.length} items in local DB to check.`
         );
 
-        // 3. Compare and delete any local items that are NOT in the new source of truth.
         let cleanedItemCount = 0;
         const deletionPromises = [];
         for (const localItem of allLocalItems) {
@@ -3356,7 +3298,6 @@ if (window.typingMindCloudSync) {
               "info",
               `- Deleting extraneous local item: ${localItem.id}`
             );
-            // The performDelete method is robust and won't fail if the item doesn't exist.
             deletionPromises.push(
               this.dataService.performDelete(localItem.id, localItem.type)
             );
@@ -3377,7 +3318,6 @@ if (window.typingMindCloudSync) {
             "✅ No extraneous local items found. Local DB is clean."
           );
         }
-        // --- END OF THE NEW, SAFER FIX ---
 
         localStorage.removeItem("tcs_local-metadata");
         localStorage.removeItem("tcs_last-cloud-sync");
@@ -3472,7 +3412,6 @@ if (window.typingMindCloudSync) {
     }
   }
 
-  // --- OperationQueue (No changes needed) ---
   class OperationQueue {
     constructor(logger) {
       this.logger = logger;
@@ -3598,7 +3537,6 @@ if (window.typingMindCloudSync) {
     }
   }
 
-  // --- LeaderElection (No changes needed) ---
   class LeaderElection {
     constructor(channelName, logger) {
       this.channelName = channelName;
@@ -3808,7 +3746,6 @@ if (window.typingMindCloudSync) {
     }
   }
 
-  // MODIFIED: This is the main application class, now acting as the factory for storage providers.
   class CloudSyncApp {
     constructor() {
       this.logger = new Logger();
@@ -3821,11 +3758,10 @@ if (window.typingMindCloudSync) {
       );
       this.cryptoService = new CryptoService(this.config, this.logger);
 
-      // MODIFIED: The generic storage service instance. Will be S3Service, GoogleDriveService, etc.
       this.storageService = null;
 
-      this.syncOrchestrator = null; // Will be initialized later
-      this.backupService = null; // Will be initialized later
+      this.syncOrchestrator = null;
+      this.backupService = null;
 
       this.autoSyncInterval = null;
       this.eventListeners = [];
@@ -3835,7 +3771,6 @@ if (window.typingMindCloudSync) {
       this.leaderElection = null;
     }
 
-    // MODIFIED: The initialization logic is now a factory.
     async initialize() {
       this.logger.log(
         "start",
@@ -3846,7 +3781,6 @@ if (window.typingMindCloudSync) {
       this.noSyncMode =
         urlParams.get("nosync") === "true" || urlParams.has("nosync");
 
-      // Handle config from URL first, as it might change the storageType
       const urlConfig = this.getConfigFromUrlParams();
       if (urlConfig.hasParams) {
         Object.keys(urlConfig.config).forEach((key) => {
@@ -3865,8 +3799,6 @@ if (window.typingMindCloudSync) {
         this.removeConfigFromUrl();
       }
 
-      // --- FACTORY LOGIC ---
-      // Determine which storage provider to use
       const storageType = this.config.get("storageType") || "s3";
       this.logger.log("info", `Selected storage provider: ${storageType}`);
 
@@ -3877,9 +3809,7 @@ if (window.typingMindCloudSync) {
             this.cryptoService,
             this.logger
           );
-        }
-        // NEW: Instantiate GoogleDriveService
-        else if (storageType === "googleDrive") {
+        } else if (storageType === "googleDrive") {
           this.storageService = new GoogleDriveService(
             this.config,
             this.cryptoService,
@@ -3895,11 +3825,9 @@ if (window.typingMindCloudSync) {
           error.message
         );
         this.updateSyncStatus("error");
-        return; // Stop initialization if provider can't be created
+        return;
       }
 
-      // --- DEPENDENCY INJECTION ---
-      // Inject the created storageService into the other components
       this.syncOrchestrator = new SyncOrchestrator(
         this.config,
         this.dataService,
@@ -3913,7 +3841,6 @@ if (window.typingMindCloudSync) {
         this.logger
       );
 
-      // --- LEADER ELECTION & SYNC START ---
       this.leaderElection = new LeaderElection(
         "tcs-leader-election",
         this.logger
@@ -3936,7 +3863,6 @@ if (window.typingMindCloudSync) {
         }
       });
 
-      // The rest of the initialization logic...
       await this.waitForDOM();
       this.insertSyncButton();
 
@@ -3967,7 +3893,7 @@ if (window.typingMindCloudSync) {
         if (this.storageService.isConfigured()) {
           try {
             await this.storageService.initialize();
-            this.leaderElection.elect(); // This will trigger runLeaderTasks if it becomes leader
+            this.leaderElection.elect();
           } catch (error) {
             this.logger.log("error", "Initialization failed", error.message);
             this.updateSyncStatus("error");
@@ -3986,7 +3912,6 @@ if (window.typingMindCloudSync) {
       }
     }
 
-    // MODIFIED: This now checks the requirements for the currently selected storage provider.
     checkMandatoryConfig() {
       const storageType = this.config.get("storageType");
       if (storageType === "s3") {
@@ -3998,7 +3923,6 @@ if (window.typingMindCloudSync) {
           this.config.get("encryptionKey")
         );
       }
-      // NEW: Check for Google Drive config
       if (storageType === "googleDrive") {
         return !!(
           this.config.get("googleClientId") && this.config.get("encryptionKey")
@@ -4147,7 +4071,6 @@ if (window.typingMindCloudSync) {
       this.setupModalEventListeners(modal, overlay);
     }
 
-    // MODIFIED: The UI is now dynamic with sections for each provider.
     getModalHTML() {
       const modeStatus = this.noSyncMode
         ? `<div class="mb-3 p-2 bg-orange-600 rounded-lg border border-orange-500">
@@ -4316,7 +4239,6 @@ if (window.typingMindCloudSync) {
       </div>`;
     }
 
-    // MODIFIED: Event listeners for the new dynamic UI
     setupModalEventListeners(modal, overlay) {
       const closeModalHandler = () => this.closeModal(overlay);
       const saveSettingsHandler = () => this.saveSettings(overlay);
@@ -4343,7 +4265,6 @@ if (window.typingMindCloudSync) {
         .querySelector("#console-logging-toggle")
         .addEventListener("change", consoleLoggingHandler);
 
-      // NEW: Event listener for provider selection
       const storageSelect = modal.querySelector("#storage-type-select");
       const s3Block = modal.querySelector("#s3-settings-block");
       const gdBlock = modal.querySelector("#googleDrive-settings-block");
@@ -4387,7 +4308,6 @@ if (window.typingMindCloudSync) {
           alert("Please enter a Google Client ID first.");
           return;
         }
-        // Temporarily set the client ID for the auth process
         this.config.set("googleClientId", clientId);
 
         try {
@@ -4396,13 +4316,12 @@ if (window.typingMindCloudSync) {
           googleAuthStatus.textContent =
             "Please follow the Google sign-in prompt...";
 
-          // We need a provider instance to call handleAuthentication
           const tempProvider = new GoogleDriveService(
             this.config,
             this.cryptoService,
             this.logger
           );
-          await tempProvider.initialize(); // This sets up the tokenClient
+          await tempProvider.initialize();
           await tempProvider.handleAuthentication();
 
           googleAuthStatus.textContent =
@@ -4694,7 +4613,6 @@ if (window.typingMindCloudSync) {
     }
 
     async loadSyncDiagnostics(modal) {
-      // ... (no changes in this method's logic)
       const diagnosticsBody = modal.querySelector("#sync-diagnostics-body");
       if (!diagnosticsBody) return;
       const overallStatusEl = modal.querySelector("#sync-overall-status");
@@ -4776,7 +4694,6 @@ if (window.typingMindCloudSync) {
       }
     }
     setupDiagnosticsToggle(modal) {
-      // ... (no changes in this method's logic)
       const header = modal.querySelector("#sync-diagnostics-header");
       const content = modal.querySelector("#sync-diagnostics-content");
       const chevron = modal.querySelector("#sync-diagnostics-chevron");
@@ -4810,7 +4727,6 @@ if (window.typingMindCloudSync) {
       });
     }
     setupDiagnosticsRefresh(modal) {
-      // ... (no changes in this method's logic)
       const refreshButton = modal.querySelector("#sync-diagnostics-refresh");
       if (!refreshButton) return;
       const refreshHandler = (e) => {
@@ -4846,7 +4762,6 @@ if (window.typingMindCloudSync) {
       if (overlay) overlay.remove();
     }
 
-    // MODIFIED: Save settings now creates a temporary provider instance to verify credentials.
     async saveSettings(overlay) {
       const storageType = document.getElementById("storage-type-select").value;
 
@@ -4879,7 +4794,6 @@ if (window.typingMindCloudSync) {
 
       const exclusions = document.getElementById("sync-exclusions").value;
 
-      // Validation
       if (newConfig.syncInterval < 15) {
         alert("Sync interval must be at least 15 seconds");
         return;
@@ -4897,7 +4811,6 @@ if (window.typingMindCloudSync) {
       actionMsg.style.color = "#3b82f6";
 
       try {
-        // Create a temporary ConfigManager and Provider for verification
         const tempConfigManager = new ConfigManager();
         tempConfigManager.config = { ...this.config.config, ...newConfig };
 
@@ -4931,7 +4844,6 @@ if (window.typingMindCloudSync) {
           "✅ Credentials verified! Saving configuration...";
         actionMsg.style.color = "#22c55e";
 
-        // If verification is successful, save to the main config object
         Object.keys(newConfig).forEach((key) =>
           this.config.set(key, newConfig[key])
         );
@@ -4945,7 +4857,6 @@ if (window.typingMindCloudSync) {
         );
         actionMsg.textContent = "✅ Saved! Page will now reload.";
 
-        // Reload the page to re-initialize everything with the new provider.
         setTimeout(() => {
           window.location.reload();
         }, 1500);
@@ -5150,7 +5061,6 @@ if (window.typingMindCloudSync) {
     }
   }
 
-  // --- Stylesheet and Final Initialization (Unchanged) ---
   const styleSheet = document.createElement("style");
   styleSheet.textContent = `
     .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); z-index: 99999; display: flex; align-items: center; justify-content: center; padding: 1rem; overflow-y: auto; }
@@ -5223,7 +5133,6 @@ if (window.typingMindCloudSync) {
     { passive: true }
   );
 
-  // --- Global Helper/Debug Functions (Unchanged) ---
   window.createTombstone = (itemId, type, source = "manual") => {
     if (app?.dataService) {
       return app.dataService.createTombstone(itemId, type, source);
