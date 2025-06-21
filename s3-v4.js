@@ -4639,7 +4639,7 @@ if (window.typingMindCloudSync) {
   class CloudSyncApp {
     constructor() {
       this.footerHTML =
-        'Developed & Maintained by Thomas@ITCON. <br><a href="https://buymeacoffee.com/itcon" target="_blank" rel="noopener noreferrer" style="color: #fbbf24;">Buy me a coffee!</a>';
+        'Developed & Maintained by Thomas@ITCON. <br><a href="https://github.com/itcon-pty-au/typingmind-cloud-backup" target="_blank" rel="noopener noreferrer" style="color:rgb(197, 192, 192);">Github</a> | <a href="https://buymeacoffee.com/itcon" target="_blank" rel="noopener noreferrer" style="color: #fbbf24;">Buy me a coffee!</a>';
       this.logger = new Logger();
       this.config = new ConfigManager();
       this.operationQueue = new OperationQueue(this.logger);
