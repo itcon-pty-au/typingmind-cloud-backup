@@ -4546,7 +4546,7 @@ if (window.typingMindCloudSync) {
   class CloudSyncApp {
     constructor() {
       this.footerHTML =
-        'Developed & Maintained by Thomas@ITCON. <a href="https://buymeacoffee.com/itcon" target="_blank" rel="noopener noreferrer">Buy me a coffee!</a>';
+        'Developed & Maintained by Thomas@ITCON. <br><a href="https://buymeacoffee.com/itcon" target="_blank" rel="noopener noreferrer" style="color: #fbbf24;">Buy me a coffee!</a>';
       this.logger = new Logger();
       this.config = new ConfigManager();
       this.operationQueue = new OperationQueue(this.logger);
@@ -4908,7 +4908,7 @@ if (window.typingMindCloudSync) {
         : "";
       return `<div class="text-white text-left text-sm">
         <div class="flex justify-center items-center mb-3">
-          <h3 class="text-center text-xl font-bold text-white">Cloud Backup & Sync Settings</h3>
+          <h3 class="text-center text-xl font-bold text-white">Cloud Sync</h3>
         </div>
         ${modeStatus}
         <div class="space-y-3">
@@ -4919,13 +4919,6 @@ if (window.typingMindCloudSync) {
               <div class="flex items-center gap-2">
                 <label class="block text-sm font-medium text-zinc-300">Sync Diagnostics</label>
                 <span id="sync-overall-status" class="text-lg">✅</span>
-                <div class="flex items-center gap-1 border-l border-zinc-600 pl-2">
-                  <button id="force-import-btn" class="px-2 py-1 text-xs text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Import from Cloud\nOverwrites local data with cloud data.">Import ↙</button>
-                  <button id="force-export-btn" class="px-2 py-1 text-xs text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Export to Cloud\nOverwrites cloud data with local data.">Export ↗</button>
-                  <button id="sync-diagnostics-refresh" class="text-zinc-400 hover:text-white transition-colors p-1 rounded" title="Refresh diagnostics">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                  </button>
-                </div>
               </div>
               <div class="flex items-center gap-1">
                 <svg id="sync-diagnostics-chevron" class="w-4 h-4 text-zinc-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
@@ -4936,6 +4929,13 @@ if (window.typingMindCloudSync) {
                 <thead><tr class="border-b border-zinc-600"><th class="text-left py-1 px-2 font-medium">Type</th><th class="text-right py-1 px-2 font-medium">Count</th></tr></thead>
                 <tbody id="sync-diagnostics-body"><tr><td colspan="2" class="text-center py-2 text-zinc-500">Loading...</td></tr></tbody>
               </table>
+              <div class="flex items-center justify-end gap-2 mt-3 pt-2 border-t border-zinc-700">
+                  <button id="force-import-btn" class="px-2 py-1 text-xs text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Import from Cloud\nOverwrites local data with cloud data.">Import ↙</button>
+                  <button id="force-export-btn" class="px-2 py-1 text-xs text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Export to Cloud\nOverwrites cloud data with local data.">Export ↗</button>
+                  <button id="sync-diagnostics-refresh" class="text-zinc-400 hover:text-white transition-colors p-1 rounded" title="Refresh diagnostics">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                  </button>
+              </div>
             </div>
           </div>
 
@@ -5019,11 +5019,11 @@ if (window.typingMindCloudSync) {
             <input type="checkbox" id="console-logging-toggle" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer">
           </div>
           <div class="flex justify-between space-x-2 mt-4">
-            <button id="save-settings" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 disabled:cursor-default transition-colors">Save & Verify</button>
+            <button id="save-settings" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 disabled:cursor-default transition-colors">Save</button>
             <div class="flex space-x-2">
               <button id="sync-now" class="inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-500 disabled:cursor-default transition-colors" ${
                 this.noSyncMode ? "disabled" : ""
-              }>${this.noSyncMode ? "Sync Off" : "Sync Now"}</button>
+              }>${this.noSyncMode ? "Sync Off" : "Sync"}</button>
               <button id="create-snapshot" class="inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 disabled:cursor-default transition-colors" ${
                 !this.isSnapshotAvailable() ? "disabled" : ""
               }>Snapshot</button>
@@ -5759,7 +5759,7 @@ if (window.typingMindCloudSync) {
         actionMsg.textContent = `❌ Verification failed: ${error.message}`;
         actionMsg.style.color = "#ef4444";
         saveButton.disabled = false;
-        saveButton.textContent = "Save & Verify";
+        saveButton.textContent = "Save";
       }
     }
 
