@@ -13,6 +13,44 @@ if (window.typingMindCloudSync) {
   console.log("TypingMind Cloud Sync already loaded");
 } else {
   window.typingMindCloudSync = true;
+
+  /**
+   * A generic async retry utility with exponential backoff.
+   * @param {Function} operation - The async function to execute.
+   * @param {object} options - Configuration for the retry logic.
+   * @param {number} [options.maxRetries=3] - Maximum number of retries.
+   * @param {number} [options.delay=1000] - Initial delay in ms.
+   * @param {Function} [options.isRetryable] - A function that takes an error and returns true if it should be retried.
+   * @param {Function} [options.onRetry] - A function called before a retry attempt.
+   */
+  async function retryAsync(operation, options = {}) {
+    const {
+      maxRetries = 3,
+      delay = 1000,
+      isRetryable = () => true,
+      onRetry = () => {},
+    } = options;
+    let lastError;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        if (attempt === maxRetries || !isRetryable(error)) {
+          throw error;
+        }
+        const retryDelay = Math.min(
+          delay * Math.pow(2, attempt) + Math.random() * 1000,
+          30000
+        );
+        onRetry(error, attempt + 1, retryDelay);
+        await new Promise((resolve) => setTimeout(resolve, retryDelay));
+      }
+    }
+    throw lastError;
+  }
+
   class ConfigManager {
     constructor() {
       this.PEPPER = "tcs-v3-pepper-!@#$%^&*()";
@@ -1194,174 +1232,259 @@ if (window.typingMindCloudSync) {
         document.head.appendChild(script);
       });
     }
-    async withRetry(operation, maxRetries = 3) {
-      let lastError;
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        try {
-          return await operation();
-        } catch (error) {
-          lastError = error;
-          if (error.code === "NoSuchKey" || error.statusCode === 404)
-            throw error;
-          if (attempt === maxRetries) break;
-          const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
-          this.logger.log(
-            "warning",
-            `Retry ${attempt + 1}/${maxRetries} in ${delay}ms - Error: ${
-              error.message || error.code || "Unknown error"
-            }`
-          );
-          await new Promise((resolve) => setTimeout(resolve, delay));
-        }
-      }
-      throw lastError;
-    }
+
     async upload(key, data, isMetadata = false) {
-      return this.withRetry(async () => {
-        try {
-          const body = isMetadata
-            ? JSON.stringify(data)
-            : await this.crypto.encrypt(data);
-          const params = {
-            Bucket: this.config.get("bucketName"),
-            Key: key,
-            Body: body,
-            ContentType: isMetadata
-              ? "application/json"
-              : "application/octet-stream",
-          };
-          if (isMetadata) {
-            params.CacheControl =
-              "no-cache, no-store, max-age=0, must-revalidate";
-          }
-          const result = await this.client.upload(params).promise();
-          this.logger.log("success", `Uploaded ${key}`, { ETag: result.ETag });
-          return result;
-        } catch (error) {
-          this.logger.log(
-            "error",
-            `Failed to upload ${key}: ${
-              error.message || error.code || "Unknown error"
-            }`
-          );
-          throw error;
-        }
-      });
-    }
-    async uploadRaw(key, data) {
-      return this.withRetry(async () => {
-        try {
-          const result = await this.client
-            .upload({
+      return this.retryAsync(
+        async () => {
+          try {
+            const body = isMetadata
+              ? JSON.stringify(data)
+              : await this.crypto.encrypt(data);
+            const params = {
               Bucket: this.config.get("bucketName"),
               Key: key,
-              Body: data,
-              ContentType: key.endsWith(".zip")
-                ? "application/zip"
+              Body: body,
+              ContentType: isMetadata
+                ? "application/json"
                 : "application/octet-stream",
-            })
-            .promise();
-          this.logger.log("success", `Uploaded raw ${key}`, {
-            ETag: result.ETag,
-          });
-          return result;
-        } catch (error) {
-          this.logger.log(
-            "error",
-            `Failed to upload raw ${key}: ${
-              error.message || error.code || "Unknown error"
-            }`
-          );
-          throw error;
+            };
+            if (isMetadata) {
+              params.CacheControl =
+                "no-cache, no-store, max-age=0, must-revalidate";
+            }
+            const result = await this.client.upload(params).promise();
+            this.logger.log("success", `Uploaded ${key}`, {
+              ETag: result.ETag,
+            });
+            return result;
+          } catch (error) {
+            this.logger.log(
+              "error",
+              `Failed to upload ${key}: ${
+                error.message || error.code || "Unknown error"
+              }`
+            );
+            throw error;
+          }
+        },
+        {
+          maxRetries: 3,
+          isRetryable: (error) =>
+            !(error.code === "NoSuchKey" || error.statusCode === 404),
+          onRetry: (error, attempt) => {
+            this.logger.log(
+              "warning",
+              `[S3] Retry ${attempt} - Error: ${error.message || error.code}`
+            );
+          },
         }
-      });
+      );
+    }
+    async uploadRaw(key, data) {
+      return this.retryAsync(
+        async () => {
+          try {
+            const result = await this.client
+              .upload({
+                Bucket: this.config.get("bucketName"),
+                Key: key,
+                Body: data,
+                ContentType: key.endsWith(".zip")
+                  ? "application/zip"
+                  : "application/octet-stream",
+              })
+              .promise();
+            this.logger.log("success", `Uploaded raw ${key}`, {
+              ETag: result.ETag,
+            });
+            return result;
+          } catch (error) {
+            this.logger.log(
+              "error",
+              `Failed to upload raw ${key}: ${
+                error.message || error.code || "Unknown error"
+              }`
+            );
+            throw error;
+          }
+        },
+        {
+          maxRetries: 3,
+          isRetryable: (error) =>
+            !(error.code === "NoSuchKey" || error.statusCode === 404),
+          onRetry: (error, attempt) => {
+            this.logger.log(
+              "warning",
+              `[S3] Retry ${attempt} - Error: ${error.message || error.code}`
+            );
+          },
+        }
+      );
     }
     async download(key, isMetadata = false) {
-      return this.withRetry(async () => {
-        const result = await this.client
-          .getObject({ Bucket: this.config.get("bucketName"), Key: key })
-          .promise();
-        const data = isMetadata
-          ? JSON.parse(result.Body.toString())
-          : await this.crypto.decrypt(new Uint8Array(result.Body));
-        return data;
-      });
+      return this.retryAsync(
+        async () => {
+          const result = await this.client
+            .getObject({ Bucket: this.config.get("bucketName"), Key: key })
+            .promise();
+          const data = isMetadata
+            ? JSON.parse(result.Body.toString())
+            : await this.crypto.decrypt(new Uint8Array(result.Body));
+          return data;
+        },
+        {
+          maxRetries: 3,
+          isRetryable: (error) =>
+            !(error.code === "NoSuchKey" || error.statusCode === 404),
+          onRetry: (error, attempt) => {
+            this.logger.log(
+              "warning",
+              `[S3] Retry ${attempt} - Error: ${error.message || error.code}`
+            );
+          },
+        }
+      );
     }
     async downloadRaw(key) {
-      return this.withRetry(async () => {
-        const result = await this.client
-          .getObject({ Bucket: this.config.get("bucketName"), Key: key })
-          .promise();
-        return new Uint8Array(result.Body);
-      });
+      return this.retryAsync(
+        async () => {
+          const result = await this.client
+            .getObject({ Bucket: this.config.get("bucketName"), Key: key })
+            .promise();
+          return new Uint8Array(result.Body);
+        },
+        {
+          maxRetries: 3,
+          isRetryable: (error) =>
+            !(error.code === "NoSuchKey" || error.statusCode === 404),
+          onRetry: (error, attempt) => {
+            this.logger.log(
+              "warning",
+              `[S3] Retry ${attempt} - Error: ${error.message || error.code}`
+            );
+          },
+        }
+      );
     }
     async delete(key) {
-      return this.withRetry(async () => {
-        await this.client
-          .deleteObject({ Bucket: this.config.get("bucketName"), Key: key })
-          .promise();
-        this.logger.log("success", `Deleted ${key}`);
-      });
+      return this.retryAsync(
+        async () => {
+          await this.client
+            .deleteObject({ Bucket: this.config.get("bucketName"), Key: key })
+            .promise();
+          this.logger.log("success", `Deleted ${key}`);
+        },
+        {
+          maxRetries: 3,
+          isRetryable: (error) =>
+            !(error.code === "NoSuchKey" || error.statusCode === 404),
+          onRetry: (error, attempt) => {
+            this.logger.log(
+              "warning",
+              `[S3] Retry ${attempt} - Error: ${error.message || error.code}`
+            );
+          },
+        }
+      );
     }
     async list(prefix = "") {
-      return this.withRetry(async () => {
-        const allContents = [];
-        let continuationToken = undefined;
-        this.logger.log(
-          "info",
-          `[S3Service] Starting paginated list for prefix: "${prefix}"`
-        );
-        do {
-          const params = {
-            Bucket: this.config.get("bucketName"),
-            Prefix: prefix,
-            ContinuationToken: continuationToken,
-          };
-          const result = await this.client.listObjectsV2(params).promise();
-          if (result.Contents) {
-            allContents.push(...result.Contents);
-          }
+      return this.retryAsync(
+        async () => {
+          const allContents = [];
+          let continuationToken = undefined;
           this.logger.log(
             "info",
-            `[S3Service] Fetched page with ${
-              result.Contents?.length || 0
-            } items. Total so far: ${allContents.length}. IsTruncated: ${
-              result.IsTruncated
-            }`
+            `[S3Service] Starting paginated list for prefix: "${prefix}"`
           );
-          if (result.IsTruncated) {
-            continuationToken = result.NextContinuationToken;
-          } else {
-            continuationToken = undefined;
-          }
-        } while (continuationToken);
-        this.logger.log(
-          "success",
-          `[S3Service] Paginated list complete. Total objects found: ${allContents.length}`
-        );
-        return allContents;
-      });
+          do {
+            const params = {
+              Bucket: this.config.get("bucketName"),
+              Prefix: prefix,
+              ContinuationToken: continuationToken,
+            };
+            const result = await this.client.listObjectsV2(params).promise();
+            if (result.Contents) {
+              allContents.push(...result.Contents);
+            }
+            this.logger.log(
+              "info",
+              `[S3Service] Fetched page with ${
+                result.Contents?.length || 0
+              } items. Total so far: ${allContents.length}. IsTruncated: ${
+                result.IsTruncated
+              }`
+            );
+            if (result.IsTruncated) {
+              continuationToken = result.NextContinuationToken;
+            } else {
+              continuationToken = undefined;
+            }
+          } while (continuationToken);
+          this.logger.log(
+            "success",
+            `[S3Service] Paginated list complete. Total objects found: ${allContents.length}`
+          );
+          return allContents;
+        },
+        {
+          maxRetries: 3,
+          isRetryable: (error) =>
+            !(error.code === "NoSuchKey" || error.statusCode === 404),
+          onRetry: (error, attempt) => {
+            this.logger.log(
+              "warning",
+              `[S3] Retry ${attempt} - Error: ${error.message || error.code}`
+            );
+          },
+        }
+      );
     }
     async downloadWithResponse(key) {
-      return this.withRetry(async () => {
-        const result = await this.client
-          .getObject({ Bucket: this.config.get("bucketName"), Key: key })
-          .promise();
-        return result;
-      });
+      return this.retryAsync(
+        async () => {
+          const result = await this.client
+            .getObject({ Bucket: this.config.get("bucketName"), Key: key })
+            .promise();
+          return result;
+        },
+        {
+          maxRetries: 3,
+          isRetryable: (error) =>
+            !(error.code === "NoSuchKey" || error.statusCode === 404),
+          onRetry: (error, attempt) => {
+            this.logger.log(
+              "warning",
+              `[S3] Retry ${attempt} - Error: ${error.message || error.code}`
+            );
+          },
+        }
+      );
     }
     async copyObject(sourceKey, destinationKey) {
-      return this.withRetry(async () => {
-        const result = await this.client
-          .copyObject({
-            Bucket: this.config.get("bucketName"),
-            CopySource: `${this.config.get("bucketName")}/${sourceKey}`,
-            Key: destinationKey,
-          })
-          .promise();
-        this.logger.log("success", `Copied ${sourceKey} → ${destinationKey}`);
-        return result;
-      });
+      return this.retryAsync(
+        async () => {
+          const result = await this.client
+            .copyObject({
+              Bucket: this.config.get("bucketName"),
+              CopySource: `${this.config.get("bucketName")}/${sourceKey}`,
+              Key: destinationKey,
+            })
+            .promise();
+          this.logger.log("success", `Copied ${sourceKey} → ${destinationKey}`);
+          return result;
+        },
+        {
+          maxRetries: 3,
+          isRetryable: (error) =>
+            !(error.code === "NoSuchKey" || error.statusCode === 404),
+          onRetry: (error, attempt) => {
+            this.logger.log(
+              "warning",
+              `[S3] Retry ${attempt} - Error: ${error.message || error.code}`
+            );
+          },
+        }
+      );
     }
 
     async ensurePathExists(path) {
@@ -1390,78 +1513,60 @@ if (window.typingMindCloudSync) {
     }
 
     async _deleteFolderIfExists(path) {
-      return this._withRetry(async () => {
-        const folderId = await this._getPathId(path, false);
+      return this.retryAsync(
+        async () => {
+          const folderId = await this._getPathId(path, false);
 
-        if (folderId) {
-          this.logger.log(
-            "info",
-            `[Google Drive] Deleting existing backup folder to prevent duplication: "${path}"`
-          );
-          await gapi.client.drive.files.delete({
-            fileId: folderId,
-          });
+          if (folderId) {
+            this.logger.log(
+              "info",
+              `[Google Drive] Deleting existing backup folder to prevent duplication: "${path}"`
+            );
+            await gapi.client.drive.files.delete({
+              fileId: folderId,
+            });
 
-          const keysToDelete = [];
-          for (const key of this.pathIdCache.keys()) {
-            if (key === path || key.startsWith(path + "/")) {
-              keysToDelete.push(key);
-            }
-          }
-          for (const key of this.pathCreationPromises.keys()) {
-            if (key === path || key.startsWith(path + "/")) {
-              if (!keysToDelete.includes(key)) {
+            const keysToDelete = [];
+            for (const key of this.pathIdCache.keys()) {
+              if (key === path || key.startsWith(path + "/")) {
                 keysToDelete.push(key);
               }
             }
-          }
+            for (const key of this.pathCreationPromises.keys()) {
+              if (key === path || key.startsWith(path + "/")) {
+                if (!keysToDelete.includes(key)) {
+                  keysToDelete.push(key);
+                }
+              }
+            }
 
-          keysToDelete.forEach((key) => {
-            this.pathIdCache.delete(key);
-            this.pathCreationPromises.delete(key);
-          });
+            keysToDelete.forEach((key) => {
+              this.pathIdCache.delete(key);
+              this.pathCreationPromises.delete(key);
+            });
 
-          this.pathIdCache.clear();
-          this.pathCreationPromises.clear();
+            this.pathIdCache.clear();
+            this.pathCreationPromises.clear();
 
-          this.logger.log(
-            "info",
-            `[Google Drive] Cleared ${keysToDelete.length} cache/promise entries for path: "${path}"`
-          );
-        }
-      });
-    }
-
-    async _withRetry(operation, maxRetries = 5, baseDelay = 1000) {
-      let lastError;
-      for (let attempt = 0; attempt < maxRetries; attempt++) {
-        try {
-          return await operation();
-        } catch (error) {
-          lastError = error;
-          if (this._isRateLimitError(error)) {
-            const delay = Math.min(
-              baseDelay * Math.pow(2, attempt) + Math.random() * 1000,
-              60000
+            this.logger.log(
+              "info",
+              `[Google Drive] Cleared ${keysToDelete.length} cache/promise entries for path: "${path}"`
             );
+          }
+        },
+        {
+          maxRetries: 5,
+          isRetryable: (error) => this._isRateLimitError(error),
+          onRetry: (error, attempt) => {
             this.logger.log(
               "warning",
-              `[Google Drive] Rate limit exceeded. Retrying in ${Math.round(
-                delay / 1000
-              )}s... (Attempt ${attempt + 1}/${maxRetries})`
+              `[Google Drive] Retry ${attempt} - Error: ${
+                error.message || error.code
+              }`
             );
-            await new Promise((resolve) => setTimeout(resolve, delay));
-          } else {
-            throw error;
-          }
+          },
         }
-      }
-      this.logger.log(
-        "error",
-        `[Google Drive] Operation failed after ${maxRetries} retries.`,
-        lastError
       );
-      throw lastError;
     }
 
     isConfigured() {
@@ -1588,44 +1693,58 @@ if (window.typingMindCloudSync) {
     }
 
     async _getAppFolderId() {
-      return this._withRetry(async () => {
-        if (this.pathIdCache.has(this.APP_FOLDER_NAME)) {
-          return this.pathIdCache.get(this.APP_FOLDER_NAME);
-        }
+      return retryAsync(
+        async () => {
+          if (this.pathIdCache.has(this.APP_FOLDER_NAME)) {
+            return this.pathIdCache.get(this.APP_FOLDER_NAME);
+          }
 
-        const response = await gapi.client.drive.files.list({
-          q: `mimeType='application/vnd.google-apps.folder' and name='${this.APP_FOLDER_NAME}' and trashed=false`,
-          fields: "files(id, name)",
-          spaces: "drive",
-        });
-
-        if (response.result.error) throw response;
-
-        if (response.result.files.length > 0) {
-          const folderId = response.result.files[0].id;
-          this.pathIdCache.set(this.APP_FOLDER_NAME, folderId);
-          return folderId;
-        } else {
-          this.logger.log(
-            "info",
-            `App folder '${this.APP_FOLDER_NAME}' not found, creating it.`
-          );
-          const fileMetadata = {
-            name: this.APP_FOLDER_NAME,
-            mimeType: "application/vnd.google-apps.folder",
-          };
-          const createResponse = await gapi.client.drive.files.create({
-            resource: fileMetadata,
-            fields: "id",
+          const response = await gapi.client.drive.files.list({
+            q: `mimeType='application/vnd.google-apps.folder' and name='${this.APP_FOLDER_NAME}' and trashed=false`,
+            fields: "files(id, name)",
+            spaces: "drive",
           });
 
-          if (createResponse.result.error) throw createResponse;
+          if (response.result.error) throw response;
 
-          const folderId = createResponse.result.id;
-          this.pathIdCache.set(this.APP_FOLDER_NAME, folderId);
-          return folderId;
+          if (response.result.files.length > 0) {
+            const folderId = response.result.files[0].id;
+            this.pathIdCache.set(this.APP_FOLDER_NAME, folderId);
+            return folderId;
+          } else {
+            this.logger.log(
+              "info",
+              `App folder '${this.APP_FOLDER_NAME}' not found, creating it.`
+            );
+            const fileMetadata = {
+              name: this.APP_FOLDER_NAME,
+              mimeType: "application/vnd.google-apps.folder",
+            };
+            const createResponse = await gapi.client.drive.files.create({
+              resource: fileMetadata,
+              fields: "id",
+            });
+
+            if (createResponse.result.error) throw createResponse;
+
+            const folderId = createResponse.result.id;
+            this.pathIdCache.set(this.APP_FOLDER_NAME, folderId);
+            return folderId;
+          }
+        },
+        {
+          maxRetries: 5,
+          isRetryable: (error) => this._isRateLimitError(error),
+          onRetry: (error, attempt, delay) => {
+            this.logger.log(
+              "warning",
+              `[Google Drive] Rate limit exceeded. Retrying in ${Math.round(
+                delay / 1000
+              )}s...`
+            );
+          },
         }
-      });
+      );
     }
 
     async _getPathId(path, createIfNotExists = false) {
@@ -1641,54 +1760,68 @@ if (window.typingMindCloudSync) {
         return this.pathCreationPromises.get(path);
       }
 
-      const promise = this._withRetry(async () => {
-        if (this.pathIdCache.has(path)) return this.pathIdCache.get(path);
+      const promise = this.retryAsync(
+        async () => {
+          if (this.pathIdCache.has(path)) return this.pathIdCache.get(path);
 
-        const parts = path.split("/").filter((p) => p);
-        let parentId = await this._getAppFolderId();
-        let currentPath = this.APP_FOLDER_NAME;
+          const parts = path.split("/").filter((p) => p);
+          let parentId = await this._getAppFolderId();
+          let currentPath = this.APP_FOLDER_NAME;
 
-        for (const part of parts) {
-          currentPath += `/${part}`;
-          if (this.pathIdCache.has(currentPath)) {
-            parentId = this.pathIdCache.get(currentPath);
-            continue;
-          }
+          for (const part of parts) {
+            currentPath += `/${part}`;
+            if (this.pathIdCache.has(currentPath)) {
+              parentId = this.pathIdCache.get(currentPath);
+              continue;
+            }
 
-          const response = await gapi.client.drive.files.list({
-            q: `mimeType='application/vnd.google-apps.folder' and name='${part}' and '${parentId}' in parents and trashed=false`,
-            fields: "files(id)",
-            spaces: "drive",
-          });
-
-          if (response.result.error) throw response;
-
-          if (response.result.files.length > 0) {
-            parentId = response.result.files[0].id;
-            this.pathIdCache.set(currentPath, parentId);
-          } else if (createIfNotExists) {
-            this.logger.log(
-              "info",
-              `Creating folder '${part}' inside parent ID ${parentId}.`
-            );
-            const fileMetadata = {
-              name: part,
-              mimeType: "application/vnd.google-apps.folder",
-              parents: [parentId],
-            };
-            const createResponse = await gapi.client.drive.files.create({
-              resource: fileMetadata,
-              fields: "id",
+            const response = await gapi.client.drive.files.list({
+              q: `mimeType='application/vnd.google-apps.folder' and name='${part}' and '${parentId}' in parents and trashed=false`,
+              fields: "files(id)",
+              spaces: "drive",
             });
-            if (createResponse.result.error) throw createResponse;
-            parentId = createResponse.result.id;
-            this.pathIdCache.set(currentPath, parentId);
-          } else {
-            return null;
+
+            if (response.result.error) throw response;
+
+            if (response.result.files.length > 0) {
+              parentId = response.result.files[0].id;
+              this.pathIdCache.set(currentPath, parentId);
+            } else if (createIfNotExists) {
+              this.logger.log(
+                "info",
+                `Creating folder '${part}' inside parent ID ${parentId}.`
+              );
+              const fileMetadata = {
+                name: part,
+                mimeType: "application/vnd.google-apps.folder",
+                parents: [parentId],
+              };
+              const createResponse = await gapi.client.drive.files.create({
+                resource: fileMetadata,
+                fields: "id",
+              });
+              if (createResponse.result.error) throw createResponse;
+              parentId = createResponse.result.id;
+              this.pathIdCache.set(currentPath, parentId);
+            } else {
+              return null;
+            }
           }
+          return parentId;
+        },
+        {
+          maxRetries: 5,
+          isRetryable: (error) => this._isRateLimitError(error),
+          onRetry: (error, attempt, delay) => {
+            this.logger.log(
+              "warning",
+              `[Google Drive] Rate limit exceeded. Retrying in ${Math.round(
+                delay / 1000
+              )}s...`
+            );
+          },
         }
-        return parentId;
-      });
+      );
 
       this.pathCreationPromises.set(path, promise);
 
@@ -1704,283 +1837,382 @@ if (window.typingMindCloudSync) {
     }
 
     async _getFileMetadata(path) {
-      return this._withRetry(async () => {
-        const parts = path.split("/").filter((p) => p);
-        const filename = parts.pop();
-        const folderPath = parts.join("/");
+      return this.retryAsync(
+        async () => {
+          const parts = path.split("/").filter((p) => p);
+          const filename = parts.pop();
+          const folderPath = parts.join("/");
 
-        const parentId = await this._getPathId(folderPath);
-        if (!parentId) return null;
+          const parentId = await this._getPathId(folderPath);
+          if (!parentId) return null;
 
-        const queryParams = new URLSearchParams({
-          q: `name='${filename}' and '${parentId}' in parents and trashed=false`,
-          fields: "files(id, name, size, modifiedTime)",
-          spaces: "drive",
-        });
+          const queryParams = new URLSearchParams({
+            q: `name='${filename}' and '${parentId}' in parents and trashed=false`,
+            fields: "files(id, name, size, modifiedTime)",
+            spaces: "drive",
+          });
 
-        const response = await fetch(
-          `https://www.googleapis.com/drive/v3/files?${queryParams.toString()}`,
-          {
-            method: "GET",
-            headers: new Headers({
-              Authorization: "Bearer " + gapi.client.getToken().access_token,
-            }),
-          }
-        );
-
-        if (!response.ok) {
-          const errorBody = await response.json();
-          this.logger.log(
-            "error",
-            `Google Drive file list failed for ${path}`,
-            errorBody
+          const response = await fetch(
+            `https://www.googleapis.com/drive/v3/files?${queryParams.toString()}`,
+            {
+              method: "GET",
+              headers: new Headers({
+                Authorization: "Bearer " + gapi.client.getToken().access_token,
+              }),
+            }
           );
-          throw errorBody;
-        }
 
-        const result = await response.json();
-        return result.files.length > 0 ? result.files[0] : null;
-      });
+          if (!response.ok) {
+            const errorBody = await response.json();
+            this.logger.log(
+              "error",
+              `Google Drive file list failed for ${path}`,
+              errorBody
+            );
+            throw errorBody;
+          }
+
+          const result = await response.json();
+          return result.files.length > 0 ? result.files[0] : null;
+        },
+        {
+          maxRetries: 5,
+          isRetryable: (error) => this._isRateLimitError(error),
+          onRetry: (error, attempt, delay) => {
+            this.logger.log(
+              "warning",
+              `[Google Drive] Rate limit exceeded. Retrying in ${Math.round(
+                delay / 1000
+              )}s...`
+            );
+          },
+        }
+      );
     }
 
     async upload(key, data, isMetadata = false) {
-      return this._withRetry(async () => {
-        await this.handleAuthentication();
-        const parts = key.split("/").filter((p) => p);
-        const filename = parts.pop();
-        const folderPath = parts.join("/");
+      return this.retryAsync(
+        async () => {
+          await this.handleAuthentication();
+          const parts = key.split("/").filter((p) => p);
+          const filename = parts.pop();
+          const folderPath = parts.join("/");
 
-        const parentId = await this._getPathId(folderPath, true);
-        const existingFile = await this._getFileMetadata(key);
+          const parentId = await this._getPathId(folderPath, true);
+          const existingFile = await this._getFileMetadata(key);
 
-        const body = isMetadata
-          ? JSON.stringify(data)
-          : await this.crypto.encrypt(data);
-        const blob = new Blob([body], {
-          type: isMetadata ? "application/json" : "application/octet-stream",
-        });
+          const body = isMetadata
+            ? JSON.stringify(data)
+            : await this.crypto.encrypt(data);
+          const blob = new Blob([body], {
+            type: isMetadata ? "application/json" : "application/octet-stream",
+          });
 
-        const metadata = {
-          name: filename,
-          mimeType: isMetadata
-            ? "application/json"
-            : "application/octet-stream",
-        };
-        if (!existingFile) {
-          metadata.parents = [parentId];
-        }
+          const metadata = {
+            name: filename,
+            mimeType: isMetadata
+              ? "application/json"
+              : "application/octet-stream",
+          };
+          if (!existingFile) {
+            metadata.parents = [parentId];
+          }
 
-        const formData = new FormData();
-        formData.append(
-          "metadata",
-          new Blob([JSON.stringify(metadata)], { type: "application/json" })
-        );
-        formData.append("file", blob);
-
-        const uploadUrl = existingFile
-          ? `https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=multipart`
-          : "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart";
-
-        const method = existingFile ? "PATCH" : "POST";
-
-        const response = await fetch(uploadUrl, {
-          method: method,
-          headers: new Headers({
-            Authorization: "Bearer " + gapi.client.getToken().access_token,
-          }),
-          body: formData,
-        });
-
-        const result = await response.json();
-        if (result.error) {
-          this.logger.log(
-            "error",
-            `Google Drive upload failed for ${key}`,
-            result.error
+          const formData = new FormData();
+          formData.append(
+            "metadata",
+            new Blob([JSON.stringify(metadata)], { type: "application/json" })
           );
-          throw result;
-        }
+          formData.append("file", blob);
 
-        const etag = response.headers.get("ETag") || result.etag;
+          const uploadUrl = existingFile
+            ? `https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=multipart`
+            : "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart";
 
-        this.logger.log("success", `Uploaded ${key} to Google Drive`, {
-          ETag: etag,
-        });
-        return { ETag: etag, ...result };
-      });
-    }
+          const method = existingFile ? "PATCH" : "POST";
 
-    async download(key, isMetadata = false) {
-      return this._withRetry(async () => {
-        await this.handleAuthentication();
-        const file = await this._getFileMetadata(key);
-        if (!file) {
-          const error = new Error(`File not found in Google Drive: ${key}`);
-          error.code = "NoSuchKey";
-          error.statusCode = 404;
-          throw error;
-        }
-
-        const response = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
-          {
-            method: "GET",
+          const response = await fetch(uploadUrl, {
+            method: method,
             headers: new Headers({
               Authorization: "Bearer " + gapi.client.getToken().access_token,
             }),
+            body: formData,
+          });
+
+          const result = await response.json();
+          if (result.error) {
+            this.logger.log(
+              "error",
+              `Google Drive upload failed for ${key}`,
+              result.error
+            );
+            throw result;
           }
-        );
 
-        if (!response.ok) {
-          const errorBody = await response.json();
-          this.logger.log(
-            "error",
-            `Google Drive download failed for ${key}`,
-            errorBody
+          const etag = response.headers.get("ETag") || result.etag;
+
+          this.logger.log("success", `Uploaded ${key} to Google Drive`, {
+            ETag: etag,
+          });
+          return { ETag: etag, ...result };
+        },
+        {
+          maxRetries: 5,
+          isRetryable: (error) => this._isRateLimitError(error),
+          onRetry: (error, attempt, delay) => {
+            this.logger.log(
+              "warning",
+              `[Google Drive] Rate limit exceeded. Retrying in ${Math.round(
+                delay / 1000
+              )}s...`
+            );
+          },
+        }
+      );
+    }
+
+    async download(key, isMetadata = false) {
+      return this.retryAsync(
+        async () => {
+          await this.handleAuthentication();
+          const file = await this._getFileMetadata(key);
+          if (!file) {
+            const error = new Error(`File not found in Google Drive: ${key}`);
+            error.code = "NoSuchKey";
+            error.statusCode = 404;
+            throw error;
+          }
+
+          const response = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
+            {
+              method: "GET",
+              headers: new Headers({
+                Authorization: "Bearer " + gapi.client.getToken().access_token,
+              }),
+            }
           );
-          throw errorBody;
-        }
 
-        if (isMetadata) {
-          return await response.json();
-        } else {
-          const encryptedBuffer = await response.arrayBuffer();
-          return await this.crypto.decrypt(new Uint8Array(encryptedBuffer));
+          if (!response.ok) {
+            const errorBody = await response.json();
+            this.logger.log(
+              "error",
+              `Google Drive download failed for ${key}`,
+              errorBody
+            );
+            throw errorBody;
+          }
+
+          if (isMetadata) {
+            return await response.json();
+          } else {
+            const encryptedBuffer = await response.arrayBuffer();
+            return await this.crypto.decrypt(new Uint8Array(encryptedBuffer));
+          }
+        },
+        {
+          maxRetries: 5,
+          isRetryable: (error) => this._isRateLimitError(error),
+          onRetry: (error, attempt, delay) => {
+            this.logger.log(
+              "warning",
+              `[Google Drive] Rate limit exceeded. Retrying in ${Math.round(
+                delay / 1000
+              )}s...`
+            );
+          },
         }
-      });
+      );
     }
 
     async delete(key) {
-      return this._withRetry(async () => {
-        await this.handleAuthentication();
-        const file = await this._getFileMetadata(key);
-        if (!file) {
-          this.logger.log("warning", `File to delete not found: ${key}`);
-          return;
-        }
+      return this.retryAsync(
+        async () => {
+          await this.handleAuthentication();
+          const file = await this._getFileMetadata(key);
+          if (!file) {
+            this.logger.log("warning", `File to delete not found: ${key}`);
+            return;
+          }
 
-        const response = await gapi.client.drive.files.delete({
-          fileId: file.id,
-        });
-        if (
-          response.result &&
-          typeof response.result === "object" &&
-          Object.keys(response.result).length > 0
-        ) {
-        } else if (response.status >= 400) {
-          throw {
-            result: {
-              error: response.body
-                ? JSON.parse(response.body)
-                : { message: "Delete failed" },
-            },
-          };
-        }
+          const response = await gapi.client.drive.files.delete({
+            fileId: file.id,
+          });
+          if (
+            response.result &&
+            typeof response.result === "object" &&
+            Object.keys(response.result).length > 0
+          ) {
+          } else if (response.status >= 400) {
+            throw {
+              result: {
+                error: response.body
+                  ? JSON.parse(response.body)
+                  : { message: "Delete failed" },
+              },
+            };
+          }
 
-        this.logger.log("success", `Deleted ${key} from Google Drive.`);
-      });
+          this.logger.log("success", `Deleted ${key} from Google Drive.`);
+        },
+        {
+          maxRetries: 5,
+          isRetryable: (error) => this._isRateLimitError(error),
+          onRetry: (error, attempt, delay) => {
+            this.logger.log(
+              "warning",
+              `[Google Drive] Rate limit exceeded. Retrying in ${Math.round(
+                delay / 1000
+              )}s...`
+            );
+          },
+        }
+      );
     }
 
     async list(prefix = "") {
-      return this._withRetry(async () => {
-        await this.handleAuthentication();
-        const parentId = await this._getPathId(prefix);
-        if (!parentId) return [];
+      return this.retryAsync(
+        async () => {
+          await this.handleAuthentication();
+          const parentId = await this._getPathId(prefix);
+          if (!parentId) return [];
 
-        let pageToken = null;
-        const allFiles = [];
-        do {
-          const response = await gapi.client.drive.files.list({
-            q: `'${parentId}' in parents and trashed=false`,
-            fields: "nextPageToken, files(id, name, size, modifiedTime)",
-            spaces: "drive",
-            pageSize: 1000,
-            pageToken: pageToken,
+          let pageToken = null;
+          const allFiles = [];
+          do {
+            const response = await gapi.client.drive.files.list({
+              q: `'${parentId}' in parents and trashed=false`,
+              fields: "nextPageToken, files(id, name, size, modifiedTime)",
+              spaces: "drive",
+              pageSize: 1000,
+              pageToken: pageToken,
+            });
+
+            if (response.result.error) throw response;
+
+            allFiles.push(...response.result.files);
+            pageToken = response.result.nextPageToken;
+          } while (pageToken);
+
+          return allFiles.map((file) => ({
+            Key: `${prefix}${file.name}`,
+            LastModified: new Date(file.modifiedTime),
+            Size: file.size,
+          }));
+        },
+        {
+          maxRetries: 5,
+          isRetryable: (error) => this._isRateLimitError(error),
+          onRetry: (error, attempt, delay) => {
+            this.logger.log(
+              "warning",
+              `[Google Drive] Rate limit exceeded. Retrying in ${Math.round(
+                delay / 1000
+              )}s...`
+            );
+          },
+        }
+      );
+    }
+
+    async downloadWithResponse(key) {
+      return this.retryAsync(
+        async () => {
+          await this.handleAuthentication();
+          const file = await this._getFileMetadata(key);
+          if (!file) {
+            const error = new Error(`File not found in Google Drive: ${key}`);
+            error.code = "NoSuchKey";
+            error.statusCode = 404;
+            throw error;
+          }
+
+          const response = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
+            {
+              method: "GET",
+              headers: new Headers({
+                Authorization: "Bearer " + gapi.client.getToken().access_token,
+              }),
+            }
+          );
+
+          if (!response.ok) {
+            const errorBody = await response.json();
+            this.logger.log(
+              "error",
+              `Google Drive download failed for ${key}`,
+              errorBody
+            );
+            throw errorBody;
+          }
+
+          const etag = response.headers.get("ETag");
+          const body = await response.text();
+
+          return {
+            Body: body,
+            ...file,
+            ETag: etag,
+          };
+        },
+        {
+          maxRetries: 5,
+          isRetryable: (error) => this._isRateLimitError(error),
+          onRetry: (error, attempt, delay) => {
+            this.logger.log(
+              "warning",
+              `[Google Drive] Rate limit exceeded. Retrying in ${Math.round(
+                delay / 1000
+              )}s...`
+            );
+          },
+        }
+      );
+    }
+
+    async copyObject(sourceKey, destinationKey) {
+      return this.retryAsync(
+        async () => {
+          await this.handleAuthentication();
+          const sourceFile = await this._getFileMetadata(sourceKey);
+          if (!sourceFile)
+            throw new Error(`Source file not found: ${sourceKey}`);
+
+          const destParts = destinationKey.split("/").filter((p) => p);
+          const destFilename = destParts.pop();
+          const destFolderPath = destParts.join("/");
+
+          const destParentId = await this._getPathId(destFolderPath, true);
+
+          const copyMetadata = {
+            name: destFilename,
+            parents: [destParentId],
+          };
+
+          const response = await gapi.client.drive.files.copy({
+            fileId: sourceFile.id,
+            resource: copyMetadata,
           });
 
           if (response.result.error) throw response;
 
-          allFiles.push(...response.result.files);
-          pageToken = response.result.nextPageToken;
-        } while (pageToken);
-
-        return allFiles.map((file) => ({
-          Key: `${prefix}${file.name}`,
-          LastModified: new Date(file.modifiedTime),
-          Size: file.size,
-        }));
-      });
-    }
-
-    async downloadWithResponse(key) {
-      return this._withRetry(async () => {
-        await this.handleAuthentication();
-        const file = await this._getFileMetadata(key);
-        if (!file) {
-          const error = new Error(`File not found in Google Drive: ${key}`);
-          error.code = "NoSuchKey";
-          error.statusCode = 404;
-          throw error;
+          this.logger.log("success", `Copied ${sourceKey} → ${destinationKey}`);
+          return response.result;
+        },
+        {
+          maxRetries: 5,
+          isRetryable: (error) => this._isRateLimitError(error),
+          onRetry: (error, attempt, delay) => {
+            this.logger.log(
+              "warning",
+              `[Google Drive] Rate limit exceeded. Retrying in ${Math.round(
+                delay / 1000
+              )}s...`
+            );
+          },
         }
-
-        const response = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
-          {
-            method: "GET",
-            headers: new Headers({
-              Authorization: "Bearer " + gapi.client.getToken().access_token,
-            }),
-          }
-        );
-
-        if (!response.ok) {
-          const errorBody = await response.json();
-          this.logger.log(
-            "error",
-            `Google Drive download failed for ${key}`,
-            errorBody
-          );
-          throw errorBody;
-        }
-
-        const etag = response.headers.get("ETag");
-        const body = await response.text();
-
-        return {
-          Body: body,
-          ...file,
-          ETag: etag,
-        };
-      });
-    }
-
-    async copyObject(sourceKey, destinationKey) {
-      return this._withRetry(async () => {
-        await this.handleAuthentication();
-        const sourceFile = await this._getFileMetadata(sourceKey);
-        if (!sourceFile) throw new Error(`Source file not found: ${sourceKey}`);
-
-        const destParts = destinationKey.split("/").filter((p) => p);
-        const destFilename = destParts.pop();
-        const destFolderPath = destParts.join("/");
-
-        const destParentId = await this._getPathId(destFolderPath, true);
-
-        const copyMetadata = {
-          name: destFilename,
-          parents: [destParentId],
-        };
-
-        const response = await gapi.client.drive.files.copy({
-          fileId: sourceFile.id,
-          resource: copyMetadata,
-        });
-
-        if (response.result.error) throw response;
-
-        this.logger.log("success", `Copied ${sourceKey} → ${destinationKey}`);
-        return response.result;
-      });
+      );
     }
 
     async verify() {
