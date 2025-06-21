@@ -1140,6 +1140,14 @@ if (window.typingMindCloudSync) {
       };
     }
 
+    async delete(key) {
+      throw new Error("Method 'delete()' must be implemented.");
+    }
+
+    async deleteFolder(folderPath) {
+      throw new Error("Method 'deleteFolder()' must be implemented.");
+    }
+
     isConfigured() {
       throw new Error("Method 'isConfigured()' must be implemented.");
     }
@@ -1422,6 +1430,54 @@ if (window.typingMindCloudSync) {
         }
       );
     }
+
+    async deleteFolder(folderPath) {
+      return retryAsync(async () => {
+        const prefix = folderPath.endsWith("/") ? folderPath : folderPath + "/";
+        this.logger.log(
+          "info",
+          `[S3] Deleting all objects with prefix: ${prefix}`
+        );
+
+        const objectsToDelete = await this.list(prefix);
+        if (objectsToDelete.length === 0) {
+          this.logger.log(
+            "info",
+            `[S3] No objects found for prefix ${prefix} to delete.`
+          );
+          return;
+        }
+
+        const keysToDelete = objectsToDelete.map((obj) => ({ Key: obj.Key }));
+        const bucketName = this.config.get("bucketName");
+
+        const chunks = [];
+        for (let i = 0; i < keysToDelete.length; i += 1000) {
+          chunks.push(keysToDelete.slice(i, i + 1000));
+        }
+
+        for (const chunk of chunks) {
+          const params = {
+            Bucket: bucketName,
+            Delete: { Objects: chunk },
+          };
+          const result = await this.client.deleteObjects(params).promise();
+          if (result.Errors && result.Errors.length > 0) {
+            this.logger.log(
+              "error",
+              "[S3] Errors during batch deletion",
+              result.Errors
+            );
+            throw new Error(`S3 deletion error: ${result.Errors[0].Message}`);
+          }
+        }
+        this.logger.log(
+          "success",
+          `[S3] Deleted ${keysToDelete.length} objects for folder: ${folderPath}`
+        );
+      });
+    }
+
     async list(prefix = "") {
       return retryAsync(
         async () => {
@@ -2120,6 +2176,43 @@ if (window.typingMindCloudSync) {
         }
 
         this.logger.log("success", `Deleted ${key} from Google Drive.`);
+      });
+    }
+
+    async deleteFolder(folderPath) {
+      return this._operationWithRetry(async () => {
+        this.logger.log(
+          "info",
+          `[Google Drive] Deleting folder: ${folderPath}`
+        );
+
+        const folderId = await this._getPathId(folderPath, false);
+
+        if (!folderId) {
+          this.logger.log(
+            "warning",
+            `[Google Drive] Folder to delete not found: ${folderPath}`
+          );
+          return;
+        }
+
+        await gapi.client.drive.files.delete({
+          fileId: folderId,
+        });
+
+        const keysToClear = Array.from(this.pathIdCache.keys()).filter(
+          (key) => key === folderPath || key.startsWith(folderPath + "/")
+        );
+
+        keysToClear.forEach((key) => {
+          this.pathIdCache.delete(key);
+          this.pathCreationPromises.delete(key);
+        });
+
+        this.logger.log(
+          "success",
+          `[Google Drive] Deleted folder ${folderPath} and cleared ${keysToClear.length} cache entries.`
+        );
       });
     }
 
@@ -5846,14 +5939,13 @@ if (window.typingMindCloudSync) {
       } else {
         this.logger.log("info", "Deleting server-side copy backup");
         const backupFolder = key.replace("/backup-manifest.json", "");
-        const filesToDelete = await this.storageService.list(
-          backupFolder + "/"
+
+        await this.storageService.deleteFolder(backupFolder);
+
+        this.logger.log(
+          "success",
+          `Deleted server-side backup: ${backupFolder}`
         );
-        for (const file of filesToDelete) {
-          await this.storageService.delete(file.Key);
-        }
-        await this.storageService.delete(key);
-        this.logger.log("success", `Deleted server-side backup: ${key}`);
       }
     }
 
