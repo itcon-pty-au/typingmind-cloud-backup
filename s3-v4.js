@@ -1924,7 +1924,7 @@ if (window.typingMindCloudSync) {
             } else if (itemLastModified > (existingItem.lastModified || 0)) {
               hasChanged = true;
               changeReason = "timestamp";
-            } else if (!existingItem.synced) {
+            } else if (!existingItem.synced || existingItem.synced === 0) {
               hasChanged = true;
               changeReason = "never-synced-chat";
             }
@@ -1941,7 +1941,7 @@ if (window.typingMindCloudSync) {
               hasChanged = true;
               changeReason = "size";
               itemLastModified = now;
-            } else if (!existingItem.synced) {
+            } else if (!existingItem.synced || existingItem.synced === 0) {
               hasChanged = true;
               changeReason = "never-synced";
             }
