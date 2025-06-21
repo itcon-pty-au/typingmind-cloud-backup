@@ -1421,6 +1421,9 @@ if (window.typingMindCloudSync) {
             this.pathCreationPromises.delete(key);
           });
 
+          this.pathIdCache.clear();
+          this.pathCreationPromises.clear();
+
           this.logger.log(
             "info",
             `[Google Drive] Cleared ${keysToDelete.length} cache/promise entries for path: "${path}"`
