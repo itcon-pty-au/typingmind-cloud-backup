@@ -2044,6 +2044,13 @@ if (window.typingMindCloudSync) {
       const changedItems = [];
       const now = Date.now();
 
+      this.logger.log(
+        "info",
+        "🔍 Gathering all local item keys for change detection."
+      );
+      const localItemKeys = await this.dataService.getAllItemKeys();
+      this.logger.log("info", `Found ${localItemKeys.size} local item keys.`);
+
       const { totalSize } = await this.dataService.estimateDataSize();
       const itemsIterator =
         totalSize > this.dataService.memoryThreshold
@@ -2130,6 +2137,37 @@ if (window.typingMindCloudSync) {
             });
           }
         }
+      }
+
+      this.logger.log(
+        "info",
+        "🔍 Checking for items deleted locally by comparing metadata against actual keys..."
+      );
+      let newlyDeletedCount = 0;
+      for (const itemId in this.metadata.items) {
+        const metadataItem = this.metadata.items[itemId];
+
+        if (!localItemKeys.has(itemId) && !metadataItem.deleted) {
+          this.logger.log(
+            "info",
+            `⚰️ Detected locally deleted item: ${itemId}. Creating tombstone.`
+          );
+
+          changedItems.push({
+            id: itemId,
+            type: metadataItem.type || "idb", // Use stored type, fallback to idb
+            deleted: Date.now(),
+            tombstoneVersion: (metadataItem.tombstoneVersion || 0) + 1,
+            reason: "detected-deletion",
+          });
+          newlyDeletedCount++;
+        }
+      }
+      if (newlyDeletedCount > 0) {
+        this.logger.log(
+          "success",
+          `✅ Found ${newlyDeletedCount} newly deleted item(s) to be synced to the cloud.`
+        );
       }
 
       return { changedItems, hasChanges: changedItems.length > 0 };
