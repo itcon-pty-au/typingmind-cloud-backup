@@ -5083,8 +5083,9 @@ if (window.typingMindCloudSync) {
                   <div class="flex items-center gap-3">
                     <button id="force-import-btn" class="px-2 py-1 text-xs text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Import from Cloud\nOverwrites local data with cloud data.">Import ↙</button>
                     <button id="force-export-btn" class="px-2 py-1 text-xs text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Export to Cloud\nOverwrites cloud data with local data.">Export ↗</button>
-                    <button id="sync-diagnostics-refresh" class="p-1.5 text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Refresh diagnostics">
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    <button id="sync-diagnostics-refresh" class="p-1.5 text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors duration-200" title="Refresh diagnostics">
+                      <svg id="refresh-icon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                      <svg id="checkmark-icon" class="w-4 h-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
                     </button>
                   </div>
               </div>
@@ -5693,11 +5694,29 @@ if (window.typingMindCloudSync) {
 
     setupDiagnosticsRefresh(modal) {
       const refreshButton = modal.querySelector("#sync-diagnostics-refresh");
-      if (!refreshButton) return;
+      const refreshIcon = modal.querySelector("#refresh-icon");
+      const checkmarkIcon = modal.querySelector("#checkmark-icon");
+
+      if (!refreshButton || !refreshIcon || !checkmarkIcon) return;
 
       const refreshHandler = (e) => {
         e.stopPropagation();
+
+        if (refreshButton.disabled) return;
+
         this.loadSyncDiagnostics(modal);
+
+        refreshButton.disabled = true;
+        refreshButton.classList.add("is-refreshing");
+        refreshIcon.classList.add("hidden");
+        checkmarkIcon.classList.remove("hidden");
+
+        setTimeout(() => {
+          refreshButton.classList.remove("is-refreshing");
+          refreshIcon.classList.remove("hidden");
+          checkmarkIcon.classList.add("hidden");
+          refreshButton.disabled = false;
+        }, 600);
       };
 
       refreshButton.addEventListener("click", refreshHandler);
@@ -6050,6 +6069,7 @@ if (window.typingMindCloudSync) {
     @media (max-width: 640px) { #sync-diagnostics-table { font-size: 0.7rem; } #sync-diagnostics-table th, #sync-diagnostics-table td { padding: 0.5rem 0.25rem; } .cloud-sync-modal { margin: 0.5rem; max-height: 90vh; overflow-y: auto; } }
     .modal-footer a { color: #60a5fa; text-decoration: none; transition: color 0.2s ease-in-out; line-height: 3em;}
     .modal-footer a:hover { color: #93c5fd; text-decoration: underline; }
+    #sync-diagnostics-refresh.is-refreshing { background-color: #16a34a; }
   `;
   document.head.appendChild(styleSheet);
 
