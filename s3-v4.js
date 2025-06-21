@@ -1370,6 +1370,7 @@ if (window.typingMindCloudSync) {
       this.gisReady = false;
       this.tokenClient = null;
       this.pathIdCache = new Map();
+      this.pathCreationPromises = new Map();
     }
 
     _isRateLimitError(error) {
@@ -1577,7 +1578,19 @@ if (window.typingMindCloudSync) {
     }
 
     async _getPathId(path, createIfNotExists = false) {
-      return this._withRetry(async () => {
+      if (this.pathIdCache.has(path)) {
+        return this.pathIdCache.get(path);
+      }
+
+      if (this.pathCreationPromises.has(path)) {
+        this.logger.log(
+          "info",
+          `[Google Drive] Awaiting in-flight creation for path: "${path}"`
+        );
+        return this.pathCreationPromises.get(path);
+      }
+
+      const promise = this._withRetry(async () => {
         if (this.pathIdCache.has(path)) return this.pathIdCache.get(path);
 
         const parts = path.split("/").filter((p) => p);
@@ -1625,6 +1638,18 @@ if (window.typingMindCloudSync) {
         }
         return parentId;
       });
+
+      this.pathCreationPromises.set(path, promise);
+
+      try {
+        const pathId = await promise;
+        if (pathId) {
+          this.pathIdCache.set(path, pathId);
+        }
+        return pathId;
+      } finally {
+        this.pathCreationPromises.delete(path);
+      }
     }
 
     async _getFileMetadata(path) {
