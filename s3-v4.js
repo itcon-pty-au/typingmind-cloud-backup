@@ -4729,9 +4729,9 @@ if (window.typingMindCloudSync) {
       this.updateSyncStatus("error");
       if (!this.hasShownTokenExpiryAlert) {
         this.hasShownTokenExpiryAlert = true;
-        alert(
-          "⚠️ Your Google Drive session has expired.\n\n" +
-            "Please open the Sync modal, go to 'Storage Provider Settings', and use the 'Sign in with Google' button to re-authenticate."
+        this.logger.log(
+          "warning",
+          "Google Drive session expired. User must re-authenticate."
         );
         setTimeout(() => {
           this.hasShownTokenExpiryAlert = false;
@@ -5282,7 +5282,16 @@ if (window.typingMindCloudSync) {
       syncNowButton.textContent = "Working...";
       this.operationQueue.add(
         "manual-full-sync",
-        () => this.syncOrchestrator.performFullSync(),
+        async () => {
+          this.updateSyncStatus("syncing");
+          try {
+            await this.syncOrchestrator.performFullSync();
+            this.updateSyncStatus("success");
+          } catch (e) {
+            this.updateSyncStatus("error");
+            throw e;
+          }
+        },
         "high"
       );
       setTimeout(() => {
@@ -5858,10 +5867,13 @@ if (window.typingMindCloudSync) {
           this.storageService.isConfigured() &&
           !this.syncOrchestrator.syncInProgress
         ) {
+          this.updateSyncStatus("syncing");
           try {
             await this.syncOrchestrator.performFullSync();
+            this.updateSyncStatus("success");
           } catch (error) {
             this.logger.log("error", "Auto-sync failed", error.message);
+            this.updateSyncStatus("error");
           }
         }
       }, interval);
