@@ -4668,6 +4668,59 @@ if (window.typingMindCloudSync) {
       this.leaderElection = null;
     }
 
+    setupAccordion(modal) {
+      const sections = [
+        "sync-diagnostics",
+        "available-backups",
+        "provider-settings",
+        "common-settings",
+      ];
+
+      const setSectionState = (sectionName, expand) => {
+        const content = modal.querySelector(`#${sectionName}-content`);
+        const chevron = modal.querySelector(`#${sectionName}-chevron`);
+        if (content && chevron) {
+          if (expand) {
+            content.classList.remove("hidden");
+            chevron.style.transform = "rotate(180deg)";
+          } else {
+            content.classList.add("hidden");
+            chevron.style.transform = "rotate(0deg)";
+          }
+        }
+      };
+
+      sections.forEach((sectionName) => {
+        const header = modal.querySelector(`#${sectionName}-header`);
+        if (header) {
+          const clickHandler = () => {
+            const isCurrentlyOpen = !modal
+              .querySelector(`#${sectionName}-content`)
+              .classList.contains("hidden");
+
+            sections.forEach((s) => setSectionState(s, false));
+
+            if (!isCurrentlyOpen) {
+              setSectionState(sectionName, true);
+            }
+          };
+          header.addEventListener("click", clickHandler);
+
+          this.modalCleanupCallbacks.push(() => {
+            header.removeEventListener("click", clickHandler);
+          });
+        }
+      });
+
+      if (
+        !this.backupsExpanded &&
+        !this.providerExpanded &&
+        !this.commonExpanded
+      ) {
+        setSectionState("sync-diagnostics", true);
+      }
+    }
+
     registerProvider(typeName, providerClass) {
       if (
         !providerClass ||
@@ -5167,21 +5220,7 @@ if (window.typingMindCloudSync) {
         .querySelector("#console-logging-toggle")
         .addEventListener("change", consoleLoggingHandler);
 
-      this.setupCollapsibleSection(
-        modal,
-        "available-backups",
-        this.backupsExpanded
-      );
-      this.setupCollapsibleSection(
-        modal,
-        "provider-settings",
-        this.providerExpanded
-      );
-      this.setupCollapsibleSection(
-        modal,
-        "common-settings",
-        this.commonExpanded
-      );
+      this.setupAccordion(modal);
 
       const storageSelect = modal.querySelector("#storage-type-select");
       const providerUIContainer = modal.querySelector(
@@ -5311,7 +5350,6 @@ if (window.typingMindCloudSync) {
         this.loadBackupList(modal);
         this.setupBackupListHandlers(modal);
         this.loadSyncDiagnostics(modal);
-        this.setupDiagnosticsToggle(modal);
         this.setupDiagnosticsRefresh(modal);
       }
     }
@@ -5652,103 +5690,18 @@ if (window.typingMindCloudSync) {
         if (lastSyncEl) lastSyncEl.textContent = "Error";
       }
     }
-    setupCollapsibleSection(modal, sectionName, initialExpanded) {
-      const header = modal.querySelector(`#${sectionName}-header`);
-      const content = modal.querySelector(`#${sectionName}-content`);
-      const chevron = modal.querySelector(`#${sectionName}-chevron`);
-      if (!header || !content || !chevron) return;
 
-      const setVisibility = (expanded) => {
-        if (expanded) {
-          content.classList.remove("hidden");
-          chevron.style.transform = "rotate(180deg)";
-        } else {
-          content.classList.add("hidden");
-          chevron.style.transform = "rotate(0deg)";
-        }
-      };
-
-      setVisibility(initialExpanded);
-
-      const toggleSection = () => {
-        const currentExpanded = !content.classList.contains("hidden");
-        const newExpanded = !currentExpanded;
-        setVisibility(newExpanded);
-
-        switch (sectionName) {
-          case "available-backups":
-            this.backupsExpanded = newExpanded;
-            break;
-          case "provider-settings":
-            this.providerExpanded = newExpanded;
-            break;
-          case "common-settings":
-            this.commonExpanded = newExpanded;
-            break;
-        }
-      };
-
-      const clickHandler = toggleSection;
-      const touchHandler = (e) => {
-        e.preventDefault();
-        toggleSection();
-      };
-
-      header.addEventListener("click", clickHandler);
-      header.addEventListener("touchend", touchHandler);
-      this.modalCleanupCallbacks.push(() => {
-        if (header) {
-          header.removeEventListener("click", clickHandler);
-          header.removeEventListener("touchend", touchHandler);
-        }
-      });
-    }
-
-    setupDiagnosticsToggle(modal) {
-      const header = modal.querySelector("#sync-diagnostics-header");
-      const content = modal.querySelector("#sync-diagnostics-content");
-      const chevron = modal.querySelector("#sync-diagnostics-chevron");
-      if (!header || !content || !chevron) return;
-      const setVisibility = (expanded) => {
-        if (expanded) {
-          content.classList.remove("hidden");
-          chevron.style.transform = "rotate(180deg)";
-        } else {
-          content.classList.add("hidden");
-          chevron.style.transform = "rotate(0deg)";
-        }
-      };
-      setVisibility(this.diagnosticsExpanded);
-      const toggleDiagnostics = () => {
-        this.diagnosticsExpanded = !this.diagnosticsExpanded;
-        setVisibility(this.diagnosticsExpanded);
-      };
-      const clickHandler = toggleDiagnostics;
-      const touchHandler = (e) => {
-        e.preventDefault();
-        toggleDiagnostics();
-      };
-      header.addEventListener("click", clickHandler);
-      header.addEventListener("touchend", touchHandler);
-      this.modalCleanupCallbacks.push(() => {
-        if (header) {
-          header.removeEventListener("click", clickHandler);
-          header.removeEventListener("touchend", touchHandler);
-        }
-      });
-    }
     setupDiagnosticsRefresh(modal) {
       const refreshButton = modal.querySelector("#sync-diagnostics-refresh");
       if (!refreshButton) return;
+
       const refreshHandler = (e) => {
         e.stopPropagation();
         this.loadSyncDiagnostics(modal);
-        refreshButton.style.transform = "rotate(360deg)";
-        setTimeout(() => {
-          refreshButton.style.transform = "rotate(0deg)";
-        }, 300);
       };
+
       refreshButton.addEventListener("click", refreshHandler);
+
       this.modalCleanupCallbacks.push(() => {
         if (refreshButton) {
           refreshButton.removeEventListener("click", refreshHandler);
