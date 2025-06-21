@@ -1140,6 +1140,10 @@ if (window.typingMindCloudSync) {
         `Connection for ${this.constructor.name} verified.`
       );
     }
+
+    async ensurePathExists(path) {
+      throw new Error("Method 'ensurePathExists()' must be implemented.");
+    }
   }
 
   class S3Service extends IStorageProvider {
@@ -1358,6 +1362,10 @@ if (window.typingMindCloudSync) {
         this.logger.log("success", `Copied ${sourceKey} → ${destinationKey}`);
         return result;
       });
+    }
+
+    async ensurePathExists(path) {
+      return Promise.resolve();
     }
   }
 
@@ -1963,6 +1971,12 @@ if (window.typingMindCloudSync) {
       await this.handleAuthentication({ interactive: true });
       await this._getAppFolderId();
       this.logger.log("success", "Google Drive connection verified.");
+    }
+
+    async ensurePathExists(path) {
+      this.logger.log("info", `[Google Drive] Ensuring path exists: "${path}"`);
+      await this._getPathId(path, true);
+      this.logger.log("info", `[Google Drive] Path confirmed: "${path}"`);
     }
   }
 
@@ -3311,6 +3325,14 @@ if (window.typingMindCloudSync) {
       }
 
       try {
+        const itemsDestinationPath = `${backupFolder}/items`;
+        this.logger.log(
+          "info",
+          `Pre-creating backup path: "${itemsDestinationPath}"`
+        );
+        await this.storageService.ensurePathExists(itemsDestinationPath);
+        this.logger.log("success", "Backup path created successfully.");
+
         const itemsList = await this.storageService.list("items/");
         this.logger.log(
           "info",
@@ -3318,11 +3340,11 @@ if (window.typingMindCloudSync) {
         );
 
         let copiedItems = 0;
-        const concurrency = 20;
         const itemsToProcess = itemsList.filter(
           (item) => item.Key && item.Key.startsWith("items/")
         );
 
+        const concurrency = 20;
         for (let i = 0; i < itemsToProcess.length; i += concurrency) {
           const batch = itemsToProcess.slice(i, i + concurrency);
           const copyPromises = batch.map(async (item) => {
@@ -3331,15 +3353,15 @@ if (window.typingMindCloudSync) {
               await this.storageService.copyObject(item.Key, destinationKey);
               return { success: true, key: item.Key };
             } catch (copyError) {
+              const errorMessage =
+                copyError.result?.error?.message ||
+                copyError.message ||
+                JSON.stringify(copyError);
               this.logger.log(
                 "warning",
-                `Failed to copy item ${item.Key}: ${copyError.message}`
+                `Failed to copy item ${item.Key}: ${errorMessage}`
               );
-              return {
-                success: false,
-                key: item.Key,
-                error: copyError.message,
-              };
+              return { success: false, key: item.Key, error: errorMessage };
             }
           });
 
@@ -3424,6 +3446,14 @@ if (window.typingMindCloudSync) {
       }
 
       try {
+        const itemsDestinationPath = `${backupFolder}/items`;
+        this.logger.log(
+          "info",
+          `Pre-creating backup path: "${itemsDestinationPath}"`
+        );
+        await this.storageService.ensurePathExists(itemsDestinationPath);
+        this.logger.log("success", "Backup path created successfully.");
+
         const itemsList = await this.storageService.list("items/");
         this.logger.log(
           "info",
@@ -3431,11 +3461,11 @@ if (window.typingMindCloudSync) {
         );
 
         let copiedItems = 0;
-        const concurrency = 20;
         const itemsToProcess = itemsList.filter(
           (item) => item.Key && item.Key.startsWith("items/")
         );
 
+        const concurrency = 20;
         for (let i = 0; i < itemsToProcess.length; i += concurrency) {
           const batch = itemsToProcess.slice(i, i + concurrency);
           const copyPromises = batch.map(async (item) => {
@@ -3444,15 +3474,15 @@ if (window.typingMindCloudSync) {
               await this.storageService.copyObject(item.Key, destinationKey);
               return { success: true, key: item.Key };
             } catch (copyError) {
+              const errorMessage =
+                copyError.result?.error?.message ||
+                copyError.message ||
+                JSON.stringify(copyError);
               this.logger.log(
                 "warning",
-                `Failed to copy item ${item.Key}: ${copyError.message}`
+                `Failed to copy item ${item.Key}: ${errorMessage}`
               );
-              return {
-                success: false,
-                key: item.Key,
-                error: copyError.message,
-              };
+              return { success: false, key: item.Key, error: errorMessage };
             }
           });
 
