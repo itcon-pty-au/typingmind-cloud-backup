@@ -1115,3 +1115,5027 @@ if (window.typingMindCloudSync) {
       }
     }
   }
+  class IStorageProvider {
+    constructor(configManager, cryptoService, logger) {
+      if (this.constructor === IStorageProvider) {
+        throw new Error("Cannot instantiate abstract class IStorageProvider.");
+      }
+      this.config = configManager;
+      this.crypto = cryptoService;
+      this.logger = logger;
+    }
+
+    // NEW: Static property for display name in UI
+    static get displayName() {
+      return "Unnamed Provider";
+    }
+
+    // NEW: Static method to get provider-specific config UI
+    /**
+     * Returns the HTML and event setup logic for this provider's config UI.
+     * @returns {{html: string, setupEventListeners: function(HTMLElement, IStorageProvider, ConfigManager, Logger): void}}
+     */
+    static getConfigurationUI() {
+      return {
+        html: '<p class="text-zinc-400">This provider has no specific configuration.</p>',
+        setupEventListeners: () => {},
+      };
+    }
+
+    isConfigured() {
+      throw new Error("Method 'isConfigured()' must be implemented.");
+    }
+
+    async initialize() {
+      throw new Error("Method 'initialize()' must be implemented.");
+    }
+
+    async handleAuthentication() {
+      this.logger.log(
+        "info",
+        `${this.constructor.name} does not require interactive authentication.`
+      );
+      return Promise.resolve();
+    }
+
+    async upload(key, data, isMetadata = false) {
+      throw new Error("Method 'upload()' must be implemented.");
+    }
+
+    async download(key, isMetadata = false) {
+      throw new Error("Method 'download()' must be implemented.");
+    }
+
+    async delete(key) {
+      throw new Error("Method 'delete()' must be implemented.");
+    }
+
+    async list(prefix = "") {
+      throw new Error("Method 'list()' must be implemented.");
+    }
+
+    async downloadWithResponse(key) {
+      throw new Error("Method 'downloadWithResponse()' must be implemented.");
+    }
+
+    async copyObject(sourceKey, destinationKey) {
+      throw new Error("Method 'copyObject()' must be implemented.");
+    }
+
+    async verify() {
+      this.logger.log(
+        "info",
+        `Verifying connection for ${this.constructor.name}...`
+      );
+      await this.list("");
+      this.logger.log(
+        "success",
+        `Connection for ${this.constructor.name} verified.`
+      );
+    }
+
+    async ensurePathExists(path) {
+      throw new Error("Method 'ensurePathExists()' must be implemented.");
+    }
+  }
+
+  class S3Service extends IStorageProvider {
+    constructor(configManager, cryptoService, logger) {
+      super(configManager, cryptoService, logger);
+      this.client = null;
+      this.sdkLoaded = false;
+    }
+
+    static get displayName() {
+      return "Amazon S3 (or S3-Compatible)";
+    }
+
+    static getConfigurationUI() {
+      const html = `
+        <div class="space-y-2">
+          <div class="flex space-x-4">
+            <div class="w-2/3">
+              <label for="aws-bucket" class="block text-sm font-medium text-zinc-300">Bucket Name <span class="text-red-400">*</span></label>
+              <input id="aws-bucket" name="aws-bucket" type="text" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
+            </div>
+            <div class="w-1/3">
+              <label for="aws-region" class="block text-sm font-medium text-zinc-300">Region <span class="text-red-400">*</span></label>
+              <input id="aws-region" name="aws-region" type="text" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
+            </div>
+          </div>
+          <div>
+            <label for="aws-access-key" class="block text-sm font-medium text-zinc-300">Access Key <span class="text-red-400">*</span></label>
+            <input id="aws-access-key" name="aws-access-key" type="password" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
+          </div>
+          <div>
+            <label for="aws-secret-key" class="block text-sm font-medium text-zinc-300">Secret Key <span class="text-red-400">*</span></label>
+            <input id="aws-secret-key" name="aws-secret-key" type="password" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
+          </div>
+          <div>
+            <label for="aws-endpoint" class="block text-sm font-medium text-zinc-300">S3 Compatible Storage Endpoint</label>
+            <input id="aws-endpoint" name="aws-endpoint" type="text" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off">
+          </div>
+        </div>
+      `;
+
+      const setupEventListeners = (container, providerInstance, config) => {
+        container.querySelector("#aws-bucket").value =
+          config.get("bucketName") || "";
+        container.querySelector("#aws-region").value =
+          config.get("region") || "";
+        container.querySelector("#aws-access-key").value =
+          config.get("accessKey") || "";
+        container.querySelector("#aws-secret-key").value =
+          config.get("secretKey") || "";
+        container.querySelector("#aws-endpoint").value =
+          config.get("endpoint") || "";
+      };
+
+      return { html, setupEventListeners };
+    }
+
+    isConfigured() {
+      return !!(
+        this.config.get("accessKey") &&
+        this.config.get("secretKey") &&
+        this.config.get("region") &&
+        this.config.get("bucketName")
+      );
+    }
+
+    async initialize() {
+      if (!this.isConfigured()) throw new Error("AWS configuration incomplete");
+      await this.loadSDK();
+      const config = this.config.config;
+      const s3Config = {
+        accessKeyId: config.accessKey,
+        secretAccessKey: config.secretKey,
+        region: config.region,
+      };
+      if (config.endpoint) {
+        s3Config.endpoint = config.endpoint;
+        s3Config.s3ForcePathStyle = true;
+      }
+      AWS.config.update(s3Config);
+      this.client = new AWS.S3();
+    }
+    async loadSDK() {
+      if (this.sdkLoaded || window.AWS) {
+        this.sdkLoaded = true;
+        return;
+      }
+      return new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "https://sdk.amazonaws.com/js/aws-sdk-2.1692.0.min.js";
+        script.onload = () => {
+          this.sdkLoaded = true;
+          resolve();
+        };
+        script.onerror = () => reject(new Error("Failed to load AWS SDK"));
+        document.head.appendChild(script);
+      });
+    }
+
+    async upload(key, data, isMetadata = false) {
+      return retryAsync(
+        async () => {
+          try {
+            const body = isMetadata
+              ? JSON.stringify(data)
+              : await this.crypto.encrypt(data);
+            const params = {
+              Bucket: this.config.get("bucketName"),
+              Key: key,
+              Body: body,
+              ContentType: isMetadata
+                ? "application/json"
+                : "application/octet-stream",
+            };
+            if (isMetadata) {
+              params.CacheControl =
+                "no-cache, no-store, max-age=0, must-revalidate";
+            }
+            const result = await this.client.upload(params).promise();
+            this.logger.log("success", `Uploaded ${key}`, {
+              ETag: result.ETag,
+            });
+            return result;
+          } catch (error) {
+            this.logger.log(
+              "error",
+              `Failed to upload ${key}: ${
+                error.message || error.code || "Unknown error"
+              }`
+            );
+            throw error;
+          }
+        },
+        {
+          isRetryable: (error) =>
+            !(error.code === "NoSuchKey" || error.statusCode === 404),
+          onRetry: (error, attempt) => {
+            this.logger.log(
+              "warning",
+              `[S3 Upload] Retry ${attempt}/${3} - Error: ${
+                error.message || error.code || "Unknown error"
+              }`
+            );
+          },
+        }
+      );
+    }
+
+    async uploadRaw(key, data) {
+      return retryAsync(
+        async () => {
+          try {
+            const result = await this.client
+              .upload({
+                Bucket: this.config.get("bucketName"),
+                Key: key,
+                Body: data,
+                ContentType: key.endsWith(".zip")
+                  ? "application/zip"
+                  : "application/octet-stream",
+              })
+              .promise();
+            this.logger.log("success", `Uploaded raw ${key}`, {
+              ETag: result.ETag,
+            });
+            return result;
+          } catch (error) {
+            this.logger.log(
+              "error",
+              `Failed to upload raw ${key}: ${
+                error.message || error.code || "Unknown error"
+              }`
+            );
+            throw error;
+          }
+        },
+        {
+          isRetryable: (error) =>
+            !(error.code === "NoSuchKey" || error.statusCode === 404),
+        }
+      );
+    }
+    async download(key, isMetadata = false) {
+      return retryAsync(
+        async () => {
+          const result = await this.client
+            .getObject({ Bucket: this.config.get("bucketName"), Key: key })
+            .promise();
+          const data = isMetadata
+            ? JSON.parse(result.Body.toString())
+            : await this.crypto.decrypt(new Uint8Array(result.Body));
+          return data;
+        },
+        {
+          isRetryable: (error) =>
+            !(error.code === "NoSuchKey" || error.statusCode === 404),
+        }
+      );
+    }
+    async downloadRaw(key) {
+      return retryAsync(
+        async () => {
+          const result = await this.client
+            .getObject({ Bucket: this.config.get("bucketName"), Key: key })
+            .promise();
+          return new Uint8Array(result.Body);
+        },
+        {
+          isRetryable: (error) =>
+            !(error.code === "NoSuchKey" || error.statusCode === 404),
+        }
+      );
+    }
+    async delete(key) {
+      return retryAsync(
+        async () => {
+          await this.client
+            .deleteObject({ Bucket: this.config.get("bucketName"), Key: key })
+            .promise();
+          this.logger.log("success", `Deleted ${key}`);
+        },
+        {
+          isRetryable: (error) =>
+            !(error.code === "NoSuchKey" || error.statusCode === 404),
+        }
+      );
+    }
+    async list(prefix = "") {
+      return retryAsync(
+        async () => {
+          const allContents = [];
+          let continuationToken = undefined;
+          this.logger.log(
+            "info",
+            `[S3Service] Starting paginated list for prefix: "${prefix}"`
+          );
+          do {
+            const params = {
+              Bucket: this.config.get("bucketName"),
+              Prefix: prefix,
+              ContinuationToken: continuationToken,
+            };
+            const result = await this.client.listObjectsV2(params).promise();
+            if (result.Contents) {
+              allContents.push(...result.Contents);
+            }
+            this.logger.log(
+              "info",
+              `[S3Service] Fetched page with ${
+                result.Contents?.length || 0
+              } items. Total so far: ${allContents.length}. IsTruncated: ${
+                result.IsTruncated
+              }`
+            );
+            if (result.IsTruncated) {
+              continuationToken = result.NextContinuationToken;
+            } else {
+              continuationToken = undefined;
+            }
+          } while (continuationToken);
+          this.logger.log(
+            "success",
+            `[S3Service] Paginated list complete. Total objects found: ${allContents.length}`
+          );
+          return allContents;
+        },
+        {
+          isRetryable: (error) =>
+            !(error.code === "NoSuchKey" || error.statusCode === 404),
+        }
+      );
+    }
+    async downloadWithResponse(key) {
+      return retryAsync(
+        async () => {
+          const result = await this.client
+            .getObject({ Bucket: this.config.get("bucketName"), Key: key })
+            .promise();
+          return result;
+        },
+        {
+          isRetryable: (error) =>
+            !(error.code === "NoSuchKey" || error.statusCode === 404),
+        }
+      );
+    }
+    async copyObject(sourceKey, destinationKey) {
+      return retryAsync(
+        async () => {
+          const result = await this.client
+            .copyObject({
+              Bucket: this.config.get("bucketName"),
+              CopySource: `${this.config.get("bucketName")}/${sourceKey}`,
+              Key: destinationKey,
+            })
+            .promise();
+          this.logger.log("success", `Copied ${sourceKey} → ${destinationKey}`);
+          return result;
+        },
+        {
+          isRetryable: (error) =>
+            !(error.code === "NoSuchKey" || error.statusCode === 404),
+        }
+      );
+    }
+
+    async ensurePathExists(path) {
+      return Promise.resolve();
+    }
+  }
+
+  class GoogleDriveService extends IStorageProvider {
+    constructor(configManager, cryptoService, logger) {
+      super(configManager, cryptoService, logger);
+      this.DRIVE_SCOPES = "https://www.googleapis.com/auth/drive.file";
+      this.APP_FOLDER_NAME = "TypingMind-Cloud-Sync";
+      this.gapiReady = false;
+      this.gisReady = false;
+      this.tokenClient = null;
+      this.pathIdCache = new Map();
+      this.pathCreationPromises = new Map();
+    }
+
+    static get displayName() {
+      return "Google Drive";
+    }
+
+    static getConfigurationUI() {
+      const html = `
+        <div class="space-y-2">
+          <div>
+            <label for="google-client-id" class="block text-sm font-medium text-zinc-300">Google Cloud Client ID <span class="text-red-400">*</span></label>
+            <input id="google-client-id" name="google-client-id" type="text" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
+          </div>
+          <div class="pt-1">
+            <button id="google-auth-btn" class="w-full inline-flex items-center justify-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 disabled:cursor-default transition-colors">Sign in with Google</button>
+            <div id="google-auth-status" class="text-xs text-center text-zinc-400 pt-2"></div>
+          </div>
+        </div>
+      `;
+
+      const setupEventListeners = (
+        container,
+        providerInstance,
+        config,
+        logger
+      ) => {
+        container.querySelector("#google-client-id").value =
+          config.get("googleClientId") || "";
+
+        const googleAuthBtn = container.querySelector("#google-auth-btn");
+        const googleAuthStatus = container.querySelector("#google-auth-status");
+        const googleClientIdInput =
+          container.querySelector("#google-client-id");
+
+        const updateAuthButtonState = () => {
+          googleAuthBtn.disabled = !googleClientIdInput.value.trim();
+          if (
+            providerInstance &&
+            providerInstance.isConfigured() &&
+            gapi.client.getToken()
+          ) {
+            googleAuthStatus.textContent = "Status: Signed in.";
+            googleAuthStatus.style.color = "#22c55e";
+          } else {
+            googleAuthStatus.textContent = providerInstance?.isConfigured()
+              ? "Status: Not signed in."
+              : "Status: Client ID required.";
+            googleAuthStatus.style.color = "";
+          }
+        };
+
+        const handleGoogleAuth = async () => {
+          const clientId = googleClientIdInput.value.trim();
+          if (!clientId) {
+            alert("Please enter a Google Client ID first.");
+            return;
+          }
+          config.set("googleClientId", clientId);
+
+          try {
+            googleAuthBtn.disabled = true;
+            googleAuthBtn.textContent = "Authenticating...";
+            googleAuthStatus.textContent =
+              "Please follow the Google sign-in prompt...";
+
+            // Create a temporary provider instance for authentication
+            const tempProvider = new GoogleDriveService(
+              config,
+              providerInstance.crypto,
+              logger
+            );
+            await tempProvider.initialize();
+            await tempProvider.handleAuthentication();
+
+            googleAuthStatus.textContent =
+              "✅ Authentication successful! Please Save & Verify.";
+            googleAuthStatus.style.color = "#22c55e";
+            googleAuthBtn.textContent = "Re-authenticate";
+          } catch (error) {
+            logger.log("error", "Google authentication failed", error);
+            googleAuthStatus.textContent = `❌ Auth failed: ${error.message}`;
+            googleAuthStatus.style.color = "#ef4444";
+            googleAuthBtn.textContent = "Sign in with Google";
+          } finally {
+            googleAuthBtn.disabled = false;
+          }
+        };
+
+        googleAuthBtn.addEventListener("click", handleGoogleAuth);
+        googleClientIdInput.addEventListener("input", updateAuthButtonState);
+        updateAuthButtonState();
+      };
+
+      return { html, setupEventListeners };
+    }
+
+    _isRateLimitError(error) {
+      const apiError = error.result?.error || error.error || {};
+      return (
+        apiError.code === 403 &&
+        apiError.message?.toLowerCase().includes("rate limit")
+      );
+    }
+
+    _operationWithRetry(operation) {
+      return retryAsync(operation, {
+        maxRetries: 5,
+        delay: 1000,
+        isRetryable: (error) => this._isRateLimitError(error),
+        onRetry: (error, attempt, delay) => {
+          this.logger.log(
+            "warning",
+            `[Google Drive] Rate limit exceeded. Retrying in ${Math.round(
+              delay / 1000
+            )}s... (Attempt ${attempt}/5)`
+          );
+        },
+      });
+    }
+
+    async _deleteFolderIfExists(path) {
+      return this._operationWithRetry(async () => {
+        const folderId = await this._getPathId(path, false);
+
+        if (folderId) {
+          this.logger.log(
+            "info",
+            `[Google Drive] Deleting existing backup folder to prevent duplication: "${path}"`
+          );
+          await gapi.client.drive.files.delete({
+            fileId: folderId,
+          });
+
+          const keysToDelete = [];
+          for (const key of this.pathIdCache.keys()) {
+            if (key === path || key.startsWith(path + "/")) {
+              keysToDelete.push(key);
+            }
+          }
+          for (const key of this.pathCreationPromises.keys()) {
+            if (key === path || key.startsWith(path + "/")) {
+              if (!keysToDelete.includes(key)) {
+                keysToDelete.push(key);
+              }
+            }
+          }
+
+          keysToDelete.forEach((key) => {
+            this.pathIdCache.delete(key);
+            this.pathCreationPromises.delete(key);
+          });
+
+          this.pathIdCache.clear();
+          this.pathCreationPromises.clear();
+
+          this.logger.log(
+            "info",
+            `[Google Drive] Cleared ${keysToDelete.length} cache/promise entries for path: "${path}"`
+          );
+        }
+      });
+    }
+
+    isConfigured() {
+      return !!this.config.get("googleClientId");
+    }
+
+    async initialize() {
+      if (!this.isConfigured())
+        throw new Error("Google Drive configuration incomplete");
+      await this._loadGapiAndGis();
+
+      await new Promise((resolve) => gapi.load("client", resolve));
+
+      await gapi.client.load(
+        "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
+      );
+
+      await gapi.client.init({});
+
+      this.tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: this.config.get("googleClientId"),
+        scope: this.DRIVE_SCOPES,
+        callback: () => {},
+      });
+
+      const storedToken = localStorage.getItem("tcs_google_access_token");
+      if (storedToken) {
+        try {
+          const token = JSON.parse(storedToken);
+          if (
+            token.expires_in &&
+            Date.now() < token.iat + token.expires_in * 1000 - 5 * 60 * 1000
+          ) {
+            gapi.client.setToken(token);
+            this.logger.log(
+              "info",
+              "Successfully restored Google Drive session from storage."
+            );
+          } else {
+            this.logger.log(
+              "info",
+              "Google Drive token from storage has expired."
+            );
+            localStorage.removeItem("tcs_google_access_token");
+          }
+        } catch (e) {
+          this.logger.log("error", "Failed to parse stored Google token", e);
+          localStorage.removeItem("tcs_google_access_token");
+        }
+      }
+    }
+
+    _storeToken(tokenResponse) {
+      if (!tokenResponse.access_token) return;
+
+      const tokenToStore = { ...tokenResponse, iat: Date.now() };
+
+      localStorage.setItem(
+        "tcs_google_access_token",
+        JSON.stringify(tokenToStore)
+      );
+      this.logger.log("success", "Google Drive token stored successfully.");
+    }
+
+    async _loadScript(id, src) {
+      if (document.getElementById(id)) return;
+      return new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.id = id;
+        script.src = src;
+        script.async = true;
+        script.defer = true;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+
+    async _loadGapiAndGis() {
+      if (this.gapiReady && this.gisReady) return;
+      await this._loadScript(
+        "gapi-client-script",
+        "https://apis.google.com/js/api.js"
+      );
+      await this._loadScript(
+        "gis-client-script",
+        "https://accounts.google.com/gsi/client"
+      );
+      this.gapiReady = true;
+      this.gisReady = true;
+    }
+
+    async handleAuthentication() {
+      if (!this.isConfigured() || !this.tokenClient) {
+        throw new Error("Google Drive is not configured or initialized.");
+      }
+
+      if (gapi.client.getToken()?.access_token) {
+        return Promise.resolve();
+      }
+
+      return new Promise((resolve, reject) => {
+        const callback = (tokenResponse) => {
+          if (tokenResponse.error) {
+            this.logger.log("error", "Google Auth Error", tokenResponse);
+            reject(
+              new Error(
+                tokenResponse.error_description || "Authentication failed."
+              )
+            );
+            return;
+          }
+
+          this._storeToken(tokenResponse);
+
+          this.logger.log("success", "Google Drive authentication successful.");
+          resolve();
+        };
+
+        this.tokenClient.callback = callback;
+
+        this.tokenClient.requestAccessToken({ prompt: "consent" });
+      });
+    }
+
+    async _getAppFolderId() {
+      return this._operationWithRetry(async () => {
+        if (this.pathIdCache.has(this.APP_FOLDER_NAME)) {
+          return this.pathIdCache.get(this.APP_FOLDER_NAME);
+        }
+
+        const response = await gapi.client.drive.files.list({
+          q: `mimeType='application/vnd.google-apps.folder' and name='${this.APP_FOLDER_NAME}' and trashed=false`,
+          fields: "files(id, name)",
+          spaces: "drive",
+        });
+
+        if (response.result.error) throw response;
+
+        if (response.result.files.length > 0) {
+          const folderId = response.result.files[0].id;
+          this.pathIdCache.set(this.APP_FOLDER_NAME, folderId);
+          return folderId;
+        } else {
+          this.logger.log(
+            "info",
+            `App folder '${this.APP_FOLDER_NAME}' not found, creating it.`
+          );
+          const fileMetadata = {
+            name: this.APP_FOLDER_NAME,
+            mimeType: "application/vnd.google-apps.folder",
+          };
+          const createResponse = await gapi.client.drive.files.create({
+            resource: fileMetadata,
+            fields: "id",
+          });
+
+          if (createResponse.result.error) throw createResponse;
+
+          const folderId = createResponse.result.id;
+          this.pathIdCache.set(this.APP_FOLDER_NAME, folderId);
+          return folderId;
+        }
+      });
+    }
+
+    async _getPathId(path, createIfNotExists = false) {
+      if (this.pathIdCache.has(path)) {
+        return this.pathIdCache.get(path);
+      }
+
+      if (this.pathCreationPromises.has(path)) {
+        this.logger.log(
+          "info",
+          `[Google Drive] Awaiting in-flight creation for path: "${path}"`
+        );
+        return this.pathCreationPromises.get(path);
+      }
+
+      const promise = this._operationWithRetry(async () => {
+        if (this.pathIdCache.has(path)) return this.pathIdCache.get(path);
+
+        const parts = path.split("/").filter((p) => p);
+        let parentId = await this._getAppFolderId();
+        let currentPath = this.APP_FOLDER_NAME;
+
+        for (const part of parts) {
+          currentPath += `/${part}`;
+          if (this.pathIdCache.has(currentPath)) {
+            parentId = this.pathIdCache.get(currentPath);
+            continue;
+          }
+
+          const response = await gapi.client.drive.files.list({
+            q: `mimeType='application/vnd.google-apps.folder' and name='${part}' and '${parentId}' in parents and trashed=false`,
+            fields: "files(id)",
+            spaces: "drive",
+          });
+
+          if (response.result.error) throw response;
+
+          if (response.result.files.length > 0) {
+            parentId = response.result.files[0].id;
+            this.pathIdCache.set(currentPath, parentId);
+          } else if (createIfNotExists) {
+            this.logger.log(
+              "info",
+              `Creating folder '${part}' inside parent ID ${parentId}.`
+            );
+            const fileMetadata = {
+              name: part,
+              mimeType: "application/vnd.google-apps.folder",
+              parents: [parentId],
+            };
+            const createResponse = await gapi.client.drive.files.create({
+              resource: fileMetadata,
+              fields: "id",
+            });
+            if (createResponse.result.error) throw createResponse;
+            parentId = createResponse.result.id;
+            this.pathIdCache.set(currentPath, parentId);
+          } else {
+            return null;
+          }
+        }
+        return parentId;
+      });
+
+      this.pathCreationPromises.set(path, promise);
+
+      try {
+        const pathId = await promise;
+        if (pathId) {
+          this.pathIdCache.set(path, pathId);
+        }
+        return pathId;
+      } finally {
+        this.pathCreationPromises.delete(path);
+      }
+    }
+
+    async _getFileMetadata(path) {
+      return this._operationWithRetry(async () => {
+        const parts = path.split("/").filter((p) => p);
+        const filename = parts.pop();
+        const folderPath = parts.join("/");
+
+        const parentId = await this._getPathId(folderPath);
+        if (!parentId) return null;
+
+        const queryParams = new URLSearchParams({
+          q: `name='${filename}' and '${parentId}' in parents and trashed=false`,
+          fields: "files(id, name, size, modifiedTime)",
+          spaces: "drive",
+        });
+
+        const response = await fetch(
+          `https://www.googleapis.com/drive/v3/files?${queryParams.toString()}`,
+          {
+            method: "GET",
+            headers: new Headers({
+              Authorization: "Bearer " + gapi.client.getToken().access_token,
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          const errorBody = await response.json();
+          this.logger.log(
+            "error",
+            `Google Drive file list failed for ${path}`,
+            errorBody
+          );
+          throw errorBody;
+        }
+
+        const result = await response.json();
+        return result.files.length > 0 ? result.files[0] : null;
+      });
+    }
+
+    async upload(key, data, isMetadata = false) {
+      return this._operationWithRetry(async () => {
+        await this.handleAuthentication();
+        const parts = key.split("/").filter((p) => p);
+        const filename = parts.pop();
+        const folderPath = parts.join("/");
+
+        const parentId = await this._getPathId(folderPath, true);
+        const existingFile = await this._getFileMetadata(key);
+
+        const body = isMetadata
+          ? JSON.stringify(data)
+          : await this.crypto.encrypt(data);
+        const blob = new Blob([body], {
+          type: isMetadata ? "application/json" : "application/octet-stream",
+        });
+
+        const metadata = {
+          name: filename,
+          mimeType: isMetadata
+            ? "application/json"
+            : "application/octet-stream",
+        };
+        if (!existingFile) {
+          metadata.parents = [parentId];
+        }
+
+        const formData = new FormData();
+        formData.append(
+          "metadata",
+          new Blob([JSON.stringify(metadata)], { type: "application/json" })
+        );
+        formData.append("file", blob);
+
+        const uploadUrl = existingFile
+          ? `https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=multipart`
+          : "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart";
+
+        const method = existingFile ? "PATCH" : "POST";
+
+        const response = await fetch(uploadUrl, {
+          method: method,
+          headers: new Headers({
+            Authorization: "Bearer " + gapi.client.getToken().access_token,
+          }),
+          body: formData,
+        });
+
+        const result = await response.json();
+        if (result.error) {
+          this.logger.log(
+            "error",
+            `Google Drive upload failed for ${key}`,
+            result.error
+          );
+          throw result;
+        }
+
+        const etag = response.headers.get("ETag") || result.etag;
+
+        this.logger.log("success", `Uploaded ${key} to Google Drive`, {
+          ETag: etag,
+        });
+        return { ETag: etag, ...result };
+      });
+    }
+
+    async download(key, isMetadata = false) {
+      return this._operationWithRetry(async () => {
+        await this.handleAuthentication();
+        const file = await this._getFileMetadata(key);
+        if (!file) {
+          const error = new Error(`File not found in Google Drive: ${key}`);
+          error.code = "NoSuchKey";
+          error.statusCode = 404;
+          throw error;
+        }
+
+        const response = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
+          {
+            method: "GET",
+            headers: new Headers({
+              Authorization: "Bearer " + gapi.client.getToken().access_token,
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          const errorBody = await response.json();
+          this.logger.log(
+            "error",
+            `Google Drive download failed for ${key}`,
+            errorBody
+          );
+          throw errorBody;
+        }
+
+        if (isMetadata) {
+          return await response.json();
+        } else {
+          const encryptedBuffer = await response.arrayBuffer();
+          return await this.crypto.decrypt(new Uint8Array(encryptedBuffer));
+        }
+      });
+    }
+
+    async delete(key) {
+      return this._operationWithRetry(async () => {
+        await this.handleAuthentication();
+        const file = await this._getFileMetadata(key);
+        if (!file) {
+          this.logger.log("warning", `File to delete not found: ${key}`);
+          return;
+        }
+
+        const response = await gapi.client.drive.files.delete({
+          fileId: file.id,
+        });
+        if (
+          response.result &&
+          typeof response.result === "object" &&
+          Object.keys(response.result).length > 0
+        ) {
+        } else if (response.status >= 400) {
+          throw {
+            result: {
+              error: response.body
+                ? JSON.parse(response.body)
+                : { message: "Delete failed" },
+            },
+          };
+        }
+
+        this.logger.log("success", `Deleted ${key} from Google Drive.`);
+      });
+    }
+
+    async list(prefix = "") {
+      return this._operationWithRetry(async () => {
+        await this.handleAuthentication();
+        const parentId = await this._getPathId(prefix);
+        if (!parentId) return [];
+
+        let pageToken = null;
+        const allFiles = [];
+        do {
+          const response = await gapi.client.drive.files.list({
+            q: `'${parentId}' in parents and trashed=false`,
+            fields: "nextPageToken, files(id, name, size, modifiedTime)",
+            spaces: "drive",
+            pageSize: 1000,
+            pageToken: pageToken,
+          });
+
+          if (response.result.error) throw response;
+
+          allFiles.push(...response.result.files);
+          pageToken = response.result.nextPageToken;
+        } while (pageToken);
+
+        return allFiles.map((file) => ({
+          Key: `${prefix}${file.name}`,
+          LastModified: new Date(file.modifiedTime),
+          Size: file.size,
+        }));
+      });
+    }
+
+    async downloadWithResponse(key) {
+      return this._operationWithRetry(async () => {
+        await this.handleAuthentication();
+        const file = await this._getFileMetadata(key);
+        if (!file) {
+          const error = new Error(`File not found in Google Drive: ${key}`);
+          error.code = "NoSuchKey";
+          error.statusCode = 404;
+          throw error;
+        }
+
+        const response = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
+          {
+            method: "GET",
+            headers: new Headers({
+              Authorization: "Bearer " + gapi.client.getToken().access_token,
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          const errorBody = await response.json();
+          this.logger.log(
+            "error",
+            `Google Drive download failed for ${key}`,
+            errorBody
+          );
+          throw errorBody;
+        }
+
+        const etag = response.headers.get("ETag");
+        const body = await response.text();
+
+        return {
+          Body: body,
+          ...file,
+          ETag: etag,
+        };
+      });
+    }
+
+    async copyObject(sourceKey, destinationKey) {
+      return this._operationWithRetry(async () => {
+        await this.handleAuthentication();
+        const sourceFile = await this._getFileMetadata(sourceKey);
+        if (!sourceFile) throw new Error(`Source file not found: ${sourceKey}`);
+
+        const destParts = destinationKey.split("/").filter((p) => p);
+        const destFilename = destParts.pop();
+        const destFolderPath = destParts.join("/");
+
+        const destParentId = await this._getPathId(destFolderPath, true);
+
+        const copyMetadata = {
+          name: destFilename,
+          parents: [destParentId],
+        };
+
+        const response = await gapi.client.drive.files.copy({
+          fileId: sourceFile.id,
+          resource: copyMetadata,
+        });
+
+        if (response.result.error) throw response;
+
+        this.logger.log("success", `Copied ${sourceKey} → ${destinationKey}`);
+        return response.result;
+      });
+    }
+
+    async verify() {
+      this.logger.log("info", "Verifying Google Drive connection...");
+      await this.handleAuthentication({ interactive: true });
+      await this._getAppFolderId();
+      this.logger.log("success", "Google Drive connection verified.");
+    }
+
+    async ensurePathExists(path) {
+      this.logger.log("info", `[Google Drive] Ensuring path exists: "${path}"`);
+      await this._getPathId(path, true);
+      this.logger.log("info", `[Google Drive] Path confirmed: "${path}"`);
+    }
+  }
+
+  class SyncOrchestrator {
+    constructor(
+      configManager,
+      dataService,
+      storageService,
+      logger,
+      operationQueue = null
+    ) {
+      this.config = configManager;
+      this.dataService = dataService;
+      this.storageService = storageService;
+      this.logger = logger;
+      this.operationQueue = operationQueue;
+      this.metadata = this.loadMetadata();
+      this.syncInProgress = false;
+      this.autoSyncInterval = null;
+    }
+    loadMetadata() {
+      const stored = localStorage.getItem("tcs_local-metadata");
+      const result = stored ? JSON.parse(stored) : { lastSync: 0, items: {} };
+      return result;
+    }
+    saveMetadata() {
+      localStorage.setItem("tcs_local-metadata", JSON.stringify(this.metadata));
+    }
+    getLastCloudSync() {
+      const stored = localStorage.getItem("tcs_last-cloud-sync");
+      return stored ? parseInt(stored) : 0;
+    }
+    setLastCloudSync(timestamp) {
+      localStorage.setItem("tcs_last-cloud-sync", timestamp.toString());
+    }
+    getItemSize(data) {
+      return JSON.stringify(data).length;
+    }
+
+    /**
+     * Detects changes between local storage and the last known sync state.
+     * This uses a combined strategy:
+     * - For CHAT items (key starts with 'CHAT_'): Uses the `updatedAt` timestamp for fast, memory-safe change detection.
+     * - For all other items: Uses the original `size`-based comparison.
+     * This prevents memory crashes caused by stringifying large chat objects.
+     */
+    async detectChanges() {
+      const changedItems = [];
+      const now = Date.now();
+
+      this.logger.log(
+        "info",
+        "🔍 Gathering all local item keys for change detection."
+      );
+      const localItemKeys = await this.dataService.getAllItemKeys();
+      this.logger.log("info", `Found ${localItemKeys.size} local item keys.`);
+
+      const { totalSize } = await this.dataService.estimateDataSize();
+      const itemsIterator =
+        totalSize > this.dataService.memoryThreshold
+          ? this.dataService.streamAllItemsInternal()
+          : [await this.dataService.getAllItems()];
+
+      for await (const batch of itemsIterator) {
+        for (const item of batch) {
+          const key = item.id;
+          const value = item.data;
+          const existingItem = this.metadata.items[key];
+
+          if (existingItem?.deleted) {
+            continue;
+          }
+
+          let hasChanged = false;
+          let changeReason = "unknown";
+          let itemLastModified = now;
+          let currentSize = 0;
+
+          if (
+            key.startsWith("CHAT_") &&
+            item.type === "idb" &&
+            value?.updatedAt
+          ) {
+            itemLastModified = value.updatedAt;
+
+            if (!existingItem) {
+              hasChanged = true;
+              changeReason = "new-chat";
+            } else if (itemLastModified > (existingItem.lastModified || 0)) {
+              hasChanged = true;
+              changeReason = "timestamp";
+            } else if (!existingItem.synced || existingItem.synced === 0) {
+              hasChanged = true;
+              changeReason = "never-synced-chat";
+            }
+          } else {
+            currentSize = this.getItemSize(value);
+            itemLastModified = existingItem?.lastModified || 0;
+
+            if (!existingItem) {
+              hasChanged = true;
+              changeReason = "new";
+            } else if (currentSize !== existingItem.size) {
+              hasChanged = true;
+              changeReason = "size";
+              itemLastModified = now;
+            } else if (!existingItem.synced || existingItem.synced === 0) {
+              hasChanged = true;
+              changeReason = "never-synced";
+            }
+          }
+
+          if (hasChanged) {
+            const change = {
+              id: key,
+              type: item.type,
+              lastModified: itemLastModified,
+              reason: changeReason,
+            };
+            if (currentSize > 0) {
+              change.size = currentSize;
+            }
+            changedItems.push(change);
+          }
+        }
+      }
+
+      for (const [itemId, metadata] of Object.entries(this.metadata.items)) {
+        if (metadata.deleted && metadata.deleted > (metadata.synced || 0)) {
+          if (
+            !changedItems.some(
+              (item) => item.id === itemId && item.reason === "tombstone"
+            )
+          ) {
+            changedItems.push({
+              id: itemId,
+              type: metadata.type,
+              deleted: metadata.deleted,
+              tombstoneVersion: metadata.tombstoneVersion || 1,
+              reason: "tombstone",
+            });
+          }
+        }
+      }
+
+      this.logger.log(
+        "info",
+        "🔍 Checking for items deleted locally by comparing metadata against actual keys..."
+      );
+      let newlyDeletedCount = 0;
+      for (const itemId in this.metadata.items) {
+        const metadataItem = this.metadata.items[itemId];
+
+        if (!localItemKeys.has(itemId) && !metadataItem.deleted) {
+          this.logger.log(
+            "info",
+            `⚰️ Detected locally deleted item: ${itemId}. Creating tombstone.`
+          );
+
+          changedItems.push({
+            id: itemId,
+            type: metadataItem.type || "idb", // Use stored type, fallback to idb
+            deleted: Date.now(),
+            tombstoneVersion: (metadataItem.tombstoneVersion || 0) + 1,
+            reason: "detected-deletion",
+          });
+          newlyDeletedCount++;
+        }
+      }
+      if (newlyDeletedCount > 0) {
+        this.logger.log(
+          "success",
+          `✅ Found ${newlyDeletedCount} newly deleted item(s) to be synced to the cloud.`
+        );
+      }
+
+      return { changedItems, hasChanges: changedItems.length > 0 };
+    }
+
+    /**
+     * Syncs detected changes up to the S3 cloud.
+     * After uploading an item, it updates the local metadata:
+     * - For CHAT items, it stores the `lastModified` timestamp.
+     * - For other items, it stores the `size`.
+     */
+    async syncToCloud() {
+      if (this.syncInProgress) {
+        this.logger.log("skip", "Sync to cloud already in progress");
+        return;
+      }
+      this.syncInProgress = true;
+      try {
+        const { changedItems } = await this.detectChanges();
+        if (changedItems.length === 0) {
+          this.logger.log("info", "No local items to sync to cloud");
+          this.syncInProgress = false;
+          return;
+        }
+
+        this.logger.log(
+          "start",
+          `Syncing ${changedItems.length} changed items to cloud...`
+        );
+
+        const cloudMetadata = await this.getCloudMetadata();
+        let itemsSynced = 0;
+
+        const uploadPromises = changedItems.map(async (item) => {
+          const cloudItem = cloudMetadata.items[item.id];
+          if (
+            cloudItem &&
+            !item.deleted &&
+            (cloudItem.lastModified || 0) > (item.lastModified || 0)
+          ) {
+            this.logger.log(
+              "skip",
+              `Skipping upload for ${item.id}, cloud version is newer.`
+            );
+            this.metadata.items[item.id] = { ...cloudItem };
+            return;
+          }
+
+          try {
+            if (item.deleted || item.reason === "tombstone") {
+              const timestamp = Date.now();
+              const tombstoneData = {
+                deleted: item.deleted || timestamp,
+                type: item.type,
+                tombstoneVersion: item.tombstoneVersion || 1,
+                synced: timestamp,
+              };
+              this.metadata.items[item.id] = tombstoneData;
+              cloudMetadata.items[item.id] = { ...tombstoneData };
+              itemsSynced++;
+              this.logger.log(
+                "info",
+                `🗑️ Synced tombstone for "${item.id}" to cloud.`
+              );
+            } else {
+              const data = await this.dataService.getItem(item.id, item.type);
+              if (data) {
+                await this.storageService.upload(`items/${item.id}.json`, data);
+
+                const newMetadataEntry = {
+                  synced: Date.now(),
+                  type: item.type,
+                  lastModified: item.lastModified,
+                };
+
+                if (!item.id.startsWith("CHAT_")) {
+                  newMetadataEntry.size = item.size || this.getItemSize(data);
+                }
+
+                this.metadata.items[item.id] = newMetadataEntry;
+                cloudMetadata.items[item.id] = { ...newMetadataEntry };
+
+                itemsSynced++;
+                this.logger.log(
+                  "info",
+                  `Synced key "${item.id}" to cloud (reason: ${item.reason}).`
+                );
+              }
+            }
+          } catch (error) {
+            this.logger.log(
+              "error",
+              `Failed to sync key "${item.id}": ${error.message}`
+            );
+            throw error;
+          }
+        });
+
+        await Promise.allSettled(uploadPromises);
+
+        if (itemsSynced > 0) {
+          cloudMetadata.lastSync = Date.now();
+          await this.storageService.upload(
+            "metadata.json",
+            cloudMetadata,
+            true
+          );
+          this.metadata.lastSync = cloudMetadata.lastSync;
+          this.setLastCloudSync(cloudMetadata.lastSync);
+          this.saveMetadata();
+          await this.updateSyncDiagnosticsCache();
+          this.logger.log(
+            "success",
+            `Sync to cloud completed - ${itemsSynced} items processed.`
+          );
+        } else {
+          this.logger.log(
+            "info",
+            "Sync to cloud finished, but no new items were uploaded."
+          );
+        }
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "An error occurred during syncToCloud",
+          error.message
+        );
+        throw error;
+      } finally {
+        this.syncInProgress = false;
+      }
+    }
+    async retrySyncTombstone(item) {
+      this.logger.log(
+        "info",
+        `🔄 Retrying tombstone sync for key "${item.id}"`
+      );
+      const cloudMetadata = await this.getCloudMetadata();
+      const timestamp = Date.now();
+      const tombstoneData = {
+        deleted: item.deleted || timestamp,
+        deletedAt: item.deleted || timestamp,
+        type: item.type,
+        tombstoneVersion: item.tombstoneVersion || 1,
+        synced: timestamp,
+      };
+      this.metadata.items[item.id] = tombstoneData;
+      cloudMetadata.items[item.id] = { ...tombstoneData };
+      await this.storageService.upload("metadata.json", cloudMetadata, true);
+      this.saveMetadata();
+      await this.updateSyncDiagnosticsCache();
+      this.logger.log(
+        "success",
+        `✅ Retry tombstone sync completed for key "${item.id}"`
+      );
+    }
+    async syncFromCloud() {
+      if (this.syncInProgress) {
+        this.logger.log("skip", "Sync from cloud already in progress");
+        return;
+      }
+      this.syncInProgress = true;
+      try {
+        const { metadata: cloudMetadata, etag: cloudMetadataETag } =
+          await this.getCloudMetadataWithETag();
+        this.logger.log("info", "Downloaded cloud metadata", {
+          ETag: cloudMetadataETag,
+          lastSync: cloudMetadata.lastSync
+            ? new Date(cloudMetadata.lastSync).toISOString()
+            : "never",
+        });
+        const debugEnabled =
+          new URLSearchParams(window.location.search).get("log") === "true";
+        if (debugEnabled && cloudMetadata?.items) {
+          const cloudItems = Object.keys(cloudMetadata.items);
+          const cloudDeleted = cloudItems.filter(
+            (id) => cloudMetadata.items[id].deleted
+          ).length;
+          const cloudActive = cloudItems.length - cloudDeleted;
+          console.log(
+            `📊 Cloud Metadata Stats: Total=${cloudItems.length}, Active=${cloudActive}, Deleted=${cloudDeleted}`
+          );
+        }
+        const lastMetadataETag = localStorage.getItem("tcs_metadata_etag");
+        const hasCloudChanges = cloudMetadataETag !== lastMetadataETag;
+        const cloudLastSync = cloudMetadata.lastSync || 0;
+        if (!hasCloudChanges) {
+          this.logger.log(
+            "info",
+            "No cloud changes detected based on ETag - skipping item downloads"
+          );
+          this.metadata.lastSync = cloudLastSync;
+          this.setLastCloudSync(cloudLastSync);
+          this.saveMetadata();
+          this.logger.log("success", "Sync from cloud completed (no changes)");
+          return;
+        }
+        this.logger.log(
+          "info",
+          `Cloud changes detected - proceeding with full sync`
+        );
+        const itemsToDownload = Object.entries(cloudMetadata.items).filter(
+          ([key, cloudItem]) => {
+            if (this.config.shouldExclude(key)) {
+              return false;
+            }
+            const localItem = this.metadata.items[key];
+            const localTombstone =
+              this.dataService.getTombstoneFromStorage(key);
+            if (cloudItem.deleted) {
+              const cloudVersion = cloudItem.tombstoneVersion || 1;
+              const localMetadataVersion = localItem?.deleted
+                ? localItem.tombstoneVersion || 1
+                : 0;
+              const localStorageVersion = localTombstone?.tombstoneVersion || 0;
+              const localVersion = Math.max(
+                localMetadataVersion,
+                localStorageVersion
+              );
+              return cloudVersion > localVersion;
+            }
+            if (localItem?.deleted) {
+              return (cloudItem.lastModified || 0) > localItem.deleted;
+            }
+            if (!localItem) {
+              return true;
+            }
+            return (
+              (cloudItem.lastModified || 0) >
+              (localItem.lastModified || 0) + 2000
+            );
+          }
+        );
+        if (itemsToDownload.length > 0) {
+          this.logger.log(
+            "info",
+            `Processing ${itemsToDownload.length} items from cloud`
+          );
+        }
+        const downloadPromises = itemsToDownload.map(
+          async ([key, cloudItem]) => {
+            if (cloudItem.deleted) {
+              this.logger.log(
+                "info",
+                `🗑️ Processing cloud tombstone for key "${key}" (v${
+                  cloudItem.tombstoneVersion || 1
+                })`
+              );
+              await this.dataService.performDelete(key, cloudItem.type);
+              const tombstoneData = {
+                deleted: cloudItem.deleted,
+                deletedAt: cloudItem.deletedAt || cloudItem.deleted,
+                type: cloudItem.type,
+                tombstoneVersion: cloudItem.tombstoneVersion || 1,
+              };
+              this.dataService.saveTombstoneToStorage(key, tombstoneData);
+              this.metadata.items[key] = { ...cloudItem };
+              this.logger.log("info", `Synced key "${key}" from cloud`);
+            } else {
+              const data = await this.storageService.download(
+                `items/${key}.json`
+              );
+              if (data) {
+                await this.dataService.saveItem(data, cloudItem.type, key);
+                const syncTime = Date.now();
+                this.metadata.items[key] = {
+                  synced: syncTime,
+                  type: cloudItem.type,
+                  size: cloudItem.size || this.getItemSize(data),
+                  lastModified: syncTime,
+                };
+                this.logger.log("info", `Synced key "${key}" from cloud`);
+              }
+            }
+          }
+        );
+        await Promise.allSettled(downloadPromises);
+        this.metadata.lastSync = cloudLastSync;
+        this.setLastCloudSync(cloudLastSync);
+        localStorage.setItem("tcs_metadata_etag", cloudMetadataETag);
+        this.saveMetadata();
+        await this.updateSyncDiagnosticsCache();
+        this.logger.log("success", "Sync from cloud completed");
+      } catch (error) {
+        this.logger.log("error", "Failed to sync from cloud", error.message);
+        throw error;
+      } finally {
+        this.syncInProgress = false;
+      }
+    }
+
+    async createInitialSync() {
+      this.logger.log("start", "Creating initial sync");
+      try {
+        if (this.storageService instanceof GoogleDriveService) {
+          await this.storageService._getPathId("items", true);
+        }
+
+        const allItemsIterator = await this.dataService.getAllItemsEfficient();
+        const { itemCount } = await this.dataService.estimateDataSize();
+
+        if (itemCount === 0) {
+          this.logger.log(
+            "info",
+            "Initial sync found no local items to upload."
+          );
+          return;
+        }
+
+        this.logger.log(
+          "info",
+          `[Initial Sync] Attempting to upload ${itemCount} items.`
+        );
+
+        const cloudMetadata = { lastSync: 0, items: {} };
+        let uploadedCount = 0;
+        const now = Date.now();
+
+        for await (const batch of allItemsIterator) {
+          const uploadPromises = batch.map(async (item) => {
+            if (item.deleted || item.reason === "tombstone") {
+              const tombstoneData = {
+                deleted: item.deleted || now,
+                deletedAt: item.deleted || now,
+                type: item.type,
+                tombstoneVersion: item.tombstoneVersion || 1,
+                synced: now,
+              };
+              return {
+                id: item.id,
+                metadata: tombstoneData,
+                isTombstone: true,
+              };
+            } else {
+              await this.storageService.upload(
+                `items/${item.id}.json`,
+                item.data
+              );
+              const newMetadataEntry = {
+                synced: now,
+                type: item.type,
+              };
+
+              if (
+                item.id.startsWith("CHAT_") &&
+                item.type === "idb" &&
+                item.data?.updatedAt
+              ) {
+                newMetadataEntry.lastModified = item.data.updatedAt;
+              } else {
+                newMetadataEntry.size = this.getItemSize(item.data);
+                newMetadataEntry.lastModified = now;
+              }
+              return { id: item.id, metadata: newMetadataEntry };
+            }
+          });
+
+          const results = await Promise.allSettled(uploadPromises);
+
+          results.forEach((result) => {
+            if (result.status === "fulfilled" && result.value) {
+              const { id, metadata, isTombstone } = result.value;
+              this.metadata.items[id] = metadata;
+              cloudMetadata.items[id] = { ...metadata };
+              if (!isTombstone) {
+                uploadedCount++;
+              }
+            }
+          });
+          this.logger.log(
+            `[Initial Sync] Processed batch. Total uploaded: ${uploadedCount}/${itemCount}`
+          );
+        }
+
+        if (Object.keys(cloudMetadata.items).length > 0) {
+          cloudMetadata.lastSync = Date.now();
+          await this.storageService.upload(
+            "metadata.json",
+            cloudMetadata,
+            true
+          );
+          this.metadata.lastSync = cloudMetadata.lastSync;
+          this.setLastCloudSync(cloudMetadata.lastSync);
+          this.saveMetadata();
+          await this.updateSyncDiagnosticsCache();
+        }
+
+        this.logger.log(
+          "success",
+          `Initial sync completed - ${uploadedCount} of ${itemCount} items processed.`
+        );
+      } catch (error) {
+        this.logger.log("error", "Failed to create initial sync", error);
+        throw error;
+      }
+    }
+    async performFullSync() {
+      if (!this.storageService || !this.storageService.isConfigured()) {
+        this.logger.log(
+          "skip",
+          "Storage provider not configured, skipping full sync."
+        );
+        return;
+      }
+
+      await this.initializeLocalMetadata();
+      const urlParams = new URLSearchParams(window.location.search);
+      const debugEnabled =
+        urlParams.get("log") === "true" || urlParams.has("log");
+      if (debugEnabled) {
+        const localItems = Object.keys(this.metadata.items || {});
+        const localDeleted = localItems.filter(
+          (id) => this.metadata.items[id].deleted
+        ).length;
+        const localActive = localItems.length - localDeleted;
+        console.log(
+          `📊 Local Metadata Stats: Total=${localItems.length}, Active=${localActive}, Deleted=${localDeleted}`
+        );
+      }
+      await this.syncFromCloud();
+      const cloudMetadata = await this.getCloudMetadata();
+      const localMetadataEmpty =
+        Object.keys(this.metadata.items || {}).length === 0;
+      const cloudMetadataEmpty =
+        Object.keys(cloudMetadata.items || {}).length === 0;
+      if (cloudMetadataEmpty) {
+        const { itemCount } = await this.dataService.estimateDataSize();
+        if (itemCount > 0) {
+          this.logger.log(
+            "info",
+            `🚀 Fresh cloud setup detected: ${itemCount} local items found with empty cloud metadata. Triggering initial sync.`
+          );
+          await this.createInitialSync();
+        } else {
+          this.logger.log(
+            "info",
+            "Fresh setup with no local data - nothing to sync"
+          );
+        }
+      } else {
+        await this.syncToCloud();
+      }
+      const now = Date.now();
+      const lastCleanup = localStorage.getItem("tcs_last-tombstone-cleanup");
+      const cleanupInterval = 24 * 60 * 60 * 1000;
+      if (!lastCleanup || now - parseInt(lastCleanup) > cleanupInterval) {
+        this.logger.log("info", "🧹 Starting periodic tombstone cleanup");
+        const localCleaned = await this.cleanupOldTombstones();
+        const cloudCleaned = await this.cleanupCloudTombstones();
+        localStorage.setItem("tcs_last-tombstone-cleanup", now.toString());
+        if (localCleaned > 0 || cloudCleaned > 0) {
+          this.logger.log(
+            "success",
+            `Tombstone cleanup completed: ${localCleaned} local, ${cloudCleaned} cloud`
+          );
+        }
+      }
+      await this.updateSyncDiagnosticsCache();
+    }
+    async initializeLocalMetadata() {
+      const isEmptyMetadata =
+        Object.keys(this.metadata.items || {}).length === 0;
+      if (!isEmptyMetadata) {
+        return;
+      }
+      this.logger.log(
+        "start",
+        "🔧 Initializing local metadata from database contents"
+      );
+      const { totalSize } = await this.dataService.estimateDataSize();
+      const useStreaming = totalSize > this.dataService.memoryThreshold;
+      const tombstones = this.dataService.getAllTombstones();
+      let itemCount = 0;
+      let tombstoneCount = 0;
+      if (useStreaming) {
+        this.logger.log(
+          "info",
+          `Using memory-efficient metadata initialization for large dataset (${this.dataService.formatSize(
+            totalSize
+          )})`
+        );
+        for await (const batch of this.dataService.streamAllItemsInternal()) {
+          for (const item of batch) {
+            if (item.id && item.data) {
+              const key = item.id;
+              this.metadata.items[key] = {
+                synced: 0,
+                type: item.type,
+                size: this.getItemSize(item.data),
+                lastModified: 0,
+              };
+              itemCount++;
+            }
+          }
+          if (itemCount % 1000 === 0) {
+            this.logger.log(
+              "info",
+              `Processed ${itemCount} items for metadata initialization`
+            );
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+        }
+      } else {
+        this.logger.log(
+          "info",
+          `Using standard metadata initialization for small dataset (${this.dataService.formatSize(
+            totalSize
+          )})`
+        );
+        const allItems = await this.dataService.getAllItems();
+        for (const item of allItems) {
+          if (item.id && item.data) {
+            const key = item.id;
+            this.metadata.items[key] = {
+              synced: 0,
+              type: item.type,
+              size: this.getItemSize(item.data),
+              lastModified: 0,
+            };
+            itemCount++;
+          }
+        }
+      }
+      for (const [itemId, tombstone] of tombstones.entries()) {
+        if (!this.metadata.items[itemId]) {
+          this.metadata.items[itemId] = {
+            deleted: tombstone.deleted,
+            deletedAt: tombstone.deletedAt || tombstone.deleted,
+            type: tombstone.type,
+            tombstoneVersion: tombstone.tombstoneVersion || 1,
+            synced: 0,
+          };
+          tombstoneCount++;
+        }
+      }
+      if (itemCount > 0 || tombstoneCount > 0) {
+        this.saveMetadata();
+        await this.updateSyncDiagnosticsCache();
+        this.logger.log(
+          "success",
+          `✅ Local metadata initialized: ${itemCount} items, ${tombstoneCount} tombstones`
+        );
+      } else {
+        this.logger.log("info", "No local items found to initialize metadata");
+      }
+      if (this.storageService && this.storageService.isConfigured()) {
+        try {
+          this.logger.log(
+            "info",
+            "🔍 Checking cloud for missing items to restore"
+          );
+          const cloudMetadata = await this.getCloudMetadata();
+          let restoredCount = 0;
+          for (const [cloudItemId, cloudItem] of Object.entries(
+            cloudMetadata.items || {}
+          )) {
+            if (!cloudItem.deleted && !this.metadata.items[cloudItemId]) {
+              try {
+                const data = await this.storageService.download(
+                  `items/${cloudItemId}.json`
+                );
+                if (data) {
+                  await this.dataService.saveItem(
+                    data,
+                    cloudItem.type,
+                    cloudItemId
+                  );
+                  const syncTime = Date.now();
+                  this.metadata.items[cloudItemId] = {
+                    synced: syncTime,
+                    type: cloudItem.type,
+                    size: cloudItem.size || this.getItemSize(data),
+                    lastModified: syncTime,
+                  };
+                  restoredCount++;
+                  this.logger.log(
+                    "info",
+                    `📥 Restored missing item: ${cloudItemId}`
+                  );
+                }
+              } catch (error) {
+                this.logger.log(
+                  "warning",
+                  `Failed to restore item ${cloudItemId}: ${error.message}`
+                );
+              }
+            } else if (cloudItem.deleted && !this.metadata.items[cloudItemId]) {
+              try {
+                await this.dataService.performDelete(
+                  cloudItemId,
+                  cloudItem.type
+                );
+                const tombstoneData = {
+                  deleted: cloudItem.deleted,
+                  deletedAt: cloudItem.deletedAt || cloudItem.deleted,
+                  type: cloudItem.type,
+                  tombstoneVersion: cloudItem.tombstoneVersion || 1,
+                  synced: Date.now(),
+                };
+                this.dataService.saveTombstoneToStorage(
+                  cloudItemId,
+                  tombstoneData
+                );
+                this.metadata.items[cloudItemId] = tombstoneData;
+                restoredCount++;
+                this.logger.log(
+                  "info",
+                  `🗑️ Applied missing tombstone: ${cloudItemId}`
+                );
+              } catch (error) {
+                this.logger.log(
+                  "warning",
+                  `Failed to apply tombstone ${cloudItemId}: ${error.message}`
+                );
+              }
+            }
+          }
+          if (restoredCount > 0) {
+            this.saveMetadata();
+            await this.updateSyncDiagnosticsCache();
+            this.logger.log(
+              "success",
+              `🔄 Restored ${restoredCount} missing items and tombstones from cloud`
+            );
+          } else {
+            this.logger.log(
+              "info",
+              "No missing items found in cloud to restore"
+            );
+          }
+        } catch (error) {
+          this.logger.log(
+            "warning",
+            "Could not check cloud for missing items",
+            error.message
+          );
+        }
+      }
+    }
+    async cleanupCloudTombstones() {
+      try {
+        const cloudMetadata = await this.getCloudMetadata();
+        const now = Date.now();
+        const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
+        let cleanupCount = 0;
+        if (cloudMetadata?.items) {
+          for (const [itemId, metadata] of Object.entries(
+            cloudMetadata.items
+          )) {
+            if (
+              metadata.deleted &&
+              now - metadata.deleted > tombstoneRetentionPeriod
+            ) {
+              delete cloudMetadata.items[itemId];
+              cleanupCount++;
+            }
+          }
+          if (cleanupCount > 0) {
+            await this.storageService.upload(
+              "metadata.json",
+              cloudMetadata,
+              true
+            );
+            this.logger.log(
+              "info",
+              `🧹 Cleaned up ${cleanupCount} old cloud tombstones`
+            );
+          }
+        }
+        return cleanupCount;
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "Error cleaning up cloud tombstones",
+          error.message
+        );
+        return 0;
+      }
+    }
+    startAutoSync() {
+      if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
+      const interval = Math.max(this.config.get("syncInterval") * 1000, 15000);
+      this.autoSyncInterval = setInterval(async () => {
+        if (
+          this.storageService &&
+          this.storageService.isConfigured() &&
+          !this.syncInProgress
+        ) {
+          try {
+            await this.performFullSync();
+          } catch (error) {
+            this.logger.log("error", "Auto-sync failed", error.message);
+          }
+        }
+      }, interval);
+      this.logger.log("info", "Auto-sync started");
+    }
+    async cleanupOldTombstones() {
+      const now = Date.now();
+      const tombstoneRetentionPeriod = 30 * 24 * 60 * 60 * 1000;
+      let cleanupCount = 0;
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key?.startsWith("tcs_tombstone_")) {
+          try {
+            const tombstone = JSON.parse(localStorage.getItem(key));
+            if (
+              tombstone?.deleted &&
+              now - tombstone.deleted > tombstoneRetentionPeriod
+            ) {
+              localStorage.removeItem(key);
+              cleanupCount++;
+            }
+          } catch {
+            localStorage.removeItem(key);
+            cleanupCount++;
+          }
+        }
+      }
+      for (const [itemId, metadata] of Object.entries(this.metadata.items)) {
+        if (
+          metadata?.deleted &&
+          now - metadata.deleted > tombstoneRetentionPeriod
+        ) {
+          delete this.metadata.items[itemId];
+          cleanupCount++;
+        }
+      }
+      if (cleanupCount > 0) {
+        this.saveMetadata();
+        await this.updateSyncDiagnosticsCache();
+        this.logger.log("info", `🧹 Cleaned up ${cleanupCount} old tombstones`);
+      }
+      return cleanupCount;
+    }
+    async getCloudMetadataWithETag() {
+      if (!this.storageService) {
+        return { metadata: { lastSync: 0, items: {} }, etag: null };
+      }
+      try {
+        const result = await this.storageService.downloadWithResponse(
+          "metadata.json"
+        );
+        const metadata = JSON.parse(result.Body.toString());
+        const etag = result.ETag;
+        if (!metadata || typeof metadata !== "object") {
+          return { metadata: { lastSync: 0, items: {} }, etag };
+        }
+        if (!metadata.items) {
+          metadata.items = {};
+        }
+        return { metadata, etag };
+      } catch (error) {
+        if (error.code === "NoSuchKey" || error.statusCode === 404) {
+          return { metadata: { lastSync: 0, items: {} }, etag: null };
+        }
+        if (
+          error.result &&
+          error.result.error &&
+          error.result.error.code === 404
+        ) {
+          return { metadata: { lastSync: 0, items: {} }, etag: null };
+        }
+        throw error;
+      }
+    }
+    async getCloudMetadata() {
+      const { metadata } = await this.getCloudMetadataWithETag();
+      return metadata;
+    }
+    async getSyncDiagnostics() {
+      try {
+        const { totalSize, itemCount } =
+          await this.dataService.estimateDataSize();
+        const localCount = itemCount;
+        let chatItems = 0;
+        if (totalSize > this.dataService.memoryThreshold) {
+          for await (const batch of this.dataService.streamAllItemsInternal()) {
+            for (const item of batch) {
+              if (item.id.startsWith("CHAT_")) {
+                chatItems++;
+              }
+            }
+          }
+        } else {
+          const allItems = await this.dataService.getAllItems();
+          chatItems = allItems.filter((item) =>
+            item.id.startsWith("CHAT_")
+          ).length;
+        }
+
+        const metadataCount = Object.keys(this.metadata.items || {}).length;
+        const metadataDeleted = Object.values(this.metadata.items || {}).filter(
+          (item) => item.deleted
+        ).length;
+        const metadataActive = metadataCount - metadataDeleted;
+
+        const cloudMetadata = await this.getCloudMetadata();
+        const cloudCount = Object.keys(cloudMetadata.items || {}).length;
+        const cloudDeleted = Object.values(cloudMetadata.items || {}).filter(
+          (item) => item.deleted
+        ).length;
+        const cloudActive = cloudCount - cloudDeleted;
+        const cloudChatItems = Object.keys(cloudMetadata.items || {}).filter(
+          (id) => id.startsWith("CHAT_") && !cloudMetadata.items[id].deleted
+        ).length;
+
+        const hasIssues =
+          localCount !== metadataActive ||
+          metadataActive !== cloudActive ||
+          chatItems !== cloudChatItems;
+
+        const overallStatus = hasIssues ? "⚠️" : "✅";
+        const lastUpdated = new Date().toLocaleTimeString();
+        const summary = `Updated: ${lastUpdated}`;
+
+        const details = [
+          { type: "📱 Local Items", count: localCount },
+          { type: "📋 Local Metadata", count: metadataActive },
+          { type: "☁️ Cloud Metadata", count: cloudActive },
+          { type: "💬 Chat Sync", count: `${chatItems} ⟷ ${cloudChatItems}` },
+        ];
+
+        const diagnosticsData = {
+          timestamp: Date.now(),
+          localItems: localCount,
+          localMetadata: metadataActive,
+          cloudMetadata: cloudActive,
+          chatSyncLocal: chatItems,
+          chatSyncCloud: cloudChatItems,
+        };
+        localStorage.setItem(
+          "tcs_sync_diagnostics",
+          JSON.stringify(diagnosticsData)
+        );
+
+        return { overallStatus, summary, details };
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "Failed to get sync diagnostics",
+          error.message
+        );
+        return {
+          overallStatus: "❌",
+          summary: "Error fetching diagnostics",
+          details: [],
+        };
+      }
+    }
+    async updateSyncDiagnosticsCache() {
+      try {
+        const { totalSize, itemCount } =
+          await this.dataService.estimateDataSize();
+        const localCount = itemCount;
+        let chatItems = 0;
+        if (totalSize > this.dataService.memoryThreshold) {
+          for await (const batch of this.dataService.streamAllItemsInternal()) {
+            for (const item of batch) {
+              if (item.id.startsWith("CHAT_")) {
+                chatItems++;
+              }
+            }
+          }
+        } else {
+          const allItems = await this.dataService.getAllItems();
+          chatItems = allItems.filter((item) =>
+            item.id.startsWith("CHAT_")
+          ).length;
+        }
+        const metadataCount = Object.keys(this.metadata.items || {}).length;
+        const metadataDeleted = Object.values(this.metadata.items || {}).filter(
+          (item) => item.deleted
+        ).length;
+        const metadataActive = metadataCount - metadataDeleted;
+        const cloudMetadata = await this.getCloudMetadata();
+        const cloudCount = Object.keys(cloudMetadata.items || {}).length;
+        const cloudDeleted = Object.values(cloudMetadata.items || {}).filter(
+          (item) => item.deleted
+        ).length;
+        const cloudActive = cloudCount - cloudDeleted;
+        const cloudChatItems = Object.keys(cloudMetadata.items || {}).filter(
+          (id) => id.startsWith("CHAT_") && !cloudMetadata.items[id].deleted
+        ).length;
+        const diagnosticsData = {
+          timestamp: Date.now(),
+          localItems: localCount,
+          localMetadata: metadataActive,
+          cloudMetadata: cloudActive,
+          chatSyncLocal: chatItems,
+          chatSyncCloud: cloudChatItems,
+        };
+        localStorage.setItem(
+          "tcs_sync_diagnostics",
+          JSON.stringify(diagnosticsData)
+        );
+        this.logger.log("info", "📊 Sync diagnostics cache updated", {
+          localItems: diagnosticsData.localItems,
+          cloudItems: diagnosticsData.cloudMetadata,
+          chatSync: `${diagnosticsData.chatSyncLocal}/${diagnosticsData.chatSyncCloud}`,
+          timestamp: new Date(diagnosticsData.timestamp).toLocaleTimeString(),
+        });
+      } catch (error) {
+        this.logger.log(
+          "warning",
+          "Failed to update sync diagnostics cache",
+          error.message
+        );
+      }
+    }
+    async forceExportToCloud() {
+      this.logger.log(
+        "warning",
+        "⚠️ User initiated Force Export. Cloud will be overwritten."
+      );
+      this.syncInProgress = true;
+      try {
+        const localKeys = await this.dataService.getAllItemKeys();
+        const cloudObjects = await this.storageService.list("items/");
+        const cloudKeys = new Set(
+          cloudObjects.map((obj) =>
+            obj.Key.replace(/^items\/(.*)\.json$/, "$1")
+          )
+        );
+        this.logger.log(
+          "info",
+          `[Force Export] Found ${localKeys.size} local items and ${cloudKeys.size} cloud items.`
+        );
+
+        this.logger.log("start", "[Force Export] Uploading all local items...");
+        let uploadedCount = 0;
+        for await (const batch of this.dataService.streamAllItemsInternal()) {
+          const uploadPromises = batch.map((item) =>
+            this.storageService.upload(`items/${item.id}.json`, item.data)
+          );
+          await Promise.allSettled(uploadPromises);
+          uploadedCount += batch.length;
+          this.logger.log(
+            "info",
+            `[Force Export] Uploaded batch. Total: ${uploadedCount}/${localKeys.size}`
+          );
+        }
+        this.logger.log("success", "[Force Export] All local items uploaded.");
+
+        const keysToDelete = [...cloudKeys].filter(
+          (key) => !localKeys.has(key)
+        );
+        if (keysToDelete.length > 0) {
+          this.logger.log(
+            "start",
+            `[Force Export] Deleting ${keysToDelete.length} extraneous cloud items...`
+          );
+          const deletePromises = keysToDelete.map((key) =>
+            this.storageService.delete(`items/${key}.json`)
+          );
+          await Promise.allSettled(deletePromises);
+          this.logger.log("success", "[Force Export] Cloud cleanup complete.");
+        }
+
+        this.logger.log(
+          "start",
+          "[Force Export] Rebuilding and uploading new metadata..."
+        );
+        const newMetadata = { lastSync: Date.now(), items: {} };
+        const now = Date.now();
+        for await (const batch of this.dataService.streamAllItemsInternal()) {
+          for (const item of batch) {
+            const metadataEntry = {
+              synced: now,
+              type: item.type,
+            };
+            if (
+              item.id.startsWith("CHAT_") &&
+              item.type === "idb" &&
+              item.data?.updatedAt
+            ) {
+              metadataEntry.lastModified = item.data.updatedAt;
+            } else {
+              metadataEntry.size = this.getItemSize(item.data);
+              metadataEntry.lastModified = now;
+            }
+            newMetadata.items[item.id] = metadataEntry;
+          }
+        }
+        await this.storageService.upload("metadata.json", newMetadata, true);
+
+        this.metadata = newMetadata;
+        this.saveMetadata();
+        localStorage.removeItem("tcs_metadata_etag");
+        this.setLastCloudSync(newMetadata.lastSync);
+        this.logger.log(
+          "success",
+          "✅ [Force Export] Operation completed successfully."
+        );
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "❌ [Force Export] An error occurred during the operation.",
+          error
+        );
+        throw error;
+      } finally {
+        this.syncInProgress = false;
+        await this.updateSyncDiagnosticsCache();
+      }
+    }
+
+    async forceImportFromCloud() {
+      this.logger.log(
+        "warning",
+        "⚠️ User initiated Force Import. Local data will be overwritten."
+      );
+      this.syncInProgress = true;
+      try {
+        const cloudMetadata = await this.getCloudMetadata();
+        if (Object.keys(cloudMetadata.items).length === 0) {
+          this.logger.log(
+            "warning",
+            "[Force Import] Cloud metadata is empty. Aborting to prevent data loss."
+          );
+          throw new Error("Cloud contains no data; import aborted.");
+        }
+        const cloudKeys = new Set(Object.keys(cloudMetadata.items));
+        const localKeys = await this.dataService.getAllItemKeys();
+        this.logger.log(
+          "info",
+          `[Force Import] Found ${cloudKeys.size} items in cloud and ${localKeys.size} items locally.`
+        );
+
+        const keysToDelete = [...localKeys].filter(
+          (key) => !cloudKeys.has(key)
+        );
+        if (keysToDelete.length > 0) {
+          this.logger.log(
+            "start",
+            `[Force Import] Deleting ${keysToDelete.length} extraneous local items...`
+          );
+          const deletePromises = [];
+          for (const key of keysToDelete) {
+            const item = (await this.dataService.getItem(key, "idb"))
+              ? { type: "idb" }
+              : { type: "ls" };
+            deletePromises.push(this.dataService.performDelete(key, item.type));
+          }
+          await Promise.allSettled(deletePromises);
+          this.logger.log("success", "[Force Import] Local cleanup complete.");
+        }
+
+        this.logger.log(
+          "start",
+          `[Force Import] Applying ${cloudKeys.size} cloud items locally...`
+        );
+        const allCloudItems = Object.entries(cloudMetadata.items);
+        const concurrency = 20;
+        for (let i = 0; i < allCloudItems.length; i += concurrency) {
+          const batch = allCloudItems.slice(i, i + concurrency);
+          const downloadPromises = batch.map(async ([key, cloudItem]) => {
+            if (cloudItem.deleted) {
+              await this.dataService.performDelete(key, cloudItem.type);
+            } else {
+              const data = await this.storageService.download(
+                `items/${key}.json`
+              );
+              await this.dataService.saveItem(data, cloudItem.type, key);
+            }
+          });
+          await Promise.allSettled(downloadPromises);
+          this.logger.log(
+            "info",
+            `[Force Import] Processed batch. Total: ${i + batch.length}/${
+              allCloudItems.length
+            }`
+          );
+        }
+        this.logger.log(
+          "success",
+          "[Force Import] All cloud items applied locally."
+        );
+
+        this.metadata = cloudMetadata;
+        this.saveMetadata();
+        localStorage.removeItem("tcs_metadata_etag");
+        this.setLastCloudSync(cloudMetadata.lastSync);
+        this.logger.log(
+          "success",
+          "✅ [Force Import] Operation completed successfully. Page will reload."
+        );
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "❌ [Force Import] An error occurred during the operation.",
+          error
+        );
+        throw error;
+      } finally {
+        this.syncInProgress = false;
+        await this.updateSyncDiagnosticsCache();
+      }
+    }
+    cleanup() {
+      if (this.autoSyncInterval) {
+        clearInterval(this.autoSyncInterval);
+        this.autoSyncInterval = null;
+      }
+      this.syncInProgress = false;
+      this.config = null;
+      this.dataService = null;
+      this.storageService = null;
+      this.logger = null;
+      this.operationQueue = null;
+      this.metadata = null;
+    }
+  }
+
+  class BackupService {
+    constructor(dataService, storageService, logger) {
+      this.dataService = dataService;
+      this.storageService = storageService;
+      this.logger = logger;
+    }
+
+    async createSnapshot(name) {
+      this.logger.log("start", `Creating server-side snapshot: ${name}`);
+      try {
+        await this.ensureSyncIsCurrent();
+        return await this.createServerSideSnapshot(name);
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "Server-side snapshot creation failed",
+          error.message
+        );
+        throw error;
+      }
+    }
+
+    async checkAndPerformDailyBackup() {
+      if (!this.storageService || !this.storageService.isConfigured()) {
+        this.logger.log(
+          "skip",
+          "Storage provider not configured, skipping daily backup."
+        );
+        return;
+      }
+      const lastBackupStr = localStorage.getItem("tcs_last-daily-backup");
+      const now = new Date();
+      const currentDateStr = `${now.getFullYear()}${String(
+        now.getMonth() + 1
+      ).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+      if (!lastBackupStr || lastBackupStr !== currentDateStr) {
+        this.logger.log("info", "Starting daily backup...");
+        await this.performDailyBackup();
+        localStorage.setItem("tcs_last-daily-backup", currentDateStr);
+        this.logger.log("success", "Daily backup completed");
+      }
+    }
+
+    async performDailyBackup() {
+      this.logger.log("info", "Starting server-side daily backup");
+      try {
+        await this.ensureSyncIsCurrent();
+        return await this.createServerSideDailyBackup();
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "Server-side daily backup failed",
+          error.message
+        );
+        throw error;
+      }
+    }
+
+    async ensureSyncIsCurrent() {
+      this.logger.log("info", "Ensuring sync is current before backup");
+      const orchestrator = window.cloudSyncApp?.syncOrchestrator;
+      if (orchestrator && !orchestrator.syncInProgress) {
+        try {
+          await orchestrator.performFullSync();
+          this.logger.log("success", "Sync completed before backup");
+        } catch (error) {
+          this.logger.log(
+            "warning",
+            `Pre-backup sync failed: ${error.message}, proceeding with backup anyway`
+          );
+        }
+      } else {
+        this.logger.log(
+          "info",
+          "Sync already in progress or not available, proceeding with backup"
+        );
+      }
+    }
+
+    async createServerSideSnapshot(name) {
+      this.logger.log(
+        "info",
+        "Creating server-side snapshot using provider's copy operations"
+      );
+      const timestamp = new Date()
+        .toISOString()
+        .replace(/[-:]/g, "")
+        .replace(/\..+/, "");
+      const backupFolder = `backups/s-${name.replace(
+        /[^a-zA-Z0-9]/g,
+        "-"
+      )}-${timestamp}`;
+
+      if (this.storageService instanceof GoogleDriveService) {
+        await this.storageService._deleteFolderIfExists(backupFolder);
+      }
+
+      try {
+        const itemsDestinationPath = `${backupFolder}/items`;
+        this.logger.log(
+          "info",
+          `Pre-creating backup path: "${itemsDestinationPath}"`
+        );
+        await this.storageService.ensurePathExists(itemsDestinationPath);
+        this.logger.log("success", "Backup path created successfully.");
+
+        const itemsList = await this.storageService.list("items/");
+        this.logger.log(
+          "info",
+          `Found ${itemsList.length} items to backup via server-side copy`
+        );
+
+        let copiedItems = 0;
+        const itemsToProcess = itemsList.filter(
+          (item) => item.Key && item.Key.startsWith("items/")
+        );
+
+        const concurrency = 20;
+        for (let i = 0; i < itemsToProcess.length; i += concurrency) {
+          const batch = itemsToProcess.slice(i, i + concurrency);
+          const copyPromises = batch.map(async (item) => {
+            try {
+              const destinationKey = `${backupFolder}/${item.Key}`;
+              await this.storageService.copyObject(item.Key, destinationKey);
+              return { success: true, key: item.Key };
+            } catch (copyError) {
+              const errorMessage =
+                copyError.result?.error?.message ||
+                copyError.message ||
+                JSON.stringify(copyError);
+              this.logger.log(
+                "warning",
+                `Failed to copy item ${item.Key}: ${errorMessage}`
+              );
+              return { success: false, key: item.Key, error: errorMessage };
+            }
+          });
+
+          const batchResults = await Promise.allSettled(copyPromises);
+          const successfulCopies = batchResults.filter(
+            (result) => result.status === "fulfilled" && result.value?.success
+          ).length;
+          copiedItems += successfulCopies;
+
+          if (
+            copiedItems % 200 === 0 ||
+            i + concurrency >= itemsToProcess.length
+          ) {
+            this.logger.log(
+              "info",
+              `Server-side copied ${copiedItems}/${itemsToProcess.length} items`
+            );
+          }
+        }
+
+        try {
+          const metadataDestination = `${backupFolder}/metadata.json`;
+          await this.storageService.copyObject(
+            "metadata.json",
+            metadataDestination
+          );
+          this.logger.log(
+            "info",
+            "Server-side copied metadata.json to snapshot"
+          );
+        } catch (metadataError) {
+          this.logger.log(
+            "warning",
+            `Failed to copy metadata: ${metadataError.message}`
+          );
+        }
+
+        const manifest = {
+          type: "server-side-snapshot",
+          name: name,
+          created: Date.now(),
+          totalItems: itemsToProcess.length,
+          copiedItems: copiedItems,
+          format: "server-side",
+          version: "3.0",
+          backupFolder: backupFolder,
+        };
+
+        await this.storageService.upload(
+          `${backupFolder}/backup-manifest.json`,
+          manifest,
+          true
+        );
+
+        this.logger.log(
+          "success",
+          `Server-side snapshot created: ${backupFolder} (${copiedItems} items copied)`
+        );
+        return true;
+      } catch (error) {
+        const errorMessage =
+          error.result?.error?.message ||
+          error.message ||
+          JSON.stringify(error);
+        this.logger.log(
+          "error",
+          `Server-side snapshot failed: ${errorMessage}`
+        );
+        throw error;
+      }
+    }
+
+    async createServerSideDailyBackup() {
+      this.logger.log(
+        "info",
+        "Creating server-side daily backup using provider's copy operations"
+      );
+      const today = new Date();
+      const dateString = `${today.getFullYear()}${String(
+        today.getMonth() + 1
+      ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+      const backupFolder = `backups/typingmind-backup-${dateString}`;
+
+      if (this.storageService instanceof GoogleDriveService) {
+        await this.storageService._deleteFolderIfExists(backupFolder);
+      }
+
+      try {
+        const itemsDestinationPath = `${backupFolder}/items`;
+        this.logger.log(
+          "info",
+          `Pre-creating backup path: "${itemsDestinationPath}"`
+        );
+        await this.storageService.ensurePathExists(itemsDestinationPath);
+        this.logger.log("success", "Backup path created successfully.");
+
+        const itemsList = await this.storageService.list("items/");
+        this.logger.log(
+          "info",
+          `Found ${itemsList.length} items for server-side daily backup`
+        );
+
+        let copiedItems = 0;
+        const itemsToProcess = itemsList.filter(
+          (item) => item.Key && item.Key.startsWith("items/")
+        );
+
+        const concurrency = 20;
+        for (let i = 0; i < itemsToProcess.length; i += concurrency) {
+          const batch = itemsToProcess.slice(i, i + concurrency);
+          const copyPromises = batch.map(async (item) => {
+            try {
+              const destinationKey = `${backupFolder}/${item.Key}`;
+              await this.storageService.copyObject(item.Key, destinationKey);
+              return { success: true, key: item.Key };
+            } catch (copyError) {
+              const errorMessage =
+                copyError.result?.error?.message ||
+                copyError.message ||
+                JSON.stringify(copyError);
+              this.logger.log(
+                "warning",
+                `Failed to copy item ${item.Key}: ${errorMessage}`
+              );
+              return { success: false, key: item.Key, error: errorMessage };
+            }
+          });
+
+          const batchResults = await Promise.allSettled(copyPromises);
+          const successfulCopies = batchResults.filter(
+            (result) => result.status === "fulfilled" && result.value?.success
+          ).length;
+          copiedItems += successfulCopies;
+
+          if (
+            copiedItems % 200 === 0 ||
+            i + concurrency >= itemsToProcess.length
+          ) {
+            this.logger.log(
+              "info",
+              `Daily backup: server-side copied ${copiedItems}/${itemsToProcess.length} items`
+            );
+          }
+        }
+
+        try {
+          const metadataDestination = `${backupFolder}/metadata.json`;
+          await this.storageService.copyObject(
+            "metadata.json",
+            metadataDestination
+          );
+          this.logger.log(
+            "info",
+            "Server-side copied metadata.json to daily backup"
+          );
+        } catch (metadataError) {
+          this.logger.log(
+            "warning",
+            `Failed to copy metadata to daily backup: ${metadataError.message}`
+          );
+        }
+
+        const manifest = {
+          type: "server-side-daily-backup",
+          name: "daily-auto",
+          created: Date.now(),
+          totalItems: itemsToProcess.length,
+          copiedItems: copiedItems,
+          format: "server-side",
+          version: "3.0",
+          backupFolder: backupFolder,
+        };
+
+        await this.storageService.upload(
+          `${backupFolder}/backup-manifest.json`,
+          manifest,
+          true
+        );
+
+        this.logger.log(
+          "success",
+          `Server-side daily backup created: ${backupFolder} (${copiedItems} items copied)`
+        );
+        await this.cleanupOldBackups();
+        return true;
+      } catch (error) {
+        const errorMessage =
+          error.result?.error?.message ||
+          error.message ||
+          JSON.stringify(error);
+        this.logger.log(
+          "error",
+          `Server-side daily backup failed: ${errorMessage}`
+        );
+        throw error;
+      }
+    }
+
+    formatFileSize(bytes) {
+      if (bytes === 0) return "0 B";
+      const k = 1024;
+      const sizes = ["B", "KB", "MB", "GB"];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+    }
+
+    async loadBackupList() {
+      try {
+        const objects = await this.storageService.list("backups/");
+        const backups = [];
+        const manifestPromises = [];
+
+        if (this.storageService instanceof GoogleDriveService) {
+          for (const folder of objects) {
+            const manifestKey = `${folder.Key}/backup-manifest.json`;
+            const promise = this.storageService
+              .download(manifestKey, true)
+              .then((manifest) => ({ manifest, manifestKey, folder }))
+              .catch((error) => {
+                if (error.code !== "NoSuchKey" && error.statusCode !== 404) {
+                  this.logger.log(
+                    "warning",
+                    `Could not check manifest for ${folder.Key}: ${error.message}`
+                  );
+                }
+                return null;
+              });
+            manifestPromises.push(promise);
+          }
+        } else {
+          for (const obj of objects) {
+            if (obj.Key.endsWith("/backup-manifest.json")) {
+              const promise = this.storageService
+                .download(obj.Key, true)
+                .then((manifest) => ({
+                  manifest,
+                  manifestKey: obj.Key,
+                  folder: obj,
+                }))
+                .catch((error) => {
+                  this.logger.log(
+                    "warning",
+                    `Could not download manifest for ${obj.Key}: ${error.message}`
+                  );
+                  return null;
+                });
+              manifestPromises.push(promise);
+            }
+          }
+        }
+
+        const results = await Promise.all(manifestPromises);
+
+        for (const result of results) {
+          if (result && result.manifest && result.manifest.backupFolder) {
+            const { manifest, manifestKey, folder } = result;
+            const backupFolder =
+              manifest.backupFolder ||
+              manifestKey.replace("/backup-manifest.json", "");
+            const backupName = backupFolder.replace("backups/", "");
+            const backupType = this.getBackupType(backupName);
+
+            backups.push({
+              key: manifestKey,
+              name: backupName,
+              displayName: backupName,
+              modified: folder.LastModified || new Date(manifest.created),
+              format: "server-side",
+              totalItems: manifest.totalItems,
+              copiedItems: manifest.copiedItems,
+              type: backupType,
+              backupFolder: backupFolder,
+              sortOrder: backupType === "snapshot" ? 1 : 2,
+            });
+          }
+        }
+
+        return backups.sort((a, b) => {
+          if (a.sortOrder !== b.sortOrder) {
+            return a.sortOrder - b.sortOrder;
+          }
+          return new Date(b.modified) - new Date(a.modified);
+        });
+      } catch (error) {
+        this.logger.log("error", "Failed to load backup list", error.message);
+        return [];
+      }
+    }
+
+    getBackupType(filename) {
+      if (filename.startsWith("s-")) {
+        return "snapshot";
+      } else if (filename.startsWith("typingmind-backup-")) {
+        return "daily";
+      }
+      return "unknown";
+    }
+
+    async restoreFromBackup(key) {
+      this.logger.log("start", `Restoring from backup: ${key}`);
+      try {
+        if (key.endsWith("/backup-manifest.json")) {
+          return await this.restoreFromServerSideBackup(key);
+        } else {
+          this.logger.log(
+            "error",
+            "Invalid or unsupported backup format selected for restore."
+          );
+          throw new Error("Unsupported backup format");
+        }
+      } catch (error) {
+        this.logger.log("error", "Backup restoration failed", error.message);
+        throw error;
+      }
+    }
+
+    async restoreFromServerSideBackup(manifestKey) {
+      this.logger.log("info", "Restoring from server-side backup format");
+
+      try {
+        const manifest = await this.storageService.download(manifestKey, true);
+        if (!manifest || manifest.format !== "server-side") {
+          throw new Error("Invalid server-side backup manifest");
+        }
+
+        const backupFolder = manifest.backupFolder;
+        this.logger.log(
+          "info",
+          `Restoring server-side backup: ${manifest.name} (${manifest.totalItems} items)`
+        );
+
+        const backupFiles = await this.storageService.list(backupFolder + "/");
+        const itemFiles = backupFiles.filter(
+          (file) =>
+            file.Key.startsWith(backupFolder + "/items/") &&
+            file.Key.endsWith(".json")
+        );
+
+        this.logger.log(
+          "info",
+          `Found ${itemFiles.length} items to restore via provider copy`
+        );
+        this.logger.log(
+          "warning",
+          "⚠️ CRITICAL: This will overwrite ALL cloud data."
+        );
+
+        let restoredCount = 0;
+        const concurrency = 20;
+
+        for (let i = 0; i < itemFiles.length; i += concurrency) {
+          const batch = itemFiles.slice(i, i + concurrency);
+          const copyPromises = batch.map(async (file) => {
+            try {
+              const itemFilename = file.Key.replace(backupFolder + "/", "");
+              await this.storageService.copyObject(file.Key, itemFilename);
+              return { success: true, key: file.Key };
+            } catch (copyError) {
+              this.logger.log(
+                "warning",
+                `Failed to restore item ${file.Key}: ${copyError.message}`
+              );
+              return {
+                success: false,
+                key: file.Key,
+                error: copyError.message,
+              };
+            }
+          });
+
+          const batchResults = await Promise.allSettled(copyPromises);
+          const successfulRestores = batchResults.filter(
+            (result) => result.status === "fulfilled" && result.value?.success
+          ).length;
+          restoredCount += successfulRestores;
+
+          if (
+            restoredCount % 200 === 0 ||
+            i + concurrency >= itemFiles.length
+          ) {
+            this.logger.log(
+              "info",
+              `Server-side restored ${restoredCount}/${itemFiles.length} items`
+            );
+          }
+        }
+
+        const metadataFile = backupFiles.find(
+          (file) => file.Key === backupFolder + "/metadata.json"
+        );
+        if (metadataFile) {
+          try {
+            await this.storageService.copyObject(
+              metadataFile.Key,
+              "metadata.json"
+            );
+            this.logger.log("info", "Server-side restored metadata.json");
+          } catch (metadataError) {
+            this.logger.log(
+              "warning",
+              `Failed to restore metadata: ${metadataError.message}`
+            );
+          }
+        }
+
+        this.logger.log(
+          "start",
+          "🧹 Starting local data reconciliation post-restore..."
+        );
+
+        const restoredCloudMetadata = await this.storageService.download(
+          "metadata.json",
+          true
+        );
+        const validCloudKeys = new Set(
+          Object.keys(restoredCloudMetadata.items || {})
+        );
+        this.logger.log(
+          "info",
+          `Restored state contains ${validCloudKeys.size} valid items.`
+        );
+
+        const allLocalItems = await this.dataService.getAllItems();
+        this.logger.log(
+          "info",
+          `Found ${allLocalItems.length} items in local DB to check.`
+        );
+
+        let cleanedItemCount = 0;
+        const deletionPromises = [];
+        for (const localItem of allLocalItems) {
+          if (!validCloudKeys.has(localItem.id)) {
+            this.logger.log(
+              "info",
+              `- Deleting extraneous local item: ${localItem.id}`
+            );
+            deletionPromises.push(
+              this.dataService.performDelete(localItem.id, localItem.type)
+            );
+            cleanedItemCount++;
+          }
+        }
+
+        await Promise.all(deletionPromises);
+
+        if (cleanedItemCount > 0) {
+          this.logger.log(
+            "success",
+            `✅ Successfully cleaned up ${cleanedItemCount} extraneous local items.`
+          );
+        } else {
+          this.logger.log(
+            "info",
+            "✅ No extraneous local items found. Local DB is clean."
+          );
+        }
+
+        localStorage.removeItem("tcs_local-metadata");
+        localStorage.removeItem("tcs_last-cloud-sync");
+        localStorage.removeItem("tcs_metadata_etag");
+
+        this.logger.log(
+          "success",
+          `Server-side backup restore completed: ${restoredCount} items restored via provider copy`
+        );
+        this.logger.log(
+          "success",
+          "Page will reload in 3 seconds to sync restored data."
+        );
+
+        setTimeout(() => {
+          window.location.reload();
+        }, 3000);
+
+        return true;
+      } catch (error) {
+        this.logger.log(
+          "error",
+          `Server-side backup restore failed: ${error.message}`
+        );
+        throw error;
+      }
+    }
+
+    async cleanupOldBackups() {
+      try {
+        const objects = await this.storageService.list("backups/");
+        const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+        let deletedBackups = 0;
+
+        const serverSideManifests = objects.filter((obj) =>
+          obj.Key.endsWith("/backup-manifest.json")
+        );
+
+        for (const manifestObj of serverSideManifests) {
+          const isOldBackup =
+            new Date(manifestObj.LastModified).getTime() < thirtyDaysAgo;
+          if (isOldBackup) {
+            try {
+              const manifest = await this.storageService.download(
+                manifestObj.Key,
+                true
+              );
+              if (manifest?.format === "server-side") {
+                const backupFolder = manifest.backupFolder;
+
+                const backupFiles = objects.filter((obj) =>
+                  obj.Key.startsWith(backupFolder + "/")
+                );
+                for (const file of backupFiles) {
+                  try {
+                    await this.storageService.delete(file.Key);
+                  } catch (fileError) {
+                    this.logger.log(
+                      "warning",
+                      `Failed to delete server-side backup file: ${file.Key}`
+                    );
+                  }
+                }
+                deletedBackups++;
+                this.logger.log(
+                  "info",
+                  `Cleaned up server-side backup: ${backupFolder}`
+                );
+              }
+            } catch (error) {
+              this.logger.log(
+                "warning",
+                `Failed to cleanup server-side backup: ${manifestObj.Key}`
+              );
+            }
+          }
+        }
+
+        if (deletedBackups > 0) {
+          this.logger.log(
+            "success",
+            `Cleaned up ${deletedBackups} old backups`
+          );
+        }
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "Failed to cleanup old backups",
+          error.message
+        );
+      }
+    }
+  }
+
+  class OperationQueue {
+    constructor(logger) {
+      this.logger = logger;
+      this.queue = new Map();
+      this.processing = false;
+      this.maxRetries = 3;
+      this.activeTimeouts = new Set();
+      this.maxQueueSize = 100;
+      this.lastCleanup = 0;
+    }
+    add(operationId, operation, priority = "normal") {
+      const now = Date.now();
+      if (now - this.lastCleanup > 10 * 60 * 1000) {
+        this.cleanupStaleOperations(now);
+        this.lastCleanup = now;
+      }
+      if (this.queue.has(operationId)) {
+        this.logger.log("skip", `Operation ${operationId} already queued`);
+        return;
+      }
+      if (this.queue.size >= this.maxQueueSize) {
+        this.logger.log(
+          "warning",
+          `Queue full (${this.maxQueueSize}), removing oldest operation`
+        );
+        const oldestKey = this.queue.keys().next().value;
+        this.queue.delete(oldestKey);
+      }
+      this.queue.set(operationId, {
+        id: operationId,
+        operation,
+        priority,
+        retries: 0,
+        addedAt: now,
+      });
+      this.logger.log("info", `📋 Queued operation: ${operationId}`);
+      this.process();
+    }
+    cleanupStaleOperations(now) {
+      const staleThreshold = 60 * 60 * 1000;
+      let removedCount = 0;
+      for (const [operationId, operation] of this.queue.entries()) {
+        if (
+          now - operation.addedAt > staleThreshold &&
+          operation.retries >= this.maxRetries
+        ) {
+          this.queue.delete(operationId);
+          removedCount++;
+        }
+      }
+      if (removedCount > 0) {
+        this.logger.log(
+          "info",
+          `🧹 Cleaned up ${removedCount} stale operations from queue`
+        );
+      }
+    }
+    async process() {
+      if (this.processing || this.queue.size === 0) return;
+      this.processing = true;
+      while (this.queue.size > 0) {
+        const operations = Array.from(this.queue.values());
+        const highPriority = operations.filter((op) => op.priority === "high");
+        const nextOp =
+          highPriority.length > 0 ? highPriority[0] : operations[0];
+        try {
+          this.logger.log("info", `⚡ Executing: ${nextOp.id}`);
+          await nextOp.operation();
+          this.queue.delete(nextOp.id);
+          this.logger.log("success", `✅ Completed: ${nextOp.id}`);
+        } catch (error) {
+          this.logger.log("error", `❌ Failed: ${nextOp.id}`, error.message);
+          if (nextOp.retries < this.maxRetries) {
+            nextOp.retries++;
+            const delay = Math.min(1000 * Math.pow(2, nextOp.retries), 10000);
+            this.logger.log(
+              "warning",
+              `🔄 Retrying ${nextOp.id} in ${delay}ms (${nextOp.retries}/${this.maxRetries})`
+            );
+            const timeoutId = setTimeout(() => {
+              this.activeTimeouts.delete(timeoutId);
+              if (this.queue.has(nextOp.id)) {
+                this.process();
+              }
+            }, delay);
+            this.activeTimeouts.add(timeoutId);
+            break;
+          } else {
+            this.logger.log("error", `💀 Giving up on: ${nextOp.id}`);
+            this.queue.delete(nextOp.id);
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      this.processing = false;
+    }
+    clear() {
+      this.queue.clear();
+      this.clearTimeouts();
+      this.processing = false;
+    }
+    clearTimeouts() {
+      for (const timeoutId of this.activeTimeouts) {
+        clearTimeout(timeoutId);
+      }
+      this.activeTimeouts.clear();
+    }
+    size() {
+      return this.queue.size;
+    }
+    cleanup() {
+      this.logger?.log("info", "🧹 OperationQueue cleanup starting");
+      try {
+        this.clear();
+        this.lastCleanup = 0;
+        this.maxRetries = 0;
+        this.maxQueueSize = 0;
+        this.logger?.log("success", "✅ OperationQueue cleanup completed");
+        this.logger = null;
+      } catch (error) {
+        console.warn("OperationQueue cleanup error:", error);
+      }
+    }
+  }
+
+  class LeaderElection {
+    constructor(channelName, logger) {
+      this.channelName = channelName;
+      this.logger = logger;
+      this.tabId = `tab_${Date.now()}_${Math.random()
+        .toString(36)
+        .substring(2, 9)}`;
+      this.leaderId = null;
+      this.isLeader = false;
+      this.channel = null;
+      this.heartbeatInterval = null;
+      this.electionTimeout = null;
+      this.leaderTimeout = null;
+      this.onBecameLeaderCallback = () => {};
+      this.onBecameFollowerCallback = () => {};
+      this.HEARTBEAT_INTERVAL = 5000;
+      this.FAST_LEADER_TIMEOUT = 12000;
+      this.SLOW_LEADER_TIMEOUT = 70000;
+      this.ELECTION_TIMEOUT = 100;
+      this.visibilityChangeHandler = this.handleVisibilityChange.bind(this);
+      try {
+        if ("BroadcastChannel" in window) {
+          this.channel = new BroadcastChannel(this.channelName);
+          this.channel.onmessage = this.handleMessage.bind(this);
+          document.addEventListener(
+            "visibilitychange",
+            this.visibilityChangeHandler
+          );
+        } else {
+          this.logger.log(
+            "warning",
+            "BroadcastChannel not supported. Multi-tab sync will not be safe."
+          );
+          this.becomeLeader();
+        }
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "Failed to create BroadcastChannel.",
+          error.message
+        );
+      }
+    }
+    elect() {
+      if (!this.channel) {
+        this.becomeLeader();
+        return;
+      }
+      this.logger.log(
+        "info",
+        `[LeaderElection] Tab ${this.tabId} starting election.`
+      );
+      this.clearElectionTimeout();
+      this.postMessage({ type: "request-leader" });
+      this.electionTimeout = setTimeout(() => {
+        this.logger.log(
+          "info",
+          `[LeaderElection] No leader responded within ${this.ELECTION_TIMEOUT}ms.`
+        );
+        this.becomeLeader();
+      }, this.ELECTION_TIMEOUT);
+    }
+    handleVisibilityChange() {
+      if (this.isLeader) {
+        this.postMessage({
+          type: "ping",
+          id: this.tabId,
+          visibilityState: document.visibilityState,
+        });
+      }
+    }
+    becomeLeader() {
+      this.logger.log(
+        "info",
+        `[LeaderElection] 👑 Tab ${this.tabId} is now the LEADER.`
+      );
+      this.isLeader = true;
+      this.leaderId = this.tabId;
+      this.clearElectionTimeout();
+      this.clearLeaderTimeout();
+      if (this.channel) {
+        this.postMessage({ type: "iam-leader", id: this.tabId });
+        if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+        this.heartbeatInterval = setInterval(() => {
+          this.postMessage({
+            type: "ping",
+            id: this.tabId,
+            visibilityState: document.visibilityState,
+          });
+        }, this.HEARTBEAT_INTERVAL);
+      }
+      this.onBecameLeaderCallback();
+    }
+    becomeFollower(leaderId) {
+      if (this.isLeader) {
+        this.logger.log(
+          "info",
+          `[LeaderElection] 🚶‍♀️ Tab ${this.tabId} is now a FOLLOWER.`
+        );
+      }
+      this.isLeader = false;
+      this.leaderId = leaderId;
+      this.clearElectionTimeout();
+      if (this.heartbeatInterval) {
+        clearInterval(this.heartbeatInterval);
+        this.heartbeatInterval = null;
+      }
+      this.resetLeaderTimeout();
+      this.onBecameFollowerCallback();
+    }
+    handleMessage(event) {
+      const msg = event.data;
+      if (!msg || !msg.type) return;
+      switch (msg.type) {
+        case "request-leader":
+          if (this.isLeader) {
+            this.postMessage({ type: "pong", id: this.tabId });
+          }
+          break;
+        case "iam-leader":
+          if (msg.id !== this.tabId) {
+            this.becomeFollower(msg.id);
+          }
+          break;
+        case "leader-unloading":
+          if (msg.id === this.leaderId) {
+            this.logger.log(
+              "info",
+              `[LeaderElection] Leader ${msg.id} is unloading. Starting new election immediately.`
+            );
+            this.leaderId = null;
+            this.elect();
+          }
+          break;
+        case "pong":
+          if (msg.id !== this.tabId) {
+            this.becomeFollower(msg.id);
+          }
+          break;
+        case "ping":
+          if (msg.id !== this.tabId && msg.id === this.leaderId) {
+            this.resetLeaderTimeout(msg.visibilityState);
+          }
+          break;
+      }
+    }
+    resetLeaderTimeout(leaderVisibilityState = "visible") {
+      this.clearLeaderTimeout();
+      const timeout =
+        leaderVisibilityState === "visible"
+          ? this.FAST_LEADER_TIMEOUT
+          : this.SLOW_LEADER_TIMEOUT;
+      this.leaderTimeout = setTimeout(() => {
+        this.logger.log(
+          "warning",
+          `[LeaderElection] Leader ${this.leaderId} timed out (state: ${leaderVisibilityState}). Starting new election.`
+        );
+        this.leaderId = null;
+        this.elect();
+      }, timeout);
+    }
+    clearElectionTimeout() {
+      if (this.electionTimeout) {
+        clearTimeout(this.electionTimeout);
+        this.electionTimeout = null;
+      }
+    }
+    clearLeaderTimeout() {
+      if (this.leaderTimeout) {
+        clearTimeout(this.leaderTimeout);
+        this.leaderTimeout = null;
+      }
+    }
+    postMessage(msg) {
+      try {
+        this.channel?.postMessage(msg);
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "[LeaderElection] Failed to post message.",
+          error.message
+        );
+      }
+    }
+    onBecameLeader(callback) {
+      this.onBecameLeaderCallback = callback;
+    }
+    onBecameFollower(callback) {
+      this.onBecameFollowerCallback = callback;
+    }
+    cleanup() {
+      this.logger.log("info", "[LeaderElection] Cleaning up.");
+      if (this.isLeader) {
+        this.postMessage({ type: "leader-unloading", id: this.tabId });
+      }
+      if (this.channel) {
+        this.channel.close();
+        this.channel = null;
+      }
+      document.removeEventListener(
+        "visibilitychange",
+        this.visibilityChangeHandler
+      );
+      if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+      this.clearElectionTimeout();
+      this.clearLeaderTimeout();
+    }
+  }
+
+  class CloudSyncApp {
+    constructor() {
+      this.logger = new Logger();
+      this.config = new ConfigManager();
+      this.operationQueue = new OperationQueue(this.logger);
+      this.dataService = new DataService(
+        this.config,
+        this.logger,
+        this.operationQueue
+      );
+      this.cryptoService = new CryptoService(this.config, this.logger);
+
+      this.storageService = null;
+      this.providerRegistry = new Map(); // NEW: Provider registry
+
+      this.syncOrchestrator = null;
+      this.backupService = null;
+
+      this.autoSyncInterval = null;
+      this.eventListeners = [];
+      this.modalCleanupCallbacks = [];
+      this.noSyncMode = false;
+      this.diagnosticsExpanded = false;
+      this.backupsExpanded = false;
+      this.providerExpanded = false;
+      this.commonExpanded = false;
+      this.leaderElection = null;
+    }
+
+    // NEW: Method to register providers
+    registerProvider(typeName, providerClass) {
+      if (
+        !providerClass ||
+        !(providerClass.prototype instanceof IStorageProvider)
+      ) {
+        this.logger.log(
+          "error",
+          `Attempted to register invalid provider: ${typeName}`
+        );
+        return;
+      }
+      this.providerRegistry.set(typeName, providerClass);
+    }
+
+    async initialize() {
+      this.logger.log(
+        "start",
+        "Initializing TypingmindCloud Sync V4 (Extensible Arch)"
+      );
+
+      const urlParams = new URLSearchParams(window.location.search);
+      this.noSyncMode =
+        urlParams.get("nosync") === "true" || urlParams.has("nosync");
+
+      const urlConfig = this.getConfigFromUrlParams();
+      if (urlConfig.hasParams) {
+        Object.keys(urlConfig.config).forEach((key) => {
+          if (key === "exclusions") {
+            localStorage.setItem(
+              "tcs_sync-exclusions",
+              urlConfig.config.exclusions
+            );
+            this.config.reloadExclusions();
+          } else {
+            this.config.set(key, urlConfig.config[key]);
+          }
+        });
+        this.config.save();
+        this.logger.log("info", "Applied and saved URL parameters to config.");
+        this.removeConfigFromUrl();
+      }
+
+      const storageType = this.config.get("storageType") || "s3";
+      this.logger.log("info", `Selected storage provider: ${storageType}`);
+
+      // REFACTORED: Use the provider registry
+      try {
+        const ProviderClass = this.providerRegistry.get(storageType);
+        if (ProviderClass) {
+          this.storageService = new ProviderClass(
+            this.config,
+            this.cryptoService,
+            this.logger
+          );
+        } else {
+          throw new Error(`Unsupported storage type: '${storageType}'`);
+        }
+      } catch (error) {
+        this.logger.log(
+          "error",
+          "Failed to instantiate storage provider.",
+          error.message
+        );
+        this.updateSyncStatus("error");
+        return;
+      }
+
+      this.syncOrchestrator = new SyncOrchestrator(
+        this.config,
+        this.dataService,
+        this.storageService,
+        this.logger,
+        this.operationQueue
+      );
+      this.backupService = new BackupService(
+        this.dataService,
+        this.storageService,
+        this.logger
+      );
+
+      this.leaderElection = new LeaderElection(
+        "tcs-leader-election",
+        this.logger
+      );
+      this.leaderElection.onBecameLeader(() => {
+        this.logger.log(
+          "info",
+          "👑 This tab is now the leader. Starting background tasks."
+        );
+        this.runLeaderTasks();
+      });
+      this.leaderElection.onBecameFollower(() => {
+        this.logger.log(
+          "info",
+          "🚶‍♀️ This tab is now a follower. Stopping background tasks."
+        );
+        if (this.autoSyncInterval) {
+          clearInterval(this.autoSyncInterval);
+          this.autoSyncInterval = null;
+        }
+      });
+
+      await this.waitForDOM();
+      this.insertSyncButton();
+
+      if (urlConfig.autoOpen || urlConfig.hasParams) {
+        this.logger.log(
+          "info",
+          "Auto-opening sync modal due to URL parameters"
+        );
+        setTimeout(() => this.openSyncModal(), 1000);
+      }
+
+      if (this.noSyncMode) {
+        this.logger.log(
+          "info",
+          "🚫 NoSync mode enabled - sync and backup tasks disabled."
+        );
+        if (this.storageService.isConfigured()) {
+          try {
+            await this.storageService.initialize();
+          } catch (error) {
+            this.logger.log(
+              "error",
+              `Storage service failed to initialize in NoSync mode: ${error.message}`
+            );
+          }
+        }
+      } else {
+        if (this.storageService.isConfigured()) {
+          try {
+            await this.storageService.initialize();
+            this.leaderElection.elect();
+          } catch (error) {
+            this.logger.log("error", "Initialization failed", error.message);
+            this.updateSyncStatus("error");
+          }
+        } else {
+          this.logger.log(
+            "info",
+            "Storage provider not configured. Running in limited capacity."
+          );
+          if (!this.checkMandatoryConfig()) {
+            alert(
+              "⚠️ Cloud Sync Configuration Required\n\nPlease click the Sync button to open settings and configure your chosen cloud provider, then reload the page."
+            );
+          }
+        }
+      }
+    }
+
+    checkMandatoryConfig() {
+      const storageType = this.config.get("storageType");
+      if (storageType === "s3") {
+        return !!(
+          this.config.get("bucketName") &&
+          this.config.get("region") &&
+          this.config.get("accessKey") &&
+          this.config.get("secretKey") &&
+          this.config.get("encryptionKey")
+        );
+      }
+      if (storageType === "googleDrive") {
+        return !!(
+          this.config.get("googleClientId") && this.config.get("encryptionKey")
+        );
+      }
+      return false;
+    }
+
+    isSnapshotAvailable() {
+      return this.storageService && this.storageService.isConfigured();
+    }
+
+    getConfigFromUrlParams() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const config = {};
+      const autoOpen = urlParams.has("config") || urlParams.has("autoconfig");
+      const paramMap = {
+        storagetype: "storageType",
+        bucket: "bucketName",
+        bucketname: "bucketName",
+        region: "region",
+        accesskey: "accessKey",
+        secretkey: "secretKey",
+        endpoint: "endpoint",
+        encryptionkey: "encryptionKey",
+        syncinterval: "syncInterval",
+        exclusions: "exclusions",
+        googleclientid: "googleClientId",
+      };
+      let hasConfigParams = false;
+      for (const [urlParam, configKey] of Object.entries(paramMap)) {
+        const value = urlParams.get(urlParam);
+        if (value !== null) {
+          config[configKey] = value;
+          hasConfigParams = true;
+        }
+      }
+      const sensitiveKeys = {
+        accesskey: "accessKey",
+        secretkey: "secretKey",
+        encryptionkey: "encryptionKey",
+      };
+      const rawQuery = window.location.search.substring(1);
+      if (rawQuery) {
+        const params = rawQuery.split("&");
+        for (const p of params) {
+          const idx = p.indexOf("=");
+          if (idx > 0) {
+            const key = p.substring(0, idx);
+            if (sensitiveKeys[key]) {
+              const value = decodeURIComponent(p.substring(idx + 1));
+              config[sensitiveKeys[key]] = value;
+              hasConfigParams = true;
+            }
+          }
+        }
+      }
+      return {
+        config: config,
+        hasParams: hasConfigParams,
+        autoOpen: autoOpen,
+      };
+    }
+    removeConfigFromUrl() {
+      const url = new URL(window.location);
+      const params = url.searchParams;
+      const paramsToRemove = [
+        "storagetype",
+        "bucket",
+        "bucketname",
+        "region",
+        "accesskey",
+        "secretkey",
+        "endpoint",
+        "encryptionkey",
+        "syncinterval",
+        "exclusions",
+        "googleclientid",
+        "config",
+        "autoconfig",
+      ];
+      let removedSomething = false;
+      paramsToRemove.forEach((p) => {
+        if (params.has(p)) {
+          params.delete(p);
+          removedSomething = true;
+        }
+      });
+      if (removedSomething) {
+        window.history.replaceState({}, document.title, url.toString());
+        this.logger.log("info", "Removed configuration parameters from URL.");
+      }
+    }
+    async waitForDOM() {
+      if (document.readyState === "loading") {
+        return new Promise((resolve) =>
+          document.addEventListener("DOMContentLoaded", resolve)
+        );
+      }
+    }
+    insertSyncButton() {
+      if (document.querySelector('[data-element-id="workspace-tab-cloudsync"]'))
+        return;
+      const style = document.createElement("style");
+      style.textContent = `#sync-status-dot { position: absolute; top: 2px; width: 8px; height: 8px; border-radius: 50%; background-color: #6b7280; display: none; z-index: 10; }`;
+      document.head.appendChild(style);
+      const button = document.createElement("button");
+      button.setAttribute("data-element-id", "workspace-tab-cloudsync");
+      button.className =
+        "min-w-[58px] sm:min-w-0 sm:aspect-auto aspect-square cursor-default h-12 md:h-[50px] flex-col justify-start items-start inline-flex focus:outline-0 focus:text-white w-full relative";
+      button.innerHTML = `<span class="text-white/70 hover:bg-white/20 self-stretch h-12 md:h-[50px] px-0.5 py-1.5 rounded-xl flex-col justify-start items-center gap-1.5 flex transition-colors"><div class="relative"><svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4.5A4.5 4.5 0 0114.5 9M9 13.5A4.5 4.5 0 013.5 9"/><polyline points="9,2.5 9,4.5 11,4.5"/><polyline points="9,15.5 9,13.5 7,13.5"/></g></svg><div id="sync-status-dot"></div></div><span class="font-normal self-stretch text-center text-xs leading-4 md:leading-none">Sync</span></span>`;
+      button.addEventListener("click", () => this.openSyncModal());
+      const chatButton = document.querySelector(
+        'button[data-element-id="workspace-tab-chat"]'
+      );
+      if (chatButton?.parentNode) {
+        chatButton.parentNode.insertBefore(button, chatButton.nextSibling);
+      }
+    }
+    updateSyncStatus(status = "success") {
+      const dot = document.getElementById("sync-status-dot");
+      if (!dot) return;
+      const colors = {
+        success: "#22c55e",
+        error: "#ef4444",
+        warning: "#eab308",
+        syncing: "#3b82f6",
+      };
+      dot.style.backgroundColor = colors[status] || "#6b7280";
+      dot.style.display = "block";
+    }
+    openSyncModal() {
+      if (document.querySelector(".cloud-sync-modal")) return;
+      this.logger.log("start", "Opening sync modal");
+      this.createModal();
+    }
+    createModal() {
+      const overlay = document.createElement("div");
+      overlay.className = "modal-overlay";
+      overlay.style.cssText = `position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 9999;`;
+      const modal = document.createElement("div");
+      modal.className = "cloud-sync-modal";
+      modal.innerHTML = this.getModalHTML();
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+      this.setupModalEventListeners(modal, overlay);
+    }
+
+    // REFACTORED: getModalHTML is now generic
+    getModalHTML() {
+      const modeStatus = this.noSyncMode
+        ? `<div class="mb-3 p-2 bg-orange-600 rounded-lg border border-orange-500">
+             <div class="text-center text-sm font-medium">
+               🚫 NoSync Mode Active - Only snapshot functionality available
+             </div>
+           </div>`
+        : "";
+      return `<div class="text-white text-left text-sm">
+        <div class="flex justify-center items-center mb-3">
+          <h3 class="text-center text-xl font-bold text-white">Cloud Backup & Sync Settings</h3>
+        </div>
+        ${modeStatus}
+        <div class="space-y-3">
+
+          <!-- Sync Diagnostics Section -->
+          <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
+            <div class="flex items-center justify-between mb-2 cursor-pointer select-none" id="sync-diagnostics-header">
+              <div class="flex items-center gap-2">
+                <label class="block text-sm font-medium text-zinc-300">Sync Diagnostics</label>
+                <span id="sync-overall-status" class="text-lg">✅</span>
+                <div class="flex items-center gap-1 border-l border-zinc-600 pl-2">
+                  <button id="force-import-btn" class="px-2 py-1 text-xs text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Import from Cloud\nOverwrites local data with cloud data.">Import ↙</button>
+                  <button id="force-export-btn" class="px-2 py-1 text-xs text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Export to Cloud\nOverwrites cloud data with local data.">Export ↗</button>
+                  <button id="sync-diagnostics-refresh" class="text-zinc-400 hover:text-white transition-colors p-1 rounded" title="Refresh diagnostics">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="flex items-center gap-1">
+                <svg id="sync-diagnostics-chevron" class="w-4 h-4 text-zinc-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+              </div>
+            </div>
+            <div id="sync-diagnostics-content" class="overflow-x-auto hidden">
+              <table id="sync-diagnostics-table" class="w-full text-xs text-zinc-300 border-collapse">
+                <thead><tr class="border-b border-zinc-600"><th class="text-left py-1 px-2 font-medium">Type</th><th class="text-right py-1 px-2 font-medium">Count</th></tr></thead>
+                <tbody id="sync-diagnostics-body"><tr><td colspan="2" class="text-center py-2 text-zinc-500">Loading...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Available Backups Section -->
+          <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
+            <div class="flex items-center justify-between mb-2 cursor-pointer select-none" id="available-backups-header">
+              <label class="block text-sm font-medium text-zinc-300">Available Backups</label>
+              <div class="flex items-center gap-1">
+                <svg id="available-backups-chevron" class="w-4 h-4 text-zinc-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+              </div>
+            </div>
+            <div id="available-backups-content" class="space-y-2 hidden">
+              <div class="w-full">
+                <select id="backup-files" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white">
+                  <option value="">Please configure your provider first</option>
+                </select>
+              </div>
+              <div class="flex justify-end space-x-2">
+                <button id="restore-backup-btn" class="px-2 py-1.5 text-sm text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>Restore</button>
+                <button id="delete-backup-btn" class="px-2 py-1.5 text-sm text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>Delete</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Storage Provider Settings Section -->
+          <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
+            <div class="flex items-center justify-between mb-2 cursor-pointer select-none" id="provider-settings-header">
+              <label class="block text-sm font-medium text-zinc-300">Storage Provider Settings</label>
+              <div class="flex items-center gap-1">
+                <svg id="provider-settings-chevron" class="w-4 h-4 text-zinc-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+              </div>
+            </div>
+            <div id="provider-settings-content" class="space-y-3 hidden">
+              <div>
+                <label for="storage-type-select" class="block text-sm font-medium text-zinc-300">Storage Provider</label>
+                <select id="storage-type-select" class="mt-1 w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white">
+                  <!-- Options will be populated by JavaScript -->
+                </select>
+              </div>
+              <div id="provider-settings-container">
+                <!-- Provider-specific UI will be injected here -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Common Settings Section -->
+          <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
+            <div class="flex items-center justify-between mb-2 cursor-pointer select-none" id="common-settings-header">
+              <label class="block text-sm font-medium text-zinc-300">Common Settings</label>
+              <div class="flex items-center gap-1">
+                <svg id="common-settings-chevron" class="w-4 h-4 text-zinc-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+              </div>
+            </div>
+            <div id="common-settings-content" class="space-y-3 hidden">
+              <div class="flex space-x-4">
+                <div class="w-1/2">
+                  <label for="sync-interval" class="block text-sm font-medium text-zinc-300">Sync Interval (sec)</label>
+                  <input id="sync-interval" name="sync-interval" type="number" min="15" value="${this.config.get(
+                    "syncInterval"
+                  )}" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
+                </div>
+                <div class="w-1/2">
+                  <label for="encryption-key" class="block text-sm font-medium text-zinc-300">Encryption Key <span class="text-red-400">*</span></label>
+                  <input id="encryption-key" name="encryption-key" type="password" value="${
+                    this.config.get("encryptionKey") || ""
+                  }" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" autocomplete="off" required>
+                </div>
+              </div>
+              <div>
+                <label for="sync-exclusions" class="block text-sm font-medium text-zinc-300">Exclusions (Comma separated)</label>
+                <input id="sync-exclusions" name="sync-exclusions" type="text" value="${
+                  localStorage.getItem("tcs_sync-exclusions") || ""
+                }" class="w-full px-2 py-1.5 border border-zinc-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700 text-white" placeholder="e.g., my-setting, another-setting" autocomplete="off">
+              </div>
+            </div>
+          </div>
+
+          <!-- Actions & Footer -->
+          <div class="flex items-center justify-end mb-4 space-x-2 mt-4">
+            <span class="text-sm text-zinc-400">Console Logging</span>
+            <input type="checkbox" id="console-logging-toggle" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer">
+          </div>
+          <div class="flex justify-between space-x-2 mt-4">
+            <button id="save-settings" class="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 disabled:cursor-default transition-colors">Save & Verify</button>
+            <div class="flex space-x-2">
+              <button id="sync-now" class="inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-500 disabled:cursor-default transition-colors" ${
+                this.noSyncMode ? "disabled" : ""
+              }>${this.noSyncMode ? "Sync Off" : "Sync Now"}</button>
+              <button id="create-snapshot" class="inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 disabled:cursor-default transition-colors" ${
+                !this.isSnapshotAvailable() ? "disabled" : ""
+              }>Snapshot</button>
+              <button id="close-modal" class="inline-flex items-center px-2 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">Close</button>
+            </div>
+          </div>
+          <div class="text-center mt-4"><span id="last-sync-msg" class="text-zinc-400">${
+            this.noSyncMode
+              ? "NoSync Mode: Automatic sync operations disabled"
+              : ""
+          }</span></div>
+          <div id="action-msg" class="text-center text-zinc-400"></div>
+        </div>
+      </div>`;
+    }
+
+    // REFACTORED: setupModalEventListeners is now generic
+    setupModalEventListeners(modal, overlay) {
+      const closeModalHandler = () => this.closeModal(overlay);
+      const saveSettingsHandler = () => this.saveSettings(modal);
+      const createSnapshotHandler = () => this.createSnapshot();
+      const handleSyncNowHandler = () => this.handleSyncNow(modal);
+      const consoleLoggingHandler = (e) =>
+        this.logger.setEnabled(e.target.checked);
+
+      overlay.addEventListener("click", closeModalHandler);
+      modal.addEventListener("click", (e) => e.stopPropagation());
+      modal
+        .querySelector("#close-modal")
+        .addEventListener("click", closeModalHandler);
+      modal
+        .querySelector("#save-settings")
+        .addEventListener("click", saveSettingsHandler);
+      modal
+        .querySelector("#create-snapshot")
+        .addEventListener("click", createSnapshotHandler);
+      modal
+        .querySelector("#sync-now")
+        .addEventListener("click", handleSyncNowHandler);
+      modal
+        .querySelector("#console-logging-toggle")
+        .addEventListener("change", consoleLoggingHandler);
+
+      this.setupCollapsibleSection(
+        modal,
+        "available-backups",
+        this.backupsExpanded
+      );
+      this.setupCollapsibleSection(
+        modal,
+        "provider-settings",
+        this.providerExpanded
+      );
+      this.setupCollapsibleSection(
+        modal,
+        "common-settings",
+        this.commonExpanded
+      );
+
+      const storageSelect = modal.querySelector("#storage-type-select");
+      const providerUIContainer = modal.querySelector(
+        "#provider-settings-container"
+      );
+
+      // Populate provider dropdown from registry
+      this.providerRegistry.forEach((providerClass, typeName) => {
+        const option = document.createElement("option");
+        option.value = typeName;
+        option.textContent = providerClass.displayName;
+        storageSelect.appendChild(option);
+      });
+      storageSelect.value = this.config.get("storageType") || "s3";
+
+      const updateProviderUI = () => {
+        const selectedType = storageSelect.value;
+        const ProviderClass = this.providerRegistry.get(selectedType);
+
+        if (ProviderClass) {
+          const { html, setupEventListeners } =
+            ProviderClass.getConfigurationUI();
+          providerUIContainer.innerHTML = html;
+          setupEventListeners(
+            providerUIContainer,
+            this.storageService,
+            this.config,
+            this.logger
+          );
+        } else {
+          providerUIContainer.innerHTML = "";
+        }
+
+        const isConfigured = this.storageService?.isConfigured();
+        modal.querySelector("#force-import-btn").disabled = !isConfigured;
+        modal.querySelector("#force-export-btn").disabled = !isConfigured;
+      };
+
+      storageSelect.addEventListener("change", updateProviderUI);
+      updateProviderUI(); // Initial render
+
+      const forceExportBtn = modal.querySelector("#force-export-btn");
+      const forceImportBtn = modal.querySelector("#force-import-btn");
+
+      const handleForceExport = async () => {
+        if (
+          !confirm(
+            "⚠️ WARNING: This will completely overwrite the data in your cloud storage with the data from THIS BROWSER.\n\nAny changes made on other devices that have not been synced here will be PERMANENTLY LOST.\n\nAre you sure you want to proceed?"
+          )
+        )
+          return;
+        const originalText = forceExportBtn.textContent;
+        forceExportBtn.disabled = true;
+        forceExportBtn.textContent = "Exporting...";
+        try {
+          await this.syncOrchestrator.forceExportToCloud();
+          forceExportBtn.textContent = "Success!";
+          alert("Force Export to Cloud completed successfully.");
+        } catch (error) {
+          forceExportBtn.textContent = "Failed";
+          alert(`Force Export failed: ${error.message}`);
+        } finally {
+          setTimeout(() => {
+            forceExportBtn.textContent = originalText;
+            forceExportBtn.disabled = false;
+            this.loadSyncDiagnostics(modal);
+          }, 2000);
+        }
+      };
+
+      const handleForceImport = async () => {
+        if (
+          !confirm(
+            "⚠️ WARNING: This will completely overwrite the data in THIS BROWSER with the data from your cloud storage.\n\nAny local changes you have made that are not saved in the cloud will be PERMANENTLY LOST. This cannot be undone.\n\nAre you sure you want to proceed?"
+          )
+        )
+          return;
+        const originalText = forceImportBtn.textContent;
+        forceImportBtn.disabled = true;
+        forceImportBtn.textContent = "Importing...";
+        try {
+          await this.syncOrchestrator.forceImportFromCloud();
+          alert(
+            "Force Import from Cloud completed successfully. The page will now reload to apply the new data."
+          );
+          window.location.reload();
+        } catch (error) {
+          forceImportBtn.textContent = "Failed";
+          alert(`Force Import failed: ${error.message}`);
+          setTimeout(() => {
+            forceImportBtn.textContent = originalText;
+            forceImportBtn.disabled = false;
+            this.loadSyncDiagnostics(modal);
+          }, 2000);
+        }
+      };
+
+      forceExportBtn.addEventListener("click", handleForceExport);
+      forceImportBtn.addEventListener("click", handleForceImport);
+
+      this.modalCleanupCallbacks.push(() => {
+        overlay.removeEventListener("click", closeModalHandler);
+        modal
+          .querySelector("#close-modal")
+          ?.removeEventListener("click", closeModalHandler);
+        modal
+          .querySelector("#save-settings")
+          ?.removeEventListener("click", saveSettingsHandler);
+        modal
+          .querySelector("#create-snapshot")
+          ?.removeEventListener("click", createSnapshotHandler);
+        modal
+          .querySelector("#sync-now")
+          ?.removeEventListener("click", handleSyncNowHandler);
+        modal
+          .querySelector("#console-logging-toggle")
+          ?.removeEventListener("change", consoleLoggingHandler);
+        storageSelect.removeEventListener("change", updateProviderUI);
+        forceExportBtn.removeEventListener("click", handleForceExport);
+        forceImportBtn.removeEventListener("click", handleForceImport);
+      });
+
+      modal.querySelector("#console-logging-toggle").checked =
+        this.logger.enabled;
+
+      this.populateFormFromUrlParams(modal);
+      if (this.isSnapshotAvailable()) {
+        this.loadBackupList(modal);
+        this.setupBackupListHandlers(modal);
+        this.loadSyncDiagnostics(modal);
+        this.setupDiagnosticsToggle(modal);
+        this.setupDiagnosticsRefresh(modal);
+      }
+    }
+
+    populateFormFromUrlParams(modal) {
+      const urlConfig = this.getConfigFromUrlParams();
+      if (!urlConfig.hasParams) {
+        this.logger.log("info", "No URL config parameters to populate");
+        return;
+      }
+      this.logger.log(
+        "info",
+        "Populating form with URL parameters",
+        urlConfig.config
+      );
+      const fieldMap = {
+        storageType: "storage-type-select",
+        bucketName: "aws-bucket",
+        region: "aws-region",
+        accessKey: "aws-access-key",
+        secretKey: "aws-secret-key",
+        endpoint: "aws-endpoint",
+        encryptionKey: "encryption-key",
+        syncInterval: "sync-interval",
+        exclusions: "sync-exclusions",
+        googleClientId: "google-client-id",
+      };
+      let populatedCount = 0;
+      for (const [configKey, fieldId] of Object.entries(fieldMap)) {
+        const value = urlConfig.config[configKey];
+        if (value !== undefined) {
+          const field = modal.querySelector(`#${fieldId}`);
+          if (field) {
+            field.value = value;
+            populatedCount++;
+            this.logger.log(
+              "info",
+              `Populated field ${fieldId} with URL value`
+            );
+          }
+        }
+      }
+      if (populatedCount > 0) {
+        const actionMsg = modal.querySelector("#action-msg");
+        if (actionMsg) {
+          actionMsg.textContent = `✨ Auto-populated ${populatedCount} field(s) from URL parameters`;
+          actionMsg.style.color = "#22c55e";
+          setTimeout(() => {
+            actionMsg.textContent = "";
+            actionMsg.style.color = "";
+          }, 5000);
+        }
+      }
+    }
+
+    handleSyncNow(modal) {
+      if (this.noSyncMode) {
+        alert(
+          "⚠️ Sync operations are disabled in NoSync mode.\n\nTo enable sync operations, remove the ?nosync parameter from the URL and reload the page."
+        );
+        return;
+      }
+      const syncNowButton = modal.querySelector("#sync-now");
+      const originalText = syncNowButton.textContent;
+      syncNowButton.disabled = true;
+      syncNowButton.textContent = "Working...";
+      this.operationQueue.add(
+        "manual-full-sync",
+        () => this.syncOrchestrator.performFullSync(),
+        "high"
+      );
+      setTimeout(() => {
+        syncNowButton.textContent = "Done!";
+        setTimeout(() => {
+          syncNowButton.textContent = originalText;
+          syncNowButton.disabled = false;
+        }, 2000);
+      }, 1000);
+    }
+
+    async loadBackupList(modal) {
+      const backupList = modal.querySelector("#backup-files");
+      if (!backupList) return;
+      backupList.innerHTML = '<option value="">Loading backups...</option>';
+      backupList.disabled = true;
+
+      if (!this.isSnapshotAvailable()) {
+        backupList.innerHTML =
+          '<option value="">Please configure your provider first</option>';
+        backupList.disabled = false;
+        return;
+      }
+
+      try {
+        const backups = await this.backupService.loadBackupList();
+        backupList.innerHTML = "";
+        backupList.disabled = false;
+        if (backups.length === 0) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.text = "No backups found";
+          backupList.appendChild(option);
+        } else {
+          backups.forEach((backup) => {
+            const option = document.createElement("option");
+            option.value = backup.key;
+            const total = backup.totalItems ?? "N/A";
+            const copied = backup.copiedItems ?? total;
+            const suffix = `(${copied}/${total})`;
+            let prefix = "";
+            if (backup.type === "snapshot") {
+              prefix = "📸 ";
+            } else if (backup.type === "daily") {
+              prefix = "🗓️ ";
+            }
+            option.text = `${prefix}${
+              backup.displayName || backup.name
+            } ${suffix}`;
+            backupList.appendChild(option);
+          });
+        }
+        this.updateBackupButtonStates(modal);
+        backupList.addEventListener("change", () =>
+          this.updateBackupButtonStates(modal)
+        );
+      } catch (error) {
+        console.error("Failed to load backup list:", error);
+        backupList.innerHTML =
+          '<option value="">Error loading backups</option>';
+        backupList.disabled = false;
+      }
+    }
+
+    updateBackupButtonStates(modal) {
+      const backupList = modal.querySelector("#backup-files");
+      const selectedValue = backupList.value || "";
+      const restoreButton = modal.querySelector("#restore-backup-btn");
+      const deleteButton = modal.querySelector("#delete-backup-btn");
+      const isSnapshot = selectedValue.includes("s-");
+      const isDailyBackup = selectedValue.includes("typingmind-backup-");
+      const isChunkedBackup = selectedValue.endsWith("-metadata.json");
+      const isMetadataFile = selectedValue === "metadata.json";
+      const isItemsFile = selectedValue.startsWith("items/");
+      if (restoreButton) {
+        const canRestore =
+          selectedValue && (isSnapshot || isDailyBackup || isChunkedBackup);
+        restoreButton.disabled = !canRestore;
+      }
+      if (deleteButton) {
+        const isProtectedFile = !selectedValue || isMetadataFile || isItemsFile;
+        deleteButton.disabled = isProtectedFile;
+      }
+    }
+
+    setupBackupListHandlers(modal) {
+      const restoreButton = modal.querySelector("#restore-backup-btn");
+      const deleteButton = modal.querySelector("#delete-backup-btn");
+      const backupList = modal.querySelector("#backup-files");
+      if (restoreButton) {
+        restoreButton.addEventListener("click", async () => {
+          const key = backupList.value;
+          if (!key) {
+            alert("Please select a backup to restore");
+            return;
+          }
+          if (
+            confirm(
+              "Are you sure you want to restore this backup? This will overwrite your current data."
+            )
+          ) {
+            try {
+              restoreButton.disabled = true;
+              restoreButton.textContent = "Restoring...";
+              const success = await this.backupService.restoreFromBackup(
+                key,
+                this.cryptoService
+              );
+              if (success) {
+                alert("Backup restored successfully! Page will reload.");
+                location.reload();
+              }
+            } catch (error) {
+              console.error("Failed to restore backup:", error);
+              alert("Failed to restore backup: " + error.message);
+              restoreButton.textContent = "Failed";
+              setTimeout(() => {
+                restoreButton.textContent = "Restore";
+                restoreButton.disabled = false;
+                this.updateBackupButtonStates(modal);
+              }, 2000);
+            }
+          }
+        });
+      }
+      if (deleteButton) {
+        deleteButton.addEventListener("click", async () => {
+          const key = backupList.value;
+          if (!key) {
+            alert("Please select a backup to delete");
+            return;
+          }
+          if (
+            confirm(
+              "Are you sure you want to delete this backup? This cannot be undone."
+            )
+          ) {
+            try {
+              deleteButton.disabled = true;
+              deleteButton.textContent = "Deleting...";
+              await this.deleteBackupWithChunks(key);
+              await this.loadBackupList(modal);
+              deleteButton.textContent = "Deleted!";
+              setTimeout(() => {
+                deleteButton.textContent = "Delete";
+                this.updateBackupButtonStates(modal);
+              }, 2000);
+            } catch (error) {
+              console.error("Failed to delete backup:", error);
+              alert("Failed to delete backup: " + error.message);
+              deleteButton.textContent = "Failed";
+              setTimeout(() => {
+                deleteButton.textContent = "Delete";
+                deleteButton.disabled = false;
+                this.updateBackupButtonStates(modal);
+              }, 2000);
+            }
+          }
+        });
+      }
+    }
+
+    async loadSyncDiagnostics(modal) {
+      const diagnosticsBody = modal.querySelector("#sync-diagnostics-body");
+      if (!diagnosticsBody) return;
+      const overallStatusEl = modal.querySelector("#sync-overall-status");
+      const summaryEl = modal.querySelector("#sync-diagnostics-summary");
+      const setContent = (html) => {
+        diagnosticsBody.innerHTML = html;
+      };
+
+      if (!this.storageService || !this.storageService.isConfigured()) {
+        setContent(
+          '<tr><td colspan="2" class="text-center py-2 text-zinc-500">Provider Not Configured</td></tr>'
+        );
+        if (overallStatusEl) overallStatusEl.textContent = "⚙️";
+        if (summaryEl) summaryEl.textContent = "Setup required";
+        return;
+      }
+
+      try {
+        const diagnosticsData = localStorage.getItem("tcs_sync_diagnostics");
+        if (!diagnosticsData) {
+          setContent(
+            '<tr><td colspan="2" class="text-center py-2 text-zinc-500">No diagnostics data available. Run a sync.</td></tr>'
+          );
+          if (overallStatusEl) overallStatusEl.textContent = "⚠️";
+          if (summaryEl) summaryEl.textContent = "Waiting for first sync";
+          return;
+        }
+
+        const data = JSON.parse(diagnosticsData);
+        const rows = [
+          {
+            type: "📱 Local Items",
+            count: data.localItems || 0,
+          },
+          {
+            type: "📋 Local Metadata",
+            count: data.localMetadata || 0,
+          },
+          {
+            type: "☁️ Cloud Metadata",
+            count: data.cloudMetadata || 0,
+          },
+          {
+            type: "💬 Chat Sync",
+            count: `${data.chatSyncLocal || 0} ⟷ ${data.chatSyncCloud || 0}`,
+          },
+        ];
+
+        const tableHTML = rows
+          .map(
+            (row) => `
+          <tr class="border-b border-zinc-700 hover:bg-zinc-700/30">
+            <td class="py-1 px-2">${row.type}</td>
+            <td class="text-right py-1 px-2">${row.count}</td>
+          </tr>
+        `
+          )
+          .join("");
+
+        const hasIssues =
+          data.localItems !== data.localMetadata ||
+          data.localMetadata !== data.cloudMetadata ||
+          data.chatSyncLocal !== data.chatSyncCloud;
+
+        const overallStatus = hasIssues ? "⚠️" : "✅";
+        const lastUpdated = new Date(data.timestamp || 0).toLocaleTimeString();
+        const summaryText = `Updated: ${lastUpdated}`;
+
+        if (overallStatusEl) overallStatusEl.textContent = overallStatus;
+        if (summaryEl) summaryEl.textContent = summaryText;
+        setContent(tableHTML);
+      } catch (error) {
+        console.error("Failed to load sync diagnostics:", error);
+        setContent(
+          '<tr><td colspan="2" class="text-center py-2 text-red-400">Error loading diagnostics from storage</td></tr>'
+        );
+        if (overallStatusEl) overallStatusEl.textContent = "❌";
+        if (summaryEl) summaryEl.textContent = "Error";
+      }
+    }
+    setupCollapsibleSection(modal, sectionName, initialExpanded) {
+      const header = modal.querySelector(`#${sectionName}-header`);
+      const content = modal.querySelector(`#${sectionName}-content`);
+      const chevron = modal.querySelector(`#${sectionName}-chevron`);
+      if (!header || !content || !chevron) return;
+
+      const setVisibility = (expanded) => {
+        if (expanded) {
+          content.classList.remove("hidden");
+          chevron.style.transform = "rotate(180deg)";
+        } else {
+          content.classList.add("hidden");
+          chevron.style.transform = "rotate(0deg)";
+        }
+      };
+
+      setVisibility(initialExpanded);
+
+      const toggleSection = () => {
+        const currentExpanded = !content.classList.contains("hidden");
+        const newExpanded = !currentExpanded;
+        setVisibility(newExpanded);
+
+        switch (sectionName) {
+          case "available-backups":
+            this.backupsExpanded = newExpanded;
+            break;
+          case "provider-settings":
+            this.providerExpanded = newExpanded;
+            break;
+          case "common-settings":
+            this.commonExpanded = newExpanded;
+            break;
+        }
+      };
+
+      const clickHandler = toggleSection;
+      const touchHandler = (e) => {
+        e.preventDefault();
+        toggleSection();
+      };
+
+      header.addEventListener("click", clickHandler);
+      header.addEventListener("touchend", touchHandler);
+      this.modalCleanupCallbacks.push(() => {
+        if (header) {
+          header.removeEventListener("click", clickHandler);
+          header.removeEventListener("touchend", touchHandler);
+        }
+      });
+    }
+
+    setupDiagnosticsToggle(modal) {
+      const header = modal.querySelector("#sync-diagnostics-header");
+      const content = modal.querySelector("#sync-diagnostics-content");
+      const chevron = modal.querySelector("#sync-diagnostics-chevron");
+      if (!header || !content || !chevron) return;
+      const setVisibility = (expanded) => {
+        if (expanded) {
+          content.classList.remove("hidden");
+          chevron.style.transform = "rotate(180deg)";
+        } else {
+          content.classList.add("hidden");
+          chevron.style.transform = "rotate(0deg)";
+        }
+      };
+      setVisibility(this.diagnosticsExpanded);
+      const toggleDiagnostics = () => {
+        this.diagnosticsExpanded = !this.diagnosticsExpanded;
+        setVisibility(this.diagnosticsExpanded);
+      };
+      const clickHandler = toggleDiagnostics;
+      const touchHandler = (e) => {
+        e.preventDefault();
+        toggleDiagnostics();
+      };
+      header.addEventListener("click", clickHandler);
+      header.addEventListener("touchend", touchHandler);
+      this.modalCleanupCallbacks.push(() => {
+        if (header) {
+          header.removeEventListener("click", clickHandler);
+          header.removeEventListener("touchend", touchHandler);
+        }
+      });
+    }
+    setupDiagnosticsRefresh(modal) {
+      const refreshButton = modal.querySelector("#sync-diagnostics-refresh");
+      if (!refreshButton) return;
+      const refreshHandler = (e) => {
+        e.stopPropagation();
+        this.loadSyncDiagnostics(modal);
+        refreshButton.style.transform = "rotate(360deg)";
+        setTimeout(() => {
+          refreshButton.style.transform = "rotate(0deg)";
+        }, 300);
+      };
+      refreshButton.addEventListener("click", refreshHandler);
+      this.modalCleanupCallbacks.push(() => {
+        if (refreshButton) {
+          refreshButton.removeEventListener("click", refreshHandler);
+        }
+      });
+    }
+
+    closeModal(overlay) {
+      this.diagnosticsExpanded = false;
+      this.backupsExpanded = false;
+      this.providerExpanded = false;
+      this.commonExpanded = false;
+      this.modalCleanupCallbacks.forEach((cleanup) => {
+        try {
+          cleanup();
+        } catch (error) {
+          this.logger.log(
+            "warning",
+            "Error during modal cleanup",
+            error.message
+          );
+        }
+      });
+      this.modalCleanupCallbacks = [];
+      if (overlay) overlay.remove();
+    }
+
+    async saveSettings(modal) {
+      const storageType = modal.querySelector("#storage-type-select").value;
+
+      const newConfig = {
+        storageType: storageType,
+        syncInterval:
+          parseInt(modal.querySelector("#sync-interval").value) || 15,
+        encryptionKey: modal.querySelector("#encryption-key").value.trim(),
+      };
+
+      const providerContainer = modal.querySelector(
+        "#provider-settings-container"
+      );
+      if (storageType === "s3") {
+        newConfig.bucketName = providerContainer
+          .querySelector("#aws-bucket")
+          .value.trim();
+        newConfig.region = providerContainer
+          .querySelector("#aws-region")
+          .value.trim();
+        newConfig.accessKey = providerContainer
+          .querySelector("#aws-access-key")
+          .value.trim();
+        newConfig.secretKey = providerContainer
+          .querySelector("#aws-secret-key")
+          .value.trim();
+        newConfig.endpoint = providerContainer
+          .querySelector("#aws-endpoint")
+          .value.trim();
+      } else if (storageType === "googleDrive") {
+        newConfig.googleClientId = providerContainer
+          .querySelector("#google-client-id")
+          .value.trim();
+      }
+
+      const exclusions = modal.querySelector("#sync-exclusions").value;
+
+      if (newConfig.syncInterval < 15) {
+        alert("Sync interval must be at least 15 seconds");
+        return;
+      }
+      if (!newConfig.encryptionKey) {
+        alert("Encryption key is a mandatory shared setting.");
+        return;
+      }
+
+      const saveButton = modal.querySelector("#save-settings");
+      const actionMsg = modal.querySelector("#action-msg");
+      saveButton.disabled = true;
+      saveButton.textContent = "Verifying...";
+      actionMsg.textContent = "Verifying provider credentials...";
+      actionMsg.style.color = "#3b82f6";
+
+      try {
+        Object.keys(newConfig).forEach((key) =>
+          this.config.set(key, newConfig[key])
+        );
+        localStorage.setItem("tcs_sync-exclusions", exclusions);
+        this.config.reloadExclusions();
+
+        // Use the registry to get the correct provider class
+        const ProviderClass = this.providerRegistry.get(storageType);
+        if (!ProviderClass) {
+          throw new Error(`Cannot verify unknown storage type: ${storageType}`);
+        }
+
+        this.storageService = new ProviderClass(
+          this.config,
+          this.cryptoService,
+          this.logger
+        );
+
+        if (!this.storageService.isConfigured()) {
+          throw new Error(
+            "Please fill in all required fields for the selected provider."
+          );
+        }
+
+        await this.storageService.initialize();
+        await this.storageService.verify();
+
+        actionMsg.textContent =
+          "✅ Credentials verified! Saving configuration...";
+        actionMsg.style.color = "#22c55e";
+
+        this.config.save();
+
+        this.logger.log(
+          "success",
+          "Configuration saved. Reloading app to apply changes..."
+        );
+        actionMsg.textContent = "✅ Saved! Page will now reload.";
+
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      } catch (error) {
+        this.logger.log("error", "Credential verification failed", error);
+        actionMsg.textContent = `❌ Verification failed: ${error.message}`;
+        actionMsg.style.color = "#ef4444";
+        saveButton.disabled = false;
+        saveButton.textContent = "Save & Verify";
+      }
+    }
+
+    async createSnapshot() {
+      if (!this.isSnapshotAvailable()) {
+        alert(
+          "⚠️ Snapshot Unavailable\n\nPlease configure and save your storage provider settings first."
+        );
+        return;
+      }
+      const name = prompt("Enter snapshot name:");
+      if (!name) return;
+      const modal = document.querySelector(".cloud-sync-modal");
+      const snapshotButton = modal?.querySelector("#create-snapshot");
+      if (snapshotButton) {
+        const originalText = snapshotButton.textContent;
+        snapshotButton.disabled = true;
+        snapshotButton.textContent = "In Progress...";
+        try {
+          await this.backupService.createSnapshot(name);
+          snapshotButton.textContent = "Success!";
+          await this.loadBackupList(modal);
+          setTimeout(() => {
+            snapshotButton.textContent = originalText;
+            snapshotButton.disabled = false;
+          }, 2000);
+          alert("Snapshot created successfully!");
+        } catch (error) {
+          this.logger.log("error", "Failed to create snapshot", error.message);
+          snapshotButton.textContent = "Failed";
+          setTimeout(() => {
+            snapshotButton.textContent = originalText;
+            snapshotButton.disabled = false;
+          }, 2000);
+          alert("Failed to create snapshot: " + error.message);
+        }
+      } else {
+        try {
+          await this.backupService.createSnapshot(name);
+          alert("Snapshot created successfully!");
+        } catch (error) {
+          this.logger.log("error", "Failed to create snapshot", error.message);
+          alert("Failed to create snapshot: " + error.message);
+        }
+      }
+    }
+
+    async deleteBackupWithChunks(key) {
+      this.logger.log("start", `Deleting backup: ${key}`);
+      if (key.endsWith("-metadata.json")) {
+        this.logger.log("info", "Deleting chunked backup with all chunks");
+        try {
+          const metadata = await this.storageService.download(key, true);
+          let deletedCount = 0;
+          if (metadata.chunkList && metadata.chunkList.length > 0) {
+            this.logger.log(
+              "info",
+              `Deleting ${metadata.chunkList.length} chunk files`
+            );
+            const deletePromises = metadata.chunkList.map(async (chunkInfo) => {
+              try {
+                await this.storageService.delete(chunkInfo.filename);
+                deletedCount++;
+              } catch (error) {
+                this.logger.log(
+                  "warning",
+                  `Failed to delete chunk ${chunkInfo.filename}: ${error.message}`
+                );
+              }
+            });
+            await Promise.allSettled(deletePromises);
+          }
+          await this.storageService.delete(key);
+          this.logger.log(
+            "success",
+            `Deleted chunked backup: ${key} (${deletedCount} chunks + metadata)`
+          );
+        } catch (error) {
+          this.logger.log(
+            "warning",
+            `Failed to read metadata for ${key}, attempting to delete file anyway`
+          );
+          await this.storageService.delete(key);
+        }
+      } else {
+        this.logger.log("info", "Deleting server-side copy backup");
+        const backupFolder = key.replace("/backup-manifest.json", "");
+        const filesToDelete = await this.storageService.list(
+          backupFolder + "/"
+        );
+        for (const file of filesToDelete) {
+          await this.storageService.delete(file.Key);
+        }
+        await this.storageService.delete(key);
+        this.logger.log("success", `Deleted server-side backup: ${key}`);
+      }
+    }
+
+    startAutoSync() {
+      if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
+      const interval = Math.max(this.config.get("syncInterval") * 1000, 15000);
+      this.autoSyncInterval = setInterval(async () => {
+        if (
+          this.storageService &&
+          this.storageService.isConfigured() &&
+          !this.syncOrchestrator.syncInProgress
+        ) {
+          try {
+            await this.syncOrchestrator.performFullSync();
+          } catch (error) {
+            this.logger.log("error", "Auto-sync failed", error.message);
+          }
+        }
+      }, interval);
+      this.logger.log("info", "Auto-sync started");
+    }
+
+    async getCloudMetadata() {
+      return this.syncOrchestrator.getCloudMetadata();
+    }
+
+    cleanup() {
+      this.logger.log("info", "🧹 Starting comprehensive cleanup");
+      if (this.autoSyncInterval) {
+        clearInterval(this.autoSyncInterval);
+        this.autoSyncInterval = null;
+      }
+      this.modalCleanupCallbacks.forEach((cleanup) => {
+        try {
+          cleanup();
+        } catch (error) {
+          console.warn("Modal cleanup error:", error);
+        }
+      });
+      this.modalCleanupCallbacks = [];
+      this.eventListeners.forEach(({ element, event, handler }) => {
+        try {
+          element.removeEventListener(event, handler);
+        } catch (error) {
+          console.warn("Event listener cleanup error:", error);
+        }
+      });
+      this.eventListeners = [];
+
+      const existingModal = document.querySelector(".cloud-sync-modal");
+      if (existingModal) {
+        existingModal.closest(".modal-overlay")?.remove();
+      }
+
+      this.operationQueue?.cleanup();
+      this.dataService?.cleanup();
+      this.cryptoService?.cleanup();
+      this.syncOrchestrator?.cleanup();
+
+      this.logger.log("success", "✅ Cleanup completed");
+      this.config = null;
+      this.dataService = null;
+      this.cryptoService = null;
+      this.storageService = null;
+      this.syncOrchestrator = null;
+      this.backupService = null;
+      this.operationQueue = null;
+      this.logger = null;
+      this.leaderElection?.cleanup();
+      this.leaderElection = null;
+    }
+
+    async runLeaderTasks() {
+      if (
+        !this.noSyncMode &&
+        this.storageService &&
+        this.storageService.isConfigured()
+      ) {
+        this.updateSyncStatus("syncing");
+        try {
+          await this.backupService.checkAndPerformDailyBackup();
+          await this.syncOrchestrator.performFullSync();
+          this.startAutoSync();
+          this.updateSyncStatus("success");
+          this.logger.log(
+            "success",
+            "Cloud Sync initialized successfully on leader tab."
+          );
+        } catch (error) {
+          this.logger.log(
+            "error",
+            "Background sync/backup failed on leader tab",
+            error.message
+          );
+          this.updateSyncStatus("error");
+        }
+      }
+    }
+  }
+
+  const styleSheet = document.createElement("style");
+  styleSheet.textContent = `
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); z-index: 99999; display: flex; align-items: center; justify-content: center; padding: 1rem; overflow-y: auto; }
+    #sync-status-dot { position: absolute; top: -0.15rem; right: -0.6rem; width: 0.625rem; height: 0.625rem; border-radius: 9999px; }
+    .cloud-sync-modal { width: 100%; max-width: 32rem; background-color: rgb(39, 39, 42); color: white; border-radius: 0.5rem; padding: 1rem; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3); }
+    .cloud-sync-modal input, .cloud-sync-modal select { background-color: rgb(63, 63, 70); border: 1px solid rgb(82, 82, 91); color: white; }
+    .cloud-sync-modal input:focus, .cloud-sync-modal select:focus { border-color: rgb(59, 130, 246); outline: none; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); }
+    .cloud-sync-modal button:disabled { background-color: rgb(82, 82, 91); cursor: not-allowed; opacity: 0.5; }
+    .cloud-sync-modal .bg-zinc-800 { border: 1px solid rgb(82, 82, 91); }
+    .cloud-sync-modal input[type="checkbox"] { accent-color: rgb(59, 130, 246); }
+    .cloud-sync-modal input[type="checkbox"]:checked { background-color: rgb(59, 130, 246); border-color: rgb(59, 130, 246); }
+    #sync-diagnostics-table { font-size: 0.75rem; }
+    #sync-diagnostics-table th { background-color: rgb(82, 82, 91); font-weight: 600; }
+    #sync-diagnostics-table tr:hover { background-color: rgba(63, 63, 70, 0.5); }
+    #sync-diagnostics-header { padding: 0.5rem; margin: -0.5rem; border-radius: 0.375rem; transition: background-color 0.2s ease; -webkit-tap-highlight-color: transparent; min-height: 44px; display: flex; align-items: center; }
+    #sync-diagnostics-header:hover { background-color: rgba(63, 63, 70, 0.5); }
+    #sync-diagnostics-header:active { background-color: rgba(63, 63, 70, 0.8); }
+    #sync-diagnostics-chevron, #sync-diagnostics-refresh { transition: transform 0.3s ease; }
+    #sync-diagnostics-content { animation: slideDown 0.2s ease-out; }
+    @keyframes slideDown { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 300px; } }
+    @media (max-width: 640px) { #sync-diagnostics-table { font-size: 0.7rem; } #sync-diagnostics-table th, #sync-diagnostics-table td { padding: 0.5rem 0.25rem; } .cloud-sync-modal { margin: 0.5rem; max-height: 90vh; overflow-y: auto; } }
+  `;
+  document.head.appendChild(styleSheet);
+
+  // --- FINAL ASSEMBLY ---
+  // This section constructs the application and registers the providers.
+  // To add a new provider, define its class and add one line here.
+
+  const app = new CloudSyncApp();
+
+  // Register all available providers
+  app.registerProvider("s3", S3Service);
+  app.registerProvider("googleDrive", GoogleDriveService);
+  // Example: to add a new Dropbox provider, you would add:
+  // app.registerProvider('dropbox', DropboxService);
+
+  app.initialize();
+  window.cloudSyncApp = app;
+  // --- END OF ASSEMBLY ---
+
+  const cleanupHandler = () => {
+    try {
+      app?.cleanup();
+    } catch (error) {
+      console.warn("Cleanup error:", error);
+    }
+  };
+  const visibilityChangeHandler = () => {
+    if (document.hidden) {
+      try {
+        if (app?.operationQueue) {
+          app.operationQueue.cleanupStaleOperations(Date.now());
+        }
+        if (app?.cryptoService) {
+          app.cryptoService.cleanupKeyCache();
+        }
+      } catch (error) {
+        console.warn("Visibility change cleanup error:", error);
+      }
+    }
+  };
+  window.addEventListener("beforeunload", cleanupHandler, { passive: true });
+  window.addEventListener("unload", cleanupHandler, { passive: true });
+  window.addEventListener("pagehide", cleanupHandler, { passive: true });
+  document.addEventListener("visibilitychange", visibilityChangeHandler, {
+    passive: true,
+  });
+  window.addEventListener(
+    "error",
+    (event) => {
+      if (
+        event.error?.message?.includes("memory") ||
+        event.error?.message?.includes("heap")
+      ) {
+        console.warn(
+          "🚨 Potential memory-related error detected:",
+          event.error
+        );
+        window.forceMemoryCleanup?.();
+      }
+    },
+    { passive: true }
+  );
+
+  window.createTombstone = (itemId, type, source = "manual") => {
+    if (app?.dataService) {
+      return app.dataService.createTombstone(itemId, type, source);
+    }
+    return null;
+  };
+  window.getTombstones = () => {
+    if (app?.dataService) {
+      return Array.from(app.dataService.getAllTombstones().entries());
+    }
+    return [];
+  };
+  window.getMemoryStats = () => {
+    if (app) {
+      return {
+        knownItems: app.dataService?.knownItems?.size || 0,
+        operationQueue: app.operationQueue?.size() || 0,
+        eventListeners: app.eventListeners?.length || 0,
+        modalCallbacks: app.modalCleanupCallbacks?.length || 0,
+      };
+    }
+    return {};
+  };
+  window.estimateBackupSize = async () => {
+    if (app?.backupService && app?.dataService) {
+      const { totalSize, itemCount } = await app.dataService.estimateDataSize();
+      const chunkLimit = 100 * 1024 * 1024;
+      const willUseChunks = totalSize > chunkLimit;
+      const willUseStreaming = totalSize > app.dataService.memoryThreshold;
+      return {
+        estimatedSize: totalSize,
+        formattedSize: app.dataService.formatSize(totalSize),
+        itemCount: itemCount,
+        chunkLimit: chunkLimit,
+        formattedChunkLimit: app.dataService.formatSize(chunkLimit),
+        memoryThreshold: app.dataService.memoryThreshold,
+        formattedMemoryThreshold: app.dataService.formatSize(
+          app.dataService.memoryThreshold
+        ),
+        willUseChunks: willUseChunks,
+        willUseStreaming: willUseStreaming,
+        backupMethod: "server-side",
+        processingMethod: willUseStreaming ? "streaming" : "in-memory",
+        compressionNote: "Size shown is before encryption/compression.",
+      };
+    }
+    return { error: "Services not available" };
+  };
+  window.getMemoryDiagnostics = () => {
+    const diagnostics = {
+      timestamp: new Date().toISOString(),
+      performance: {},
+      app: {},
+      browser: {},
+    };
+    try {
+      if (performance?.memory) {
+        diagnostics.performance = {
+          usedJSHeapSize: performance.memory.usedJSHeapSize,
+          totalJSHeapSize: performance.memory.totalJSHeapSize,
+          jsHeapSizeLimit: performance.memory.jsHeapSizeLimit,
+          usedHeapMB: Math.round(
+            performance.memory.usedJSHeapSize / 1024 / 1024
+          ),
+          totalHeapMB: Math.round(
+            performance.memory.totalJSHeapSize / 1024 / 1024
+          ),
+          limitHeapMB: Math.round(
+            performance.memory.jsHeapSizeLimit / 1024 / 1024
+          ),
+          heapUsagePercent: Math.round(
+            (performance.memory.usedJSHeapSize /
+              performance.memory.jsHeapSizeLimit) *
+              100
+          ),
+        };
+      }
+      if (app) {
+        diagnostics.app = {
+          hasDataService: !!app.dataService,
+          hasCryptoService: !!app.cryptoService,
+          hasStorageService: !!app.storageService,
+          hasSyncOrchestrator: !!app.syncOrchestrator,
+          hasBackupService: !!app.backupService,
+          hasOperationQueue: !!app.operationQueue,
+          operationQueueSize: app.operationQueue?.size() || 0,
+          eventListenersCount: app.eventListeners?.length || 0,
+          modalCallbacksCount: app.modalCleanupCallbacks?.length || 0,
+          cryptoKeyCacheSize: app.cryptoService?.keyCache?.size || 0,
+          syncInProgress: app.syncOrchestrator?.syncInProgress || false,
+          autoSyncInterval: !!app.autoSyncInterval,
+        };
+      }
+      diagnostics.browser = {
+        userAgent: navigator.userAgent,
+        language: navigator.language,
+        platform: navigator.platform,
+        hardwareConcurrency: navigator.hardwareConcurrency,
+        cookieEnabled: navigator.cookieEnabled,
+        onLine: navigator.onLine,
+        doNotTrack: navigator.doNotTrack,
+      };
+      if (window?.gc || (typeof global !== "undefined" && global?.gc)) {
+        diagnostics.performance.gcAvailable = true;
+      }
+    } catch (error) {
+      diagnostics.error = error.message;
+    }
+    return diagnostics;
+  };
+  window.forceMemoryCleanup = async () => {
+    console.log("🧹 Starting forced memory cleanup...");
+    try {
+      if (app?.dataService?.forceGarbageCollection) {
+        await app.dataService.forceGarbageCollection();
+      }
+      if (app?.cryptoService?.cleanupKeyCache) {
+        app.cryptoService.cleanupKeyCache();
+      }
+      if (app?.operationQueue?.cleanupStaleOperations) {
+        app.operationQueue.cleanupStaleOperations(Date.now());
+      }
+      const modal = document.querySelector(".cloud-sync-modal");
+      if ((modal && !modal.style.display) || modal.style.display !== "none") {
+        console.log("Modal is open, skipping DOM cleanup");
+      } else {
+        const orphanedElements = document.querySelectorAll(
+          "[data-temporary='true']"
+        );
+        orphanedElements.forEach((el) => el.remove());
+      }
+      if (window?.gc) {
+        window.gc();
+        console.log("✅ Manual garbage collection triggered");
+      } else if (typeof global !== "undefined" && global?.gc) {
+        global.gc();
+        console.log("✅ Manual garbage collection triggered (global)");
+      } else {
+        console.log("⚠️ Manual garbage collection not available");
+      }
+      console.log("✅ Memory cleanup completed");
+      return window.getMemoryDiagnostics();
+    } catch (error) {
+      console.error("❌ Memory cleanup failed:", error);
+      return { error: error.message };
+    }
+  };
+}
