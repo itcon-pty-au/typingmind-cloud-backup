@@ -1234,7 +1234,7 @@ if (window.typingMindCloudSync) {
     }
 
     async upload(key, data, isMetadata = false) {
-      return this.retryAsync(
+      return retryAsync(
         async () => {
           try {
             const body = isMetadata
@@ -1281,7 +1281,7 @@ if (window.typingMindCloudSync) {
       );
     }
     async uploadRaw(key, data) {
-      return this.retryAsync(
+      return retryAsync(
         async () => {
           try {
             const result = await this.client
@@ -1322,7 +1322,7 @@ if (window.typingMindCloudSync) {
       );
     }
     async download(key, isMetadata = false) {
-      return this.retryAsync(
+      return retryAsync(
         async () => {
           const result = await this.client
             .getObject({ Bucket: this.config.get("bucketName"), Key: key })
@@ -1346,7 +1346,7 @@ if (window.typingMindCloudSync) {
       );
     }
     async downloadRaw(key) {
-      return this.retryAsync(
+      return retryAsync(
         async () => {
           const result = await this.client
             .getObject({ Bucket: this.config.get("bucketName"), Key: key })
@@ -1367,7 +1367,7 @@ if (window.typingMindCloudSync) {
       );
     }
     async delete(key) {
-      return this.retryAsync(
+      return retryAsync(
         async () => {
           await this.client
             .deleteObject({ Bucket: this.config.get("bucketName"), Key: key })
@@ -1388,7 +1388,7 @@ if (window.typingMindCloudSync) {
       );
     }
     async list(prefix = "") {
-      return this.retryAsync(
+      return retryAsync(
         async () => {
           const allContents = [];
           let continuationToken = undefined;
@@ -1440,7 +1440,7 @@ if (window.typingMindCloudSync) {
       );
     }
     async downloadWithResponse(key) {
-      return this.retryAsync(
+      return retryAsync(
         async () => {
           const result = await this.client
             .getObject({ Bucket: this.config.get("bucketName"), Key: key })
@@ -1461,7 +1461,7 @@ if (window.typingMindCloudSync) {
       );
     }
     async copyObject(sourceKey, destinationKey) {
-      return this.retryAsync(
+      return retryAsync(
         async () => {
           const result = await this.client
             .copyObject({
@@ -1513,7 +1513,7 @@ if (window.typingMindCloudSync) {
     }
 
     async _deleteFolderIfExists(path) {
-      return this.retryAsync(
+      return retryAsync(
         async () => {
           const folderId = await this._getPathId(path, false);
 
@@ -1760,7 +1760,7 @@ if (window.typingMindCloudSync) {
         return this.pathCreationPromises.get(path);
       }
 
-      const promise = this.retryAsync(
+      const promise = retryAsync(
         async () => {
           if (this.pathIdCache.has(path)) return this.pathIdCache.get(path);
 
@@ -1837,7 +1837,7 @@ if (window.typingMindCloudSync) {
     }
 
     async _getFileMetadata(path) {
-      return this.retryAsync(
+      return retryAsync(
         async () => {
           const parts = path.split("/").filter((p) => p);
           const filename = parts.pop();
@@ -1891,7 +1891,7 @@ if (window.typingMindCloudSync) {
     }
 
     async upload(key, data, isMetadata = false) {
-      return this.retryAsync(
+      return retryAsync(
         async () => {
           await this.handleAuthentication();
           const parts = key.split("/").filter((p) => p);
@@ -1972,7 +1972,7 @@ if (window.typingMindCloudSync) {
     }
 
     async download(key, isMetadata = false) {
-      return this.retryAsync(
+      return retryAsync(
         async () => {
           await this.handleAuthentication();
           const file = await this._getFileMetadata(key);
@@ -2026,7 +2026,7 @@ if (window.typingMindCloudSync) {
     }
 
     async delete(key) {
-      return this.retryAsync(
+      return retryAsync(
         async () => {
           await this.handleAuthentication();
           const file = await this._getFileMetadata(key);
@@ -2071,7 +2071,7 @@ if (window.typingMindCloudSync) {
     }
 
     async list(prefix = "") {
-      return this.retryAsync(
+      return retryAsync(
         async () => {
           await this.handleAuthentication();
           const parentId = await this._getPathId(prefix);
@@ -2116,7 +2116,7 @@ if (window.typingMindCloudSync) {
     }
 
     async downloadWithResponse(key) {
-      return this.retryAsync(
+      return retryAsync(
         async () => {
           await this.handleAuthentication();
           const file = await this._getFileMetadata(key);
@@ -2172,7 +2172,7 @@ if (window.typingMindCloudSync) {
     }
 
     async copyObject(sourceKey, destinationKey) {
-      return this.retryAsync(
+      return retryAsync(
         async () => {
           await this.handleAuthentication();
           const sourceFile = await this._getFileMetadata(sourceKey);
