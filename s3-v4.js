@@ -1372,6 +1372,46 @@ if (window.typingMindCloudSync) {
       this.pathIdCache = new Map();
     }
 
+    _isRateLimitError(error) {
+      const apiError = error.result?.error || error.error || {};
+      return (
+        apiError.code === 403 &&
+        apiError.message?.toLowerCase().includes("rate limit")
+      );
+    }
+
+    async _withRetry(operation, maxRetries = 5, baseDelay = 1000) {
+      let lastError;
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          return await operation();
+        } catch (error) {
+          lastError = error;
+          if (this._isRateLimitError(error)) {
+            const delay = Math.min(
+              baseDelay * Math.pow(2, attempt) + Math.random() * 1000,
+              60000
+            );
+            this.logger.log(
+              "warning",
+              `[Google Drive] Rate limit exceeded. Retrying in ${Math.round(
+                delay / 1000
+              )}s... (Attempt ${attempt + 1}/${maxRetries})`
+            );
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          } else {
+            throw error;
+          }
+        }
+      }
+      this.logger.log(
+        "error",
+        `[Google Drive] Operation failed after ${maxRetries} retries.`,
+        lastError
+      );
+      throw lastError;
+    }
+
     isConfigured() {
       return !!this.config.get("googleClientId");
     }
@@ -1496,16 +1536,18 @@ if (window.typingMindCloudSync) {
     }
 
     async _getAppFolderId() {
-      if (this.pathIdCache.has(this.APP_FOLDER_NAME)) {
-        return this.pathIdCache.get(this.APP_FOLDER_NAME);
-      }
+      return this._withRetry(async () => {
+        if (this.pathIdCache.has(this.APP_FOLDER_NAME)) {
+          return this.pathIdCache.get(this.APP_FOLDER_NAME);
+        }
 
-      try {
         const response = await gapi.client.drive.files.list({
           q: `mimeType='application/vnd.google-apps.folder' and name='${this.APP_FOLDER_NAME}' and trashed=false`,
           fields: "files(id, name)",
           spaces: "drive",
         });
+
+        if (response.result.error) throw response;
 
         if (response.result.files.length > 0) {
           const folderId = response.result.files[0].id;
@@ -1524,314 +1566,342 @@ if (window.typingMindCloudSync) {
             resource: fileMetadata,
             fields: "id",
           });
+
+          if (createResponse.result.error) throw createResponse;
+
           const folderId = createResponse.result.id;
           this.pathIdCache.set(this.APP_FOLDER_NAME, folderId);
           return folderId;
         }
-      } catch (error) {
-        this.logger.log(
-          "error",
-          "Failed to get/create app folder.",
-          error.result ? error.result.error : error
-        );
-        throw new Error(
-          "Could not access or create the application folder in Google Drive."
-        );
-      }
+      });
     }
 
     async _getPathId(path, createIfNotExists = false) {
-      if (this.pathIdCache.has(path)) return this.pathIdCache.get(path);
+      return this._withRetry(async () => {
+        if (this.pathIdCache.has(path)) return this.pathIdCache.get(path);
 
-      const parts = path.split("/").filter((p) => p);
-      let parentId = await this._getAppFolderId();
-      let currentPath = this.APP_FOLDER_NAME;
+        const parts = path.split("/").filter((p) => p);
+        let parentId = await this._getAppFolderId();
+        let currentPath = this.APP_FOLDER_NAME;
 
-      for (const part of parts) {
-        currentPath += `/${part}`;
-        if (this.pathIdCache.has(currentPath)) {
-          parentId = this.pathIdCache.get(currentPath);
-          continue;
-        }
+        for (const part of parts) {
+          currentPath += `/${part}`;
+          if (this.pathIdCache.has(currentPath)) {
+            parentId = this.pathIdCache.get(currentPath);
+            continue;
+          }
 
-        const response = await gapi.client.drive.files.list({
-          q: `mimeType='application/vnd.google-apps.folder' and name='${part}' and '${parentId}' in parents and trashed=false`,
-          fields: "files(id)",
-          spaces: "drive",
-        });
-
-        if (response.result.files.length > 0) {
-          parentId = response.result.files[0].id;
-          this.pathIdCache.set(currentPath, parentId);
-        } else if (createIfNotExists) {
-          this.logger.log(
-            "info",
-            `Creating folder '${part}' inside parent ID ${parentId}.`
-          );
-          const fileMetadata = {
-            name: part,
-            mimeType: "application/vnd.google-apps.folder",
-            parents: [parentId],
-          };
-          const createResponse = await gapi.client.drive.files.create({
-            resource: fileMetadata,
-            fields: "id",
+          const response = await gapi.client.drive.files.list({
+            q: `mimeType='application/vnd.google-apps.folder' and name='${part}' and '${parentId}' in parents and trashed=false`,
+            fields: "files(id)",
+            spaces: "drive",
           });
-          parentId = createResponse.result.id;
-          this.pathIdCache.set(currentPath, parentId);
-        } else {
-          return null;
+
+          if (response.result.error) throw response;
+
+          if (response.result.files.length > 0) {
+            parentId = response.result.files[0].id;
+            this.pathIdCache.set(currentPath, parentId);
+          } else if (createIfNotExists) {
+            this.logger.log(
+              "info",
+              `Creating folder '${part}' inside parent ID ${parentId}.`
+            );
+            const fileMetadata = {
+              name: part,
+              mimeType: "application/vnd.google-apps.folder",
+              parents: [parentId],
+            };
+            const createResponse = await gapi.client.drive.files.create({
+              resource: fileMetadata,
+              fields: "id",
+            });
+            if (createResponse.result.error) throw createResponse;
+            parentId = createResponse.result.id;
+            this.pathIdCache.set(currentPath, parentId);
+          } else {
+            return null;
+          }
         }
-      }
-      return parentId;
+        return parentId;
+      });
     }
 
     async _getFileMetadata(path) {
-      const parts = path.split("/").filter((p) => p);
-      const filename = parts.pop();
-      const folderPath = parts.join("/");
+      return this._withRetry(async () => {
+        const parts = path.split("/").filter((p) => p);
+        const filename = parts.pop();
+        const folderPath = parts.join("/");
 
-      const parentId = await this._getPathId(folderPath);
-      if (!parentId) return null;
+        const parentId = await this._getPathId(folderPath);
+        if (!parentId) return null;
 
-      const queryParams = new URLSearchParams({
-        q: `name='${filename}' and '${parentId}' in parents and trashed=false`,
-        fields: "files(id, name, size, modifiedTime)",
-        spaces: "drive",
-      });
+        const queryParams = new URLSearchParams({
+          q: `name='${filename}' and '${parentId}' in parents and trashed=false`,
+          fields: "files(id, name, size, modifiedTime)",
+          spaces: "drive",
+        });
 
-      const response = await fetch(
-        `https://www.googleapis.com/drive/v3/files?${queryParams.toString()}`,
-        {
-          method: "GET",
-          headers: new Headers({
-            Authorization: "Bearer " + gapi.client.getToken().access_token,
-          }),
+        const response = await fetch(
+          `https://www.googleapis.com/drive/v3/files?${queryParams.toString()}`,
+          {
+            method: "GET",
+            headers: new Headers({
+              Authorization: "Bearer " + gapi.client.getToken().access_token,
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          const errorBody = await response.json();
+          this.logger.log(
+            "error",
+            `Google Drive file list failed for ${path}`,
+            errorBody
+          );
+          throw errorBody;
         }
-      );
 
-      if (!response.ok) {
-        const errorBody = await response.json();
-        this.logger.log(
-          "error",
-          `Google Drive file list failed for ${path}`,
-          errorBody
-        );
-        throw new Error(
-          errorBody.error.message ||
-            `API request failed with status ${response.status}`
-        );
-      }
-
-      const result = await response.json();
-      return result.files.length > 0 ? result.files[0] : null;
+        const result = await response.json();
+        return result.files.length > 0 ? result.files[0] : null;
+      });
     }
 
     async upload(key, data, isMetadata = false) {
-      await this.handleAuthentication();
-      const parts = key.split("/").filter((p) => p);
-      const filename = parts.pop();
-      const folderPath = parts.join("/");
+      return this._withRetry(async () => {
+        await this.handleAuthentication();
+        const parts = key.split("/").filter((p) => p);
+        const filename = parts.pop();
+        const folderPath = parts.join("/");
 
-      const parentId = await this._getPathId(folderPath, true);
-      const existingFile = await this._getFileMetadata(key);
+        const parentId = await this._getPathId(folderPath, true);
+        const existingFile = await this._getFileMetadata(key);
 
-      const body = isMetadata
-        ? JSON.stringify(data)
-        : await this.crypto.encrypt(data);
-      const blob = new Blob([body], {
-        type: isMetadata ? "application/json" : "application/octet-stream",
-      });
+        const body = isMetadata
+          ? JSON.stringify(data)
+          : await this.crypto.encrypt(data);
+        const blob = new Blob([body], {
+          type: isMetadata ? "application/json" : "application/octet-stream",
+        });
 
-      const metadata = {
-        name: filename,
-        mimeType: isMetadata ? "application/json" : "application/octet-stream",
-      };
-      if (!existingFile) {
-        metadata.parents = [parentId];
-      }
+        const metadata = {
+          name: filename,
+          mimeType: isMetadata
+            ? "application/json"
+            : "application/octet-stream",
+        };
+        if (!existingFile) {
+          metadata.parents = [parentId];
+        }
 
-      const formData = new FormData();
-      formData.append(
-        "metadata",
-        new Blob([JSON.stringify(metadata)], { type: "application/json" })
-      );
-      formData.append("file", blob);
-
-      const uploadUrl = existingFile
-        ? `https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=multipart`
-        : "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart";
-
-      const method = existingFile ? "PATCH" : "POST";
-
-      const response = await fetch(uploadUrl, {
-        method: method,
-        headers: new Headers({
-          Authorization: "Bearer " + gapi.client.getToken().access_token,
-        }),
-        body: formData,
-      });
-
-      const result = await response.json();
-      if (result.error) {
-        this.logger.log(
-          "error",
-          `Google Drive upload failed for ${key}`,
-          result.error
+        const formData = new FormData();
+        formData.append(
+          "metadata",
+          new Blob([JSON.stringify(metadata)], { type: "application/json" })
         );
-        throw new Error(result.error.message);
-      }
-      this.logger.log("success", `Uploaded ${key} to Google Drive`, {
-        ETag: result.etag,
+        formData.append("file", blob);
+
+        const uploadUrl = existingFile
+          ? `https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=multipart`
+          : "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart";
+
+        const method = existingFile ? "PATCH" : "POST";
+
+        const response = await fetch(uploadUrl, {
+          method: method,
+          headers: new Headers({
+            Authorization: "Bearer " + gapi.client.getToken().access_token,
+          }),
+          body: formData,
+        });
+
+        const result = await response.json();
+        if (result.error) {
+          this.logger.log(
+            "error",
+            `Google Drive upload failed for ${key}`,
+            result.error
+          );
+          throw result;
+        }
+        this.logger.log("success", `Uploaded ${key} to Google Drive`, {
+          ETag: result.etag,
+        });
+        return { ETag: result.etag, ...result };
       });
-      return { ETag: result.etag, ...result };
     }
 
     async download(key, isMetadata = false) {
-      await this.handleAuthentication();
-      const file = await this._getFileMetadata(key);
-      if (!file) {
-        const error = new Error(`File not found in Google Drive: ${key}`);
-        error.code = "NoSuchKey";
-        error.statusCode = 404;
-        throw error;
-      }
-
-      const response = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
-        {
-          method: "GET",
-          headers: new Headers({
-            Authorization: "Bearer " + gapi.client.getToken().access_token,
-          }),
+      return this._withRetry(async () => {
+        await this.handleAuthentication();
+        const file = await this._getFileMetadata(key);
+        if (!file) {
+          const error = new Error(`File not found in Google Drive: ${key}`);
+          error.code = "NoSuchKey";
+          error.statusCode = 404;
+          throw error;
         }
-      );
 
-      if (!response.ok) {
-        const errorBody = await response.json();
-        this.logger.log(
-          "error",
-          `Google Drive download failed for ${key}`,
-          errorBody
+        const response = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
+          {
+            method: "GET",
+            headers: new Headers({
+              Authorization: "Bearer " + gapi.client.getToken().access_token,
+            }),
+          }
         );
-        throw new Error(
-          errorBody.error.message ||
-            `Download failed with status ${response.status}`
-        );
-      }
 
-      if (isMetadata) {
-        return await response.json();
-      } else {
-        const encryptedBuffer = await response.arrayBuffer();
-        return await this.crypto.decrypt(new Uint8Array(encryptedBuffer));
-      }
+        if (!response.ok) {
+          const errorBody = await response.json();
+          this.logger.log(
+            "error",
+            `Google Drive download failed for ${key}`,
+            errorBody
+          );
+          throw errorBody;
+        }
+
+        if (isMetadata) {
+          return await response.json();
+        } else {
+          const encryptedBuffer = await response.arrayBuffer();
+          return await this.crypto.decrypt(new Uint8Array(encryptedBuffer));
+        }
+      });
     }
 
     async delete(key) {
-      await this.handleAuthentication();
-      const file = await this._getFileMetadata(key);
-      if (!file) {
-        this.logger.log("warning", `File to delete not found: ${key}`);
-        return;
-      }
+      return this._withRetry(async () => {
+        await this.handleAuthentication();
+        const file = await this._getFileMetadata(key);
+        if (!file) {
+          this.logger.log("warning", `File to delete not found: ${key}`);
+          return;
+        }
 
-      await gapi.client.drive.files.delete({ fileId: file.id });
-      this.logger.log("success", `Deleted ${key} from Google Drive.`);
+        const response = await gapi.client.drive.files.delete({
+          fileId: file.id,
+        });
+        if (
+          response.result &&
+          typeof response.result === "object" &&
+          Object.keys(response.result).length > 0
+        ) {
+        } else if (response.status >= 400) {
+          throw {
+            result: {
+              error: response.body
+                ? JSON.parse(response.body)
+                : { message: "Delete failed" },
+            },
+          };
+        }
+
+        this.logger.log("success", `Deleted ${key} from Google Drive.`);
+      });
     }
 
     async list(prefix = "") {
-      await this.handleAuthentication();
-      const parentId = await this._getPathId(prefix);
-      if (!parentId) return [];
+      return this._withRetry(async () => {
+        await this.handleAuthentication();
+        const parentId = await this._getPathId(prefix);
+        if (!parentId) return [];
 
-      let pageToken = null;
-      const allFiles = [];
-      do {
-        const response = await gapi.client.drive.files.list({
-          q: `'${parentId}' in parents and trashed=false`,
-          fields: "nextPageToken, files(id, name, size, modifiedTime)",
-          spaces: "drive",
-          pageSize: 1000,
-          pageToken: pageToken,
-        });
-        allFiles.push(...response.result.files);
-        pageToken = response.result.nextPageToken;
-      } while (pageToken);
+        let pageToken = null;
+        const allFiles = [];
+        do {
+          const response = await gapi.client.drive.files.list({
+            q: `'${parentId}' in parents and trashed=false`,
+            fields: "nextPageToken, files(id, name, size, modifiedTime)",
+            spaces: "drive",
+            pageSize: 1000,
+            pageToken: pageToken,
+          });
 
-      return allFiles.map((file) => ({
-        Key: `${prefix}${file.name}`,
-        LastModified: new Date(file.modifiedTime),
-        Size: file.size,
-      }));
+          if (response.result.error) throw response;
+
+          allFiles.push(...response.result.files);
+          pageToken = response.result.nextPageToken;
+        } while (pageToken);
+
+        return allFiles.map((file) => ({
+          Key: `${prefix}${file.name}`,
+          LastModified: new Date(file.modifiedTime),
+          Size: file.size,
+        }));
+      });
     }
 
     async downloadWithResponse(key) {
-      await this.handleAuthentication();
-      const file = await this._getFileMetadata(key);
-      if (!file) {
-        const error = new Error(`File not found in Google Drive: ${key}`);
-        error.code = "NoSuchKey";
-        error.statusCode = 404;
-        throw error;
-      }
-
-      const response = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
-        {
-          method: "GET",
-          headers: new Headers({
-            Authorization: "Bearer " + gapi.client.getToken().access_token,
-          }),
+      return this._withRetry(async () => {
+        await this.handleAuthentication();
+        const file = await this._getFileMetadata(key);
+        if (!file) {
+          const error = new Error(`File not found in Google Drive: ${key}`);
+          error.code = "NoSuchKey";
+          error.statusCode = 404;
+          throw error;
         }
-      );
 
-      if (!response.ok) {
-        const errorBody = await response.json();
-        this.logger.log(
-          "error",
-          `Google Drive download failed for ${key}`,
-          errorBody
+        const response = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
+          {
+            method: "GET",
+            headers: new Headers({
+              Authorization: "Bearer " + gapi.client.getToken().access_token,
+            }),
+          }
         );
-        throw new Error(
-          errorBody.error.message ||
-            `Download failed with status ${response.status}`
-        );
-      }
 
-      const etag = response.headers.get("ETag");
-      const body = await response.text();
+        if (!response.ok) {
+          const errorBody = await response.json();
+          this.logger.log(
+            "error",
+            `Google Drive download failed for ${key}`,
+            errorBody
+          );
+          throw errorBody;
+        }
 
-      return {
-        Body: body,
-        ETag: etag,
-        ...file,
-      };
+        const etag = response.headers.get("ETag");
+        const body = await response.text();
+
+        return {
+          Body: body,
+          ETag: etag,
+          ...file,
+        };
+      });
     }
 
     async copyObject(sourceKey, destinationKey) {
-      await this.handleAuthentication();
-      const sourceFile = await this._getFileMetadata(sourceKey);
-      if (!sourceFile) throw new Error(`Source file not found: ${sourceKey}`);
+      return this._withRetry(async () => {
+        await this.handleAuthentication();
+        const sourceFile = await this._getFileMetadata(sourceKey);
+        if (!sourceFile) throw new Error(`Source file not found: ${sourceKey}`);
 
-      const destParts = destinationKey.split("/").filter((p) => p);
-      const destFilename = destParts.pop();
-      const destFolderPath = destParts.join("/");
+        const destParts = destinationKey.split("/").filter((p) => p);
+        const destFilename = destParts.pop();
+        const destFolderPath = destParts.join("/");
 
-      const destParentId = await this._getPathId(destFolderPath, true);
+        const destParentId = await this._getPathId(destFolderPath, true);
 
-      const copyMetadata = {
-        name: destFilename,
-        parents: [destParentId],
-      };
+        const copyMetadata = {
+          name: destFilename,
+          parents: [destParentId],
+        };
 
-      const response = await gapi.client.drive.files.copy({
-        fileId: sourceFile.id,
-        resource: copyMetadata,
+        const response = await gapi.client.drive.files.copy({
+          fileId: sourceFile.id,
+          resource: copyMetadata,
+        });
+
+        if (response.result.error) throw response;
+
+        this.logger.log("success", `Copied ${sourceKey} → ${destinationKey}`);
+        return response.result;
       });
-
-      this.logger.log("success", `Copied ${sourceKey} → ${destinationKey}`);
-      return response.result;
     }
 
     async verify() {
@@ -1910,7 +1980,6 @@ if (window.typingMindCloudSync) {
           let itemLastModified = now;
           let currentSize = 0;
 
-          // STRATEGY 1: Timestamp-based detection for CHAT items
           if (
             key.startsWith("CHAT_") &&
             item.type === "idb" &&
@@ -1928,9 +1997,7 @@ if (window.typingMindCloudSync) {
               hasChanged = true;
               changeReason = "never-synced-chat";
             }
-          }
-          // STRATEGY 2: Size-based detection for all other items (the original, safe logic)
-          else {
+          } else {
             currentSize = this.getItemSize(value);
             itemLastModified = existingItem?.lastModified || 0;
 
