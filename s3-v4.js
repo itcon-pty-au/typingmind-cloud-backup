@@ -2348,13 +2348,12 @@ if (window.typingMindCloudSync) {
         Object.keys(this.metadata.items || {}).length === 0;
       const cloudMetadataEmpty =
         Object.keys(cloudMetadata.items || {}).length === 0;
-      if (localMetadataEmpty && cloudMetadataEmpty) {
-        const { totalSize, itemCount } =
-          await this.dataService.estimateDataSize();
+      if (cloudMetadataEmpty) {
+        const { itemCount } = await this.dataService.estimateDataSize();
         if (itemCount > 0) {
           this.logger.log(
             "info",
-            `🚀 Fresh setup detected: ${itemCount} local items found with empty metadata. Triggering initial sync.`
+            `🚀 Fresh cloud setup detected: ${itemCount} local items found with empty cloud metadata. Triggering initial sync.`
           );
           await this.createInitialSync();
         } else {
