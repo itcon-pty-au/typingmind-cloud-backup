@@ -1392,9 +1392,7 @@ if (window.typingMindCloudSync) {
       this.tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: this.config.get("googleClientId"),
         scope: this.DRIVE_SCOPES,
-        callback: (tokenResponse) => {
-          this._storeToken(tokenResponse);
-        },
+        callback: () => {},
       });
 
       const storedToken = localStorage.getItem("tcs_google_access_token");
@@ -1403,7 +1401,7 @@ if (window.typingMindCloudSync) {
           const token = JSON.parse(storedToken);
           if (
             token.expires_in &&
-            Date.now() < token.iat + token.expires_in * 1000
+            Date.now() < token.iat + token.expires_in * 1000 - 5 * 60 * 1000
           ) {
             gapi.client.setToken(token);
             this.logger.log(
@@ -1418,9 +1416,22 @@ if (window.typingMindCloudSync) {
             localStorage.removeItem("tcs_google_access_token");
           }
         } catch (e) {
+          this.logger.log("error", "Failed to parse stored Google token", e);
           localStorage.removeItem("tcs_google_access_token");
         }
       }
+    }
+
+    _storeToken(tokenResponse) {
+      if (!tokenResponse.access_token) return;
+
+      const tokenToStore = { ...tokenResponse, iat: Date.now() };
+
+      localStorage.setItem(
+        "tcs_google_access_token",
+        JSON.stringify(tokenToStore)
+      );
+      this.logger.log("success", "Google Drive token stored successfully.");
     }
 
     async _loadScript(id, src) {
@@ -1480,11 +1491,7 @@ if (window.typingMindCloudSync) {
 
         this.tokenClient.callback = callback;
 
-        if (gapi.client.getToken() === null) {
-          this.tokenClient.requestAccessToken({ prompt: "consent" });
-        } else {
-          this.tokenClient.requestAccessToken({ prompt: "" });
-        }
+        this.tokenClient.requestAccessToken({ prompt: "consent" });
       });
     }
 
@@ -1829,7 +1836,7 @@ if (window.typingMindCloudSync) {
 
     async verify() {
       this.logger.log("info", "Verifying Google Drive connection...");
-      await this.handleAuthentication();
+      await this.handleAuthentication({ interactive: true });
       await this._getAppFolderId();
       this.logger.log("success", "Google Drive connection verified.");
     }
@@ -4609,7 +4616,7 @@ if (window.typingMindCloudSync) {
             this.logger
           );
           await tempProvider.initialize();
-          await tempProvider.handleAuthentication();
+          await tempProvider.handleAuthentication({ interactive: true });
 
           googleAuthStatus.textContent =
             "✅ Authentication successful! Please Save & Verify.";
