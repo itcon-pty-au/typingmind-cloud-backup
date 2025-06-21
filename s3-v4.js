@@ -1408,10 +1408,22 @@ if (window.typingMindCloudSync) {
               keysToDelete.push(key);
             }
           }
-          keysToDelete.forEach((key) => this.pathIdCache.delete(key));
+          for (const key of this.pathCreationPromises.keys()) {
+            if (key === path || key.startsWith(path + "/")) {
+              if (!keysToDelete.includes(key)) {
+                keysToDelete.push(key);
+              }
+            }
+          }
+
+          keysToDelete.forEach((key) => {
+            this.pathIdCache.delete(key);
+            this.pathCreationPromises.delete(key);
+          });
+
           this.logger.log(
             "info",
-            `[Google Drive] Cleared ${keysToDelete.length} cache entries for path: "${path}"`
+            `[Google Drive] Cleared ${keysToDelete.length} cache/promise entries for path: "${path}"`
           );
         }
       });
@@ -3424,9 +3436,13 @@ if (window.typingMindCloudSync) {
         );
         return true;
       } catch (error) {
+        const errorMessage =
+          error.result?.error?.message ||
+          error.message ||
+          JSON.stringify(error);
         this.logger.log(
           "error",
-          `Server-side snapshot failed: ${error.message}`
+          `Server-side snapshot failed: ${errorMessage}`
         );
         throw error;
       }
@@ -3546,9 +3562,13 @@ if (window.typingMindCloudSync) {
         await this.cleanupOldBackups();
         return true;
       } catch (error) {
+        const errorMessage =
+          error.result?.error?.message ||
+          error.message ||
+          JSON.stringify(error);
         this.logger.log(
           "error",
-          `Server-side daily backup failed: ${error.message}`
+          `Server-side daily backup failed: ${errorMessage}`
         );
         throw error;
       }
