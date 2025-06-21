@@ -2191,7 +2191,7 @@ if (window.typingMindCloudSync) {
         return {
           Body: body,
           ...file,
-          ETag: etag,
+          ETag: file.modifiedTime,
         };
       });
     }
