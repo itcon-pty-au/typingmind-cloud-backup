@@ -2271,6 +2271,9 @@ if (window.typingMindCloudSync) {
     async createInitialSync() {
       this.logger.log("start", "Creating initial sync");
       try {
+        if (this.storageService instanceof GoogleDriveService) {
+          await this.storageService._getPathId("items", true);
+        }
         const { changedItems } = await this.detectChanges();
         const cloudMetadata = {
           lastSync: Date.now(),
