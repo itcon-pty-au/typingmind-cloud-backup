@@ -2276,7 +2276,7 @@ if (window.typingMindCloudSync) {
           await this.storageService._getPathId("items", true);
         }
 
-        const allItemsIterator = this.dataService.getAllItemsEfficient();
+        const allItemsIterator = await this.dataService.getAllItemsEfficient();
         const { itemCount } = await this.dataService.estimateDataSize();
 
         if (itemCount === 0) {
