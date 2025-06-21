@@ -2354,11 +2354,7 @@ if (window.typingMindCloudSync) {
           `Initial sync completed - ${uploadedCount} of ${changedItems.length} items uploaded.`
         );
       } catch (error) {
-        this.logger.log(
-          "error",
-          "Failed to create initial sync",
-          error.message
-        );
+        this.logger.log("error", "Failed to create initial sync", error);
         throw error;
       }
     }
