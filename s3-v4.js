@@ -5022,12 +5022,18 @@ if (window.typingMindCloudSync) {
                 <thead><tr class="border-b border-zinc-600"><th class="text-left py-1 px-2 font-medium">Type</th><th class="text-right py-1 px-2 font-medium">Count</th></tr></thead>
                 <tbody id="sync-diagnostics-body"><tr><td colspan="2" class="text-center py-2 text-zinc-500">Loading...</td></tr></tbody>
               </table>
-              <div class="flex items-center justify-end gap-3 mt-3 pt-2 border-t border-zinc-700">
-                  <button id="force-import-btn" class="px-2 py-1 text-xs text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Import from Cloud\nOverwrites local data with cloud data.">Import ↙</button>
-                  <button id="force-export-btn" class="px-2 py-1 text-xs text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Export to Cloud\nOverwrites cloud data with local data.">Export ↗</button>
-                  <button id="sync-diagnostics-refresh" class="p-1.5 text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Refresh diagnostics">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                  </button>
+                <div class="flex items-center justify-between mt-3 pt-2 border-t border-zinc-700">
+                  <div id="sync-diagnostics-last-sync" class="flex items-center gap-1.5 text-xs text-zinc-400">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span>Loading...</span>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <button id="force-import-btn" class="px-2 py-1 text-xs text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Import from Cloud\nOverwrites local data with cloud data.">Import ↙</button>
+                    <button id="force-export-btn" class="px-2 py-1 text-xs text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Export to Cloud\nOverwrites cloud data with local data.">Export ↗</button>
+                    <button id="sync-diagnostics-refresh" class="p-1.5 text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Refresh diagnostics">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    </button>
+                  </div>
               </div>
             </div>
           </div>
@@ -5551,6 +5557,9 @@ if (window.typingMindCloudSync) {
       if (!diagnosticsBody) return;
       const overallStatusEl = modal.querySelector("#sync-overall-status");
       const summaryEl = modal.querySelector("#sync-diagnostics-summary");
+      const lastSyncEl = modal.querySelector(
+        "#sync-diagnostics-last-sync span"
+      );
       const setContent = (html) => {
         diagnosticsBody.innerHTML = html;
       };
@@ -5561,10 +5570,25 @@ if (window.typingMindCloudSync) {
         );
         if (overallStatusEl) overallStatusEl.textContent = "⚙️";
         if (summaryEl) summaryEl.textContent = "Setup required";
+        if (lastSyncEl) lastSyncEl.textContent = "N/A";
         return;
       }
 
       try {
+        const lastSyncTimestamp = this.syncOrchestrator.getLastCloudSync();
+        if (lastSyncEl) {
+          if (lastSyncTimestamp > 0) {
+            const date = new Date(lastSyncTimestamp);
+            const day = date.getDate();
+            const month = date.toLocaleString("default", { month: "short" });
+            const hours = date.getHours().toString().padStart(2, "0");
+            const minutes = date.getMinutes().toString().padStart(2, "0");
+            lastSyncEl.textContent = `${day} ${month}, ${hours}:${minutes}`;
+          } else {
+            lastSyncEl.textContent = "Never";
+          }
+        }
+
         const diagnosticsData = localStorage.getItem("tcs_sync_diagnostics");
         if (!diagnosticsData) {
           setContent(
@@ -5625,6 +5649,7 @@ if (window.typingMindCloudSync) {
         );
         if (overallStatusEl) overallStatusEl.textContent = "❌";
         if (summaryEl) summaryEl.textContent = "Error";
+        if (lastSyncEl) lastSyncEl.textContent = "Error";
       }
     }
     setupCollapsibleSection(modal, sectionName, initialExpanded) {
