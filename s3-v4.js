@@ -1785,7 +1785,9 @@ if (window.typingMindCloudSync) {
           );
           throw result;
         }
-        const etag = response.headers.get("ETag");
+
+        const etag = response.headers.get("ETag") || result.etag;
+
         this.logger.log("success", `Uploaded ${key} to Google Drive`, {
           ETag: etag,
         });
@@ -1931,8 +1933,8 @@ if (window.typingMindCloudSync) {
 
         return {
           Body: body,
-          ETag: etag,
           ...file,
+          ETag: etag,
         };
       });
     }
