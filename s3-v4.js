@@ -4929,10 +4929,10 @@ if (window.typingMindCloudSync) {
                 <thead><tr class="border-b border-zinc-600"><th class="text-left py-1 px-2 font-medium">Type</th><th class="text-right py-1 px-2 font-medium">Count</th></tr></thead>
                 <tbody id="sync-diagnostics-body"><tr><td colspan="2" class="text-center py-2 text-zinc-500">Loading...</td></tr></tbody>
               </table>
-              <div class="flex items-center justify-end gap-2 mt-3 pt-2 border-t border-zinc-700">
-                  <button id="force-import-btn" class="px-2 py-1 text-xs text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Import from Cloud\nOverwrites local data with cloud data.">Import ↙</button>
-                  <button id="force-export-btn" class="px-2 py-1 text-xs text-white bg-amber-600 rounded-md hover:bg-amber-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Export to Cloud\nOverwrites cloud data with local data.">Export ↗</button>
-                  <button id="sync-diagnostics-refresh" class="text-zinc-400 hover:text-white transition-colors p-1 rounded" title="Refresh diagnostics">
+              <div class="flex items-center justify-end gap-3 mt-3 pt-2 border-t border-zinc-700">
+                  <button id="force-import-btn" class="px-2 py-1 text-xs text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Import from Cloud\nOverwrites local data with cloud data.">Import ↙</button>
+                  <button id="force-export-btn" class="px-2 py-1 text-xs text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Force Export to Cloud\nOverwrites cloud data with local data.">Export ↗</button>
+                  <button id="sync-diagnostics-refresh" class="p-1.5 text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed" title="Refresh diagnostics">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                   </button>
               </div>
@@ -4953,7 +4953,7 @@ if (window.typingMindCloudSync) {
                   <option value="">Please configure your provider first</option>
                 </select>
               </div>
-              <div class="flex justify-end space-x-2">
+              <div class="flex justify-end gap-2">
                 <button id="restore-backup-btn" class="px-2 py-1.5 text-sm text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>Restore</button>
                 <button id="delete-backup-btn" class="px-2 py-1.5 text-sm text-white bg-red-600 rounded-md hover:bg-red-700 disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>Delete</button>
               </div>
@@ -5042,7 +5042,6 @@ if (window.typingMindCloudSync) {
         </div>
       </div>`;
     }
-
     setupModalEventListeners(modal, overlay) {
       const closeModalHandler = () => this.closeModal(overlay);
       const saveSettingsHandler = () => this.saveSettings(modal);
@@ -5506,7 +5505,7 @@ if (window.typingMindCloudSync) {
         const tableHTML = rows
           .map(
             (row) => `
-          <tr class="border-b border-zinc-700 hover:bg-zinc-700/30">
+          <tr class="hover:bg-zinc-700/30">
             <td class="py-1 px-2">${row.type}</td>
             <td class="text-right py-1 px-2">${row.count}</td>
           </tr>
