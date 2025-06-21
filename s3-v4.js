@@ -1381,6 +1381,32 @@ if (window.typingMindCloudSync) {
       );
     }
 
+    async _deleteFolderIfExists(path) {
+      return this._withRetry(async () => {
+        // Find the folder without creating it if it's missing.
+        const folderId = await this._getPathId(path, false);
+
+        if (folderId) {
+          this.logger.log(
+            "info",
+            `[Google Drive] Deleting existing backup folder to prevent duplication: "${path}"`
+          );
+          await gapi.client.drive.files.delete({
+            fileId: folderId,
+          });
+          // Important: Clear the folder from the cache so it can be recreated.
+          this.pathIdCache.delete(path);
+
+          // Also clear any sub-path caches that might now be invalid
+          for (const key of this.pathIdCache.keys()) {
+            if (key.startsWith(path + "/")) {
+              this.pathIdCache.delete(key);
+            }
+          }
+        }
+      });
+    }
+
     async _withRetry(operation, maxRetries = 5, baseDelay = 1000) {
       let lastError;
       for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -3278,6 +3304,10 @@ if (window.typingMindCloudSync) {
         "-"
       )}-${timestamp}`;
 
+      if (this.storageService instanceof GoogleDriveService) {
+        await this.storageService._deleteFolderIfExists(backupFolder);
+      }
+
       try {
         const itemsList = await this.storageService.list("items/");
         this.logger.log(
@@ -3386,6 +3416,10 @@ if (window.typingMindCloudSync) {
         today.getMonth() + 1
       ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
       const backupFolder = `backups/typingmind-backup-${dateString}`;
+
+      if (this.storageService instanceof GoogleDriveService) {
+        await this.storageService._deleteFolderIfExists(backupFolder);
+      }
 
       try {
         const itemsList = await this.storageService.list("items/");
