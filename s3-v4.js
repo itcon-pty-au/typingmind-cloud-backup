@@ -1125,12 +1125,10 @@ if (window.typingMindCloudSync) {
       this.logger = logger;
     }
 
-    // NEW: Static property for display name in UI
     static get displayName() {
       return "Unnamed Provider";
     }
 
-    // NEW: Static method to get provider-specific config UI
     /**
      * Returns the HTML and event setup logic for this provider's config UI.
      * @returns {{html: string, setupEventListeners: function(HTMLElement, IStorageProvider, ConfigManager, Logger): void}}
@@ -1583,7 +1581,6 @@ if (window.typingMindCloudSync) {
             googleAuthStatus.textContent =
               "Please follow the Google sign-in prompt...";
 
-            // Create a temporary provider instance for authentication
             const tempProvider = new GoogleDriveService(
               config,
               providerInstance.crypto,
@@ -1614,6 +1611,20 @@ if (window.typingMindCloudSync) {
       return { html, setupEventListeners };
     }
 
+    _isAuthError(error) {
+      const apiError = error.result?.error || error.error || {};
+      if (apiError.code === 401 || apiError.status === "UNAUTHENTICATED") {
+        return true;
+      }
+      if (error.status === 401) {
+        return true;
+      }
+      if (apiError.message?.toLowerCase().includes("invalid credentials")) {
+        return true;
+      }
+      return false;
+    }
+
     _isRateLimitError(error) {
       const apiError = error.result?.error || error.error || {};
       return (
@@ -1626,7 +1637,21 @@ if (window.typingMindCloudSync) {
       return retryAsync(operation, {
         maxRetries: 5,
         delay: 1000,
-        isRetryable: (error) => this._isRateLimitError(error),
+        isRetryable: (error) => {
+          if (this._isAuthError(error)) {
+            this.logger.log(
+              "error",
+              "Google Drive authentication token expired or invalid."
+            );
+            localStorage.removeItem("tcs_google_access_token");
+            if (gapi?.client) gapi.client.setToken(null);
+
+            window.cloudSyncApp?.handleExpiredToken();
+
+            return false;
+          }
+          return this._isRateLimitError(error);
+        },
         onRetry: (error, attempt, delay) => {
           this.logger.log(
             "warning",
@@ -2372,7 +2397,7 @@ if (window.typingMindCloudSync) {
 
           changedItems.push({
             id: itemId,
-            type: metadataItem.type || "idb", // Use stored type, fallback to idb
+            type: metadataItem.type || "idb",
             deleted: Date.now(),
             tombstoneVersion: (metadataItem.tombstoneVersion || 0) + 1,
             reason: "detected-deletion",
@@ -4531,7 +4556,7 @@ if (window.typingMindCloudSync) {
       this.cryptoService = new CryptoService(this.config, this.logger);
 
       this.storageService = null;
-      this.providerRegistry = new Map(); // NEW: Provider registry
+      this.providerRegistry = new Map();
 
       this.syncOrchestrator = null;
       this.backupService = null;
@@ -4544,10 +4569,10 @@ if (window.typingMindCloudSync) {
       this.backupsExpanded = false;
       this.providerExpanded = false;
       this.commonExpanded = false;
+      this.hasShownTokenExpiryAlert = false;
       this.leaderElection = null;
     }
 
-    // NEW: Method to register providers
     registerProvider(typeName, providerClass) {
       if (
         !providerClass ||
@@ -4593,7 +4618,6 @@ if (window.typingMindCloudSync) {
       const storageType = this.config.get("storageType") || "s3";
       this.logger.log("info", `Selected storage provider: ${storageType}`);
 
-      // REFACTORED: Use the provider registry
       try {
         const ProviderClass = this.providerRegistry.get(storageType);
         if (ProviderClass) {
@@ -4696,6 +4720,20 @@ if (window.typingMindCloudSync) {
             );
           }
         }
+      }
+    }
+
+    handleExpiredToken() {
+      this.updateSyncStatus("error");
+      if (!this.hasShownTokenExpiryAlert) {
+        this.hasShownTokenExpiryAlert = true;
+        alert(
+          "⚠️ Your Google Drive session has expired.\n\n" +
+            "Please open the Sync modal, go to 'Storage Provider Settings', and use the 'Sign in with Google' button to re-authenticate."
+        );
+        setTimeout(() => {
+          this.hasShownTokenExpiryAlert = false;
+        }, 5 * 60 * 1000);
       }
     }
 
@@ -4858,7 +4896,6 @@ if (window.typingMindCloudSync) {
       this.setupModalEventListeners(modal, overlay);
     }
 
-    // REFACTORED: getModalHTML is now generic
     getModalHTML() {
       const modeStatus = this.noSyncMode
         ? `<div class="mb-3 p-2 bg-orange-600 rounded-lg border border-orange-500">
@@ -5001,7 +5038,6 @@ if (window.typingMindCloudSync) {
       </div>`;
     }
 
-    // REFACTORED: setupModalEventListeners is now generic
     setupModalEventListeners(modal, overlay) {
       const closeModalHandler = () => this.closeModal(overlay);
       const saveSettingsHandler = () => this.saveSettings(modal);
@@ -5049,7 +5085,6 @@ if (window.typingMindCloudSync) {
         "#provider-settings-container"
       );
 
-      // Populate provider dropdown from registry
       this.providerRegistry.forEach((providerClass, typeName) => {
         const option = document.createElement("option");
         option.value = typeName;
@@ -5082,7 +5117,7 @@ if (window.typingMindCloudSync) {
       };
 
       storageSelect.addEventListener("change", updateProviderUI);
-      updateProviderUI(); // Initial render
+      updateProviderUI();
 
       const forceExportBtn = modal.querySelector("#force-export-btn");
       const forceImportBtn = modal.querySelector("#force-import-btn");
@@ -5670,7 +5705,6 @@ if (window.typingMindCloudSync) {
         localStorage.setItem("tcs_sync-exclusions", exclusions);
         this.config.reloadExclusions();
 
-        // Use the registry to get the correct provider class
         const ProviderClass = this.providerRegistry.get(storageType);
         if (!ProviderClass) {
           throw new Error(`Cannot verify unknown storage type: ${storageType}`);
@@ -5931,21 +5965,13 @@ if (window.typingMindCloudSync) {
   `;
   document.head.appendChild(styleSheet);
 
-  // --- FINAL ASSEMBLY ---
-  // This section constructs the application and registers the providers.
-  // To add a new provider, define its class and add one line here.
-
   const app = new CloudSyncApp();
 
-  // Register all available providers
   app.registerProvider("s3", S3Service);
   app.registerProvider("googleDrive", GoogleDriveService);
-  // Example: to add a new Dropbox provider, you would add:
-  // app.registerProvider('dropbox', DropboxService);
 
   app.initialize();
   window.cloudSyncApp = app;
-  // --- END OF ASSEMBLY ---
 
   const cleanupHandler = () => {
     try {
