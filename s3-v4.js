@@ -5969,6 +5969,7 @@ if (window.typingMindCloudSync) {
     @media (max-width: 640px) { #sync-diagnostics-table { font-size: 0.7rem; } #sync-diagnostics-table th, #sync-diagnostics-table td { padding: 0.5rem 0.25rem; } .cloud-sync-modal { margin: 0.5rem; max-height: 90vh; overflow-y: auto; } }
     .modal-footer a { color: #60a5fa; text-decoration: none; transition: color 0.2s ease-in-out; }
     .modal-footer a:hover { color: #93c5fd; text-decoration: underline; }
+    .modal-footer { border-color: #e5e7eb; }
   `;
   document.head.appendChild(styleSheet);
 
