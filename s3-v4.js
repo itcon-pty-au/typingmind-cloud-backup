@@ -4545,6 +4545,8 @@ if (window.typingMindCloudSync) {
 
   class CloudSyncApp {
     constructor() {
+      this.footerHTML =
+        'Developed & Maintained by Thomas@ITCON. <a href="https://buymeacoffee.com/itcon" target="_blank" rel="noopener noreferrer">Buy me a coffee!</a>';
       this.logger = new Logger();
       this.config = new ConfigManager();
       this.operationQueue = new OperationQueue(this.logger);
@@ -5034,6 +5036,9 @@ if (window.typingMindCloudSync) {
               : ""
           }</span></div>
           <div id="action-msg" class="text-center text-zinc-400"></div>
+          <div class="modal-footer text-center mt-6 pt-3 border-t border-zinc-700/50 text-xs text-zinc-500">
+            ${this.footerHTML}
+          </div>
         </div>
       </div>`;
     }
@@ -5962,6 +5967,8 @@ if (window.typingMindCloudSync) {
     #sync-diagnostics-content { animation: slideDown 0.2s ease-out; }
     @keyframes slideDown { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 300px; } }
     @media (max-width: 640px) { #sync-diagnostics-table { font-size: 0.7rem; } #sync-diagnostics-table th, #sync-diagnostics-table td { padding: 0.5rem 0.25rem; } .cloud-sync-modal { margin: 0.5rem; max-height: 90vh; overflow-y: auto; } }
+    .modal-footer a { color: #60a5fa; text-decoration: none; transition: color 0.2s ease-in-out; }
+    .modal-footer a:hover { color: #93c5fd; text-decoration: underline; }
   `;
   document.head.appendChild(styleSheet);
 
