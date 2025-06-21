@@ -3589,40 +3589,70 @@ if (window.typingMindCloudSync) {
       try {
         const objects = await this.storageService.list("backups/");
         const backups = [];
+        const manifestPromises = [];
 
-        for (const obj of objects) {
-          if (obj.Key.endsWith("/backup-manifest.json")) {
-            try {
-              const manifest = await this.storageService.download(
-                obj.Key,
-                true
-              );
-              if (manifest && manifest.backupFolder) {
-                const backupFolder =
-                  manifest.backupFolder ||
-                  obj.Key.replace("/backup-manifest.json", "");
-                const backupName = backupFolder.replace("backups/", "");
-                const backupType = this.getBackupType(backupName);
-
-                backups.push({
-                  key: obj.Key,
-                  name: backupName,
-                  displayName: backupName,
-                  modified: obj.LastModified,
-                  format: "server-side",
-                  totalItems: manifest.totalItems,
-                  copiedItems: manifest.copiedItems,
-                  type: backupType,
-                  backupFolder: backupFolder,
-                  sortOrder: backupType === "snapshot" ? 1 : 2,
+        if (this.storageService instanceof GoogleDriveService) {
+          for (const folder of objects) {
+            const manifestKey = `${folder.Key}/backup-manifest.json`;
+            const promise = this.storageService
+              .download(manifestKey, true)
+              .then((manifest) => ({ manifest, manifestKey, folder }))
+              .catch((error) => {
+                if (error.code !== "NoSuchKey" && error.statusCode !== 404) {
+                  this.logger.log(
+                    "warning",
+                    `Could not check manifest for ${folder.Key}: ${error.message}`
+                  );
+                }
+                return null;
+              });
+            manifestPromises.push(promise);
+          }
+        } else {
+          for (const obj of objects) {
+            if (obj.Key.endsWith("/backup-manifest.json")) {
+              const promise = this.storageService
+                .download(obj.Key, true)
+                .then((manifest) => ({
+                  manifest,
+                  manifestKey: obj.Key,
+                  folder: obj,
+                }))
+                .catch((error) => {
+                  this.logger.log(
+                    "warning",
+                    `Could not download manifest for ${obj.Key}: ${error.message}`
+                  );
+                  return null;
                 });
-              }
-            } catch (error) {
-              this.logger.log(
-                "warning",
-                `Failed to read server-side manifest for ${obj.Key}`
-              );
+              manifestPromises.push(promise);
             }
+          }
+        }
+
+        const results = await Promise.all(manifestPromises);
+
+        for (const result of results) {
+          if (result && result.manifest && result.manifest.backupFolder) {
+            const { manifest, manifestKey, folder } = result;
+            const backupFolder =
+              manifest.backupFolder ||
+              manifestKey.replace("/backup-manifest.json", "");
+            const backupName = backupFolder.replace("backups/", "");
+            const backupType = this.getBackupType(backupName);
+
+            backups.push({
+              key: manifestKey,
+              name: backupName,
+              displayName: backupName,
+              modified: folder.LastModified || new Date(manifest.created),
+              format: "server-side",
+              totalItems: manifest.totalItems,
+              copiedItems: manifest.copiedItems,
+              type: backupType,
+              backupFolder: backupFolder,
+              sortOrder: backupType === "snapshot" ? 1 : 2,
+            });
           }
         }
 
