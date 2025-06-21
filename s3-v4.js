@@ -2275,10 +2275,22 @@ if (window.typingMindCloudSync) {
           await this.storageService._getPathId("items", true);
         }
         const { changedItems } = await this.detectChanges();
+        if (changedItems.length === 0) {
+          this.logger.log("info", "Initial sync found no items to upload.");
+          return;
+        }
+
+        this.logger.log(
+          "info",
+          `[Initial Sync] Attempting to upload ${changedItems.length} items.`
+        );
+
         const cloudMetadata = {
-          lastSync: Date.now(),
+          lastSync: 0,
           items: {},
         };
+        let uploadedCount = 0;
+
         const uploadPromises = changedItems.map(async (item) => {
           if (item.deleted || item.reason === "tombstone") {
             const tombstoneData = {
@@ -2288,37 +2300,58 @@ if (window.typingMindCloudSync) {
               tombstoneVersion: item.tombstoneVersion || 1,
               synced: Date.now(),
             };
-            this.metadata.items[item.id] = tombstoneData;
-            cloudMetadata.items[item.id] = { ...tombstoneData };
-            this.logger.log(
-              "info",
-              `🗑️ Added tombstone for ${item.id} to initial sync`
-            );
+            return { id: item.id, metadata: tombstoneData, isTombstone: true };
           } else {
             const data = await this.dataService.getItem(item.id, item.type);
             if (data) {
               await this.storageService.upload(`items/${item.id}.json`, data);
-              this.metadata.items[item.id] = {
+              const newMetadataEntry = {
                 synced: Date.now(),
                 type: item.type,
                 size: item.size || this.getItemSize(data),
                 lastModified: item.lastModified,
               };
-              cloudMetadata.items[item.id] = {
-                ...this.metadata.items[item.id],
-              };
+              return { id: item.id, metadata: newMetadataEntry };
             }
           }
+          return null;
         });
-        await Promise.allSettled(uploadPromises);
-        await this.storageService.upload("metadata.json", cloudMetadata, true);
-        this.metadata.lastSync = cloudMetadata.lastSync;
-        this.setLastCloudSync(cloudMetadata.lastSync);
-        this.saveMetadata();
-        await this.updateSyncDiagnosticsCache();
+
+        const results = await Promise.allSettled(uploadPromises);
+
+        results.forEach((result, index) => {
+          if (result.status === "fulfilled" && result.value) {
+            const { id, metadata, isTombstone } = result.value;
+            this.metadata.items[id] = metadata;
+            cloudMetadata.items[id] = { ...metadata };
+            if (!isTombstone) {
+              uploadedCount++;
+            }
+          } else if (result.status === "rejected") {
+            this.logger.log(
+              "error",
+              `[Initial Sync] Failed to process item: ${changedItems[index].id}`,
+              result.reason.message || result.reason
+            );
+          }
+        });
+
+        if (Object.keys(cloudMetadata.items).length > 0) {
+          cloudMetadata.lastSync = Date.now();
+          await this.storageService.upload(
+            "metadata.json",
+            cloudMetadata,
+            true
+          );
+          this.metadata.lastSync = cloudMetadata.lastSync;
+          this.setLastCloudSync(cloudMetadata.lastSync);
+          this.saveMetadata();
+          await this.updateSyncDiagnosticsCache();
+        }
+
         this.logger.log(
           "success",
-          `Initial sync completed - ${changedItems.length} items uploaded`
+          `Initial sync completed - ${uploadedCount} of ${changedItems.length} items uploaded.`
         );
       } catch (error) {
         this.logger.log(
