@@ -3187,18 +3187,22 @@ if (window.typingMindCloudSync) {
       const interval = Math.max(this.config.get("syncInterval") * 1000, 15000);
       this.autoSyncInterval = setInterval(async () => {
         if (
-          this.storageService &&
-          this.storageService.isConfigured() &&
-          !this.syncInProgress
+          this.config.isConfigured() &&
+          !this.syncOrchestrator.syncInProgress
         ) {
           try {
-            await this.performFullSync();
+            await this.backupService.checkAndPerformDailyBackup();
+            await this.syncOrchestrator.performFullSync();
           } catch (error) {
-            this.logger.log("error", "Auto-sync failed", error.message);
+            this.logger.log(
+              "error",
+              "Auto-sync/backup cycle failed",
+              error.message
+            );
           }
         }
       }, interval);
-      this.logger.log("info", "Auto-sync started");
+      this.logger.log("info", "Auto-sync and daily backup check started");
     }
     async cleanupOldTombstones() {
       const now = Date.now();
@@ -6019,21 +6023,13 @@ if (window.typingMindCloudSync) {
     }
 
     async runLeaderTasks() {
-      if (
-        !this.noSyncMode &&
-        this.storageService &&
-        this.storageService.isConfigured()
-      ) {
+      if (!this.noSyncMode && this.config.isConfigured()) {
         this.updateSyncStatus("syncing");
         try {
-          await this.backupService.checkAndPerformDailyBackup();
           await this.syncOrchestrator.performFullSync();
           this.startAutoSync();
           this.updateSyncStatus("success");
-          this.logger.log(
-            "success",
-            "Cloud Sync initialized successfully on leader tab."
-          );
+          this.logger.log("success", "Cloud Sync initialized on leader tab.");
         } catch (error) {
           this.logger.log(
             "error",
