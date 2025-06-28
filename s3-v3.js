@@ -4386,6 +4386,7 @@ if (window.typingMindCloudSync) {
           !this.syncOrchestrator.syncInProgress
         ) {
           try {
+            await this.backupService.checkAndPerformDailyBackup();
             await this.syncOrchestrator.performFullSync();
           } catch (error) {
             this.logger.log("error", "Auto-sync failed", error.message);
