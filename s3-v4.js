@@ -2387,10 +2387,7 @@ if (window.typingMindCloudSync) {
       this.logger.log("info", `Found ${localItemKeys.size} local item keys.`);
 
       const { totalSize } = await this.dataService.estimateDataSize();
-      const itemsIterator =
-        totalSize > this.dataService.memoryThreshold
-          ? this.dataService.streamAllItemsInternal()
-          : [await this.dataService.getAllItems()];
+      const itemsIterator = this.dataService.streamAllItemsInternal();
 
       for await (const batch of itemsIterator) {
         for (const item of batch) {
@@ -2977,43 +2974,15 @@ if (window.typingMindCloudSync) {
       const tombstones = this.dataService.getAllTombstones();
       let itemCount = 0;
       let tombstoneCount = 0;
-      if (useStreaming) {
-        this.logger.log(
-          "info",
-          `Using memory-efficient metadata initialization for large dataset (${this.dataService.formatSize(
-            totalSize
-          )})`
-        );
-        for await (const batch of this.dataService.streamAllItemsInternal()) {
-          for (const item of batch) {
-            if (item.id && item.data) {
-              const key = item.id;
-              this.metadata.items[key] = {
-                synced: 0,
-                type: item.type,
-                size: this.getItemSize(item.data),
-                lastModified: 0,
-              };
-              itemCount++;
-            }
-          }
-          if (itemCount % 1000 === 0) {
-            this.logger.log(
-              "info",
-              `Processed ${itemCount} items for metadata initialization`
-            );
-            await new Promise((resolve) => setTimeout(resolve, 10));
-          }
-        }
-      } else {
-        this.logger.log(
-          "info",
-          `Using standard metadata initialization for small dataset (${this.dataService.formatSize(
-            totalSize
-          )})`
-        );
-        const allItems = await this.dataService.getAllItems();
-        for (const item of allItems) {
+      this.logger.log(
+        "info",
+        `Using memory-efficient metadata initialization (dataset: ${this.dataService.formatSize(
+          totalSize
+        )})`
+      );
+
+      for await (const batch of this.dataService.streamAllItemsInternal()) {
+        for (const item of batch) {
           if (item.id && item.data) {
             const key = item.id;
             this.metadata.items[key] = {
@@ -3024,6 +2993,13 @@ if (window.typingMindCloudSync) {
             };
             itemCount++;
           }
+        }
+        if (itemCount % 1000 === 0) {
+          this.logger.log(
+            "info",
+            `Processed ${itemCount} items for metadata initialization`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 10));
         }
       }
       for (const [itemId, tombstone] of tombstones.entries()) {
@@ -3189,17 +3165,25 @@ if (window.typingMindCloudSync) {
         if (
           this.storageService &&
           this.storageService.isConfigured() &&
-          !this.syncInProgress
+          !this.syncOrchestrator.syncInProgress
         ) {
+          this.updateSyncStatus("syncing");
           try {
-            await this.backupService.checkAndPerformDailyBackup();
-            await this.performFullSync();
+            const backupWasPerformed =
+              await this.backupService.checkAndPerformDailyBackup();
+
+            if (!backupWasPerformed) {
+              await this.syncOrchestrator.performFullSync();
+            }
+
+            this.updateSyncStatus("success");
           } catch (error) {
             this.logger.log(
               "error",
               "Auto-sync/backup cycle failed",
               error.message
             );
+            this.updateSyncStatus("error");
           }
         }
       }, interval);
@@ -3284,19 +3268,12 @@ if (window.typingMindCloudSync) {
           await this.dataService.estimateDataSize();
         const localCount = itemCount;
         let chatItems = 0;
-        if (totalSize > this.dataService.memoryThreshold) {
-          for await (const batch of this.dataService.streamAllItemsInternal()) {
-            for (const item of batch) {
-              if (item.id.startsWith("CHAT_")) {
-                chatItems++;
-              }
+        for await (const batch of this.dataService.streamAllItemsInternal()) {
+          for (const item of batch) {
+            if (item.id.startsWith("CHAT_")) {
+              chatItems++;
             }
           }
-        } else {
-          const allItems = await this.dataService.getAllItems();
-          chatItems = allItems.filter((item) =>
-            item.id.startsWith("CHAT_")
-          ).length;
         }
 
         const metadataCount = Object.keys(this.metadata.items || {}).length;
@@ -3364,19 +3341,12 @@ if (window.typingMindCloudSync) {
           await this.dataService.estimateDataSize();
         const localCount = itemCount;
         let chatItems = 0;
-        if (totalSize > this.dataService.memoryThreshold) {
-          for await (const batch of this.dataService.streamAllItemsInternal()) {
-            for (const item of batch) {
-              if (item.id.startsWith("CHAT_")) {
-                chatItems++;
-              }
+        for await (const batch of this.dataService.streamAllItemsInternal()) {
+          for (const item of batch) {
+            if (item.id.startsWith("CHAT_")) {
+              chatItems++;
             }
           }
-        } else {
-          const allItems = await this.dataService.getAllItems();
-          chatItems = allItems.filter((item) =>
-            item.id.startsWith("CHAT_")
-          ).length;
         }
         const metadataCount = Object.keys(this.metadata.items || {}).length;
         const metadataDeleted = Object.values(this.metadata.items || {}).filter(
@@ -3650,7 +3620,7 @@ if (window.typingMindCloudSync) {
           "skip",
           "Storage provider not configured, skipping daily backup."
         );
-        return;
+        return false;
       }
       const lastBackupStr = localStorage.getItem("tcs_last-daily-backup");
       const now = new Date();
@@ -3662,7 +3632,9 @@ if (window.typingMindCloudSync) {
         await this.performDailyBackup();
         localStorage.setItem("tcs_last-daily-backup", currentDateStr);
         this.logger.log("success", "Daily backup completed");
+        return true;
       }
+      return false;
     }
 
     async performDailyBackup() {
@@ -6034,7 +6006,7 @@ if (window.typingMindCloudSync) {
         } catch (error) {
           this.logger.log(
             "error",
-            "Background sync/backup failed on leader tab",
+            "Initial sync failed on leader tab",
             error.message
           );
           this.updateSyncStatus("error");
