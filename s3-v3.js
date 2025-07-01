@@ -903,6 +903,7 @@ if (window.typingMindCloudSync) {
       this.keyCache = new Map();
       this.maxCacheSize = 10;
       this.lastCacheCleanup = Date.now();
+      this.largeArrayKeys = ["TM_useUserCharacters"];
     }
     async deriveKey(password) {
       const now = Date.now();
@@ -939,18 +940,64 @@ if (window.typingMindCloudSync) {
         }
       }
     }
-    async encrypt(data) {
+    _createJsonStreamForArray(array) {
+      let i = 0;
+      const encoder = new TextEncoder();
+      return new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode("["));
+        },
+        pull(controller) {
+          if (i >= array.length) {
+            controller.enqueue(encoder.encode("]"));
+            controller.close();
+            return;
+          }
+
+          try {
+            const chunk = JSON.stringify(array[i]);
+            if (i < array.length - 1) {
+              controller.enqueue(encoder.encode(chunk + ","));
+            } else {
+              controller.enqueue(encoder.encode(chunk));
+            }
+            i++;
+          } catch (e) {
+            this.logger.log(
+              "error",
+              `Streaming serialization failed for element ${i}`,
+              e
+            );
+            controller.error(e);
+          }
+        },
+      });
+    }
+    async encrypt(data, key = null) {
       const encryptionKey = this.config.get("encryptionKey");
       if (!encryptionKey) throw new Error("No encryption key configured");
-      const key = await this.deriveKey(encryptionKey);
-      let encodedData = new TextEncoder().encode(JSON.stringify(data));
+
+      const cryptoKey = await this.deriveKey(encryptionKey);
+      let dataStream;
+
+      // Check if we should use streaming serialization
+      if (key && this.largeArrayKeys.includes(key) && Array.isArray(data)) {
+        this.logger.log(
+          "info",
+          `Using streaming serialization for large array: ${key}`
+        );
+        dataStream = this._createJsonStreamForArray(data);
+      } else {
+        // Use the standard in-memory method for other items
+        const encodedData = new TextEncoder().encode(JSON.stringify(data));
+        dataStream = new Blob([encodedData]).stream();
+      }
+
+      let processedStream = dataStream;
       try {
         if (window.CompressionStream) {
-          const compressedStream = new Blob([encodedData])
-            .stream()
-            .pipeThrough(new CompressionStream("deflate-raw"));
-          encodedData = new Uint8Array(
-            await new Response(compressedStream).arrayBuffer()
+          processedStream = dataStream.pipeThrough(
+            new CompressionStream("deflate-raw")
           );
         } else {
           this.logger.log(
@@ -965,12 +1012,18 @@ if (window.typingMindCloudSync) {
           e
         );
       }
+
+      const finalData = new Uint8Array(
+        await new Response(processedStream).arrayBuffer()
+      );
+
       const iv = crypto.getRandomValues(new Uint8Array(12));
       const encrypted = await crypto.subtle.encrypt(
         { name: "AES-GCM", iv },
-        key,
-        encodedData
+        cryptoKey,
+        finalData
       );
+
       const result = new Uint8Array(iv.length + encrypted.byteLength);
       result.set(iv, 0);
       result.set(new Uint8Array(encrypted), iv.length);
@@ -1112,12 +1165,12 @@ if (window.typingMindCloudSync) {
       }
       throw lastError;
     }
-    async upload(key, data, isMetadata = false) {
+    async upload(key, data, isMetadata = false, itemKey = null) {
       return this.withRetry(async () => {
         try {
           const body = isMetadata
             ? JSON.stringify(data)
-            : await this.crypto.encrypt(data);
+            : await this.crypto.encrypt(data, itemKey || key); // Pass the key here
           const params = {
             Bucket: this.config.get("bucketName"),
             Key: key,
@@ -1277,6 +1330,7 @@ if (window.typingMindCloudSync) {
       this.metadata = this.loadMetadata();
       this.syncInProgress = false;
       this.autoSyncInterval = null;
+      this.largeArrayKeys = ["TM_useUserCharacters"];
     }
     loadMetadata() {
       const stored = localStorage.getItem("tcs_local-metadata");
@@ -1293,7 +1347,27 @@ if (window.typingMindCloudSync) {
     setLastCloudSync(timestamp) {
       localStorage.setItem("tcs_last-cloud-sync", timestamp.toString());
     }
-    getItemSize(data) {
+    getItemSize(data, key) {
+      if (this.largeArrayKeys.includes(key) && Array.isArray(data)) {
+        let totalSize = 2; // for '[' and ']'
+        for (let i = 0; i < data.length; i++) {
+          try {
+            totalSize += JSON.stringify(data[i]).length;
+            if (i < data.length - 1) {
+              totalSize++; // for ','
+            }
+          } catch (e) {
+            // Fallback for an item that can't be stringified
+            this.logger.log(
+              "warning",
+              `Could not stringify element ${i} in large array ${key}`
+            );
+            totalSize += 100; // arbitrary small size
+          }
+        }
+        return totalSize;
+      }
+      // Fallback to the old method for all other items
       return JSON.stringify(data).length;
     }
 
@@ -1351,7 +1425,7 @@ if (window.typingMindCloudSync) {
           }
           // STRATEGY 2: Size-based detection for all other items (the original, safe logic)
           else {
-            currentSize = this.getItemSize(value);
+            currentSize = this.getItemSize(value, key);
             itemLastModified = existingItem?.lastModified || 0; // Preserve existing timestamp if any
 
             if (!existingItem) {
@@ -1471,7 +1545,12 @@ if (window.typingMindCloudSync) {
             else {
               const data = await this.dataService.getItem(item.id, item.type);
               if (data) {
-                await this.s3Service.upload(`items/${item.id}.json`, data);
+                await this.s3Service.upload(
+                  `items/${item.id}.json`,
+                  data,
+                  false,
+                  item.id
+                );
 
                 // ================== START: UPDATED METADATA SAVING ==================
                 const newMetadataEntry = {
@@ -1482,7 +1561,8 @@ if (window.typingMindCloudSync) {
 
                 // For non-chat items, we must also store the size for future comparisons.
                 if (!item.id.startsWith("CHAT_")) {
-                  newMetadataEntry.size = item.size || this.getItemSize(data);
+                  newMetadataEntry.size =
+                    item.size || this.getItemSize(data, item.id);
                 }
 
                 this.metadata.items[item.id] = newMetadataEntry;

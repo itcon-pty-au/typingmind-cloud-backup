@@ -969,6 +969,7 @@ if (window.typingMindCloudSync) {
       this.keyCache = new Map();
       this.maxCacheSize = 10;
       this.lastCacheCleanup = Date.now();
+      this.largeArrayKeys = ["TM_useUserCharacters"];
     }
     async deriveKey(password) {
       const now = Date.now();
@@ -1005,18 +1006,64 @@ if (window.typingMindCloudSync) {
         }
       }
     }
-    async encrypt(data) {
+    _createJsonStreamForArray(array) {
+      let i = 0;
+      const encoder = new TextEncoder();
+      return new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode("["));
+        },
+        pull(controller) {
+          if (i >= array.length) {
+            controller.enqueue(encoder.encode("]"));
+            controller.close();
+            return;
+          }
+
+          try {
+            const chunk = JSON.stringify(array[i]);
+            if (i < array.length - 1) {
+              controller.enqueue(encoder.encode(chunk + ","));
+            } else {
+              controller.enqueue(encoder.encode(chunk));
+            }
+            i++;
+          } catch (e) {
+            this.logger.log(
+              "error",
+              `Streaming serialization failed for element ${i}`,
+              e
+            );
+            controller.error(e);
+          }
+        },
+      });
+    }
+    async encrypt(data, key = null) {
       const encryptionKey = this.config.get("encryptionKey");
       if (!encryptionKey) throw new Error("No encryption key configured");
-      const key = await this.deriveKey(encryptionKey);
-      let encodedData = new TextEncoder().encode(JSON.stringify(data));
+
+      const cryptoKey = await this.deriveKey(encryptionKey);
+      let dataStream;
+
+      // Check if we should use streaming serialization for known large arrays
+      if (key && this.largeArrayKeys.includes(key) && Array.isArray(data)) {
+        this.logger.log(
+          "info",
+          `Using streaming serialization for large array: ${key}`
+        );
+        dataStream = this._createJsonStreamForArray(data);
+      } else {
+        // Use the standard in-memory method for all other items
+        const encodedData = new TextEncoder().encode(JSON.stringify(data));
+        dataStream = new Blob([encodedData]).stream();
+      }
+
+      let processedStream = dataStream;
       try {
         if (window.CompressionStream) {
-          const compressedStream = new Blob([encodedData])
-            .stream()
-            .pipeThrough(new CompressionStream("deflate-raw"));
-          encodedData = new Uint8Array(
-            await new Response(compressedStream).arrayBuffer()
+          processedStream = dataStream.pipeThrough(
+            new CompressionStream("deflate-raw")
           );
         } else {
           this.logger.log(
@@ -1031,12 +1078,18 @@ if (window.typingMindCloudSync) {
           e
         );
       }
+
+      const finalData = new Uint8Array(
+        await new Response(processedStream).arrayBuffer()
+      );
+
       const iv = crypto.getRandomValues(new Uint8Array(12));
       const encrypted = await crypto.subtle.encrypt(
         { name: "AES-GCM", iv },
-        key,
-        encodedData
+        cryptoKey,
+        finalData
       );
+
       const result = new Uint8Array(iv.length + encrypted.byteLength);
       result.set(iv, 0);
       result.set(new Uint8Array(encrypted), iv.length);
@@ -1302,13 +1355,13 @@ if (window.typingMindCloudSync) {
       });
     }
 
-    async upload(key, data, isMetadata = false) {
+    async upload(key, data, isMetadata = false, itemKey = null) {
       return retryAsync(
         async () => {
           try {
             const body = isMetadata
               ? JSON.stringify(data)
-              : await this.crypto.encrypt(data);
+              : await this.crypto.encrypt(data, itemKey || key);
             const params = {
               Bucket: this.config.get("bucketName"),
               Key: key,
@@ -2097,7 +2150,7 @@ if (window.typingMindCloudSync) {
       });
     }
 
-    async upload(key, data, isMetadata = false) {
+    async upload(key, data, isMetadata = false, itemKey = null) {
       return this._operationWithRetry(async () => {
         await this.handleAuthentication();
         const parts = key.split("/").filter((p) => p);
@@ -2109,7 +2162,7 @@ if (window.typingMindCloudSync) {
 
         const body = isMetadata
           ? JSON.stringify(data)
-          : await this.crypto.encrypt(data);
+          : await this.crypto.encrypt(data, itemKey || filename); // Pass itemKey to encrypt
         const blob = new Blob([body], {
           type: isMetadata ? "application/json" : "application/octet-stream",
         });
@@ -2623,7 +2676,12 @@ if (window.typingMindCloudSync) {
             } else {
               const data = await this.dataService.getItem(item.id, item.type);
               if (data) {
-                await this.storageService.upload(`items/${item.id}.json`, data);
+                await this.storageService.upload(
+                  `items/${item.id}.json`,
+                  data,
+                  false,
+                  item.id
+                );
 
                 const newMetadataEntry = {
                   synced: Date.now(),
@@ -2892,7 +2950,9 @@ if (window.typingMindCloudSync) {
             } else {
               await this.storageService.upload(
                 `items/${item.id}.json`,
-                item.data
+                item.data,
+                false,
+                item.id
               );
               const newMetadataEntry = {
                 synced: now,
