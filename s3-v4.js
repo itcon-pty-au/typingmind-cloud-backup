@@ -1789,10 +1789,10 @@ if (window.typingMindCloudSync) {
       if (storedToken) {
         try {
           const token = JSON.parse(storedToken);
-          if (
-            token.expires_in &&
-            Date.now() < token.iat + token.expires_in * 1000 - 5 * 60 * 1000
-          ) {
+          const isExpired =
+            Date.now() > token.iat + token.expires_in * 1000 - 5 * 60 * 1000;
+
+          if (!isExpired) {
             gapi.client.setToken(token);
             this.logger.log(
               "info",
@@ -1852,36 +1852,53 @@ if (window.typingMindCloudSync) {
       this.gisReady = true;
     }
 
-    async handleAuthentication() {
+    async handleAuthentication(options = { interactive: false }) {
       if (!this.isConfigured() || !this.tokenClient) {
         throw new Error("Google Drive is not configured or initialized.");
       }
 
-      if (gapi.client.getToken()?.access_token) {
-        return Promise.resolve();
+      const token = gapi.client.getToken();
+
+      if (token?.access_token) {
+        const isExpired =
+          Date.now() > token.iat + token.expires_in * 1000 - 5 * 60 * 1000;
+        if (!isExpired) {
+          return Promise.resolve();
+        }
+        this.logger.log(
+          "info",
+          "Access token is expired, attempting silent refresh."
+        );
       }
 
       return new Promise((resolve, reject) => {
         const callback = (tokenResponse) => {
           if (tokenResponse.error) {
             this.logger.log("error", "Google Auth Error", tokenResponse);
-            reject(
-              new Error(
-                tokenResponse.error_description || "Authentication failed."
-              )
-            );
+            if (options.interactive) {
+              reject(
+                new Error(
+                  tokenResponse.error_description || "Authentication failed."
+                )
+              );
+            } else {
+              this.logger.log(
+                "warning",
+                "Silent token refresh failed. User interaction will be required."
+              );
+              resolve();
+            }
             return;
           }
 
           this._storeToken(tokenResponse);
-
           this.logger.log("success", "Google Drive authentication successful.");
           resolve();
         };
 
         this.tokenClient.callback = callback;
-
-        this.tokenClient.requestAccessToken({ prompt: "consent" });
+        const prompt = options.interactive ? "consent" : "";
+        this.tokenClient.requestAccessToken({ prompt: prompt });
       });
     }
 
