@@ -3187,12 +3187,13 @@ if (window.typingMindCloudSync) {
       const interval = Math.max(this.config.get("syncInterval") * 1000, 15000);
       this.autoSyncInterval = setInterval(async () => {
         if (
-          this.config.isConfigured() &&
-          !this.syncOrchestrator.syncInProgress
+          this.storageService &&
+          this.storageService.isConfigured() &&
+          !this.syncInProgress
         ) {
           try {
             await this.backupService.checkAndPerformDailyBackup();
-            await this.syncOrchestrator.performFullSync();
+            await this.performFullSync();
           } catch (error) {
             this.logger.log(
               "error",
