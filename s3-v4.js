@@ -4553,6 +4553,14 @@ if (window.typingMindCloudSync) {
       }, this.ELECTION_TIMEOUT);
     }
     handleVisibilityChange() {
+      if (document.visibilityState === "visible" && this.isLeader) {
+        this.logger.log(
+          "info",
+          `[LeaderElection] Tab ${this.tabId} became visible and believes it's the leader. Re-running election to confirm.`
+        );
+        this.elect();
+      }
+
       if (this.isLeader) {
         this.postMessage({
           type: "ping",
