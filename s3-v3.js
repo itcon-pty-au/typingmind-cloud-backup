@@ -1381,6 +1381,7 @@ if (window.typingMindCloudSync) {
     async detectChanges() {
       const changedItems = [];
       const now = Date.now();
+      const localItemKeys = await this.dataService.getAllItemKeys();
 
       // Use memory-efficient streaming for iterating through all local items
       const { totalSize } = await this.dataService.estimateDataSize();
@@ -1474,6 +1475,38 @@ if (window.typingMindCloudSync) {
             });
           }
         }
+      }
+
+      // Find ghost items in metadata
+      this.logger.log(
+        "info",
+        "🔍 Checking for items deleted locally by comparing metadata against actual keys..."
+      );
+      let newlyDeletedCount = 0;
+      for (const itemId in this.metadata.items) {
+        const metadataItem = this.metadata.items[itemId];
+
+        if (!localItemKeys.has(itemId) && !metadataItem.deleted) {
+          this.logger.log(
+            "info",
+            `⚰️ Detected locally deleted item: ${itemId}. Creating tombstone.`
+          );
+
+          changedItems.push({
+            id: itemId,
+            type: metadataItem.type || "idb",
+            deleted: Date.now(),
+            tombstoneVersion: (metadataItem.tombstoneVersion || 0) + 1,
+            reason: "detected-deletion",
+          });
+          newlyDeletedCount++;
+        }
+      }
+      if (newlyDeletedCount > 0) {
+        this.logger.log(
+          "success",
+          `✅ Found ${newlyDeletedCount} newly deleted item(s) to be synced to the cloud.`
+        );
       }
 
       return { changedItems, hasChanges: changedItems.length > 0 };

@@ -2487,12 +2487,12 @@ if (window.typingMindCloudSync) {
     async detectChanges() {
       const changedItems = [];
       const now = Date.now();
+      const localItemKeys = await this.dataService.getAllItemKeys();
 
       this.logger.log(
         "info",
         "🔍 Gathering all local item keys for change detection."
       );
-      const localItemKeys = await this.dataService.getAllItemKeys();
       this.logger.log("info", `Found ${localItemKeys.size} local item keys.`);
 
       const { totalSize } = await this.dataService.estimateDataSize();
