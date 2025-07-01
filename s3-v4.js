@@ -1589,6 +1589,38 @@ if (window.typingMindCloudSync) {
             <button id="google-auth-btn" class="w-full inline-flex items-center justify-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-500 disabled:cursor-default transition-colors">Sign in with Google</button>
             <div id="google-auth-status" class="text-xs text-center text-zinc-400 pt-2"></div>
           </div>
+          
+          <!-- NEW: Help Guide Section -->
+          <div class="pt-2 text-center">
+            <span id="toggle-google-guide" class="text-xs text-blue-400 hover:text-blue-300 hover:underline cursor-pointer">How to get a Google Client ID?</span>
+          </div>
+          <div id="google-guide-content" class="hidden mt-2 p-3 bg-zinc-900 border border-zinc-700 rounded-lg max-h-48 overflow-y-auto text-xs text-zinc-300">
+            <p class="font-bold mb-2">Follow these steps to create your own Client ID:</p>
+            <ol class="list-decimal list-inside space-y-2">
+              <li>Go to the <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline">Google Cloud Console</a> and create a new project (or select an existing one).</li>
+              <li>In the search bar, find and enable the <strong>"Google Drive API"</strong> for your project.</li>
+              <li>Go to "APIs & Services" > <strong>"OAuth consent screen"</strong>.
+                <ul class="list-disc list-inside pl-4 mt-1 space-y-1">
+                  <li>Choose User Type: <strong>External</strong>.</li>
+                  <li>Fill in the required app name (e.g., "My TypingMind Sync"), user support email, and developer contact.</li>
+                  <li>Click "Save and Continue" through the "Scopes" and "Test Users" sections. You don't need to add anything here.</li>
+                  <li>Finally, click "Back to Dashboard" and <strong>"Publish App"</strong> to make it available for your own use.</li>
+                </ul>
+              </li>
+              <li>Go to "APIs & Services" > <strong>"Credentials"</strong>.</li>
+              <li>Click <strong>"+ Create Credentials"</strong> and select <strong>"OAuth client ID"</strong>.</li>
+              <li>For Application type, select <strong>"Web application"</strong>.</li>
+              <li>Under <strong>"Authorized JavaScript origins"</strong>, click "+ Add URI".
+                  <br>
+                  <strong class="text-amber-300">IMPORTANT:</strong> You MUST add the URL you use to access TypingMind. For example:
+                  <ul class="list-disc list-inside pl-4 mt-1">
+                    <li>If you use the official web app: <code class="bg-zinc-700 p-1 rounded">https://www.typingmind.com</code></li>
+                    <li>If you self-host: <code class="bg-zinc-700 p-1 rounded">http://localhost:3000</code> (or your custom domain)</li>
+                  </ul>
+              </li>
+              <li>Click "Create". A modal will appear with your <strong>Client ID</strong>. Copy it and paste it into the field above.</li>
+            </ol>
+          </div>
         </div>
       `;
 
@@ -1606,12 +1638,19 @@ if (window.typingMindCloudSync) {
         const googleClientIdInput =
           container.querySelector("#google-client-id");
 
+        const toggleGuideLink = container.querySelector("#toggle-google-guide");
+        const guideContent = container.querySelector("#google-guide-content");
+
+        toggleGuideLink.addEventListener("click", () => {
+          guideContent.classList.toggle("hidden");
+        });
+
         const updateAuthButtonState = () => {
           googleAuthBtn.disabled = !googleClientIdInput.value.trim();
           if (
             providerInstance &&
             providerInstance.isConfigured() &&
-            gapi.client.getToken()
+            window.gapi?.client.getToken()
           ) {
             googleAuthStatus.textContent = "Status: Signed in.";
             googleAuthStatus.style.color = "#22c55e";
