@@ -1355,6 +1355,94 @@ if (window.typingMindCloudSync) {
       });
     }
 
+    /**
+     * Enhanced error information extraction for AWS SDK errors
+     * @param {Error} error - The AWS SDK error object
+     * @returns {string} - A detailed error description
+     */
+    extractErrorDetails(error) {
+      if (!error) return "Unknown error";
+      const details = [];
+      if (error.message) {
+        details.push(`Message: ${error.message}`);
+      }
+      if (error.code) {
+        details.push(`Code: ${error.code}`);
+      }
+      if (error.statusCode) {
+        details.push(`Status: ${error.statusCode}`);
+      }
+      if (error.requestId) {
+        details.push(`RequestId: ${error.requestId}`);
+      }
+      if (error.extendedRequestId) {
+        details.push(`ExtRequestId: ${error.extendedRequestId}`);
+      }
+      if (error.region) {
+        details.push(`Region: ${error.region}`);
+      }
+      if (error.serviceName) {
+        details.push(`Service: ${error.serviceName}`);
+      }
+      if (error.operationName) {
+        details.push(`Operation: ${error.operationName}`);
+      }
+      if (error.retryable !== undefined) {
+        details.push(`Retryable: ${error.retryable}`);
+      }
+      if (error.time) {
+        details.push(`Time: ${error.time}`);
+      }
+      if (error.headers) {
+        const relevantHeaders = [
+          "x-amz-request-id",
+          "x-amz-id-2",
+          "x-amz-bucket-region",
+        ];
+        relevantHeaders.forEach((header) => {
+          if (error.headers[header]) {
+            details.push(`${header}: ${error.headers[header]}`);
+          }
+        });
+      }
+      if (error.networkError) {
+        details.push(
+          `Network: ${error.networkError.message || error.networkError}`
+        );
+      }
+      if (error.originalError && error.originalError !== error) {
+        details.push(
+          `Original: ${error.originalError.message || error.originalError}`
+        );
+      }
+      if (details.length === 0) {
+        const fallbackProps = ["name", "type", "errorType", "errorMessage"];
+        for (const prop of fallbackProps) {
+          if (error[prop]) {
+            details.push(`${prop}: ${error[prop]}`);
+            break;
+          }
+        }
+      }
+      if (details.length === 0) {
+        try {
+          const errorStr = JSON.stringify(error, null, 2);
+          if (errorStr && errorStr !== "{}") {
+            details.push(`Raw: ${errorStr}`);
+          } else {
+            details.push(
+              `Type: ${typeof error}, Constructor: ${
+                error.constructor?.name || "Unknown"
+              }`
+            );
+          }
+        } catch (stringifyError) {
+          details.push(`Unstringifiable error of type: ${typeof error}`);
+        }
+      }
+      return details.length > 0 ? details.join(" | ") : "Unknown AWS error";
+    }
+
     async upload(key, data, isMetadata = false, itemKey = null) {
       return retryAsync(
         async () => {
@@ -1382,9 +1470,7 @@ if (window.typingMindCloudSync) {
           } catch (error) {
             this.logger.log(
               "error",
-              `Failed to upload ${key}: ${
-                error.message || error.code || "Unknown error"
-              }`
+              `Failed to upload ${key}: ${this.extractErrorDetails(error)}`
             );
             throw error;
           }
@@ -1395,9 +1481,9 @@ if (window.typingMindCloudSync) {
           onRetry: (error, attempt) => {
             this.logger.log(
               "warning",
-              `[S3 Upload] Retry ${attempt}/${3} - Error: ${
-                error.message || error.code || "Unknown error"
-              }`
+              `[S3 Upload] Retry ${attempt}/${3} - ${this.extractErrorDetails(
+                error
+              )}`
             );
           },
         }
@@ -1425,9 +1511,7 @@ if (window.typingMindCloudSync) {
           } catch (error) {
             this.logger.log(
               "error",
-              `Failed to upload raw ${key}: ${
-                error.message || error.code || "Unknown error"
-              }`
+              `Failed to upload raw ${key}: ${this.extractErrorDetails(error)}`
             );
             throw error;
           }
