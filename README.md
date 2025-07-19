@@ -255,13 +255,13 @@ Any other files or folders at the root of your bucket, are no longer used by V3 
             "s3:GetBucketLocation",
             "s3:GetBucketVersioning",
             "s3:ListBucketVersions",
-            "s3:DeleteObjectVersion",
+            "s3:DeleteObjectVersion"
           ],
         "Resource":
           [
             "arn:aws:s3:::<AWS bucket name>",
-            "arn:aws:s3:::<AWS bucket name>/*",
-          ],
+            "arn:aws:s3:::<AWS bucket name>/*"
+          ]
       },
       {
         "Sid": "PreventSpecificFileDeletion",
@@ -269,9 +269,9 @@ Any other files or folders at the root of your bucket, are no longer used by V3 
         "Principal":
           { "AWS": "arn:aws:iam::<AWS Account ID>:user/<IAM username>" },
         "Action": "s3:DeleteObject",
-        "Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json",
-      },
-    ],
+        "Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json"
+      }
+    ]
 }
 ```
 
@@ -291,10 +291,10 @@ Update AWS Account ID, IAM username and AWS bucket name in the policy with your 
         "ETag",
         "x-amz-server-side-encryption",
         "x-amz-request-id",
-        "x-amz-id-2",
+        "x-amz-id-2"
       ],
-    "MaxAgeSeconds": 3000,
-  },
+    "MaxAgeSeconds": 3000
+  }
 ]
 ```
 
@@ -312,10 +312,10 @@ If you are using typingmind cloud, use the below
         "ETag",
         "x-amz-server-side-encryption",
         "x-amz-request-id",
-        "x-amz-id-2",
+        "x-amz-id-2"
       ],
-    "MaxAgeSeconds": 3000,
-  },
+    "MaxAgeSeconds": 3000
+  }
 ]
 ```
 
