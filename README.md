@@ -326,6 +326,9 @@ Update "https://\*.hostname.com" with your specific hostname in case you are sel
 Cloudflare R2 provides S3 compatible API with a generous 10GB free storage per month. Refer [How to setup Cloudflare R2 and use with this extension](https://github.com/itcon-pty-au/typingmind-cloud-backup/blob/main/HowTo/Cloudflare_R2_HowTo.docx)
 iDrive E2 provides S3 compatible API with a generous 10GB free storage per month. Refer [How to setup iDrive E2 and use with this extension](https://github.com/itcon-pty-au/typingmind-cloud-backup/blob/main/HowTo/iDrive_E2_HowTo.docx)
 
+Google Cloud Storage (part of GCP) is another S3 compatible storage, compatible with this extension. Please refer to the [manual](HowTo/google_cloud_storage_gcp.md) for setup instructions.
+
+
 ## 🐛 Troubleshooting
 
 ### Enable Logging

@@ -1,0 +1,14 @@
+[
+  {
+    "origin": ["https://www.typingmind.com"],
+    "method": ["HEAD", "GET", "PUT", "POST", "DELETE"],
+    "responseHeader": [
+      "*",
+      "ETag",
+      "x-amz-server-side-encryption",
+      "x-amz-request-id",
+      "x-amz-id-2"
+    ],
+    "maxAgeSeconds": 3000
+  }
+]
