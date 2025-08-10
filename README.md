@@ -255,13 +255,13 @@ Any other files or folders at the root of your bucket, are no longer used by V3 
             "s3:GetBucketLocation",
             "s3:GetBucketVersioning",
             "s3:ListBucketVersions",
-            "s3:DeleteObjectVersion",
+            "s3:DeleteObjectVersion"
           ],
         "Resource":
           [
             "arn:aws:s3:::<AWS bucket name>",
-            "arn:aws:s3:::<AWS bucket name>/*",
-          ],
+            "arn:aws:s3:::<AWS bucket name>/*"
+          ]
       },
       {
         "Sid": "PreventSpecificFileDeletion",
@@ -269,9 +269,9 @@ Any other files or folders at the root of your bucket, are no longer used by V3 
         "Principal":
           { "AWS": "arn:aws:iam::<AWS Account ID>:user/<IAM username>" },
         "Action": "s3:DeleteObject",
-        "Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json",
-      },
-    ],
+        "Resource": "arn:aws:s3:::<AWS bucket name>/typingmind-backup.json"
+      }
+    ]
 }
 ```
 
@@ -291,10 +291,10 @@ Update AWS Account ID, IAM username and AWS bucket name in the policy with your 
         "ETag",
         "x-amz-server-side-encryption",
         "x-amz-request-id",
-        "x-amz-id-2",
+        "x-amz-id-2"
       ],
-    "MaxAgeSeconds": 3000,
-  },
+    "MaxAgeSeconds": 3000
+  }
 ]
 ```
 
@@ -312,10 +312,10 @@ If you are using typingmind cloud, use the below
         "ETag",
         "x-amz-server-side-encryption",
         "x-amz-request-id",
-        "x-amz-id-2",
+        "x-amz-id-2"
       ],
-    "MaxAgeSeconds": 3000,
-  },
+    "MaxAgeSeconds": 3000
+  }
 ]
 ```
 
@@ -325,6 +325,9 @@ Update "https://\*.hostname.com" with your specific hostname in case you are sel
 
 Cloudflare R2 provides S3 compatible API with a generous 10GB free storage per month. Refer [How to setup Cloudflare R2 and use with this extension](https://github.com/itcon-pty-au/typingmind-cloud-backup/blob/main/HowTo/Cloudflare_R2_HowTo.docx)
 iDrive E2 provides S3 compatible API with a generous 10GB free storage per month. Refer [How to setup iDrive E2 and use with this extension](https://github.com/itcon-pty-au/typingmind-cloud-backup/blob/main/HowTo/iDrive_E2_HowTo.docx)
+
+Google Cloud Storage (part of GCP) is another S3 compatible storage, compatible with this extension. Please refer to the [manual](HowTo/google_cloud_storage_gcp.md) for setup instructions.
+
 
 ## 🐛 Troubleshooting
 
