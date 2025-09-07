@@ -2608,24 +2608,28 @@ if (window.typingMindCloudSync) {
             value?.updatedAt
           ) {
             const rawUpdatedAt = value.updatedAt;
-            let normalizedTimestamp = 0;
+            const rawLastModifiedFromMetadata = existingItem?.lastModified;
+            const getNumericTimestamp = (dateValue) => {
+                if (typeof dateValue === 'number') {
+                    return dateValue;
+                }
+                if (!dateValue) {
+                    return 0;
+                }
+                const timestamp = new Date(dateValue).getTime();
+                return isNaN(timestamp) ? 0 : timestamp;
+            };
 
-            if (typeof rawUpdatedAt === 'number') {
-                normalizedTimestamp = rawUpdatedAt;
-            } else if (typeof rawUpdatedAt === 'string') {
-                normalizedTimestamp = Date.parse(rawUpdatedAt);
-            }
-            itemLastModified = isNaN(normalizedTimestamp) ? 0 : normalizedTimestamp;
+            const currentTimestamp = getNumericTimestamp(rawUpdatedAt);
+            const lastKnownTimestamp = getNumericTimestamp(rawLastModifiedFromMetadata);
+            itemLastModified = currentTimestamp;
 
-            const lastKnownTimestamp = existingItem?.lastModified || 0;
-
-             this.logger.log('info', `[TCS-DEBUG] Comparing timestamps for chat: ${key}`, {
-            'Raw updatedAt from DB': rawUpdatedAt,
-            'Normalized (Current)': itemLastModified,
-            'From Metadata (Previous)': lastKnownTimestamp,
-            'Change Detected? (Current > Previous)': itemLastModified > lastKnownTimestamp,
-            'Comparison Type (Current)': typeof itemLastModified,
-            'Comparison Type (Previous)': typeof lastKnownTimestamp
+            this.logger.log('info', `[TCS-DEBUG] Comparing timestamps for chat: ${key}`, {
+                'Raw DB Value': rawUpdatedAt,
+                'Raw Metadata Value': rawLastModifiedFromMetadata,
+                'Normalized (Current)': currentTimestamp,
+                'Normalized (Previous)': lastKnownTimestamp,
+                'Change Detected?': currentTimestamp > lastKnownTimestamp,
             });
 
             if (!existingItem) {
