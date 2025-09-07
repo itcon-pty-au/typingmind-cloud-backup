@@ -170,6 +170,7 @@ if (window.typingMindCloudSync) {
         "TM_useStateUpdateHistory",
         "INSTANCE_ID",
         "eruda-console",
+        "TM_useExtensionURLs",
       ];
       return [...systemExclusions, ...userExclusions];
     }
