@@ -2623,14 +2623,8 @@ if (window.typingMindCloudSync) {
             const currentTimestamp = getNumericTimestamp(rawUpdatedAt);
             const lastKnownTimestamp = getNumericTimestamp(rawLastModifiedFromMetadata);
             itemLastModified = currentTimestamp;
-
-            // this.logger.log('info', `[TCS-DEBUG] Comparing timestamps for chat: ${key}`, {
-            //     'Raw DB Value': rawUpdatedAt,
-            //     'Raw Metadata Value': rawLastModifiedFromMetadata,
-            //     'Normalized (Current)': currentTimestamp,
-            //     'Normalized (Previous)': lastKnownTimestamp,
-            //     'Change Detected?': currentTimestamp > lastKnownTimestamp,
-            // });
+          ]
+007
 
             if (!existingItem) {
               hasChanged = true;
@@ -2953,10 +2947,9 @@ if (window.typingMindCloudSync) {
             if (!localItem) {
               return true;
             }
-            return (
-              (cloudItem.lastModified || 0) >
-              (localItem.lastModified || 0) + 2000
-            );
+          const cloudTimestamp = new Date(cloudItem.lastModified || 0).getTime();
+          const localTimestamp = new Date(localItem.lastModified || 0).getTime();
+          return cloudTimestamp > localTimestamp;
           }
         );
         if (itemsToDownload.length > 0) {
