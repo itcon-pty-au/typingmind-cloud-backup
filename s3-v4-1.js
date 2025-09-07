@@ -2599,7 +2599,7 @@ if (window.typingMindCloudSync) {
 
           let hasChanged = false;
           let changeReason = "unknown";
-          let itemLastModified = now;
+          let itemLastModified;
           let currentSize = 0;
 
           if (
@@ -2607,14 +2607,15 @@ if (window.typingMindCloudSync) {
             item.type === "idb" &&
             value?.updatedAt
           ) {
-            let itemLastModified;
             const rawUpdatedAt = value.updatedAt;
+            let normalizedTimestamp = 0;
 
-            if (typeof rawUpdatedAt === 'string') {
-              itemLastModified = Date.parse(rawUpdatedAt);
-            } else {
-              itemLastModified = rawUpdatedAt;
+            if (typeof rawUpdatedAt === 'number') {
+                normalizedTimestamp = rawUpdatedAt;
+            } else if (typeof rawUpdatedAt === 'string') {
+                normalizedTimestamp = Date.parse(rawUpdatedAt);
             }
+            itemLastModified = isNaN(normalizedTimestamp) ? 0 : normalizedTimestamp;
 
             if (!existingItem) {
               hasChanged = true;
