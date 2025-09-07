@@ -310,6 +310,7 @@ if (window.typingMindCloudSync) {
     async estimateDataSize() {
       let totalSize = 0;
       let itemCount = 0;
+      let excludedItemCount = 0;
       const db = await this.getDB();
       const transaction = db.transaction(["keyval"], "readonly");
       const store = transaction.objectStore("keyval");
@@ -332,6 +333,8 @@ if (window.typingMindCloudSync) {
               } catch (e) {
                 this.logger.log("warning", `Error estimating size for ${key}`);
               }
+            } else if (typeof key === "string") {
+              excludedItemCount++;
             }
             cursor.continue();
           } else {
@@ -348,9 +351,11 @@ if (window.typingMindCloudSync) {
             totalSize += value.length * 2;
             itemCount++;
           }
+        } else if (key) {
+          excludedItemCount++;
         }
       }
-      return { totalSize, itemCount };
+      return { totalSize, itemCount, excludedItemCount };
     }
     async *streamAllItems() {
       const batchSize = this.streamBatchSize;
@@ -3434,7 +3439,7 @@ if (window.typingMindCloudSync) {
     }
     async getSyncDiagnostics() {
       try {
-        const { totalSize, itemCount } =
+        const { totalSize, itemCount, excludedItemCount } =
           await this.dataService.estimateDataSize();
         const localCount = itemCount;
         let chatItems = 0;
@@ -3476,6 +3481,7 @@ if (window.typingMindCloudSync) {
           { type: "📋 Local Metadata", count: metadataActive },
           { type: "☁️ Cloud Metadata", count: cloudActive },
           { type: "💬 Chat Sync", count: `${chatItems} ⟷ ${cloudChatItems}` },
+          { type: "⏭️ Skipped Items", count: excludedItemCount },
         ];
 
         const diagnosticsData = {
@@ -3485,6 +3491,7 @@ if (window.typingMindCloudSync) {
           cloudMetadata: cloudActive,
           chatSyncLocal: chatItems,
           chatSyncCloud: cloudChatItems,
+          excludedItemCount: excludedItemCount,
         };
         localStorage.setItem(
           "tcs_sync_diagnostics",
@@ -3507,7 +3514,7 @@ if (window.typingMindCloudSync) {
     }
     async updateSyncDiagnosticsCache() {
       try {
-        const { totalSize, itemCount } =
+        const { totalSize, itemCount, excludedItemCount } =
           await this.dataService.estimateDataSize();
         const localCount = itemCount;
         let chatItems = 0;
@@ -3539,6 +3546,7 @@ if (window.typingMindCloudSync) {
           cloudMetadata: cloudActive,
           chatSyncLocal: chatItems,
           chatSyncCloud: cloudChatItems,
+          excludedItemCount: excludedItemCount,
         };
         localStorage.setItem(
           "tcs_sync_diagnostics",
@@ -5869,6 +5877,10 @@ if (window.typingMindCloudSync) {
           {
             type: "💬 Chat Sync",
             count: `${data.chatSyncLocal || 0} ⟷ ${data.chatSyncCloud || 0}`,
+          },
+          {
+            type: "⏭️ Skipped Items",
+            count: data.excludedItemCount || 0,
           },
         ];
 
