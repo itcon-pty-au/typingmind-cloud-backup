@@ -2624,13 +2624,13 @@ if (window.typingMindCloudSync) {
             const lastKnownTimestamp = getNumericTimestamp(rawLastModifiedFromMetadata);
             itemLastModified = currentTimestamp;
 
-            this.logger.log('info', `[TCS-DEBUG] Comparing timestamps for chat: ${key}`, {
-                'Raw DB Value': rawUpdatedAt,
-                'Raw Metadata Value': rawLastModifiedFromMetadata,
-                'Normalized (Current)': currentTimestamp,
-                'Normalized (Previous)': lastKnownTimestamp,
-                'Change Detected?': currentTimestamp > lastKnownTimestamp,
-            });
+            // this.logger.log('info', `[TCS-DEBUG] Comparing timestamps for chat: ${key}`, {
+            //     'Raw DB Value': rawUpdatedAt,
+            //     'Raw Metadata Value': rawLastModifiedFromMetadata,
+            //     'Normalized (Current)': currentTimestamp,
+            //     'Normalized (Previous)': lastKnownTimestamp,
+            //     'Change Detected?': currentTimestamp > lastKnownTimestamp,
+            // });
 
             if (!existingItem) {
               hasChanged = true;
