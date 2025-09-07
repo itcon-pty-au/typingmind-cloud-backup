@@ -2617,10 +2617,21 @@ if (window.typingMindCloudSync) {
             }
             itemLastModified = isNaN(normalizedTimestamp) ? 0 : normalizedTimestamp;
 
+            const lastKnownTimestamp = existingItem?.lastModified || 0;
+
+             this.logger.log('info', `[TCS-DEBUG] Comparing timestamps for chat: ${key}`, {
+            'Raw updatedAt from DB': rawUpdatedAt,
+            'Normalized (Current)': itemLastModified,
+            'From Metadata (Previous)': lastKnownTimestamp,
+            'Change Detected? (Current > Previous)': itemLastModified > lastKnownTimestamp,
+            'Comparison Type (Current)': typeof itemLastModified,
+            'Comparison Type (Previous)': typeof lastKnownTimestamp
+            });
+
             if (!existingItem) {
               hasChanged = true;
               changeReason = "new-chat";
-            } else if (itemLastModified > (existingItem.lastModified || 0)) {
+            } else if (itemLastModified > lastKnownTimestamp) {
               hasChanged = true;
               changeReason = "timestamp";
             } else if (!existingItem.synced || existingItem.synced === 0) {
