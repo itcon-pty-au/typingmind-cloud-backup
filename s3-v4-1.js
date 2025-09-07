@@ -2607,7 +2607,14 @@ if (window.typingMindCloudSync) {
             item.type === "idb" &&
             value?.updatedAt
           ) {
-            itemLastModified = value.updatedAt;
+            let itemLastModified;
+            const rawUpdatedAt = value.updatedAt;
+
+            if (typeof rawUpdatedAt === 'string') {
+              itemLastModified = Date.parse(rawUpdatedAt);
+            } else {
+              itemLastModified = rawUpdatedAt;
+            }
 
             if (!existingItem) {
               hasChanged = true;
