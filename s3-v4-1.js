@@ -2591,6 +2591,9 @@ if (window.typingMindCloudSync) {
       for await (const batch of itemsIterator) {
         for (const item of batch) {
           const key = item.id;
+            if (typeof key !== 'string' || !key) {
+                continue;
+            }
           const value = item.data;
           const existingItem = this.metadata.items[key];
 
