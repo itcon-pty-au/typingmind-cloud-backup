@@ -2574,11 +2574,7 @@ if (window.typingMindCloudSync) {
      * - For all other items: Uses the original `size`-based comparison.
      * This prevents memory crashes caused by stringifying large chat objects.
      */
-    async detectChanges() {
-      // Temporary logging
-      const excludedKeys = [];
-      const invalidKeys = [];
-      
+    async detectChanges() {    
       const changedItems = [];
       const now = Date.now();
       const localItemKeys = await this.dataService.getAllItemKeys();
@@ -2595,22 +2591,9 @@ if (window.typingMindCloudSync) {
       for await (const batch of itemsIterator) {
         for (const item of batch) {
           const key = item.id;
-            if (typeof key !== 'string' || !key) {
-                continue;
-            }
-          // Temporary logging
           if (typeof key !== 'string' || !key) {
-            invalidKeys.push(key);
-            continue;
-          }
-
-          if (this.config.shouldExclude(key)) {
-            excludedKeys.push(key);
-            continue;
-          }
-
-          // END Temporary logging
-          
+              continue;
+          }         
           const value = item.data;
           const existingItem = this.metadata.items[key];
 
@@ -2743,24 +2726,6 @@ if (window.typingMindCloudSync) {
           `✅ Found ${newlyDeletedCount} newly deleted item(s) to be synced to the cloud.`
         );
       }
-
-      // Temporary logging
-      if (invalidKeys.length > 0) {
-        this.logger.log(
-          "warning", 
-          `⚠️ Skipped ${invalidKeys.length} items due to invalid or corrupt keys. Values found:`,
-          JSON.stringify(invalidKeys)
-        );
-      }
-      if (excludedKeys.length > 0) {
-        this.logger.log(
-          "skip", 
-          `⏭️ Skipped ${excludedKeys.length} items based on exclusion rules:`, 
-          excludedKeys.join(', ')
-        );
-      }
-
-      // END Temporary logging
 
       return { changedItems, hasChanges: changedItems.length > 0 };
     }
@@ -2966,14 +2931,10 @@ if (window.typingMindCloudSync) {
           "info",
           `Cloud changes detected - proceeding with full sync`
         );
-        // Temporary logging
-        const skippedImportKeys = [];
         
         const itemsToDownload = Object.entries(cloudMetadata.items).filter(
           ([key, cloudItem]) => {
             if (this.config.shouldExclude(key)) {
-              // Temporary logging
-              skippedImportKeys.push(key);
               return false;
             }
             const localItem = this.metadata.items[key];
@@ -3002,15 +2963,6 @@ if (window.typingMindCloudSync) {
           return cloudTimestamp > localTimestamp;
           }
         );
-        
-        // Temporary logging
-        if (skippedImportKeys.length > 0) {
-            this.logger.log(
-              "skip", 
-              `⏭️ [IMPORT] Skipped ${skippedImportKeys.length} items based on exclusion rules:`, 
-              skippedImportKeys.join(', ')
-            );
-        }
         
         if (itemsToDownload.length > 0) {
           this.logger.log(
