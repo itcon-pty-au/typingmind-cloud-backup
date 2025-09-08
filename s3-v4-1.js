@@ -2966,9 +2966,14 @@ if (window.typingMindCloudSync) {
           "info",
           `Cloud changes detected - proceeding with full sync`
         );
+        // Temporary logging
+        const skippedImportKeys = [];
+        
         const itemsToDownload = Object.entries(cloudMetadata.items).filter(
           ([key, cloudItem]) => {
             if (this.config.shouldExclude(key)) {
+              // Temporary logging
+              skippedImportKeys.push(key);
               return false;
             }
             const localItem = this.metadata.items[key];
@@ -2997,6 +3002,16 @@ if (window.typingMindCloudSync) {
           return cloudTimestamp > localTimestamp;
           }
         );
+        
+        // Temporary logging
+        if (skippedImportKeys.length > 0) {
+            this.logger.log(
+              "skip", 
+              `⏭️ [IMPORT] Skipped ${skippedImportKeys.length} items based on exclusion rules:`, 
+              skippedImportKeys.join(', ')
+            );
+        }
+        
         if (itemsToDownload.length > 0) {
           this.logger.log(
             "info",
