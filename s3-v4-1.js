@@ -2575,6 +2575,10 @@ if (window.typingMindCloudSync) {
      * This prevents memory crashes caused by stringifying large chat objects.
      */
     async detectChanges() {
+      // Temporary logging
+      const excludedKeys = [];
+      const invalidKeys = [];
+      
       const changedItems = [];
       const now = Date.now();
       const localItemKeys = await this.dataService.getAllItemKeys();
@@ -2594,6 +2598,19 @@ if (window.typingMindCloudSync) {
             if (typeof key !== 'string' || !key) {
                 continue;
             }
+          // Temporary logging
+          if (typeof key !== 'string' || !key) {
+            invalidKeys.push(key);
+            continue;
+          }
+
+          if (this.config.shouldExclude(key)) {
+            excludedKeys.push(key);
+            continue;
+          }
+
+          // END Temporary logging
+          
           const value = item.data;
           const existingItem = this.metadata.items[key];
 
@@ -2726,6 +2743,24 @@ if (window.typingMindCloudSync) {
           `✅ Found ${newlyDeletedCount} newly deleted item(s) to be synced to the cloud.`
         );
       }
+
+      // Temporary logging
+      if (invalidKeys.length > 0) {
+        this.logger.log(
+          "warning", 
+          `⚠️ Skipped ${invalidKeys.length} items due to invalid or corrupt keys. Values found:`,
+          JSON.stringify(invalidKeys)
+        );
+      }
+      if (excludedKeys.length > 0) {
+        this.logger.log(
+          "skip", 
+          `⏭️ Skipped ${excludedKeys.length} items based on exclusion rules:`, 
+          excludedKeys.join(', ')
+        );
+      }
+
+      // END Temporary logging
 
       return { changedItems, hasChanges: changedItems.length > 0 };
     }
