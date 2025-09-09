@@ -3004,6 +3004,7 @@ if (window.typingMindCloudSync) {
           }
         );
         await Promise.allSettled(downloadPromises);
+        this.metadata = cloudMetadata;
         this.metadata.lastSync = cloudLastSync;
         this.setLastCloudSync(cloudLastSync);
         localStorage.setItem("tcs_metadata_etag", cloudMetadataETag);
