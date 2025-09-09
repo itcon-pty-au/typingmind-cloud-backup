@@ -2893,7 +2893,7 @@ if (window.typingMindCloudSync) {
             ? new Date(cloudMetadata.lastSync).toISOString()
             : "never",
         });
-
+        let metadataWasPurged = false;
         let purgedCount = 0;
         for (const itemId in cloudMetadata.items) {
             if (this.config.shouldExclude(itemId)) {
@@ -2903,6 +2903,42 @@ if (window.typingMindCloudSync) {
         }
         if (purgedCount > 0) {
             this.logger.log('warning', `Purged ${purgedCount} newly excluded item(s) from cloud metadata to resolve conflicts.`);
+            metadataWasPurged = true;
+        }
+
+        const lastMetadataETag = localStorage.getItem("tcs_metadata_etag");
+        const hasCloudChanges = cloudMetadataETag !== lastMetadataETag;
+        const cloudLastSync = cloudMetadata.lastSync || 0;
+        const cloudActiveCount = Object.values(cloudMetadata.items || {}).filter(item => !item.deleted).length;
+        const localActiveCount = Object.values(this.metadata.items || {}).filter(item => !item.deleted).length;
+
+        if (!hasCloudChanges && cloudActiveCount === localActiveCount && !metadataWasPurged){
+          this.logger.log(
+            "info",
+            "No cloud changes detected and item count is consistent - skipping item downloads"
+          );
+          this.metadata.lastSync = cloudLastSync;
+          this.setLastCloudSync(cloudLastSync);
+          this.saveMetadata();
+          this.logger.log("success", "Sync from cloud completed (no changes)");
+          return;
+        }
+
+        if (hasCloudChanges) {
+          this.logger.log(
+            "info",
+            `Cloud changes detected (ETag mismatch) - proceeding with full sync`
+          );
+        } else if (metadataWasPurged) {
+          this.logger.log(
+            "info",
+            `Metadata was purged of excluded items - proceeding to save cleaned state.`
+          );
+        } else { // This case covers cloudActiveCount !== localActiveCount
+          this.logger.log(
+            "warning",
+            `Inconsistency detected! Cloud has ${cloudActiveCount} active items, local has ${localActiveCount}. Forcing full sync.`
+          );
         }
 
         const debugEnabled =
@@ -2916,35 +2952,6 @@ if (window.typingMindCloudSync) {
           console.log(
             `📊 Cloud Metadata Stats: Total=${cloudItems.length}, Active=${cloudActive}, Deleted=${cloudDeleted}`
           );
-        }
-        const lastMetadataETag = localStorage.getItem("tcs_metadata_etag");
-        const hasCloudChanges = cloudMetadataETag !== lastMetadataETag;
-        const cloudLastSync = cloudMetadata.lastSync || 0;
-        const cloudActiveCount = Object.values(cloudMetadata.items || {}).filter(item => !item.deleted).length;
-        const localActiveCount = Object.values(this.metadata.items || {}).filter(item => !item.deleted).length;
-
-        if (!hasCloudChanges && cloudActiveCount === localActiveCount){
-          this.logger.log(
-            "info",
-            "No cloud changes detected and item count is consistent - skipping item downloads"
-          );
-          this.metadata.lastSync = cloudLastSync;
-          this.setLastCloudSync(cloudLastSync);
-          this.saveMetadata();
-          this.logger.log("success", "Sync from cloud completed (no changes)");
-          return;
-        }
-
-        if (hasCloudChanges) {
-            this.logger.log(
-              "info",
-              `Cloud changes detected (ETag mismatch) - proceeding with full sync`
-            );
-        } else {
-            this.logger.log(
-                "warning",
-                `Inconsistency detected! Cloud has ${cloudActiveCount} active items, local has ${localActiveCount}. Forcing full sync.`
-            );
         }
 
         const itemsToDownload = Object.entries(cloudMetadata.items).filter(
@@ -3006,21 +3013,12 @@ if (window.typingMindCloudSync) {
                 tombstoneVersion: cloudItem.tombstoneVersion || 1,
               };
               this.dataService.saveTombstoneToStorage(key, tombstoneData);
-              this.metadata.items[key] = { ...cloudItem };
-              this.logger.log("info", `Synced key "${key}" from cloud`);
             } else {
               const data = await this.storageService.download(
                 `items/${key}.json`
               );
               if (data) {
                 await this.dataService.saveItem(data, cloudItem.type, key);
-                const syncTime = Date.now();
-                this.metadata.items[key] = {
-                  synced: syncTime,
-                  type: cloudItem.type,
-                  size: cloudItem.size || this.getItemSize(data),
-                  lastModified: syncTime,
-                };
                 this.logger.log("info", `Synced key "${key}" from cloud`);
               }
             }
