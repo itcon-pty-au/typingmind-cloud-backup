@@ -6537,8 +6537,6 @@ async loadTombstoneList(modal) {
     }
 
     try {
-        const baseURL = window.location.origin;
-
         const tombstones = Object.entries(this.syncOrchestrator.metadata.items)
             .filter(([key, item]) => item.deleted)
             .sort((a, b) => b[1].deleted - a[1].deleted);
@@ -6549,32 +6547,14 @@ async loadTombstoneList(modal) {
         }
 
         tableBody.innerHTML = "";
+
         for (const [itemId, itemData] of tombstones) {
             const row = document.createElement("tr");
             row.className = "border-t border-zinc-700 hover:bg-zinc-700/50";
-
-            let itemDisplayCell;
-            if (itemId.startsWith('CHAT_')) {
-                const chatId = itemId.substring(5);
-                const chatUrl = `${baseURL}/#chat=${chatId}`;
-                itemDisplayCell = `
-                    <td class="p-2 font-mono">
-                        <a href="${chatUrl}" 
-                           target="_blank" 
-                           rel="noopener noreferrer" 
-                           class="text-blue-400 hover:underline"
-                           title="Open a read-only view of this chat in a new tab">
-                            ${itemId}
-                        </a>
-                    </td>
-                `;
-            } else {
-                itemDisplayCell = `<td class="p-2 font-mono">${itemId}</td>`;
-            }
-
+            
             row.innerHTML = `
                 <td class="p-2 text-center"><input type="checkbox" class="tombstone-checkbox h-4 w-4" data-id="${itemId}"></td>
-                ${itemDisplayCell}
+                <td class="p-2 font-mono">${itemId}</td>
                 <td class="p-2">${new Date(itemData.deleted).toLocaleString()}</td>
                 <td class="p-2 text-center">
                     <button class="permanent-delete-btn p-1 text-red-400 hover:text-red-300" data-id="${itemId}" title="Permanently Delete Now">
@@ -6589,6 +6569,7 @@ async loadTombstoneList(modal) {
         this.logger.log("error", "Failed to load tombstone list", error);
     }
 }
+
   }
   const styleSheet = document.createElement("style");
   styleSheet.textContent =
