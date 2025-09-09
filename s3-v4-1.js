@@ -2574,7 +2574,7 @@ if (window.typingMindCloudSync) {
      * - For all other items: Uses the original `size`-based comparison.
      * This prevents memory crashes caused by stringifying large chat objects.
      */
-    async detectChanges() {    
+    async detectChanges() {
       const changedItems = [];
       const now = Date.now();
       const localItemKeys = await this.dataService.getAllItemKeys();
@@ -2591,9 +2591,9 @@ if (window.typingMindCloudSync) {
       for await (const batch of itemsIterator) {
         for (const item of batch) {
           const key = item.id;
-          if (typeof key !== 'string' || !key) {
-              continue;
-          }         
+          if (typeof key !== "string" || !key) {
+            continue;
+          }
           const value = item.data;
           const existingItem = this.metadata.items[key];
 
@@ -2933,7 +2933,7 @@ if (window.typingMindCloudSync) {
           "info",
           `Cloud changes detected - proceeding with full sync`
         );
-        
+
         const itemsToDownload = Object.entries(cloudMetadata.items).filter(
           ([key, cloudItem]) => {
             if (this.config.shouldExclude(key)) {
@@ -2969,7 +2969,7 @@ if (window.typingMindCloudSync) {
             return cloudTimestamp > localTimestamp;
           }
         );
-        
+
         if (itemsToDownload.length > 0) {
           this.logger.log(
             "info",
@@ -5445,7 +5445,7 @@ if (window.typingMindCloudSync) {
                   <thead class="bg-zinc-700 sticky top-0">
                     <tr>
                       <th class="p-2 w-8"><input type="checkbox" id="tombstone-select-all" class="h-4 w-4"></th>
-                      <th class="p-2 text-left">Chat Title</th>
+                      <th class="p-2 text-left">Item</th>
                       <th class="p-2 text-left">Deleted On</th>
                       <th class="p-2 w-12">Actions</th>
                     </tr>
@@ -5606,7 +5606,7 @@ if (window.typingMindCloudSync) {
             "Force Import from Cloud completed successfully. The page will now reload to apply the new data."
           );
           setTimeout(() => {
-              window.location.reload();
+            window.location.reload();
           }, 3000);
         } catch (error) {
           forceImportBtn.textContent = "Failed";
@@ -5676,28 +5676,45 @@ if (window.typingMindCloudSync) {
         this.logger.log("start", `Restoring ${itemIdsToRestore.length} items.`);
         undoButton.disabled = true;
         undoButton.textContent = "Restoring...";
+
         try {
-          itemIdsToRestore.forEach((itemId) => {
+          // Step 1: Download and save each file locally first.
+          const restorePromises = itemIdsToRestore.map(async (itemId) => {
             const item = this.syncOrchestrator.metadata.items[itemId];
             if (item && item.deleted) {
+              this.logger.log(
+                "info",
+                `Downloading data for restored item: ${itemId}`
+              );
+              const data = await this.storageService.download(
+                `items/${itemId}.json`
+              );
+              await this.dataService.saveItem(data, item.type, itemId);
+
+              // Step 2: Now that the file is saved, update the metadata.
               delete item.deleted;
               delete item.deletedAt;
               delete item.tombstoneVersion;
-              item.synced = 0;
+              item.synced = 0; // Mark for re-sync
             }
           });
 
-          await this.syncOrchestrator.performFullSync(); // Full sync will upload metadata changes and download files if needed
+          await Promise.all(restorePromises);
+
+          // Step 3: Sync the updated metadata to the cloud.
+          await this.syncOrchestrator.performFullSync();
 
           this.logger.log(
             "success",
-            `Restored ${itemIdsToRestore.length} items.`
+            `Restored ${itemIdsToRestore.length} items successfully.`
           );
           undoButton.textContent = "Success!";
           await this.loadTombstoneList(modal);
+          await this.loadSyncDiagnostics(modal); // Also refresh diagnostics
+
           setTimeout(() => {
             undoButton.textContent = "Restore Selected";
-            updateRestoreButtonState(); // Call helper to set correct state
+            updateRestoreButtonState();
           }, 2000);
         } catch (error) {
           alert(`Failed to restore items: ${error.message}`);
@@ -5767,14 +5784,25 @@ if (window.typingMindCloudSync) {
 
         // --- START: NEW TOMBSTONE CLEANUP ---
         if (tombstoneTableBody) {
-          tombstoneTableBody.removeEventListener('click', handleTombstoneTableClick);
-          tombstoneTableBody.removeEventListener('change', handleTombstoneCheckboxChange);
+          tombstoneTableBody.removeEventListener(
+            "click",
+            handleTombstoneTableClick
+          );
+          tombstoneTableBody.removeEventListener(
+            "change",
+            handleTombstoneCheckboxChange
+          );
         }
-        if (undoButton) undoButton.removeEventListener('click', handleUndoClick);
-        if (selectAllCheckbox) selectAllCheckbox.removeEventListener('change', handleSelectAll);
-        if (refreshTombstonesBtn) refreshTombstonesBtn.removeEventListener('click', handleRefreshTombstones);
+        if (undoButton)
+          undoButton.removeEventListener("click", handleUndoClick);
+        if (selectAllCheckbox)
+          selectAllCheckbox.removeEventListener("change", handleSelectAll);
+        if (refreshTombstonesBtn)
+          refreshTombstonesBtn.removeEventListener(
+            "click",
+            handleRefreshTombstones
+          );
         // --- END: NEW TOMBSTONE CLEANUP ---
-
       });
 
       modal.querySelector("#console-logging-toggle").checked =
@@ -6480,7 +6508,7 @@ if (window.typingMindCloudSync) {
       try {
         const tombstones = Object.entries(this.syncOrchestrator.metadata.items)
           .filter(([key, item]) => item.deleted)
-          .sort((a, b) => b[1].deleted - a[1].deleted);
+          .sort((a, b) => b[1].deleted - a[1].deleted); // Sort by most recently deleted
 
         if (tombstones.length === 0) {
           tableBody.innerHTML =
@@ -6488,14 +6516,16 @@ if (window.typingMindCloudSync) {
           return;
         }
 
-        tableBody.innerHTML = "";
+        tableBody.innerHTML = ""; // Clear loading message
 
         for (const [itemId, itemData] of tombstones) {
           const row = document.createElement("tr");
           row.className = "border-t border-zinc-700 hover:bg-zinc-700/50";
+
+          // The HTML is now simplified to directly display the itemId
           row.innerHTML = `
                 <td class="p-2 text-center"><input type="checkbox" class="tombstone-checkbox h-4 w-4" data-id="${itemId}"></td>
-                <td class="p-2 font-mono text-zinc-400 italic">Loading title...</td>
+                <td class="p-2 font-mono">${itemId}</td>
                 <td class="p-2">${new Date(
                   itemData.deleted
                 ).toLocaleString()}</td>
@@ -6506,30 +6536,6 @@ if (window.typingMindCloudSync) {
                 </td>
             `;
           tableBody.appendChild(row);
-
-          (async () => {
-            const titleCell = row.querySelector("td:nth-child(2)");
-            try {
-              const fileData = await this.storageService.download(
-                `items/${itemId}.json`
-              );
-              const chatTitle =
-                fileData.title ||
-                fileData.name ||
-                (fileData.messages && fileData.messages[0]
-                  ? fileData.messages[0].content.substring(0, 50) + "..."
-                  : itemId);
-              titleCell.textContent = chatTitle;
-              titleCell.className = "p-2";
-            } catch (error) {
-              titleCell.textContent = "Title unavailable (file may be purged)";
-              this.logger.log(
-                "warning",
-                `Could not fetch title for tombstoned item ${itemId}`,
-                error.message
-              );
-            }
-          })();
         }
       } catch (error) {
         tableBody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-red-400">Error loading items: ${error.message}</td></tr>`;
