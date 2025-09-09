@@ -5464,10 +5464,10 @@ if (window.typingMindCloudSync) {
                 <table class="w-full text-xs text-zinc-300">
                   <thead class="bg-zinc-700 sticky top-0">
                     <tr>
-                      <th class="p-2 w-8"><input type="checkbox" id="tombstone-select-all" class="h-4 w-4"></th>
-                      <th class="p-2 text-left">Item</th>
-                      <th class="p-2 text-left">Deleted Detected</th>
-                      <th class="p-2 w-12">Actions</th>
+                      <th class="p-2 w-8 bg-zinc-700"><input type="checkbox" id="tombstone-select-all" class="h-4 w-4"></th>
+                      <th class="p-2 text-left bg-zinc-700">Item</th>
+                      <th class="p-2 text-left bg-zinc-700">Deleted Detected</th>
+                      <th class="p-2 w-12 bg-zinc-700">Actions</th>
                     </tr>
                   </thead>
                   <tbody id="tombstone-list-body">
@@ -5477,7 +5477,7 @@ if (window.typingMindCloudSync) {
               </div>
               <div class="flex justify-between items-center pt-2">
                 <button id="undo-selected-btn" class="px-2 py-1.5 text-sm text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>Restore Selected</button>
-                <button id="refresh-tombstones-btn" class="p-1.5 text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors duration-200" title="Refresh list">
+                <button id="refresh-tombstones-btn" class="p-1.5 text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed transition-colors duration-200" title="Refresh list">
                   <svg id="tombstone-refresh-icon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                   <svg id="tombstone-checkmark-icon" class="w-4 h-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
                 </button>
