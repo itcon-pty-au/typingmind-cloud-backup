@@ -5716,7 +5716,7 @@ if (window.typingMindCloudSync) {
 
           await Promise.all(restorePromises);
 
-          await this.syncOrchestrator.performFullSync();
+          await this.syncOrchestrator.syncToCloud();
 
           this.logger.log(
             "success",
