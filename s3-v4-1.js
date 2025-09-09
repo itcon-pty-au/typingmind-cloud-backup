@@ -5466,7 +5466,7 @@ if (window.typingMindCloudSync) {
                     <tr>
                       <th class="p-2 w-8"><input type="checkbox" id="tombstone-select-all" class="h-4 w-4"></th>
                       <th class="p-2 text-left">Item</th>
-                      <th class="p-2 text-left">Deleted On</th>
+                      <th class="p-2 text-left">Deleted Detected</th>
                       <th class="p-2 w-12">Actions</th>
                     </tr>
                   </thead>
