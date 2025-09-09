@@ -2893,6 +2893,18 @@ if (window.typingMindCloudSync) {
             ? new Date(cloudMetadata.lastSync).toISOString()
             : "never",
         });
+
+        let purgedCount = 0;
+        for (const itemId in cloudMetadata.items) {
+            if (this.config.shouldExclude(itemId)) {
+                delete cloudMetadata.items[itemId];
+                purgedCount++;
+            }
+        }
+        if (purgedCount > 0) {
+            this.logger.log('warning', `Purged ${purgedCount} newly excluded item(s) from cloud metadata to resolve conflicts.`);
+        }
+
         const debugEnabled =
           new URLSearchParams(window.location.search).get("log") === "true";
         if (debugEnabled && cloudMetadata?.items) {
