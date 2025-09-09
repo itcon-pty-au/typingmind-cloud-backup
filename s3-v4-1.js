@@ -5462,7 +5462,7 @@ if (window.typingMindCloudSync) {
               <div class="text-xs text-zinc-400 mb-2">Items deleted within the last 30 days are shown here. You can restore them or permanently delete them.</div>
               <div class="max-h-56 overflow-y-auto border border-zinc-700 rounded-md">
                 <table class="w-full text-xs text-zinc-300">
-                  <thead class="sticky top-0">
+                  <thead class="sticky top-0 bg-zinc-700">
                     <tr>
                       <th class="p-2 w-8 bg-zinc-700"><input type="checkbox" id="tombstone-select-all" class="h-4 w-4"></th>
                       <th class="p-2 text-left bg-zinc-700">Item</th>
@@ -5758,29 +5758,27 @@ if (window.typingMindCloudSync) {
       };
 
       const handleRefreshTombstones = (e) => {
-        e.stopPropagation();
+          e.stopPropagation();
 
-        const refreshButton = modal.querySelector("#refresh-tombstones-btn");
-        const refreshIcon = modal.querySelector("#tombstone-refresh-icon");
-        const checkmarkIcon = modal.querySelector("#tombstone-checkmark-icon");
-        
-        if (!refreshButton || !refreshIcon || !checkmarkIcon || refreshButton.disabled) return;
+          const refreshButton = modal.querySelector("#refresh-tombstones-btn");
+          const refreshIcon = modal.querySelector("#tombstone-refresh-icon");
+          const checkmarkIcon = modal.querySelector("#tombstone-checkmark-icon");
+          
+          if (!refreshButton || !refreshIcon || !checkmarkIcon || refreshButton.disabled) return;
 
-        this.loadTombstoneList(modal);
+          this.loadTombstoneList(modal);
 
-        refreshButton.disabled = true;
-        refreshButton.classList.remove("bg-blue-600", "hover:bg-blue-700");
-        refreshButton.classList.add("bg-green-600");
-        refreshIcon.classList.add("hidden");
-        checkmarkIcon.classList.remove("hidden");
+          refreshButton.disabled = true;
+          refreshButton.classList.add("is-refreshing");
+          refreshIcon.classList.add("hidden");
+          checkmarkIcon.classList.remove("hidden");
 
-        setTimeout(() => {
-          refreshButton.classList.remove("bg-green-600");
-          refreshButton.classList.add("bg-blue-600", "hover:bg-blue-700");
-          refreshIcon.classList.remove("hidden");
-          checkmarkIcon.classList.add("hidden");
-          refreshButton.disabled = false;
-        }, 800);
+          setTimeout(() => {
+            refreshButton.classList.remove("is-refreshing");
+            refreshIcon.classList.remove("hidden");
+            checkmarkIcon.classList.add("hidden");
+            refreshButton.disabled = false;
+          }, 800);
       };
 
       if (tombstoneTableBody) {
