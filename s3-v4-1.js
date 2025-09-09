@@ -1052,7 +1052,6 @@ if (window.typingMindCloudSync) {
       const cryptoKey = await this.deriveKey(encryptionKey);
       let dataStream;
 
-      // Check if we should use streaming serialization for known large arrays
       if (key && this.largeArrayKeys.includes(key) && Array.isArray(data)) {
         this.logger.log(
           "info",
@@ -1060,7 +1059,6 @@ if (window.typingMindCloudSync) {
         );
         dataStream = this._createJsonStreamForArray(data);
       } else {
-        // Use the standard in-memory method for all other items
         const encodedData = new TextEncoder().encode(JSON.stringify(data));
         dataStream = new Blob([encodedData]).stream();
       }
@@ -2252,7 +2250,7 @@ if (window.typingMindCloudSync) {
 
         const body = isMetadata
           ? JSON.stringify(data)
-          : await this.crypto.encrypt(data, itemKey || filename); // Pass itemKey to encrypt
+          : await this.crypto.encrypt(data, itemKey || filename);
         const blob = new Blob([body], {
           type: isMetadata ? "application/json" : "application/octet-stream",
         });
@@ -2629,14 +2627,6 @@ if (window.typingMindCloudSync) {
               rawLastModifiedFromMetadata
             );
             itemLastModified = currentTimestamp;
-
-            // this.logger.log('info', `[TCS-DEBUG] Comparing timestamps for chat: ${key}`, {
-            //     'Raw DB Value': rawUpdatedAt,
-            //     'Raw Metadata Value': rawLastModifiedFromMetadata,
-            //     'Normalized (Current)': currentTimestamp,
-            //     'Normalized (Previous)': lastKnownTimestamp,
-            //     'Change Detected?': currentTimestamp > lastKnownTimestamp,
-            // });
 
             if (!existingItem) {
               hasChanged = true;
@@ -5645,15 +5635,12 @@ if (window.typingMindCloudSync) {
         this.logger.log("start", `Permanently deleting item: ${itemId}`);
         deleteButton.disabled = true;
         try {
-          // Step 1: Delete the actual data file from the cloud
           await this.storageService.delete(`items/${itemId}.json`);
-          // Step 2: Delete the record from the local metadata
           delete this.syncOrchestrator.metadata.items[itemId];
-          // Step 3: Sync the updated metadata to the cloud
-          await this.syncOrchestrator.performFullSync(); // Use full sync to ensure consistency
+          await this.syncOrchestrator.performFullSync();
 
           this.logger.log("success", `Permanently deleted ${itemId}`);
-          await this.loadTombstoneList(modal); // Refresh the list
+          await this.loadTombstoneList(modal);
         } catch (error) {
           alert(`Failed to permanently delete item: ${error.message}`);
           this.logger.log(
@@ -5678,7 +5665,6 @@ if (window.typingMindCloudSync) {
         undoButton.textContent = "Restoring...";
 
         try {
-          // Step 1: Download and save each file locally first.
           const restorePromises = itemIdsToRestore.map(async (itemId) => {
             const item = this.syncOrchestrator.metadata.items[itemId];
             if (item && item.deleted) {
@@ -5690,18 +5676,15 @@ if (window.typingMindCloudSync) {
                 `items/${itemId}.json`
               );
               await this.dataService.saveItem(data, item.type, itemId);
-
-              // Step 2: Now that the file is saved, update the metadata.
               delete item.deleted;
               delete item.deletedAt;
               delete item.tombstoneVersion;
-              item.synced = 0; // Mark for re-sync
+              item.synced = 0;
             }
           });
 
           await Promise.all(restorePromises);
 
-          // Step 3: Sync the updated metadata to the cloud.
           await this.syncOrchestrator.performFullSync();
 
           this.logger.log(
@@ -5710,7 +5693,7 @@ if (window.typingMindCloudSync) {
           );
           undoButton.textContent = "Success!";
           await this.loadTombstoneList(modal);
-          await this.loadSyncDiagnostics(modal); // Also refresh diagnostics
+          await this.loadSyncDiagnostics(modal);
 
           setTimeout(() => {
             undoButton.textContent = "Restore Selected";
@@ -5745,7 +5728,6 @@ if (window.typingMindCloudSync) {
 
       const handleRefreshTombstones = () => this.loadTombstoneList(modal);
 
-      // Attach new event listeners
       if (tombstoneTableBody) {
         tombstoneTableBody.addEventListener("click", handleTombstoneTableClick);
         tombstoneTableBody.addEventListener(
@@ -5758,8 +5740,6 @@ if (window.typingMindCloudSync) {
         selectAllCheckbox.addEventListener("change", handleSelectAll);
       if (refreshTombstonesBtn)
         refreshTombstonesBtn.addEventListener("click", handleRefreshTombstones);
-
-      // --- END: NEW TOMBSTONE UI LOGIC ---
 
       this.modalCleanupCallbacks.push(() => {
         overlay.removeEventListener("click", closeModalHandler);
@@ -5782,7 +5762,6 @@ if (window.typingMindCloudSync) {
         forceExportBtn.removeEventListener("click", handleForceExport);
         forceImportBtn.removeEventListener("click", handleForceImport);
 
-        // --- START: NEW TOMBSTONE CLEANUP ---
         if (tombstoneTableBody) {
           tombstoneTableBody.removeEventListener(
             "click",
@@ -5802,7 +5781,6 @@ if (window.typingMindCloudSync) {
             "click",
             handleRefreshTombstones
           );
-        // --- END: NEW TOMBSTONE CLEANUP ---
       });
 
       modal.querySelector("#console-logging-toggle").checked =
@@ -6490,58 +6468,72 @@ if (window.typingMindCloudSync) {
       }
     }
 
-    async loadTombstoneList(modal) {
-      const tableBody = modal.querySelector("#tombstone-list-body");
-      const undoButton = modal.querySelector("#undo-selected-btn");
-      if (!tableBody || !undoButton) return;
+async loadTombstoneList(modal) {
+    const tableBody = modal.querySelector("#tombstone-list-body");
+    const undoButton = modal.querySelector("#undo-selected-btn");
+    if (!tableBody || !undoButton) return;
 
-      tableBody.innerHTML =
-        '<tr><td colspan="4" class="p-4 text-center text-zinc-500">Loading deleted items...</td></tr>';
-      undoButton.disabled = true;
+    tableBody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-zinc-500">Loading deleted items...</td></tr>';
+    undoButton.disabled = true;
 
-      if (!this.storageService || !this.storageService.isConfigured()) {
-        tableBody.innerHTML =
-          '<tr><td colspan="4" class="p-4 text-center text-zinc-500">Provider Not Configured</td></tr>';
+    if (!this.storageService || !this.storageService.isConfigured()) {
+        tableBody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-zinc-500">Provider Not Configured</td></tr>';
         return;
-      }
+    }
 
-      try {
+    try {
+        const baseURL = window.location.origin;
+
         const tombstones = Object.entries(this.syncOrchestrator.metadata.items)
-          .filter(([key, item]) => item.deleted)
-          .sort((a, b) => b[1].deleted - a[1].deleted); // Sort by most recently deleted
+            .filter(([key, item]) => item.deleted)
+            .sort((a, b) => b[1].deleted - a[1].deleted);
 
         if (tombstones.length === 0) {
-          tableBody.innerHTML =
-            '<tr><td colspan="4" class="p-4 text-center text-zinc-500">No recently deleted items found.</td></tr>';
-          return;
+            tableBody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-zinc-500">No recently deleted items found.</td></tr>';
+            return;
         }
 
-        tableBody.innerHTML = ""; // Clear loading message
-
+        tableBody.innerHTML = "";
         for (const [itemId, itemData] of tombstones) {
-          const row = document.createElement("tr");
-          row.className = "border-t border-zinc-700 hover:bg-zinc-700/50";
+            const row = document.createElement("tr");
+            row.className = "border-t border-zinc-700 hover:bg-zinc-700/50";
 
-          // The HTML is now simplified to directly display the itemId
-          row.innerHTML = `
+            let itemDisplayCell;
+            if (itemId.startsWith('CHAT_')) {
+                const chatId = itemId.substring(5);
+                const chatUrl = `${baseURL}/#chat=${chatId}`;
+                itemDisplayCell = `
+                    <td class="p-2 font-mono">
+                        <a href="${chatUrl}" 
+                           target="_blank" 
+                           rel="noopener noreferrer" 
+                           class="text-blue-400 hover:underline"
+                           title="Open a read-only view of this chat in a new tab">
+                            ${itemId}
+                        </a>
+                    </td>
+                `;
+            } else {
+                itemDisplayCell = `<td class="p-2 font-mono">${itemId}</td>`;
+            }
+
+            row.innerHTML = `
                 <td class="p-2 text-center"><input type="checkbox" class="tombstone-checkbox h-4 w-4" data-id="${itemId}"></td>
-                <td class="p-2 font-mono">${itemId}</td>
-                <td class="p-2">${new Date(
-                  itemData.deleted
-                ).toLocaleString()}</td>
+                ${itemDisplayCell}
+                <td class="p-2">${new Date(itemData.deleted).toLocaleString()}</td>
                 <td class="p-2 text-center">
                     <button class="permanent-delete-btn p-1 text-red-400 hover:text-red-300" data-id="${itemId}" title="Permanently Delete Now">
                         <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
                     </button>
                 </td>
             `;
-          tableBody.appendChild(row);
+            tableBody.appendChild(row);
         }
-      } catch (error) {
+    } catch (error) {
         tableBody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-red-400">Error loading items: ${error.message}</td></tr>`;
         this.logger.log("error", "Failed to load tombstone list", error);
-      }
     }
+}
   }
   const styleSheet = document.createElement("style");
   styleSheet.textContent =
