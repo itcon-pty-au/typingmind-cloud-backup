@@ -2574,7 +2574,7 @@ if (window.typingMindCloudSync) {
      * - For all other items: Uses the original `size`-based comparison.
      * This prevents memory crashes caused by stringifying large chat objects.
      */
-    async detectChanges() {
+    async detectChanges() {    
       const changedItems = [];
       const now = Date.now();
       const localItemKeys = await this.dataService.getAllItemKeys();
@@ -2591,6 +2591,9 @@ if (window.typingMindCloudSync) {
       for await (const batch of itemsIterator) {
         for (const item of batch) {
           const key = item.id;
+          if (typeof key !== 'string' || !key) {
+              continue;
+          }         
           const value = item.data;
           const existingItem = this.metadata.items[key];
 
@@ -2930,6 +2933,7 @@ if (window.typingMindCloudSync) {
           "info",
           `Cloud changes detected - proceeding with full sync`
         );
+        
         const itemsToDownload = Object.entries(cloudMetadata.items).filter(
           ([key, cloudItem]) => {
             if (this.config.shouldExclude(key)) {
@@ -2965,6 +2969,7 @@ if (window.typingMindCloudSync) {
             return cloudTimestamp > localTimestamp;
           }
         );
+        
         if (itemsToDownload.length > 0) {
           this.logger.log(
             "info",
