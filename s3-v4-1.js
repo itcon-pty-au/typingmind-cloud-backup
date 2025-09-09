@@ -2908,10 +2908,13 @@ if (window.typingMindCloudSync) {
         const lastMetadataETag = localStorage.getItem("tcs_metadata_etag");
         const hasCloudChanges = cloudMetadataETag !== lastMetadataETag;
         const cloudLastSync = cloudMetadata.lastSync || 0;
-        if (!hasCloudChanges) {
+        const cloudActiveCount = Object.values(cloudMetadata.items || {}).filter(item => !item.deleted).length;
+        const localActiveCount = Object.values(this.metadata.items || {}).filter(item => !item.deleted).length;
+
+        if (!hasCloudChanges && cloudActiveCount === localActiveCount){
           this.logger.log(
             "info",
-            "No cloud changes detected based on ETag - skipping item downloads"
+            "No cloud changes detected and item count is consistent - skipping item downloads"
           );
           this.metadata.lastSync = cloudLastSync;
           this.setLastCloudSync(cloudLastSync);
@@ -2919,10 +2922,18 @@ if (window.typingMindCloudSync) {
           this.logger.log("success", "Sync from cloud completed (no changes)");
           return;
         }
-        this.logger.log(
-          "info",
-          `Cloud changes detected - proceeding with full sync`
-        );
+
+        if (hasCloudChanges) {
+            this.logger.log(
+              "info",
+              `Cloud changes detected (ETag mismatch) - proceeding with full sync`
+            );
+        } else {
+            this.logger.log(
+                "warning",
+                `Inconsistency detected! Cloud has ${cloudActiveCount} active items, local has ${localActiveCount}. Forcing full sync.`
+            );
+        }
 
         const itemsToDownload = Object.entries(cloudMetadata.items).filter(
           ([key, cloudItem]) => {
