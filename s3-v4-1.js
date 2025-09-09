@@ -2611,18 +2611,20 @@ if (window.typingMindCloudSync) {
             const rawUpdatedAt = value.updatedAt;
             const rawLastModifiedFromMetadata = existingItem?.lastModified;
             const getNumericTimestamp = (dateValue) => {
-                if (typeof dateValue === 'number') {
-                    return dateValue;
-                }
-                if (!dateValue) {
-                    return 0;
-                }
-                const timestamp = new Date(dateValue).getTime();
-                return isNaN(timestamp) ? 0 : timestamp;
+              if (typeof dateValue === "number") {
+                return dateValue;
+              }
+              if (!dateValue) {
+                return 0;
+              }
+              const timestamp = new Date(dateValue).getTime();
+              return isNaN(timestamp) ? 0 : timestamp;
             };
 
             const currentTimestamp = getNumericTimestamp(rawUpdatedAt);
-            const lastKnownTimestamp = getNumericTimestamp(rawLastModifiedFromMetadata);
+            const lastKnownTimestamp = getNumericTimestamp(
+              rawLastModifiedFromMetadata
+            );
             itemLastModified = currentTimestamp;
 
             // this.logger.log('info', `[TCS-DEBUG] Comparing timestamps for chat: ${key}`, {
@@ -2954,9 +2956,13 @@ if (window.typingMindCloudSync) {
             if (!localItem) {
               return true;
             }
-          const cloudTimestamp = new Date(cloudItem.lastModified || 0).getTime();
-          const localTimestamp = new Date(localItem.lastModified || 0).getTime();
-          return cloudTimestamp > localTimestamp;
+            const cloudTimestamp = new Date(
+              cloudItem.lastModified || 0
+            ).getTime();
+            const localTimestamp = new Date(
+              localItem.lastModified || 0
+            ).getTime();
+            return cloudTimestamp > localTimestamp;
           }
         );
         if (itemsToDownload.length > 0) {
@@ -5205,6 +5211,7 @@ if (window.typingMindCloudSync) {
         autoOpen: autoOpen,
       };
     }
+
     removeConfigFromUrl() {
       const url = new URL(window.location);
       const params = url.searchParams;
@@ -5235,6 +5242,7 @@ if (window.typingMindCloudSync) {
         this.logger.log("info", "Removed configuration parameters from URL.");
       }
     }
+
     async waitForDOM() {
       if (document.readyState === "loading") {
         return new Promise((resolve) =>
@@ -5242,6 +5250,7 @@ if (window.typingMindCloudSync) {
         );
       }
     }
+
     insertSyncButton() {
       if (document.querySelector('[data-element-id="workspace-tab-cloudsync"]'))
         return;
@@ -5261,6 +5270,7 @@ if (window.typingMindCloudSync) {
         chatButton.parentNode.insertBefore(button, chatButton.nextSibling);
       }
     }
+
     updateSyncStatus(status = "success") {
       const dot = document.getElementById("sync-status-dot");
       if (!dot) return;
@@ -5273,11 +5283,13 @@ if (window.typingMindCloudSync) {
       dot.style.backgroundColor = colors[status] || "#6b7280";
       dot.style.display = "block";
     }
+
     openSyncModal() {
       if (document.querySelector(".cloud-sync-modal")) return;
       this.logger.log("start", "Opening sync modal");
       this.createModal();
     }
+
     createModal() {
       const overlay = document.createElement("div");
       overlay.className = "modal-overlay";
@@ -5412,6 +5424,40 @@ if (window.typingMindCloudSync) {
             </div>
           </div>
 
+          <!-- Deleted Items (Tombstones) Section -->
+          <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
+            <div class="flex items-center justify-between mb-2 cursor-pointer select-none" id="tombstones-header">
+              <label class="block text-sm font-medium text-zinc-300">Recently Deleted Items</label>
+              <div class="flex items-center gap-1">
+                <svg id="tombstones-chevron" class="w-4 h-4 text-zinc-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+              </div>
+            </div>
+            <div id="tombstones-content" class="space-y-2 hidden">
+              <div class="text-xs text-zinc-400 mb-2">Items deleted within the last 30 days are shown here. You can restore them or permanently delete them.</div>
+              <div class="max-h-48 overflow-y-auto border border-zinc-700 rounded-md">
+                <table class="w-full text-xs text-zinc-300">
+                  <thead class="bg-zinc-700 sticky top-0">
+                    <tr>
+                      <th class="p-2 w-8"><input type="checkbox" id="tombstone-select-all" class="h-4 w-4"></th>
+                      <th class="p-2 text-left">Chat Title</th>
+                      <th class="p-2 text-left">Deleted On</th>
+                      <th class="p-2 w-12">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tombstone-list-body">
+                    <!-- Tombstone rows will be injected here by JavaScript -->
+                  </tbody>
+                </table>
+              </div>
+              <div class="flex justify-between items-center pt-2">
+                <button id="undo-selected-btn" class="px-2 py-1.5 text-sm text-white bg-green-600 rounded-md hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>Restore Selected</button>
+                <button id="refresh-tombstones-btn" class="p-1.5 text-white bg-blue-600 rounded-md hover:bg-blue-700" title="Refresh list">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
           <!-- Actions & Footer -->
           <div class="flex items-center justify-end mb-4 space-x-2 mt-4">
             <span class="text-sm text-zinc-400">Console Logging</span>
@@ -5441,6 +5487,7 @@ if (window.typingMindCloudSync) {
         </div>
       </div>`;
     }
+
     setupModalEventListeners(modal, overlay) {
       const closeModalHandler = () => this.closeModal(overlay);
       const saveSettingsHandler = () => this.saveSettings(modal);
@@ -5567,6 +5614,128 @@ if (window.typingMindCloudSync) {
       forceExportBtn.addEventListener("click", handleForceExport);
       forceImportBtn.addEventListener("click", handleForceImport);
 
+      const tombstoneTableBody = modal.querySelector("#tombstone-list-body");
+      const undoButton = modal.querySelector("#undo-selected-btn");
+      const selectAllCheckbox = modal.querySelector("#tombstone-select-all");
+      const refreshTombstonesBtn = modal.querySelector(
+        "#refresh-tombstones-btn"
+      );
+
+      const handleTombstoneTableClick = async (e) => {
+        const deleteButton = e.target.closest(".permanent-delete-btn");
+        if (!deleteButton) return;
+
+        const itemId = deleteButton.dataset.id;
+        if (
+          !confirm(
+            `⚠️ PERMANENT DELETION\n\nAre you sure you want to permanently delete the item "${itemId}"?\n\nThis cannot be undone.`
+          )
+        ) {
+          return;
+        }
+
+        this.logger.log("start", `Permanently deleting item: ${itemId}`);
+        deleteButton.disabled = true;
+        try {
+          // Step 1: Delete the actual data file from the cloud
+          await this.storageService.delete(`items/${itemId}.json`);
+          // Step 2: Delete the record from the local metadata
+          delete this.syncOrchestrator.metadata.items[itemId];
+          // Step 3: Sync the updated metadata to the cloud
+          await this.syncOrchestrator.performFullSync(); // Use full sync to ensure consistency
+
+          this.logger.log("success", `Permanently deleted ${itemId}`);
+          await this.loadTombstoneList(modal); // Refresh the list
+        } catch (error) {
+          alert(`Failed to permanently delete item: ${error.message}`);
+          this.logger.log(
+            "error",
+            `Permanent delete failed for ${itemId}`,
+            error
+          );
+          deleteButton.disabled = false;
+        }
+      };
+
+      const handleUndoClick = async () => {
+        const selectedCheckboxes = Array.from(
+          modal.querySelectorAll(".tombstone-checkbox:checked")
+        );
+        const itemIdsToRestore = selectedCheckboxes.map((cb) => cb.dataset.id);
+
+        if (itemIdsToRestore.length === 0) return;
+
+        this.logger.log("start", `Restoring ${itemIdsToRestore.length} items.`);
+        undoButton.disabled = true;
+        undoButton.textContent = "Restoring...";
+        try {
+          itemIdsToRestore.forEach((itemId) => {
+            const item = this.syncOrchestrator.metadata.items[itemId];
+            if (item && item.deleted) {
+              delete item.deleted;
+              delete item.deletedAt;
+              delete item.tombstoneVersion;
+              item.synced = 0;
+            }
+          });
+
+          await this.syncOrchestrator.performFullSync(); // Full sync will upload metadata changes and download files if needed
+
+          this.logger.log(
+            "success",
+            `Restored ${itemIdsToRestore.length} items.`
+          );
+          undoButton.textContent = "Success!";
+          await this.loadTombstoneList(modal);
+          setTimeout(() => {
+            undoButton.textContent = "Restore Selected";
+            updateRestoreButtonState(); // Call helper to set correct state
+          }, 2000);
+        } catch (error) {
+          alert(`Failed to restore items: ${error.message}`);
+          this.logger.log("error", "Restore operation failed", error);
+          undoButton.textContent = "Restore Selected";
+          undoButton.disabled = false;
+        }
+      };
+
+      const updateRestoreButtonState = () => {
+        const selectedCount = modal.querySelectorAll(
+          ".tombstone-checkbox:checked"
+        ).length;
+        undoButton.disabled = selectedCount === 0;
+      };
+
+      const handleTombstoneCheckboxChange = (e) => {
+        if (e.target.classList.contains("tombstone-checkbox")) {
+          updateRestoreButtonState();
+        }
+      };
+
+      const handleSelectAll = () => {
+        const checkboxes = modal.querySelectorAll(".tombstone-checkbox");
+        checkboxes.forEach((cb) => (cb.checked = selectAllCheckbox.checked));
+        updateRestoreButtonState();
+      };
+
+      const handleRefreshTombstones = () => this.loadTombstoneList(modal);
+
+      // Attach new event listeners
+      if (tombstoneTableBody) {
+        tombstoneTableBody.addEventListener("click", handleTombstoneTableClick);
+        tombstoneTableBody.addEventListener(
+          "change",
+          handleTombstoneCheckboxChange
+        );
+      }
+      if (undoButton) undoButton.addEventListener("click", handleUndoClick);
+      if (selectAllCheckbox)
+        selectAllCheckbox.addEventListener("change", handleSelectAll);
+      if (refreshTombstonesBtn)
+        refreshTombstonesBtn.addEventListener("click", handleRefreshTombstones);
+
+      // --- END: NEW TOMBSTONE UI LOGIC ---
+
       this.modalCleanupCallbacks.push(() => {
         overlay.removeEventListener("click", closeModalHandler);
         modal
@@ -5587,6 +5756,17 @@ if (window.typingMindCloudSync) {
         storageSelect.removeEventListener("change", updateProviderUI);
         forceExportBtn.removeEventListener("click", handleForceExport);
         forceImportBtn.removeEventListener("click", handleForceImport);
+
+        // --- START: NEW TOMBSTONE CLEANUP ---
+        if (tombstoneTableBody) {
+          tombstoneTableBody.removeEventListener('click', handleTombstoneTableClick);
+          tombstoneTableBody.removeEventListener('change', handleTombstoneCheckboxChange);
+        }
+        if (undoButton) undoButton.removeEventListener('click', handleUndoClick);
+        if (selectAllCheckbox) selectAllCheckbox.removeEventListener('change', handleSelectAll);
+        if (refreshTombstonesBtn) refreshTombstonesBtn.removeEventListener('click', handleRefreshTombstones);
+        // --- END: NEW TOMBSTONE CLEANUP ---
+
       });
 
       modal.querySelector("#console-logging-toggle").checked =
@@ -5598,6 +5778,8 @@ if (window.typingMindCloudSync) {
         this.setupBackupListHandlers(modal);
         this.loadSyncDiagnostics(modal);
         this.setupDiagnosticsRefresh(modal);
+        this.setupAccordion(modal);
+        this.loadTombstoneList(modal);
       }
     }
 
@@ -5836,6 +6018,7 @@ if (window.typingMindCloudSync) {
         });
       }
     }
+
     async loadSyncDiagnostics(modal) {
       const diagnosticsBody = modal.querySelector("#sync-diagnostics-body");
       if (!diagnosticsBody) return;
@@ -6269,6 +6452,81 @@ if (window.typingMindCloudSync) {
           );
           this.updateSyncStatus("error");
         }
+      }
+    }
+
+    async loadTombstoneList(modal) {
+      const tableBody = modal.querySelector("#tombstone-list-body");
+      const undoButton = modal.querySelector("#undo-selected-btn");
+      if (!tableBody || !undoButton) return;
+
+      tableBody.innerHTML =
+        '<tr><td colspan="4" class="p-4 text-center text-zinc-500">Loading deleted items...</td></tr>';
+      undoButton.disabled = true;
+
+      if (!this.storageService || !this.storageService.isConfigured()) {
+        tableBody.innerHTML =
+          '<tr><td colspan="4" class="p-4 text-center text-zinc-500">Provider Not Configured</td></tr>';
+        return;
+      }
+
+      try {
+        const tombstones = Object.entries(this.syncOrchestrator.metadata.items)
+          .filter(([key, item]) => item.deleted)
+          .sort((a, b) => b[1].deleted - a[1].deleted);
+
+        if (tombstones.length === 0) {
+          tableBody.innerHTML =
+            '<tr><td colspan="4" class="p-4 text-center text-zinc-500">No recently deleted items found.</td></tr>';
+          return;
+        }
+
+        tableBody.innerHTML = "";
+
+        for (const [itemId, itemData] of tombstones) {
+          const row = document.createElement("tr");
+          row.className = "border-t border-zinc-700 hover:bg-zinc-700/50";
+          row.innerHTML = `
+                <td class="p-2 text-center"><input type="checkbox" class="tombstone-checkbox h-4 w-4" data-id="${itemId}"></td>
+                <td class="p-2 font-mono text-zinc-400 italic">Loading title...</td>
+                <td class="p-2">${new Date(
+                  itemData.deleted
+                ).toLocaleString()}</td>
+                <td class="p-2 text-center">
+                    <button class="permanent-delete-btn p-1 text-red-400 hover:text-red-300" data-id="${itemId}" title="Permanently Delete Now">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
+                    </button>
+                </td>
+            `;
+          tableBody.appendChild(row);
+
+          (async () => {
+            const titleCell = row.querySelector("td:nth-child(2)");
+            try {
+              const fileData = await this.storageService.download(
+                `items/${itemId}.json`
+              );
+              const chatTitle =
+                fileData.title ||
+                fileData.name ||
+                (fileData.messages && fileData.messages[0]
+                  ? fileData.messages[0].content.substring(0, 50) + "..."
+                  : itemId);
+              titleCell.textContent = chatTitle;
+              titleCell.className = "p-2";
+            } catch (error) {
+              titleCell.textContent = "Title unavailable (file may be purged)";
+              this.logger.log(
+                "warning",
+                `Could not fetch title for tombstoned item ${itemId}`,
+                error.message
+              );
+            }
+          })();
+        }
+      } catch (error) {
+        tableBody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-red-400">Error loading items: ${error.message}</td></tr>`;
+        this.logger.log("error", "Failed to load tombstone list", error);
       }
     }
   }
