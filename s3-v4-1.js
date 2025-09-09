@@ -2934,7 +2934,7 @@ if (window.typingMindCloudSync) {
             "info",
             `Metadata was purged of excluded items - proceeding to save cleaned state.`
           );
-        } else { // This case covers cloudActiveCount !== localActiveCount
+        } else {
           this.logger.log(
             "warning",
             `Inconsistency detected! Cloud has ${cloudActiveCount} active items, local has ${localActiveCount}. Forcing full sync.`
