@@ -4931,6 +4931,7 @@ if (window.typingMindCloudSync) {
         "available-backups",
         "provider-settings",
         "common-settings",
+        "tombstones",
       ];
 
       const setSectionState = (sectionName, expand) => {
@@ -5604,7 +5605,9 @@ if (window.typingMindCloudSync) {
           alert(
             "Force Import from Cloud completed successfully. The page will now reload to apply the new data."
           );
-          window.location.reload();
+          setTimeout(() => {
+              window.location.reload();
+          }, 3000);
         } catch (error) {
           forceImportBtn.textContent = "Failed";
           alert(`Force Import failed: ${error.message}`);
@@ -5783,7 +5786,6 @@ if (window.typingMindCloudSync) {
         this.setupBackupListHandlers(modal);
         this.loadSyncDiagnostics(modal);
         this.setupDiagnosticsRefresh(modal);
-        this.setupAccordion(modal);
         this.loadTombstoneList(modal);
       }
     }
