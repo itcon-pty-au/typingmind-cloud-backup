@@ -5460,7 +5460,7 @@ if (window.typingMindCloudSync) {
             </div>
             <div id="tombstones-content" class="space-y-2 hidden">
               <div class="text-xs text-zinc-400 mb-2">Items deleted within the last 30 days are shown here. You can restore them or permanently delete them.</div>
-              <div class="max-h-80 overflow-y-auto border border-zinc-700 rounded-md">
+              <div class="max-h-56 overflow-y-auto border border-zinc-700 rounded-md">
                 <table class="w-full text-xs text-zinc-300">
                   <thead class="bg-zinc-700 sticky top-0">
                     <tr>
