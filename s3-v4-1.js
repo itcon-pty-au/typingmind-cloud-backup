@@ -3032,6 +3032,7 @@ if (window.typingMindCloudSync) {
         this.saveMetadata();
         await this.updateSyncDiagnosticsCache();
         this.logger.log("success", "Sync from cloud completed");
+        return metadataWasPurged;
       } catch (error) {
         this.logger.log("error", "Failed to sync from cloud", error.message);
         throw error;
@@ -3170,7 +3171,14 @@ if (window.typingMindCloudSync) {
           `📊 Local Metadata Stats: Total=${localItems.length}, Active=${localActive}, Deleted=${localDeleted}`
         );
       }
-      await this.syncFromCloud();
+      const metadataWasPurged =await this.syncFromCloud();
+
+      if (metadataWasPurged) {
+          this.logger.log('info', 'Metadata was purged. Forcing an upload to make the fix permanent in the cloud.');
+          await this.storageService.upload("metadata.json", this.metadata, true);
+          localStorage.setItem("tcs_metadata_etag", "");
+      }
+
       const cloudMetadata = await this.getCloudMetadata();
       const localMetadataEmpty =
         Object.keys(this.metadata.items || {}).length === 0;
