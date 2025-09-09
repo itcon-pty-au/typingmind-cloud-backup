@@ -5757,7 +5757,31 @@ if (window.typingMindCloudSync) {
         updateRestoreButtonState();
       };
 
-      const handleRefreshTombstones = () => this.loadTombstoneList(modal);
+      const handleRefreshTombstones = (e) => {
+        e.stopPropagation();
+
+        const refreshButton = modal.querySelector("#refresh-tombstones-btn");
+        const refreshIcon = modal.querySelector("#tombstone-refresh-icon");
+        const checkmarkIcon = modal.querySelector("#tombstone-checkmark-icon");
+        
+        if (!refreshButton || !refreshIcon || !checkmarkIcon || refreshButton.disabled) return;
+
+        this.loadTombstoneList(modal);
+
+        refreshButton.disabled = true;
+        refreshButton.classList.remove("bg-blue-600", "hover:bg-blue-700");
+        refreshButton.classList.add("bg-green-600");
+        refreshIcon.classList.add("hidden");
+        checkmarkIcon.classList.remove("hidden");
+
+        setTimeout(() => {
+          refreshButton.classList.remove("bg-green-600");
+          refreshButton.classList.add("bg-blue-600", "hover:bg-blue-700");
+          refreshIcon.classList.remove("hidden");
+          checkmarkIcon.classList.add("hidden");
+          refreshButton.disabled = false;
+        }, 800);
+      };
 
       if (tombstoneTableBody) {
         tombstoneTableBody.addEventListener("click", handleTombstoneTableClick);
