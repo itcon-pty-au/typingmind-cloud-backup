@@ -16,9 +16,15 @@
 
 # TypingMind Cloud Sync V4.2
 
-A comprehensive cloud backup and sync extension for TypingMind that automatically backs up and synchronizes your entire TypingMind data with AWS S3 or S3-compatible cloud storage services.
+A comprehensive cloud backup and sync extension for TypingMind that automatically backs up and synchronizes your entire TypingMind data with multiple cloud storage providers including AWS S3, S3-compatible services, and Google Drive.
 
 ## ✨ Key Features
+
+### ☁️ **Multi-Provider Support**
+
+- **Extensible Provider Architecture**: Choose between AWS S3, S3-compatible services (Cloudflare R2, iDrive E2, Wasabi, Google Cloud Storage), or Google Drive.
+- **Provider-Specific Configuration**: Each storage provider has its own optimized configuration interface.
+- **Seamless Provider Switching**: Easy to configure and switch between different cloud storage providers.
 
 ### 🔄 **Intelligent Sync System**
 
@@ -27,6 +33,7 @@ A comprehensive cloud backup and sync extension for TypingMind that automaticall
 - **Deletion Tracking**: Advanced tombstone system tracks deletions across devices to prevent data loss.
 - **Conflict Resolution**: Smart conflict resolution when the same data is modified on multiple devices.
 - **Auto-sync**: Configurable automatic sync intervals (minimum 15 seconds).
+- **Retry Logic**: Built-in exponential backoff retry mechanism for failed operations, ensuring robust sync even with network issues.
 
 ### 💾 **Efficient Backup Management**
 
@@ -34,6 +41,7 @@ A comprehensive cloud backup and sync extension for TypingMind that automaticall
 - **On-demand Snapshots**: Create named snapshots of your current cloud data instantly.
 - **Server-Side Operations**: Backups and snapshots are created using fast server-side copies, minimizing local resource usage and upload times.
 - **Smart Cleanup**: Automatic cleanup of old daily backups and tombstones.
+- **Attachment Support**: Full support for syncing and backing up file attachments (images, documents, etc.) alongside your chat data.
 
 ### 🔒 **Security & Encryption**
 
@@ -47,6 +55,7 @@ A comprehensive cloud backup and sync extension for TypingMind that automaticall
 - **NoSync Mode**: A snapshot-only mode for when you don't need real-time synchronization.
 - **Auto-configuration**: Automatic setup from URL parameters on first launch.
 - **Exclusion Lists**: Customize what data to exclude from sync.
+- **Storage Provider Selection**: Easy dropdown selection to switch between different cloud storage providers.
 
 ### 📊 **Monitoring & Debugging**
 
@@ -70,19 +79,35 @@ A comprehensive cloud backup and sync extension for TypingMind that automaticall
 
 After installation, you'll see a new **Sync** button in the sidebar. Click it to open the configuration modal.
 
-> **First Time Setup**: If you haven't configured the mandatory fields (bucket name, region, access key, secret key, encryption key), the extension will show an alert prompting you to configure these settings. The extension needs these credentials to function.
+> **First Time Setup**: If you haven't configured the mandatory fields, the extension will show an alert prompting you to configure these settings. The extension needs these credentials to function.
 
-**Required Fields** (marked with \*):
+#### Storage Provider Selection
+
+The extension supports multiple cloud storage providers. Select your preferred provider from the **Storage Type** dropdown:
+
+- **AWS S3 / S3-Compatible** - AWS S3, Cloudflare R2, iDrive E2, Wasabi, Google Cloud Storage (S3 API), etc.
+- **Google Drive** - Google Drive using Google's native API
+
+#### Configuration Fields
+
+The required fields depend on your chosen storage provider:
+
+**For S3 / S3-Compatible Storage** (marked with \*):
 
 - **Bucket Name\*** - Your S3 bucket name.
 - **Region\*** - AWS region (e.g., `us-east-1`; use `auto` for Cloudflare R2).
 - **Access Key\*** - Your S3 access key ID.
 - **Secret Key\*** - Your S3 secret access key.
 - **Encryption Key\*** - Your personal encryption password. **If you forget this key, your data cannot be recovered.**
+- **S3 Endpoint** (Optional) - For S3-compatible services (e.g., iDrive E2, Wasabi). Leave empty for AWS S3.
 
-**Optional Fields**:
+**For Google Drive**:
 
-- **S3 Endpoint** - For S3-compatible services (e.g., iDrive E2, Wasabi). Leave empty for AWS S3.
+- **Google Client ID\*** - Your Google OAuth client ID.
+- **Encryption Key\*** - Your personal encryption password. **If you forget this key, your data cannot be recovered.**
+
+**Common Optional Fields**:
+
 - **Sync Interval** - How often to sync in seconds (minimum 15, default 15).
 - **Exclusions** - Comma-separated list of additional keys to exclude from sync.
 
@@ -103,23 +128,31 @@ After installation, you'll see a new **Sync** button in the sidebar. Click it to
 
 Add parameters to your TypingMind URL for automatic setup. This is useful for quickly configuring a new browser or device.
 
+**For S3/S3-Compatible Storage:**
 ```
-https://your-typingmind-url.com/?bucket=your-bucket&region=us-east-1&accesskey=your-key&secretkey=your-secret&encryptionkey=your-password&config
+https://your-typingmind-url.com/?storagetype=s3&bucket=your-bucket&region=us-east-1&accesskey=your-key&secretkey=your-secret&encryptionkey=your-password&config
+```
+
+**For Google Drive:**
+```
+https://your-typingmind-url.com/?storagetype=googleDrive&googleclientid=your-client-id&encryptionkey=your-password&config
 ```
 
 **Available URL Parameters**:
 
-- `bucket` - S3 bucket name
-- `region` - AWS region
-- `accesskey` - Access key ID
-- `secretkey` - Secret access key
-- `endpoint` - S3 endpoint (for compatible services)
-- `encryptionkey` - Encryption password
+- `storagetype` - Storage provider type (`s3` or `googleDrive`)
+- `bucket` - S3 bucket name (S3 only)
+- `region` - AWS region (S3 only)
+- `accesskey` - Access key ID (S3 only)
+- `secretkey` - Secret access key (S3 only)
+- `endpoint` - S3 endpoint (for compatible services, S3 only)
+- `googleclientid` - Google OAuth client ID (Google Drive only)
+- `encryptionkey` - Encryption password (all providers)
 - `syncinterval` - Sync interval in seconds
 - `exclusions` - Comma-separated exclusion list
-- `config` or `autoconfig` - Auto-open the config modal on load.
-- `log` - Enable console logging from startup.
-- `nosync` - Enable NoSync mode (snapshots only).
+- `config` or `autoconfig` - Auto-open the config modal on load
+- `log` - Enable console logging from startup
+- `nosync` - Enable NoSync mode (snapshots only)
 
 ## 🎛 Operating Modes
 
@@ -183,11 +216,33 @@ The sync button in the sidebar shows a colored dot indicating the current status
 - 🔴 **Red** - A sync error occurred. Check the browser console for details.
 - 🔵 **Blue** - Sync in progress.
 
-## 🚀 Migration to V3+
+## 🚀 Migration from Earlier Versions
+
+### Migration to V4+
+
+V4 introduced major architectural changes including multi-provider support and attachment handling. However, **V4 is fully backward compatible** with V3 backups and cloud data structures.
+
+#### What's New in V4.2
+
+- **Multi-Provider Architecture**: Support for AWS S3, S3-compatible services, and Google Drive
+- **Attachment Sync**: Full support for syncing file attachments (images, documents, etc.)
+- **Retry Logic**: Exponential backoff retry mechanism for improved reliability
+- **Enhanced Blob Handling**: Better support for binary data and large files
+
+#### What to Expect During Migration from V3 to V4+
+
+When you load the V4+ extension for the first time, the process is largely automatic:
+
+- **Your Data is Safe**: Your existing V3 cloud data and backups remain compatible and accessible
+- **Automatic Configuration Upgrade**: V3 configuration is automatically read and migrated to V4 format
+- **Default Provider**: If upgrading from V3, the extension defaults to S3 provider (maintaining compatibility)
+- **Seamless Transition**: First sync will validate and continue with your existing cloud data structure
+
+### Migration to V3+ (from V1/V2)
 
 V3 was a major rewrite and is **not backward compatible** with backups created by older versions (V1 or V2).
 
-#### What to Expect During Migration
+#### What to Expect During Migration from V1/V2 to V3+
 
 When you load the V3+ extension for the first time, the process is largely automatic:
 
@@ -211,21 +266,27 @@ There is no manual data migration required—the extension handles everything au
 4.  **Configure**: Open the **Sync** modal. Your previous settings should be pre-filled. Enter your **Encryption Key** again and click **Save**.
 5.  **Verify**: The first sync will begin. You can monitor its progress in the browser console (enable logging for more detail) and by using the **Sync Diagnostics** panel.
 
-### Understanding the V3+ File Structure
+### Understanding the V3+/V4+ File Structure
 
-To help you safely clean up old files from previous versions, here is a breakdown of the file structure used by V3+ in your S3 bucket. Any files or folders not matching this structure are likely from an older version and can be removed.
+To help you safely clean up old files from previous versions, here is a breakdown of the file structure used by V3+/V4+ in your cloud storage. Any files or folders not matching this structure are likely from an older version and can be removed.
+
+**Note**: This structure applies to S3 and S3-compatible storage. Google Drive uses a similar logical structure but with Google Drive's folder system.
 
 - **`metadata.json`**: This is the most critical file for synchronization. It acts as the central index for all your data, tracking every item's sync status, version, and deletions (tombstones). It resides at the root of your bucket.
 - **`/items`**: This directory contains the actual encrypted data for every individual item in your TypingMind application (chats, settings, etc.). Each item is stored as a separate file within this folder.
+- **`/attachments`**: (V4+) This directory contains encrypted file attachments (images, documents, etc.) synced from your TypingMind chats. Each attachment is stored as a separate encrypted blob.
 - **`/backups`**: This directory holds all your on-demand snapshots and automatic daily backups.
   - Each backup is stored in its own sub-folder (e.g., `backups/s-my-snapshot-20231027T120000/` or `backups/typingmind-backup-20231027/`).
   - Inside each backup folder, you will find a copy of `metadata.json` and an `items/` directory, representing the state of your data at the time of the backup.
+  - In V4+, backups also include the `/attachments` directory if attachments are present.
 
-Any other files or folders at the root of your bucket, are no longer used by V3+ and can be safely deleted once you have successfully migrated. This is how your S3 bucket should look like.
+Any other files or folders at the root of your bucket are no longer used by V3+/V4+ and can be safely deleted once you have successfully migrated. This is how your S3 bucket should look like.
 
 <img src="Admin/s3-file-structure.PNG" alt="S3 File Structure" />
 
 ## ☁️ Cloud Storage Setup
+
+The extension supports multiple cloud storage providers. Choose the one that best fits your needs:
 
 ### AWS S3
 
@@ -328,6 +389,29 @@ iDrive E2 provides S3 compatible API with a generous 10GB free storage per month
 
 Google Cloud Storage (part of GCP) is another S3 compatible storage, compatible with this extension. Please refer to the [manual](HowTo/google_cloud_storage_gcp.md) for setup instructions.
 
+### Google Drive
+
+Google Drive can be used as a cloud storage provider using Google's native API.
+
+**Setup Steps:**
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select an existing one
+3. Enable the **Google Drive API** for your project:
+   - Navigate to "APIs & Services" > "Library"
+   - Search for "Google Drive API" and enable it
+4. Create OAuth 2.0 credentials:
+   - Go to "APIs & Services" > "Credentials"
+   - Click "Create Credentials" > "OAuth client ID"
+   - Choose "Web application" as the application type
+   - Add your TypingMind URL to "Authorized JavaScript origins" (e.g., `https://www.typingmind.com` or your self-hosted URL)
+   - Add your TypingMind URL to "Authorized redirect URIs"
+5. Copy the **Client ID** and use it in the extension configuration
+6. In the extension's sync modal, select "Google Drive" as the storage type
+7. Enter your Client ID and encryption key, then click "Authorize Google Drive"
+8. Complete the OAuth flow to grant the extension access to your Google Drive
+
+**Note**: The extension creates a dedicated folder in your Google Drive for TypingMind backups and maintains the same logical structure as S3 storage.
 
 ## 🐛 Troubleshooting
 
