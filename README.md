@@ -207,7 +207,7 @@ There is no manual data migration required—the extension handles everything au
 
 1.  **Backup Data**: In TypingMind, go to **Settings > App Data & Storage > Export**. Select all checkboxes and download the file. Keep it in a safe place.
 2.  **Remove Old Version**: Go to **Settings > Extensions** and remove the V1/V2 extension.
-3.  **Install V3**: Load the V3 extension URL: `https://itcon-pty-au.github.io/typingmind-cloud-backup/s3-v3.js`.
+3.  **Install V3**: Load the V3 extension URL: `https://itcon-pty-au.github.io/typingmind-cloud-backup/s3-v4-2.js`.
 4.  **Configure**: Open the **Sync** modal. Your previous settings should be pre-filled. Enter your **Encryption Key** again and click **Save**.
 5.  **Verify**: The first sync will begin. You can monitor its progress in the browser console (enable logging for more detail) and by using the **Sync Diagnostics** panel.
 
