@@ -167,6 +167,7 @@ if (window.typingMindCloudSync) {
         "tcs_localMigrated",
         "tcs_migrationBackup",
         "tcs_last-tombstone-cleanup",
+        "tcs_autosync_enabled",
         "referrer",
         "TM_useLastVerifiedToken",
         "TM_useStateUpdateHistory",
@@ -5020,6 +5021,34 @@ async download(key, isMetadata = false) {
       this.commonExpanded = false;
       this.hasShownTokenExpiryAlert = false;
       this.leaderElection = null;
+      // Load auto-sync enabled state from localStorage (device-specific, not synced)
+      this.autoSyncEnabled = this.getAutoSyncEnabled();
+    }
+
+    getAutoSyncEnabled() {
+      const stored = localStorage.getItem('tcs_autosync_enabled');
+      // Default to true (enabled) if not set
+      return stored === null ? true : stored === 'true';
+    }
+
+    setAutoSyncEnabled(enabled) {
+      this.autoSyncEnabled = enabled;
+      localStorage.setItem('tcs_autosync_enabled', enabled.toString());
+      this.logger.log('info', `Auto-sync ${enabled ? 'enabled' : 'disabled'}`);
+      
+      if (enabled) {
+        // Re-start auto-sync if it was disabled
+        if (this.storageService?.isConfigured() && !this.noSyncMode) {
+          this.startAutoSync();
+        }
+      } else {
+        // Stop auto-sync
+        if (this.autoSyncInterval) {
+          clearInterval(this.autoSyncInterval);
+          this.autoSyncInterval = null;
+          this.logger.log('info', 'Auto-sync interval cleared');
+        }
+      }
     }
 
     setupAccordion(modal) {
@@ -5414,8 +5443,15 @@ async download(key, isMetadata = false) {
            </div>`
         : "";
       return `<div class="text-white text-left text-sm">
-        <div class="flex justify-center items-center mb-3">
-          <h3 class="text-center text-xl font-bold text-white">Cloud Sync</h3>
+        <div class="flex justify-between items-center mb-3">
+          <h3 class="text-center text-xl font-bold text-white flex-grow">Cloud Sync</h3>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-zinc-400">Auto-Sync</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="auto-sync-toggle" class="sr-only peer" ${this.autoSyncEnabled ? 'checked' : ''} ${this.noSyncMode ? 'disabled' : ''}>
+              <div class="w-11 h-6 bg-zinc-600 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
+            </label>
+          </div>
         </div>
         ${modeStatus}
         <div class="space-y-3">
@@ -5582,6 +5618,8 @@ async download(key, isMetadata = false) {
           <div class="text-center mt-4"><span id="last-sync-msg" class="text-zinc-400">${
             this.noSyncMode
               ? "NoSync Mode: Automatic sync operations disabled"
+              : !this.autoSyncEnabled
+              ? "Auto-Sync Disabled: Manual sync operations only"
               : ""
           }</span></div>
           <div id="action-msg" class="text-center text-zinc-400"></div>
@@ -5599,6 +5637,18 @@ async download(key, isMetadata = false) {
       const handleSyncNowHandler = () => this.handleSyncNow(modal);
       const consoleLoggingHandler = (e) =>
         this.logger.setEnabled(e.target.checked);
+      const autoSyncToggleHandler = (e) => {
+        this.setAutoSyncEnabled(e.target.checked);
+        // Update the status message
+        const statusMsg = modal.querySelector('#last-sync-msg');
+        if (statusMsg) {
+          if (e.target.checked) {
+            statusMsg.textContent = '';
+          } else {
+            statusMsg.textContent = 'Auto-Sync Disabled: Manual sync operations only';
+          }
+        }
+      };
 
       overlay.addEventListener("click", closeModalHandler);
       modal.addEventListener("click", (e) => e.stopPropagation());
@@ -5617,6 +5667,9 @@ async download(key, isMetadata = false) {
       modal
         .querySelector("#console-logging-toggle")
         .addEventListener("change", consoleLoggingHandler);
+      modal
+        .querySelector("#auto-sync-toggle")
+        .addEventListener("change", autoSyncToggleHandler);
 
       this.setupAccordion(modal);
 
@@ -6499,6 +6552,13 @@ async download(key, isMetadata = false) {
 
     startAutoSync() {
       if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
+      
+      // Check if auto-sync is disabled
+      if (!this.autoSyncEnabled) {
+        this.logger.log('info', 'Auto-sync is disabled, skipping interval creation');
+        return;
+      }
+      
       const interval = Math.max(this.config.get("syncInterval") * 1000, 15000);
 
       this.autoSyncInterval = setInterval(async () => {
@@ -6582,6 +6642,12 @@ async download(key, isMetadata = false) {
 
     async runLeaderTasks() {
       if (!this.noSyncMode && this.storageService.isConfigured()) {
+        // Only run initial sync if auto-sync is enabled
+        if (!this.autoSyncEnabled) {
+          this.logger.log('info', 'Auto-sync is disabled, skipping initial sync on load');
+          return;
+        }
+        
         this.updateSyncStatus("syncing");
         try {
           await this.syncOrchestrator.performFullSync();
