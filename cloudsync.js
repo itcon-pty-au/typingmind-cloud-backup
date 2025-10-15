@@ -5468,18 +5468,24 @@ async download(key, isMetadata = false) {
            </div>`
         : "";
       return `<div class="text-white text-left text-sm">
-        <div class="flex justify-between items-center mb-3 gap-3">
-          <h3 class="text-xl font-bold text-white flex-shrink-0">Cloud Sync</h3>
-          <div class="flex items-center gap-2 flex-shrink-0">
-            <span class="text-xs text-zinc-400 whitespace-nowrap">Auto-Sync</span>
-            <label class="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" id="auto-sync-toggle" class="sr-only peer" ${this.autoSyncEnabled ? 'checked' : ''} ${this.noSyncMode ? 'disabled' : ''}>
-              <div class="w-11 h-6 bg-zinc-600 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
-            </label>
+        <!-- Modal Header (Fixed) -->
+        <div class="cloud-sync-modal-header">
+          <div class="flex justify-between items-center gap-3">
+            <h3 class="text-xl font-bold text-white flex-shrink-0">Cloud Sync</h3>
+            <div class="flex items-center gap-2 flex-shrink-0">
+              <span class="text-xs text-zinc-400 whitespace-nowrap">Auto-Sync</span>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="auto-sync-toggle" class="sr-only peer" ${this.autoSyncEnabled ? 'checked' : ''} ${this.noSyncMode ? 'disabled' : ''}>
+                <div class="w-11 h-6 bg-zinc-600 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
+              </label>
+            </div>
           </div>
+          ${modeStatus}
         </div>
-        ${modeStatus}
-        <div class="space-y-3">
+        
+        <!-- Modal Content (Scrollable) -->
+        <div class="cloud-sync-modal-content">
+          <div class="space-y-3">
 
           <!-- Sync Diagnostics Section -->
           <div class="mt-4 bg-zinc-800 px-3 py-2 rounded-lg border border-zinc-700">
@@ -5648,7 +5654,11 @@ async download(key, isMetadata = false) {
               : ""
           }</span></div>
           <div id="action-msg" class="text-center text-zinc-400"></div>
-          <div class="modal-footer text-center mt-6 pt-3 text-xs text-zinc-500">
+        </div>
+        
+        <!-- Modal Footer (Fixed) -->
+        <div class="cloud-sync-modal-footer">
+          <div class="modal-footer text-center text-xs text-zinc-500">
             ${this.footerHTML}
           </div>
         </div>
@@ -6741,7 +6751,7 @@ async loadTombstoneList(modal) {
   }
   const styleSheet = document.createElement("style");
   styleSheet.textContent =
-    '.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); z-index: 99999; display: flex; align-items: center; justify-content: center; padding: 1rem; overflow-y: auto; } #sync-status-dot { position: absolute; top: -0.15rem; right: -0.6rem; width: 0.625rem; height: 0.625rem; border-radius: 9999px; } .cloud-sync-modal { width: 100%; max-width: 32rem; background-color: rgb(39, 39, 42); color: white; border-radius: 0.5rem; padding: 1rem; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3); } .cloud-sync-modal input, .cloud-sync-modal select { background-color: rgb(63, 63, 70); border: 1px solid rgb(82, 82, 91); color: white; } .cloud-sync-modal input:focus, .cloud-sync-modal select:focus { border-color: rgb(59, 130, 246); outline: none; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); } .cloud-sync-modal button:disabled { background-color: rgb(82, 82, 91); cursor: not-allowed; opacity: 0.5; } .cloud-sync-modal .bg-zinc-800 { border: 1px solid rgb(82, 82, 91); } .cloud-sync-modal input[type="checkbox"] { accent-color: rgb(59, 130, 246); } .cloud-sync-modal input[type="checkbox"]:checked { background-color: rgb(59, 130, 246); border-color: rgb(59, 130, 246); } #sync-diagnostics-table { font-size: 0.75rem; } #sync-diagnostics-table th { background-color: rgb(82, 82, 91); font-weight: 600; } #sync-diagnostics-table tr:hover { background-color: rgba(63, 63, 70, 0.5); } #sync-diagnostics-header { padding: 0.5rem; margin: -0.5rem; border-radius: 0.375rem; transition: background-color 0.2s ease; -webkit-tap-highlight-color: transparent; min-height: 44px; display: flex; align-items: center; } #sync-diagnostics-header:hover { background-color: rgba(63, 63, 70, 0.5); } #sync-diagnostics-header:active { background-color: rgba(63, 63, 70, 0.8); } #sync-diagnostics-chevron, #sync-diagnostics-refresh { transition: transform 0.3s ease; } #sync-diagnostics-content { animation: slideDown 0.2s ease-out; } @keyframes slideDown { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 300px; } } @media (max-width: 640px) { #sync-diagnostics-table { font-size: 0.7rem; } #sync-diagnostics-table th, #sync-diagnostics-table td { padding: 0.5rem 0.25rem; } .cloud-sync-modal { margin: 0.5rem; max-height: 90vh; overflow-y: auto; } } .modal-footer a { color: #60a5fa; text-decoration: none; transition: color 0.2s ease-in-out; line-height: 3em;} .modal-footer a:hover { color: #93c5fd; text-decoration: underline; } #sync-diagnostics-refresh.is-refreshing { background-color: #16a34a; } #refresh-tombstones-btn.is-refreshing { background-color: #16a34a; } #undo-selected-btn:disabled.is-success { background-color: #16a34a; }';
+    '.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); z-index: 99999; display: flex; align-items: center; justify-content: center; padding: 1rem; overflow-y: auto; } #sync-status-dot { position: absolute; top: -0.15rem; right: -0.6rem; width: 0.625rem; height: 0.625rem; border-radius: 9999px; } .cloud-sync-modal { width: 100%; max-width: 32rem; max-height: 90vh; background-color: rgb(39, 39, 42); color: white; border-radius: 0.5rem; padding: 0; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3); display: flex; flex-direction: column; } .cloud-sync-modal > div { display: flex; flex-direction: column; height: 100%; } .cloud-sync-modal-header { padding: 1rem; padding-bottom: 0.75rem; flex-shrink: 0; } .cloud-sync-modal-content { padding: 0 1rem; flex: 1; overflow-y: auto; } .cloud-sync-modal-footer { padding: 1rem; padding-top: 0.75rem; flex-shrink: 0; } .cloud-sync-modal input, .cloud-sync-modal select { background-color: rgb(63, 63, 70); border: 1px solid rgb(82, 82, 91); color: white; } .cloud-sync-modal input:focus, .cloud-sync-modal select:focus { border-color: rgb(59, 130, 246); outline: none; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); } .cloud-sync-modal button:disabled { background-color: rgb(82, 82, 91); cursor: not-allowed; opacity: 0.5; } .cloud-sync-modal .bg-zinc-800 { border: 1px solid rgb(82, 82, 91); } .cloud-sync-modal input[type="checkbox"] { accent-color: rgb(59, 130, 246); } .cloud-sync-modal input[type="checkbox"]:checked { background-color: rgb(59, 130, 246); border-color: rgb(59, 130, 246); } #sync-diagnostics-table { font-size: 0.75rem; } #sync-diagnostics-table th { background-color: rgb(82, 82, 91); font-weight: 600; } #sync-diagnostics-table tr:hover { background-color: rgba(63, 63, 70, 0.5); } #sync-diagnostics-header { padding: 0.5rem; margin: -0.5rem; border-radius: 0.375rem; transition: background-color 0.2s ease; -webkit-tap-highlight-color: transparent; min-height: 44px; display: flex; align-items: center; } #sync-diagnostics-header:hover { background-color: rgba(63, 63, 70, 0.5); } #sync-diagnostics-header:active { background-color: rgba(63, 63, 70, 0.8); } #sync-diagnostics-chevron, #sync-diagnostics-refresh { transition: transform 0.3s ease; } #sync-diagnostics-content { animation: slideDown 0.2s ease-out; } @keyframes slideDown { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 300px; } } @media (max-width: 640px) { #sync-diagnostics-table { font-size: 0.7rem; } #sync-diagnostics-table th, #sync-diagnostics-table td { padding: 0.5rem 0.25rem; } .cloud-sync-modal { margin: 0.5rem; } } .modal-footer a { color: #60a5fa; text-decoration: none; transition: color 0.2s ease-in-out; line-height: 3em;} .modal-footer a:hover { color: #93c5fd; text-decoration: underline; } #sync-diagnostics-refresh.is-refreshing { background-color: #16a34a; } #refresh-tombstones-btn.is-refreshing { background-color: #16a34a; } #undo-selected-btn:disabled.is-success { background-color: #16a34a; }';
   document.head.appendChild(styleSheet);
   const app = new CloudSyncApp();
   app.registerProvider("s3", S3Service);
