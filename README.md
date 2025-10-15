@@ -6,7 +6,7 @@
 
 [Key Features](#-key-features) •
 [Installation & Setup](#-installation--setup) •
-[Migration to V3](#-migration-to-v3) •
+[Migration to V3+](#-migration-to-v3) •
 [Operating Modes](#-operating-modes) •
 [Using the Extension](#-using-the-extension) •
 [Cloud Storage Setup](#️-cloud-storage-setup) •
@@ -14,7 +14,7 @@
 
 </div>
 
-# TypingMind Cloud Sync V3
+# TypingMind Cloud Sync V4.2
 
 A comprehensive cloud backup and sync extension for TypingMind that automatically backs up and synchronizes your entire TypingMind data with AWS S3 or S3-compatible cloud storage services.
 
@@ -64,7 +64,7 @@ A comprehensive cloud backup and sync extension for TypingMind that automaticall
 ### Step 1: Install the Extension
 
 1. Go to **Menu > Preferences > Extensions** in TypingMind.
-2. Load this URL: `https://itcon-pty-au.github.io/typingmind-cloud-backup/s3-v3.js`
+2. Load this URL: `https://itcon-pty-au.github.io/typingmind-cloud-backup/s3-v4-2.js`
 
 ### Step 2: Configure Cloud Storage
 
@@ -183,22 +183,22 @@ The sync button in the sidebar shows a colored dot indicating the current status
 - 🔴 **Red** - A sync error occurred. Check the browser console for details.
 - 🔵 **Blue** - Sync in progress.
 
-## 🚀 Migration to V3
+## 🚀 Migration to V3+
 
-V3 is a major rewrite and is **not backward compatible** with backups created by older versions (V1 or V2).
+V3 was a major rewrite and is **not backward compatible** with backups created by older versions (V1 or V2).
 
 #### What to Expect During Migration
 
-When you load the V3 extension for the first time, the process is largely automatic:
+When you load the V3+ extension for the first time, the process is largely automatic:
 
 - **Your Data is Safe**: Your existing local TypingMind data (chats, folders, etc.) is preserved and used as the source for the first sync.
 - **Automatic Configuration Upgrade**: Old configuration keys from V2 are automatically read and used.
-- **New Cloud Structure**: V3 uses a new, more efficient data structure in your S3 bucket. Old extension files and backups are ignored.
+- **New Cloud Structure**: V3+ uses a new, more efficient data structure in your S3 bucket. Old extension files and backups are ignored.
 - **First Sync**: The extension will treat your current local data as the source of truth and upload it to the new cloud structure.
 
 #### ⚠️ Important Compatibility Notes
 
-- **Old Backups Are Incompatible**: Backups created with V1 or V2 **cannot be restored** using V3. It is recommended to delete old backup files from your S3 bucket.
+- **Old Backups Are Incompatible**: Backups created with V1 or V2 **cannot be restored** using V3+. It is recommended to delete old backup files from your S3 bucket.
 - **One-Way Upgrade**: The process is a one-way upgrade. You cannot revert to an older version without potentially causing data sync issues.
 
 There is no manual data migration required—the extension handles everything automatically on the first load. Just install, configure, and let it work.
@@ -207,13 +207,13 @@ There is no manual data migration required—the extension handles everything au
 
 1.  **Backup Data**: In TypingMind, go to **Settings > App Data & Storage > Export**. Select all checkboxes and download the file. Keep it in a safe place.
 2.  **Remove Old Version**: Go to **Settings > Extensions** and remove the V1/V2 extension.
-3.  **Install V3**: Load the V3 extension URL: `https://itcon-pty-au.github.io/typingmind-cloud-backup/s3-v4-2.js`.
+3.  **Install**: Load the extension URL: `https://itcon-pty-au.github.io/typingmind-cloud-backup/s3-v4-2.js`.
 4.  **Configure**: Open the **Sync** modal. Your previous settings should be pre-filled. Enter your **Encryption Key** again and click **Save**.
 5.  **Verify**: The first sync will begin. You can monitor its progress in the browser console (enable logging for more detail) and by using the **Sync Diagnostics** panel.
 
-### Understanding the V3 File Structure
+### Understanding the V3+ File Structure
 
-To help you safely clean up old files from previous versions, here is a breakdown of the file structure used by V3 in your S3 bucket. Any files or folders not matching this structure are likely from an older version and can be removed.
+To help you safely clean up old files from previous versions, here is a breakdown of the file structure used by V3+ in your S3 bucket. Any files or folders not matching this structure are likely from an older version and can be removed.
 
 - **`metadata.json`**: This is the most critical file for synchronization. It acts as the central index for all your data, tracking every item's sync status, version, and deletions (tombstones). It resides at the root of your bucket.
 - **`/items`**: This directory contains the actual encrypted data for every individual item in your TypingMind application (chats, settings, etc.). Each item is stored as a separate file within this folder.
@@ -221,7 +221,7 @@ To help you safely clean up old files from previous versions, here is a breakdow
   - Each backup is stored in its own sub-folder (e.g., `backups/s-my-snapshot-20231027T120000/` or `backups/typingmind-backup-20231027/`).
   - Inside each backup folder, you will find a copy of `metadata.json` and an `items/` directory, representing the state of your data at the time of the backup.
 
-Any other files or folders at the root of your bucket, are no longer used by V3 and can be safely deleted once you have successfully migrated. This is how your S3 bucket should look like.
+Any other files or folders at the root of your bucket, are no longer used by V3+ and can be safely deleted once you have successfully migrated. This is how your S3 bucket should look like.
 
 <img src="Admin/s3-file-structure.PNG" alt="S3 File Structure" />
 
