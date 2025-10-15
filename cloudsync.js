@@ -1575,7 +1575,8 @@ async download(key, isMetadata = false) {
       const bodyBytes = new Uint8Array(result.Body);
 
       if (isMetadata) {
-        const jsonString = bodyBytes.toString().trim();
+        // Use TextDecoder to properly convert Uint8Array to string
+        const jsonString = new TextDecoder().decode(bodyBytes).trim();
         // Validate JSON before parsing
         if (!jsonString || jsonString.length === 0) {
           throw new Error('Empty JSON data received');
