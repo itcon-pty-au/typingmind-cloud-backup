@@ -73,7 +73,7 @@ A comprehensive cloud backup and sync extension for TypingMind that automaticall
 ### Step 1: Install the Extension
 
 1. Go to **Menu > Preferences > Extensions** in TypingMind.
-2. Load this URL: `https://itcon-pty-au.github.io/typingmind-cloud-backup/s3-v4-2.js`
+2. Load this URL: `https://itcon-pty-au.github.io/typingmind-cloud-backup/cloudsync.js`
 
 ### Step 2: Configure Cloud Storage
 
@@ -262,7 +262,7 @@ There is no manual data migration required—the extension handles everything au
 
 1.  **Backup Data**: In TypingMind, go to **Settings > App Data & Storage > Export**. Select all checkboxes and download the file. Keep it in a safe place.
 2.  **Remove Old Version**: Go to **Settings > Extensions** and remove the V1/V2 extension.
-3.  **Install**: Load the extension URL: `https://itcon-pty-au.github.io/typingmind-cloud-backup/s3-v4-2.js`.
+3.  **Install**: Load the extension URL: `https://itcon-pty-au.github.io/typingmind-cloud-backup/cloudsync.js`.
 4.  **Configure**: Open the **Sync** modal. Your previous settings should be pre-filled. Enter your **Encryption Key** again and click **Save**.
 5.  **Verify**: The first sync will begin. You can monitor its progress in the browser console (enable logging for more detail) and by using the **Sync Diagnostics** panel.
 
