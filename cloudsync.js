@@ -1097,24 +1097,6 @@ if (window.typingMindCloudSync) {
       }
 
       let processedStream = dataStream;
-      try {
-        if (window.CompressionStream) {
-          processedStream = dataStream.pipeThrough(
-            new CompressionStream("deflate-raw")
-          );
-        } else {
-          this.logger.log(
-            "warning",
-            "CompressionStream API not supported, uploading uncompressed."
-          );
-        }
-      } catch (e) {
-        this.logger.log(
-          "warning",
-          "Could not compress data, uploading uncompressed.",
-          e
-        );
-      }
 
       const finalData = new Uint8Array(
         await new Response(processedStream).arrayBuffer()
@@ -1158,24 +1140,14 @@ if (window.typingMindCloudSync) {
         key,
         data
       );
-      try {
-        if (window.DecompressionStream) {
-          const stream = new Blob([decrypted])
-            .stream()
-            .pipeThrough(new DecompressionStream("deflate-raw"));
-          const text = await new Response(stream).text();
-          return JSON.parse(text);
-        } else {
-          this.logger.log(
-            "warning",
-            "DecompressionStream API not supported, decoding as text."
-          );
-          return JSON.parse(new TextDecoder().decode(decrypted));
-        }
-      } catch (e) {
-        return JSON.parse(new TextDecoder().decode(decrypted));
-      }
+      
+      // --- 关键修改：彻底删掉 try-catch 和 DecompressionStream ---
+      // 苹果手机不支持解压流，我们直接将解密后的数据转为文字并解析 JSON
+      const text = new TextDecoder().decode(decrypted);
+      return JSON.parse(text);
+      // -------------------------------------------------------
     }
+    
     async decryptBytes(encryptedData) {
       const encryptionKey = this.config.get("encryptionKey");
       if (!encryptionKey) throw new Error("No encryption key configured");
