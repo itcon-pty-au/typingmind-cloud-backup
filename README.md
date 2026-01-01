@@ -96,10 +96,39 @@ The required fields depend on your chosen storage provider:
 
 - **Bucket Name\*** - Your S3 bucket name.
 - **Region\*** - AWS region (e.g., `us-east-1`; use `auto` for Cloudflare R2).
-- **Access Key\*** - Your S3 access key ID.
-- **Secret Key\*** - Your S3 secret access key.
+- **Access Key\*** - Your S3 IAM user access key ID.
+- **Secret Key\*** - Your S3 IAM user secret access key.
 - **Encryption Key\*** - Your personal encryption password. **If you forget this key, your data cannot be recovered.**
 - **S3 Endpoint** (Optional) - For S3-compatible services (e.g., iDrive E2, Wasabi). Leave empty for AWS S3.
+
+You also need to add a CORS Policy to the Amazon S3 Bucket or else there will be Network errors. In Amazon S3 > Buckets > bucket1 > Permissions > Cross-origin resource sharing (CORS), paste the following 
+```
+[
+    {
+        "AllowedHeaders": [
+            "*"
+        ],
+        "AllowedMethods": [
+            "GET",
+            "PUT",
+            "POST",
+            "DELETE",
+            "HEAD"
+        ],
+        "AllowedOrigins": [
+            "*"
+        ],
+        "ExposeHeaders": [
+            "x-amz-server-side-encryption",
+            "x-amz-request-id",
+            "x-amz-id-2",
+            "ETag"
+        ],
+        "MaxAgeSeconds": 3000
+    }
+]
+
+```
 
 **For Google Drive**:
 
