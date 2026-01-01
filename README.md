@@ -76,6 +76,9 @@ A comprehensive cloud backup and sync extension for TypingMind that automaticall
 2. Load this URL: `https://itcon-pty-au.github.io/typingmind-cloud-backup/cloudsync.js`
 
 ### Step 2: Configure Cloud Storage
+[Cloud Storage Setup](#️-cloud-storage-setup)
+
+### Step 3: Configure Extension
 
 After installation, you'll see a new **Sync** button in the sidebar. Click it to open the configuration modal.
 
@@ -101,35 +104,6 @@ The required fields depend on your chosen storage provider:
 - **Encryption Key\*** - Your personal encryption password. **If you forget this key, your data cannot be recovered.**
 - **S3 Endpoint** (Optional) - For S3-compatible services (e.g., iDrive E2, Wasabi). Leave empty for AWS S3.
 
-You also need to add a CORS Policy to the Amazon S3 Bucket or else there will be Network errors. In Amazon S3 > Buckets > bucket1 > Permissions > Cross-origin resource sharing (CORS), paste the following 
-```
-[
-    {
-        "AllowedHeaders": [
-            "*"
-        ],
-        "AllowedMethods": [
-            "GET",
-            "PUT",
-            "POST",
-            "DELETE",
-            "HEAD"
-        ],
-        "AllowedOrigins": [
-            "*"
-        ],
-        "ExposeHeaders": [
-            "x-amz-server-side-encryption",
-            "x-amz-request-id",
-            "x-amz-id-2",
-            "ETag"
-        ],
-        "MaxAgeSeconds": 3000
-    }
-]
-
-```
-
 **For Google Drive**:
 
 - **Google Client ID\*** - Your Google OAuth client ID.
@@ -142,7 +116,7 @@ You also need to add a CORS Policy to the Amazon S3 Bucket or else there will be
 
   > **Note**: System keys (starting with `tcs_`) and sensitive keys are automatically excluded.
 
-### Step 3: Quick Setup Options
+### Step 4: Quick Setup Options
 
 #### Option A: Manual Configuration
 
