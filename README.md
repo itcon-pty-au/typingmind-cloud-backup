@@ -482,6 +482,25 @@ For troubleshooting, enable detailed logging:
 
 The extension encrypts the AWS credentials while its stored in the browser database. However, since the encryption key is still stored in plain text, sophisticated hackers who can get access to your browser data and could theoretically get access to your AWS credentials. So, be sure to provide minimum permissions to the AWS credentials. For Amazon S3, I have provided access policy above. However, for other S3 compatible providers, its up to you to setup proper access policies.
 
+## Contributors
+
+This project wouldn't be possible without the awesome contributions from our community:
+
+### Core Features
+- **ITCON (Thomas)** - Project Creator & Core Architecture
+- **Enjoy** - Attachment Sync and Backup Support [2025-10-13]
+- **hang333** - AWS Endpoint Configuration for S3-compatible services [2024-11-26]
+- **Martin Wehner** - UI Integration using MutationObserver [2025-12-24]
+- **McQuade** - Stability improvements & Data Integrity [2025-12-28]
+- **YATSE** - Incremental update concept [2024]
+
+### Documentation & Fixes
+- **Andrew Ong** - Documentation improvements [2026-01-01]
+- **Ben Coldham** - CORS policy fixes [2025-07-19]
+- **Maksim Kirillov** - S3 compatibility updates [2025-07-18]
+- **Shigeki1120** - Syntax fixes [2024-12-12]
+- **Thinh Dinh** - Multipart upload improvements [2024-11-21]
+
 ## About me
 
 I am a passionate developer dedicated to creating useful tools that can benefit the community. My goal is to distribute all of my projects as open source, enabling others to learn, contribute, and innovate together. If you appreciate my work and want to support my efforts, [consider buying me a coffee.](https://buymeacoffee.com/itcon) :heart:!

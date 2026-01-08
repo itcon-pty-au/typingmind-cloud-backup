@@ -7,11 +7,22 @@ Features:
 - Backup management in Extension config UI
 - Detailed logging in console
 - Memory-efficient data processing
-- Attachment Sync and backup support (by Enjoy)
+- Attachment Sync and backup support (by Enjoy) [2025-10-13]
+- Incremental update implementation idea (by YATSE, 2024)
+- AWS Endpoint Configuration to support S3 compatible services (by hang333) [2024-11-26]
+
+Contributors (Docs & Fixes):
+- Andrew Ong (README improvements) [2026-01-01]
+- Maksim Kirillov (Compatible S3 storages list update) [2025-07-18]
+- Ben Coldham (CORS policy JSON fix) [2025-07-19]
+- Shigeki1120 (Syntax error fix) [2024-12-12]
+- Thinh Dinh (Multipart upload fix) [2024-11-21]
+- Martin Wehner (UI Integration using MutationObserver) [2025-12-24]
+- McQuade (Stability improvements) [2025-12-28]
 */
-// ===== TCS BUILD VERSION =====
-const TCS_BUILD_VERSION = "2026-01-09.1";
-// =============================
+
+const TCS_BUILD_VERSION = "2026-01-09.2";
+
 if (window.typingMindCloudSync) {
   console.log("TypingMind Cloud Sync already loaded");
 } else {
@@ -1576,16 +1587,13 @@ async download(key, isMetadata = false) {
       const bodyBytes = new Uint8Array(result.Body);
 
       if (isMetadata) {
-        // Use TextDecoder to properly convert Uint8Array to string
         const jsonString = new TextDecoder().decode(bodyBytes).trim();
-        // Validate JSON before parsing
         if (!jsonString || jsonString.length === 0) {
           throw new Error('Empty JSON data received');
         }
         try {
           return JSON.parse(jsonString);
         } catch (parseError) {
-          // Log the problematic data for debugging
           console.error(`Failed to parse JSON for key: ${key}`);
           console.error(`First 100 chars: ${jsonString.substring(0, 100)}`);
           throw new Error(`Invalid JSON data in ${key}: ${parseError.message}`);
@@ -2644,8 +2652,6 @@ async download(key, isMetadata = false) {
         if (!chat || typeof chat !== "object") return "0";
         const updatedAt =
           chat.updatedAt || chat.updated_at || chat.lastUpdated || chat.modifiedAt || "";
-
-        // Common shapes: { messages: [...] } or nested { chat: { messages: [...] } } or { conversation: { messages: [...] } }
         const messages =
           (Array.isArray(chat.messages) && chat.messages) ||
           (Array.isArray(chat.chat?.messages) && chat.chat.messages) ||
@@ -2670,7 +2676,6 @@ async download(key, isMetadata = false) {
               "";
           }
         } else {
-          // Fallback: attempt to use any obvious counters / pointers that are typically small.
           msgCount = chat.messageCount || chat.messagesCount || chat.turns || 0;
           lastMsgId =
             chat.lastMessageId || chat.lastMsgId || chat.last_message_id || "";
@@ -2716,8 +2721,6 @@ async download(key, isMetadata = false) {
           if (typeof key !== "string" || !key) {
             continue;
           }
-
-          // Respect configured exclusions to avoid syncing transient/internal keys (can cause excessive metadata uploads)
           if (
             this.config &&
             typeof this.config.shouldExclude === "function" &&
@@ -2752,16 +2755,11 @@ async download(key, isMetadata = false) {
               const timestamp = new Date(dateValue).getTime();
               return isNaN(timestamp) ? 0 : timestamp;
             };
-
             const currentTimestamp = getNumericTimestamp(rawUpdatedAt);
             const lastKnownTimestamp = getNumericTimestamp(rawLastModifiedFromMetadata);
-
             const currentFingerprint = this.getChatFingerprint(value);
             const lastKnownFingerprint = existingItem?.chatFingerprint || "";
-
-            // Prefer timestamp when available; otherwise use fingerprint.
             itemLastModified = currentTimestamp || (existingItem?.lastModified || 0);
-
             if (!existingItem) {
               hasChanged = true;
               changeReason = "new-chat";
@@ -2774,8 +2772,6 @@ async download(key, isMetadata = false) {
             } else if (!existingItem.synced || existingItem.synced === 0) {
              hasChanged = true;
              changeReason = "never-synced-chat";
-
-             // optional, aber sinnvoll: erzwingt Pull über lastModified
              itemLastModified = now;
             }
           } else {
@@ -3143,8 +3139,6 @@ async download(key, isMetadata = false) {
             if (!localItem) {
               return true;
             }
-            // SAUBERER CHAT-SPEZIALFALL:
-            // Wenn es ein Chat ist und sich der Fingerprint unterscheidet, immer herunterladen.
             if (key.startsWith("CHAT_")) {
               const cloudFp = cloudItem.chatFingerprint || "";
               const localFp = localItem?.chatFingerprint || "";
@@ -3152,8 +3146,6 @@ async download(key, isMetadata = false) {
                 return true;
               }
             }
-
-            // Fallback: Timestamp-Vergleich
             const cloudTimestamp = new Date(
               cloudItem.lastModified || 0
             ).getTime();
@@ -3756,8 +3748,6 @@ async download(key, isMetadata = false) {
       }
     }
     async updateSyncDiagnosticsCache() {
-      // Throttle diagnostics cache refresh: this is called frequently by auto-sync,
-      // but it triggers cloud metadata reads and full local scans. Limit to once per 5 minutes.
       const _now = Date.now();
       const _last = Number(localStorage.getItem("tcs_sync_diag_last_update") || "0");
       const _minInterval = 5 * 60 * 1000;
@@ -4029,12 +4019,9 @@ async download(key, isMetadata = false) {
       this.storageService = storageService;
       this.logger = logger;
       this.BACKUP_INDEX_KEY = "backups/manifest-index.json";
-      // Re-entrancy / cross-trigger guards for daily backup
       this._dailyBackupRunning = false;
       this.DAILY_BACKUP_LOCK_KEY = "tcs_daily_backup_lock";
     }
-
-    // UTC date as YYYYMMDD (cross-device stable)
     _getUtcDateString() {
       return new Date().toISOString().slice(0, 10).replace(/-/g, "");
     }
@@ -4076,54 +4063,40 @@ async download(key, isMetadata = false) {
         );
         return false;
       }
-
-      // Throttle: avoid checking the cloud manifest on every auto-sync tick.
-      // We retry at most every 30 minutes until the backup is confirmed/performed for the current UTC day.
       const nowMs = Date.now();
       const todayUtc = this._getUtcDateString();
       const lastAttemptDay = localStorage.getItem("tcs_daily_backup_attempt_day") || "";
       const lastAttemptMs = Number(localStorage.getItem("tcs_daily_backup_attempt_ms") || "0");
-      const attemptCooldownMs = 30 * 60 * 1000; // 30 minutes
+      const attemptCooldownMs = 30 * 60 * 1000;
       if (lastAttemptDay === todayUtc && lastAttemptMs && nowMs - lastAttemptMs < attemptCooldownMs) {
         this.logger.log("skip", "Daily backup check throttled (cooldown active).");
         return false;
       }
       localStorage.setItem("tcs_daily_backup_attempt_day", todayUtc);
       localStorage.setItem("tcs_daily_backup_attempt_ms", String(nowMs));
-
-      // In-tab re-entrancy guard (prevents parallel runs during app start).
       if (this._dailyBackupRunning) {
         this.logger.log("skip", "Daily backup already running, skipping.");
         return false;
       }
-
-      // Same-device lock (prevents multiple triggers/tabs from starting the backup concurrently).
       const lockNowMs = Date.now();
-      const lockTtlMs = 30 * 60 * 1000; // 30 minutes
+      const lockTtlMs = 30 * 60 * 1000;
       const lastLock = Number(localStorage.getItem(this.DAILY_BACKUP_LOCK_KEY) || "0");
       if (lastLock && lockNowMs - lastLock < lockTtlMs) {
         this.logger.log("skip", "Daily backup lock active, skipping.");
         return false;
       }
-
-      // Set lock early (do not wait for completion) to avoid request storms.
       localStorage.setItem(this.DAILY_BACKUP_LOCK_KEY, String(lockNowMs));
       this._dailyBackupRunning = true;
 
       try {
-        // Variant B: global once-per-day (cross-device) using the cloud manifest index.
         const alreadyDoneInCloud = await this._hasDailyBackupForTodayUtc();
         if (alreadyDoneInCloud) {
           this.logger.log("info", "Daily backup already exists in cloud for today (UTC).");
           return false;
         }
-
         this.logger.log("info", "Starting daily backup...");
         await this.performDailyBackup();
-
-        // Keep a local marker for diagnostics (cloud is the source of truth).
         localStorage.setItem("tcs_last-daily-backup", this._getUtcDateString());
-
         this.logger.log("success", "Daily backup completed");
         return true;
       } finally {
@@ -4136,11 +4109,6 @@ async download(key, isMetadata = false) {
       this.logger.log("info", "Starting daily backup (export-style upload)");
       try {
         await this.ensureSyncIsCurrent();
-        // NOTE:
-        // Cloudflare R2 (and other S3-compatible backends) may accept CopyObject
-        // requests but still produce 0-byte destination objects.
-        // To ensure reliable daily backups, we use the same strategy as the UI
-        // "Export" path: serialize from local data and upload via PUT.
         return await this.createDailyBackupFromLocalExport();
       } catch (error) {
         this.logger.log(
@@ -4185,9 +4153,6 @@ async download(key, isMetadata = false) {
     async createDailyBackupFromLocalExport() {
       const dateString = this._getUtcDateString();
       const backupFolder = `backups/typingmind-backup-${dateString}`;
-
-      // For providers that model folders explicitly (e.g. Google Drive), remove
-      // the existing daily backup folder to ensure a clean, deterministic run.
       if (this.storageService instanceof GoogleDriveService) {
         await this.storageService._deleteFolderIfExists(backupFolder);
       }
@@ -4206,7 +4171,6 @@ async download(key, isMetadata = false) {
       let totalItems = 0;
 
       try {
-        // Upload all items from local storage into the backup folder.
         for await (const batch of this.dataService.streamAllItemsInternal()) {
           totalItems += batch.length;
 
@@ -4224,8 +4188,6 @@ async download(key, isMetadata = false) {
             );
           }
         }
-
-        // Build a metadata snapshot for the backup (same semantics as Force Export).
         const backupMetadata = { lastSync: now, items: {} };
         for await (const batch of this.dataService.streamAllItemsInternal()) {
           for (const item of batch) {
@@ -4233,8 +4195,6 @@ async download(key, isMetadata = false) {
               synced: now,
               type: item.type,
             };
-
-            // Prefer orchestrator helpers for fidelity (fingerprint/size).
             if (
               orchestrator &&
               item.id.startsWith("CHAT_") &&
@@ -4576,8 +4536,6 @@ async download(key, isMetadata = false) {
         today.getMonth() + 1
       ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
       const backupFolder = `backups/typingmind-backup-${dateString}`;
-
-      // For Google Drive we replace the folder to keep behavior consistent
       if (this.storageService instanceof GoogleDriveService) {
         await this.storageService._deleteFolderIfExists(backupFolder);
       }
@@ -4597,14 +4555,11 @@ async download(key, isMetadata = false) {
         );
         await this.storageService.ensurePathExists(itemsDestinationPath);
         this.logger.log("success", "Backup path created successfully.");
-
-        // Upload items from local storage
         let totalLocalItems = 0;
         try {
           const localKeys = await this.dataService.getAllItemKeys();
           totalLocalItems = localKeys?.size || 0;
         } catch (_) {
-          // Non-critical. We'll compute totals from stream as we go.
         }
 
         this.logger.log(
@@ -4618,7 +4573,6 @@ async download(key, isMetadata = false) {
         const concurrency = 20;
 
         for await (const batch of this.dataService.streamAllItemsInternal()) {
-          // Concurrency-limited uploads per batch
           for (let i = 0; i < batch.length; i += concurrency) {
             const slice = batch.slice(i, i + concurrency);
             const uploadPromises = slice.map(async (item) => {
@@ -4644,8 +4598,6 @@ async download(key, isMetadata = false) {
           "success",
           `Daily backup: uploaded ${uploadedItems} items successfully.`
         );
-
-        // Rebuild metadata.json consistent with local state
         this.logger.log(
           "start",
           "Rebuilding metadata.json for daily backup..."
@@ -4740,10 +4692,8 @@ async download(key, isMetadata = false) {
           this.logger.log("info", "Backup index not found, will create it.");
           return null;
         }
-        // Handle corrupted JSON gracefully
         if (error.message && error.message.includes('Invalid JSON')) {
           this.logger.log("warn", "Backup index is corrupted, will rebuild it.");
-          // Try to delete the corrupted index
           try {
             await this.storageService.delete(this.BACKUP_INDEX_KEY);
             this.logger.log("info", "Corrupted backup index deleted.");
@@ -5513,13 +5463,11 @@ async download(key, isMetadata = false) {
       this.commonExpanded = false;
       this.hasShownTokenExpiryAlert = false;
       this.leaderElection = null;
-      // Load auto-sync enabled state from localStorage (device-specific, not synced)
       this.autoSyncEnabled = this.getAutoSyncEnabled();
     }
 
     getAutoSyncEnabled() {
       const stored = localStorage.getItem('tcs_autosync_enabled');
-      // Default to true (enabled) if not set
       return stored === null ? true : stored === 'true';
     }
 
@@ -5529,12 +5477,10 @@ async download(key, isMetadata = false) {
       this.logger.log('info', `Auto-sync ${enabled ? 'enabled' : 'disabled'}`);
       
       if (enabled) {
-        // Re-start auto-sync if it was disabled
         if (this.storageService?.isConfigured() && !this.noSyncMode) {
           this.startAutoSync();
         }
       } else {
-        // Stop auto-sync
         if (this.autoSyncInterval) {
           clearInterval(this.autoSyncInterval);
           this.autoSyncInterval = null;
@@ -5896,8 +5842,6 @@ async download(key, isMetadata = false) {
       const chatButton = document.querySelector('button[data-element-id="workspace-tab-chat"]');
       if (!chatButton?.parentNode)
         return false;
-
-      // Inject minimal CSS once (TypingMind may not provide Tailwind "dark:" variants on all pages)
       if (!document.getElementById("tcs-inline-style")) {
         const style = document.createElement("style");
         style.id = "tcs-inline-style";
@@ -5943,14 +5887,8 @@ async download(key, isMetadata = false) {
 
       const button = document.createElement("button");
       button.setAttribute("data-element-id", "workspace-tab-cloudsync");
-
-      // Wichtig: Layout 1:1 vom Chat-Tab übernehmen, damit Sidebar-Breite/Buttons unverändert bleiben
       button.className = "text-slate-900/70 sm:hover:bg-slate-900/20 dark:text-white/70 sm:dark:hover:bg-white/20 inline-flex rounded-xl px-0.5 py-1.5 flex-col justify-start items-center gap-1.5 flex-1 md:flex-none md:w-full min-w-[58px] md:min-w-0 h-12 md:min-h-[50px] md:h-fit shrink-0 transition-colors cursor-default focus:outline-0";
-
-      // Sicherstellen, dass der Click wirklich als Button-Interaktion wirkt
       button.style.cursor = "pointer";
-
-      // InnerHTML so nah wie möglich am originalen Tab-Aufbau halten
       button.innerHTML = `
         <div class="relative">
           <svg class="w-4 h-4 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">
@@ -6216,7 +6154,6 @@ async download(key, isMetadata = false) {
         this.logger.setEnabled(e.target.checked);
       const autoSyncToggleHandler = (e) => {
         this.setAutoSyncEnabled(e.target.checked);
-        // Update the status message
         const statusMsg = modal.querySelector('#last-sync-msg');
         if (statusMsg) {
           if (e.target.checked) {
@@ -7129,8 +7066,6 @@ async download(key, isMetadata = false) {
 
     startAutoSync() {
       if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
-      
-      // Check if auto-sync is disabled
       if (!this.autoSyncEnabled) {
         this.logger.log('info', 'Auto-sync is disabled, skipping interval creation');
         return;
@@ -7146,7 +7081,6 @@ async download(key, isMetadata = false) {
         ) {
           this.updateSyncStatus("syncing");
           try {
-            // Always sync local changes first; daily backup is an additional safety net (not a substitute for sync).
             await this.syncOrchestrator.performFullSync();
             await this.backupService.checkAndPerformDailyBackup();
 
@@ -7217,7 +7151,6 @@ async download(key, isMetadata = false) {
 
     async runLeaderTasks() {
       if (!this.noSyncMode && this.storageService.isConfigured()) {
-        // Only run initial sync if auto-sync is enabled
         if (!this.autoSyncEnabled) {
           this.logger.log('info', 'Auto-sync is disabled, skipping initial sync on load');
           return;
