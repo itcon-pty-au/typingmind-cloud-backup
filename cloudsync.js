@@ -5978,27 +5978,25 @@ async download(key, isMetadata = false) {
       button.setAttribute("data-element-id", "workspace-tab-cloudsync");
 
       // Wichtig: Layout 1:1 vom Chat-Tab übernehmen, damit Sidebar-Breite/Buttons unverändert bleiben
-      button.className = chatButton.className;
+      button.className = "text-slate-900/70 sm:hover:bg-slate-900/20 dark:text-white/70 sm:dark:hover:bg-white/20 inline-flex rounded-xl px-0.5 py-1.5 flex-col justify-start items-center gap-1.5 flex-1 md:flex-none md:w-full min-w-[58px] md:min-w-0 h-12 md:min-h-[50px] md:h-fit shrink-0 transition-colors cursor-default focus:outline-0";
 
       // Sicherstellen, dass der Click wirklich als Button-Interaktion wirkt
       button.style.cursor = "pointer";
 
       // InnerHTML so nah wie möglich am originalen Tab-Aufbau halten
       button.innerHTML = `
-        <span class="text-white/70 hover:bg-white/20 self-stretch h-12 md:h-[50px] px-0.5 py-1.5 rounded-xl flex-col justify-start items-center gap-1.5 flex transition-colors">
-          <div class="relative">
-            <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">
-              <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M9 4.5A4.5 4.5 0 0114.5 9"/>
-                <path d="M9 13.5A4.5 4.5 0 013.5 9"/>
-                <polyline points="9,2.5 9,4.5 11,4.5"/>
-                <polyline points="9,15.5 9,13.5 7,13.5"/>
-              </g>
-            </svg>
-            <div id="sync-status-dot"></div>
-          </div>
-          <span class="font-normal self-stretch text-center text-xs leading-4 md:leading-none">Sync</span>
-        </span>
+        <div class="relative">
+          <svg class="w-4 h-4 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">
+            <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 4.5A4.5 4.5 0 0114.5 9"/>
+              <path d="M9 13.5A4.5 4.5 0 013.5 9"/>
+              <polyline points="9,2.5 9,4.5 11,4.5"/>
+              <polyline points="9,15.5 9,13.5 7,13.5"/>
+            </g>
+          </svg>
+          <div id="sync-status-dot"></div>
+        </div>
+        <span class="font-normal mx-auto self-stretch text-center text-xs leading-4 md:leading-none w-full md:w-[51px]" style="hyphens: auto; word-break: break-word;">Sync</span>
       `;
 
       button.addEventListener("click", () => this.openSyncModal());
