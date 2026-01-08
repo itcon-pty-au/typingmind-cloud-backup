@@ -5231,8 +5231,7 @@ async download(key, isMetadata = false) {
         }
       });
 
-      await this.waitForDOM();
-      this.insertSyncButton();
+      await this.setupSyncButtonObserver();
 
       if (urlConfig.autoOpen || urlConfig.hasParams) {
         this.logger.log(
@@ -5400,17 +5399,37 @@ async download(key, isMetadata = false) {
       }
     }
 
-    async waitForDOM() {
-      if (document.readyState === "loading") {
-        return new Promise((resolve) =>
-          document.addEventListener("DOMContentLoaded", resolve)
-        );
-      }
+    async setupSyncButtonObserver() {
+      if (this.insertSyncButton()) return;
+
+      return new Promise((resolve) => {
+        const observer = new MutationObserver(() => {
+          if (this.insertSyncButton()) {
+            observer.disconnect();
+            resolve();
+          }
+        });
+
+        observer.observe(document.body, {
+          childList: true,
+          subtree: true
+        });
+
+        setTimeout(() => {
+          observer.disconnect();
+          resolve();
+        }, 10000);
+      });
     }
 
     insertSyncButton() {
       if (document.querySelector('[data-element-id="workspace-tab-cloudsync"]'))
-        return;
+        return true;
+      
+      const chatButton = document.querySelector('button[data-element-id="workspace-tab-chat"]');
+      if (!chatButton?.parentNode)
+        return false;
+      
       const style = document.createElement("style");
       style.textContent = `#sync-status-dot { position: absolute; top: 2px; width: 8px; height: 8px; border-radius: 50%; background-color: #6b7280; display: none; z-index: 10; }`;
       document.head.appendChild(style);
@@ -5420,12 +5439,8 @@ async download(key, isMetadata = false) {
         "min-w-[58px] sm:min-w-0 sm:aspect-auto aspect-square cursor-default h-12 md:h-[50px] flex-col justify-start items-start inline-flex focus:outline-0 focus:text-white w-full relative";
       button.innerHTML = `<span class="text-white/70 hover:bg-white/20 self-stretch h-12 md:h-[50px] px-0.5 py-1.5 rounded-xl flex-col justify-start items-center gap-1.5 flex transition-colors"><div class="relative"><svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4.5A4.5 4.5 0 0114.5 9M9 13.5A4.5 4.5 0 013.5 9"/><polyline points="9,2.5 9,4.5 11,4.5"/><polyline points="9,15.5 9,13.5 7,13.5"/></g></svg><div id="sync-status-dot"></div></div><span class="font-normal self-stretch text-center text-xs leading-4 md:leading-none">Sync</span></span>`;
       button.addEventListener("click", () => this.openSyncModal());
-      const chatButton = document.querySelector(
-        'button[data-element-id="workspace-tab-chat"]'
-      );
-      if (chatButton?.parentNode) {
-        chatButton.parentNode.insertBefore(button, chatButton.nextSibling);
-      }
+      chatButton.parentNode.insertBefore(button, chatButton.nextSibling);
+      return true;
     }
 
     updateSyncStatus(status = "success") {
