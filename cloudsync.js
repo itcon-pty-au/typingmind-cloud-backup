@@ -5908,8 +5908,8 @@ async download(key, isMetadata = false) {
         /* Sync-Status-Punkt: immer sichtbar positioniert (oben rechts am Icon) */
         #sync-status-dot {
           position: absolute;
-          top: -1px;
-          right: -1px;
+          top: -2px;
+          right: -3px;
           width: 8px;
           height: 8px;
           border-radius: 50%;
