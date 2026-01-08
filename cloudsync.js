@@ -1,6 +1,4 @@
-/*TypingMind Cloud Sync v4.2 by ITCON, AU
-Edited by Enjoy for the attachment support
--------------------------
+/*TypingMind Cloud Sync by ITCON, AU and our awesome community
 Features:
 - Extensible provider architecture (S3, Google Drive, etc.)
 - Sync typingmind database with a cloud storage provider
@@ -12,8 +10,7 @@ Features:
 - Attachment Sync and backup support (by Enjoy)
 */
 // ===== TCS BUILD VERSION =====
-const TCS_BUILD_VERSION = "2025-12-28.4";
-console.log("[TCS] cloudsync-fixed.js build", TCS_BUILD_VERSION);
+const TCS_BUILD_VERSION = "2026-01-09.1";
 // =============================
 if (window.typingMindCloudSync) {
   console.log("TypingMind Cloud Sync already loaded");
