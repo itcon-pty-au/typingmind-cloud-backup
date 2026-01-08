@@ -5919,39 +5919,9 @@ async download(key, isMetadata = false) {
           box-shadow: 0 0 0 2px rgba(255,255,255,0.9); /* auf hellem Hintergrund sichtbar */
         }
 
-        /* ===== Sync-Button: KONTRAST (Light/Dark) ===== */
-        /* Light Mode -> dunkle Farbe */
-        [data-element-id="workspace-tab-cloudsync"] svg,
-        [data-element-id="workspace-tab-cloudsync"] span span {
-          color: #111827 !important; /* gray-900 */
-          opacity: 1 !important;
-        }
-
-        /* Hover/Active für Light Mode (deutlich sichtbar, aber sauber) */
-        [data-element-id="workspace-tab-cloudsync"]:hover > span {
-          background-color: rgba(0, 0, 0, 0.06) !important;
-        }
-        [data-element-id="workspace-tab-cloudsync"]:active > span {
-          background-color: rgba(0, 0, 0, 0.10) !important;
-          transform: translateY(1px);
-        }
-
-        /* Dark Mode -> helle Farbe */
         @media (prefers-color-scheme: dark) {
           #sync-status-dot {
             box-shadow: 0 0 0 2px rgba(0,0,0,0.55);
-          }
-
-          [data-element-id="workspace-tab-cloudsync"] svg,
-          [data-element-id="workspace-tab-cloudsync"] span span {
-            color: #e5e7eb !important; /* gray-200 */
-          }
-
-          [data-element-id="workspace-tab-cloudsync"]:hover > span {
-            background-color: rgba(255, 255, 255, 0.18) !important;
-          }
-          [data-element-id="workspace-tab-cloudsync"]:active > span {
-            background-color: rgba(255, 255, 255, 0.24) !important;
           }
         }
 
