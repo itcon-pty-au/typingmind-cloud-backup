@@ -1,6 +1,4 @@
-/*TypingMind Cloud Sync v4.2 by ITCON, AU
-Edited by Enjoy for the attachment support
--------------------------
+/*TypingMind Cloud Sync by ITCON, AU and our awesome community
 Features:
 - Extensible provider architecture (S3, Google Drive, etc.)
 - Sync typingmind database with a cloud storage provider
@@ -9,8 +7,22 @@ Features:
 - Backup management in Extension config UI
 - Detailed logging in console
 - Memory-efficient data processing
-- Attachment Sync and backup support (by Enjoy)
+- Attachment Sync and backup support (by Enjoy) [2025-10-13]
+- Incremental update implementation idea (by YATSE, 2024)
+- AWS Endpoint Configuration to support S3 compatible services (by hang333) [2024-11-26]
+
+Contributors (Docs & Fixes):
+- Andrew Ong (README improvements) [2026-01-01]
+- Maksim Kirillov (Compatible S3 storages list update) [2025-07-18]
+- Ben Coldham (CORS policy JSON fix) [2025-07-19]
+- Shigeki1120 (Syntax error fix) [2024-12-12]
+- Thinh Dinh (Multipart upload fix) [2024-11-21]
+- Martin Wehner (UI Integration using MutationObserver) [2025-12-24]
+- McQuade (Stability improvements) [2025-12-28]
 */
+
+const TCS_BUILD_VERSION = "2026-01-09.2";
+
 if (window.typingMindCloudSync) {
   console.log("TypingMind Cloud Sync already loaded");
 } else {
@@ -1547,16 +1559,13 @@ async download(key, isMetadata = false) {
       const bodyBytes = new Uint8Array(result.Body);
 
       if (isMetadata) {
-        // Use TextDecoder to properly convert Uint8Array to string
         const jsonString = new TextDecoder().decode(bodyBytes).trim();
-        // Validate JSON before parsing
         if (!jsonString || jsonString.length === 0) {
           throw new Error('Empty JSON data received');
         }
         try {
           return JSON.parse(jsonString);
         } catch (parseError) {
-          // Log the problematic data for debugging
           console.error(`Failed to parse JSON for key: ${key}`);
           console.error(`First 100 chars: ${jsonString.substring(0, 100)}`);
           throw new Error(`Invalid JSON data in ${key}: ${parseError.message}`);
@@ -2604,6 +2613,59 @@ async download(key, isMetadata = false) {
       return JSON.stringify(data).length;
     }
 
+
+    /**
+     * Creates a lightweight, stable fingerprint for TypingMind chat objects.
+     * This avoids JSON-stringifying large chats (which can be slow and memory-heavy),
+     * while still detecting in-chat message updates reliably.
+     */
+    getChatFingerprint(chat) {
+      try {
+        if (!chat || typeof chat !== "object") return "0";
+        const updatedAt =
+          chat.updatedAt || chat.updated_at || chat.lastUpdated || chat.modifiedAt || "";
+        const messages =
+          (Array.isArray(chat.messages) && chat.messages) ||
+          (Array.isArray(chat.chat?.messages) && chat.chat.messages) ||
+          (Array.isArray(chat.conversation?.messages) && chat.conversation.messages) ||
+          (Array.isArray(chat.data?.messages) && chat.data.messages) ||
+          null;
+
+        let msgCount = 0;
+        let lastMsgId = "";
+        let lastMsgTs = "";
+        if (messages) {
+          msgCount = messages.length;
+          const last = messages[msgCount - 1];
+          if (last && typeof last === "object") {
+            lastMsgId = last.id || last.messageId || last.uuid || "";
+            lastMsgTs =
+              last.updatedAt ||
+              last.updated_at ||
+              last.createdAt ||
+              last.created_at ||
+              last.timestamp ||
+              "";
+          }
+        } else {
+          msgCount = chat.messageCount || chat.messagesCount || chat.turns || 0;
+          lastMsgId =
+            chat.lastMessageId || chat.lastMsgId || chat.last_message_id || "";
+          lastMsgTs =
+            chat.lastMessageAt || chat.lastMsgAt || chat.last_message_at || "";
+        }
+
+        return [
+          String(updatedAt),
+          String(msgCount),
+          String(lastMsgId),
+          String(lastMsgTs),
+        ].join("|");
+      } catch {
+        return "0";
+      }
+    }
+
     /**
      * Detects changes between local storage and the last known sync state.
      * This uses a combined strategy:
@@ -2631,6 +2693,14 @@ async download(key, isMetadata = false) {
           if (typeof key !== "string" || !key) {
             continue;
           }
+          if (
+            this.config &&
+            typeof this.config.shouldExclude === "function" &&
+            this.config.shouldExclude(key)
+          ) {
+            continue;
+          }
+
           const value = item.data;
           const existingItem = this.metadata.items[key];
 
@@ -2645,37 +2715,36 @@ async download(key, isMetadata = false) {
 
           if (
             key.startsWith("CHAT_") &&
-            item.type === "idb" &&
-            value?.updatedAt
+            item.type === "idb"
           ) {
-            const rawUpdatedAt = value.updatedAt;
+            const rawUpdatedAt =
+              value.updatedAt || value.updated_at || value.lastUpdated || value.modifiedAt;
             const rawLastModifiedFromMetadata = existingItem?.lastModified;
+
             const getNumericTimestamp = (dateValue) => {
-              if (typeof dateValue === "number") {
-                return dateValue;
-              }
-              if (!dateValue) {
-                return 0;
-              }
+              if (typeof dateValue === "number") return dateValue;
+              if (!dateValue) return 0;
               const timestamp = new Date(dateValue).getTime();
               return isNaN(timestamp) ? 0 : timestamp;
             };
-
             const currentTimestamp = getNumericTimestamp(rawUpdatedAt);
-            const lastKnownTimestamp = getNumericTimestamp(
-              rawLastModifiedFromMetadata
-            );
-            itemLastModified = currentTimestamp;
-
+            const lastKnownTimestamp = getNumericTimestamp(rawLastModifiedFromMetadata);
+            const currentFingerprint = this.getChatFingerprint(value);
+            const lastKnownFingerprint = existingItem?.chatFingerprint || "";
+            itemLastModified = currentTimestamp || (existingItem?.lastModified || 0);
             if (!existingItem) {
               hasChanged = true;
               changeReason = "new-chat";
-            } else if (itemLastModified > lastKnownTimestamp) {
+            } else if (currentTimestamp && currentTimestamp > lastKnownTimestamp) {
               hasChanged = true;
               changeReason = "timestamp";
-            } else if (!existingItem.synced || existingItem.synced === 0) {
+            } else if (currentFingerprint && currentFingerprint !== lastKnownFingerprint) {
               hasChanged = true;
-              changeReason = "never-synced-chat";
+              changeReason = "fingerprint";
+            } else if (!existingItem.synced || existingItem.synced === 0) {
+             hasChanged = true;
+             changeReason = "never-synced-chat";
+             itemLastModified = now;
             }
           } else {
             currentSize =
@@ -2704,6 +2773,9 @@ async download(key, isMetadata = false) {
               lastModified: itemLastModified,
               reason: changeReason,
             };
+            if (key.startsWith("CHAT_") && item.type === "idb") {
+              change.chatFingerprint = this.getChatFingerprint(value);
+            }
             if (item.type === 'blob' && value instanceof Blob) {
             change.blobType = value.type || '';
             }
@@ -2847,6 +2919,10 @@ async download(key, isMetadata = false) {
                   type: item.type,
                   lastModified: item.lastModified,
                 };
+
+                if (item.id.startsWith("CHAT_") && item.type === "idb") {
+                  newMetadataEntry.chatFingerprint = item.chatFingerprint || this.getChatFingerprint(data);
+                }
 
                 if (item.type === "blob") {         
                     newMetadataEntry.blobType = mime;                 
@@ -3035,6 +3111,13 @@ async download(key, isMetadata = false) {
             if (!localItem) {
               return true;
             }
+            if (key.startsWith("CHAT_")) {
+              const cloudFp = cloudItem.chatFingerprint || "";
+              const localFp = localItem?.chatFingerprint || "";
+              if (cloudFp && cloudFp !== localFp) {
+                return true;
+              }
+            }
             const cloudTimestamp = new Date(
               cloudItem.lastModified || 0
             ).getTime();
@@ -3042,6 +3125,7 @@ async download(key, isMetadata = false) {
               localItem.lastModified || 0
             ).getTime();
             return cloudTimestamp > localTimestamp;
+
           }
         );
 
@@ -3164,6 +3248,7 @@ async download(key, isMetadata = false) {
                 item.data?.updatedAt
               ) {
                 newMetadataEntry.lastModified = item.data.updatedAt;
+                newMetadataEntry.chatFingerprint = this.getChatFingerprint(item.data);
               } else {
                 newMetadataEntry.size = this.getItemSize(item.data);
                 newMetadataEntry.lastModified = now;
@@ -3307,12 +3392,17 @@ async download(key, isMetadata = false) {
         for (const item of batch) {
           if (item.id && item.data) {
             const key = item.id;
-            this.metadata.items[key] = {
+            const baseEntry = {
               synced: 0,
               type: item.type,
               size: this.getItemSize(item.data),
               lastModified: 0,
             };
+            if (key.startsWith("CHAT_") && item.type === "idb") {
+              baseEntry.lastModified = item.data?.updatedAt || 0;
+              baseEntry.chatFingerprint = this.getChatFingerprint(item.data);
+            }
+            this.metadata.items[key] = baseEntry;
             itemCount++;
           }
         }
@@ -3630,6 +3720,13 @@ async download(key, isMetadata = false) {
       }
     }
     async updateSyncDiagnosticsCache() {
+      const _now = Date.now();
+      const _last = Number(localStorage.getItem("tcs_sync_diag_last_update") || "0");
+      const _minInterval = 5 * 60 * 1000;
+      if (_last && _now - _last < _minInterval) {
+        return;
+      }
+      localStorage.setItem("tcs_sync_diag_last_update", String(_now));
       try {
         const { totalSize, itemCount, excludedItemCount } =
           await this.dataService.estimateDataSize();
@@ -3750,6 +3847,7 @@ async download(key, isMetadata = false) {
               item.data?.updatedAt
             ) {
               metadataEntry.lastModified = item.data.updatedAt;
+              metadataEntry.chatFingerprint = this.getChatFingerprint(item.data);
             } else {
               metadataEntry.size = this.getItemSize(item.data);
               metadataEntry.lastModified = now;
@@ -3893,7 +3991,26 @@ async download(key, isMetadata = false) {
       this.storageService = storageService;
       this.logger = logger;
       this.BACKUP_INDEX_KEY = "backups/manifest-index.json";
+      this._dailyBackupRunning = false;
+      this.DAILY_BACKUP_LOCK_KEY = "tcs_daily_backup_lock";
     }
+    _getUtcDateString() {
+      return new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    }
+
+    async _hasDailyBackupForTodayUtc() {
+      const today = this._getUtcDateString();
+      const index = (await this._getBackupIndex()) || [];
+      return index.some(
+        (m) =>
+          m &&
+          m.type === "daily-backup" &&
+          m.backupFolder &&
+          typeof m.backupFolder === "string" &&
+          m.backupFolder.endsWith(today)
+      );
+    }
+
 
     async createSnapshot(name) {
       this.logger.log("start", `Creating server-side snapshot: ${name}`);
@@ -3918,30 +4035,57 @@ async download(key, isMetadata = false) {
         );
         return false;
       }
-      const lastBackupStr = localStorage.getItem("tcs_last-daily-backup");
-      const now = new Date();
-      const currentDateStr = `${now.getFullYear()}${String(
-        now.getMonth() + 1
-      ).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-      if (!lastBackupStr || lastBackupStr !== currentDateStr) {
+      const nowMs = Date.now();
+      const todayUtc = this._getUtcDateString();
+      const lastAttemptDay = localStorage.getItem("tcs_daily_backup_attempt_day") || "";
+      const lastAttemptMs = Number(localStorage.getItem("tcs_daily_backup_attempt_ms") || "0");
+      const attemptCooldownMs = 30 * 60 * 1000;
+      if (lastAttemptDay === todayUtc && lastAttemptMs && nowMs - lastAttemptMs < attemptCooldownMs) {
+        this.logger.log("skip", "Daily backup check throttled (cooldown active).");
+        return false;
+      }
+      localStorage.setItem("tcs_daily_backup_attempt_day", todayUtc);
+      localStorage.setItem("tcs_daily_backup_attempt_ms", String(nowMs));
+      if (this._dailyBackupRunning) {
+        this.logger.log("skip", "Daily backup already running, skipping.");
+        return false;
+      }
+      const lockNowMs = Date.now();
+      const lockTtlMs = 30 * 60 * 1000;
+      const lastLock = Number(localStorage.getItem(this.DAILY_BACKUP_LOCK_KEY) || "0");
+      if (lastLock && lockNowMs - lastLock < lockTtlMs) {
+        this.logger.log("skip", "Daily backup lock active, skipping.");
+        return false;
+      }
+      localStorage.setItem(this.DAILY_BACKUP_LOCK_KEY, String(lockNowMs));
+      this._dailyBackupRunning = true;
+
+      try {
+        const alreadyDoneInCloud = await this._hasDailyBackupForTodayUtc();
+        if (alreadyDoneInCloud) {
+          this.logger.log("info", "Daily backup already exists in cloud for today (UTC).");
+          return false;
+        }
         this.logger.log("info", "Starting daily backup...");
         await this.performDailyBackup();
-        localStorage.setItem("tcs_last-daily-backup", currentDateStr);
+        localStorage.setItem("tcs_last-daily-backup", this._getUtcDateString());
         this.logger.log("success", "Daily backup completed");
         return true;
+      } finally {
+        localStorage.removeItem(this.DAILY_BACKUP_LOCK_KEY);
+        this._dailyBackupRunning = false;
       }
-      return false;
     }
 
     async performDailyBackup() {
-      this.logger.log("info", "Starting server-side daily backup");
+      this.logger.log("info", "Starting daily backup (export-style upload)");
       try {
         await this.ensureSyncIsCurrent();
-        return await this.createServerSideDailyBackup();
+        return await this.createDailyBackupFromLocalExport();
       } catch (error) {
         this.logger.log(
           "error",
-          "Server-side daily backup failed",
+          "Daily backup failed",
           error.message
         );
         throw error;
@@ -3966,6 +4110,124 @@ async download(key, isMetadata = false) {
           "info",
           "Sync already in progress or not available, proceeding with backup"
         );
+      }
+    }
+
+    /**
+     * Daily backup implementation that mirrors the UI "Export" path.
+     *
+     * Rationale:
+     * - Server-side copy operations (CopyObject) can create 0-byte objects on
+     *   some S3-compatible backends (notably Cloudflare R2).
+     * - Export-style backups serialize from local data and upload via PUT,
+     *   yielding deterministic, content-correct backup objects.
+     */
+    async createDailyBackupFromLocalExport() {
+      const dateString = this._getUtcDateString();
+      const backupFolder = `backups/typingmind-backup-${dateString}`;
+      if (this.storageService instanceof GoogleDriveService) {
+        await this.storageService._deleteFolderIfExists(backupFolder);
+      }
+
+      this.logger.log(
+        "info",
+        `Creating daily backup via upload: ${backupFolder} (local export snapshot)`
+      );
+
+      const itemsDestinationPath = `${backupFolder}/items`;
+      await this.storageService.ensurePathExists(itemsDestinationPath);
+
+      const orchestrator = window.cloudSyncApp?.syncOrchestrator;
+      const now = Date.now();
+      let uploadedItems = 0;
+      let totalItems = 0;
+
+      try {
+        for await (const batch of this.dataService.streamAllItemsInternal()) {
+          totalItems += batch.length;
+
+          const uploadPromises = batch.map(async (item) => {
+            const key = `${backupFolder}/items/${item.id}.json`;
+            await this.storageService.upload(key, item.data);
+          });
+          const results = await Promise.allSettled(uploadPromises);
+          uploadedItems += results.filter((r) => r.status === "fulfilled").length;
+
+          if (uploadedItems % 200 === 0) {
+            this.logger.log(
+              "info",
+              `Daily backup upload progress: ${uploadedItems}/${totalItems}`
+            );
+          }
+        }
+        const backupMetadata = { lastSync: now, items: {} };
+        for await (const batch of this.dataService.streamAllItemsInternal()) {
+          for (const item of batch) {
+            const metadataEntry = {
+              synced: now,
+              type: item.type,
+            };
+            if (
+              orchestrator &&
+              item.id.startsWith("CHAT_") &&
+              item.type === "idb" &&
+              item.data?.updatedAt
+            ) {
+              metadataEntry.lastModified = item.data.updatedAt;
+              if (typeof orchestrator.getChatFingerprint === "function") {
+                metadataEntry.chatFingerprint = orchestrator.getChatFingerprint(
+                  item.data
+                );
+              }
+            } else {
+              if (orchestrator && typeof orchestrator.getItemSize === "function") {
+                metadataEntry.size = orchestrator.getItemSize(item.data);
+              }
+              metadataEntry.lastModified = now;
+            }
+
+            backupMetadata.items[item.id] = metadataEntry;
+          }
+        }
+
+        await this.storageService.upload(
+          `${backupFolder}/metadata.json`,
+          backupMetadata,
+          true
+        );
+
+        const manifest = {
+          type: "daily-backup",
+          name: "daily-auto",
+          created: now,
+          totalItems: totalItems,
+          copiedItems: uploadedItems,
+          format: "export-upload",
+          version: "3.1",
+          backupFolder: backupFolder,
+        };
+
+        await this.storageService.upload(
+          `${backupFolder}/backup-manifest.json`,
+          manifest,
+          true
+        );
+        await this._addOrUpdateBackupInIndex(manifest);
+
+        this.logger.log(
+          "success",
+          `Daily backup created via upload: ${backupFolder} (${uploadedItems}/${totalItems} items uploaded)`
+        );
+
+        await this.cleanupOldBackups();
+        return true;
+      } catch (error) {
+        const errorMessage =
+          error.result?.error?.message ||
+          error.message ||
+          JSON.stringify(error);
+        this.logger.log("error", `Daily backup via upload failed: ${errorMessage}`);
+        throw error;
       }
     }
 
@@ -4225,6 +4487,163 @@ async download(key, isMetadata = false) {
       }
     }
 
+    /**
+     * Reliable daily backup implementation.
+     *
+     * Instead of server-side CopyObject operations (which can result in 0-byte
+     * objects on some S3-compatible providers like Cloudflare R2), this method
+     * performs an "export-style" backup:
+     *   - reads local data via DataService
+     *   - uploads each item to the daily backup folder via PUT
+     *   - rebuilds a consistent metadata.json and uploads it to the backup folder
+     */
+    async createDailyBackupFromLocalExport() {
+      this.logger.log(
+        "info",
+        "Creating daily backup via export-style uploads (robust mode)"
+      );
+
+      const today = new Date();
+      const dateString = `${today.getFullYear()}${String(
+        today.getMonth() + 1
+      ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+      const backupFolder = `backups/typingmind-backup-${dateString}`;
+      if (this.storageService instanceof GoogleDriveService) {
+        await this.storageService._deleteFolderIfExists(backupFolder);
+      }
+
+      const orchestrator = window.cloudSyncApp?.syncOrchestrator;
+      if (!orchestrator) {
+        throw new Error(
+          "Sync orchestrator not available. Cannot create export-style backup."
+        );
+      }
+
+      try {
+        const itemsDestinationPath = `${backupFolder}/items`;
+        this.logger.log(
+          "info",
+          `Pre-creating backup path: "${itemsDestinationPath}"`
+        );
+        await this.storageService.ensurePathExists(itemsDestinationPath);
+        this.logger.log("success", "Backup path created successfully.");
+        let totalLocalItems = 0;
+        try {
+          const localKeys = await this.dataService.getAllItemKeys();
+          totalLocalItems = localKeys?.size || 0;
+        } catch (_) {
+        }
+
+        this.logger.log(
+          "start",
+          `Uploading local items to daily backup...$${
+            totalLocalItems ? ` (estimated ${totalLocalItems})` : ""
+          }`
+        );
+
+        let uploadedItems = 0;
+        const concurrency = 20;
+
+        for await (const batch of this.dataService.streamAllItemsInternal()) {
+          for (let i = 0; i < batch.length; i += concurrency) {
+            const slice = batch.slice(i, i + concurrency);
+            const uploadPromises = slice.map(async (item) => {
+              const key = `${backupFolder}/items/${item.id}.json`;
+              await this.storageService.upload(key, item.data);
+              return true;
+            });
+            await Promise.allSettled(uploadPromises);
+            uploadedItems += slice.length;
+          }
+
+          if (uploadedItems % 200 === 0) {
+            this.logger.log(
+              "info",
+              `Daily backup: uploaded ${uploadedItems}$${
+                totalLocalItems ? `/${totalLocalItems}` : ""
+              } items`
+            );
+          }
+        }
+
+        this.logger.log(
+          "success",
+          `Daily backup: uploaded ${uploadedItems} items successfully.`
+        );
+        this.logger.log(
+          "start",
+          "Rebuilding metadata.json for daily backup..."
+        );
+        const newMetadata = { lastSync: Date.now(), items: {} };
+        const now = Date.now();
+        for await (const batch of this.dataService.streamAllItemsInternal()) {
+          for (const item of batch) {
+            const metadataEntry = {
+              synced: now,
+              type: item.type,
+            };
+            if (
+              item.id.startsWith("CHAT_") &&
+              item.type === "idb" &&
+              item.data?.updatedAt
+            ) {
+              metadataEntry.lastModified = item.data.updatedAt;
+              metadataEntry.chatFingerprint = orchestrator.getChatFingerprint(
+                item.data
+              );
+            } else {
+              metadataEntry.size = orchestrator.getItemSize(item.data);
+              metadataEntry.lastModified = now;
+            }
+            newMetadata.items[item.id] = metadataEntry;
+          }
+        }
+
+        await this.storageService.upload(
+          `${backupFolder}/metadata.json`,
+          newMetadata,
+          true
+        );
+        this.logger.log("success", "metadata.json uploaded to daily backup");
+
+        const manifest = {
+          type: "daily-backup",
+          name: "daily-auto",
+          created: Date.now(),
+          totalItems: uploadedItems,
+          copiedItems: uploadedItems,
+          format: "export-style",
+          version: "3.1",
+          backupFolder: backupFolder,
+        };
+
+        await this.storageService.upload(
+          `${backupFolder}/backup-manifest.json`,
+          manifest,
+          true
+        );
+        await this._addOrUpdateBackupInIndex(manifest);
+
+        this.logger.log(
+          "success",
+          `Daily backup created: ${backupFolder} (${uploadedItems} items uploaded)`
+        );
+
+        await this.cleanupOldBackups();
+        return true;
+      } catch (error) {
+        const errorMessage =
+          error.result?.error?.message ||
+          error.message ||
+          JSON.stringify(error);
+        this.logger.log(
+          "error",
+          `Daily backup (export-style) failed: ${errorMessage}`
+        );
+        throw error;
+      }
+    }
+
     formatFileSize(bytes) {
       if (bytes === 0) return "0 B";
       const k = 1024;
@@ -4245,10 +4664,8 @@ async download(key, isMetadata = false) {
           this.logger.log("info", "Backup index not found, will create it.");
           return null;
         }
-        // Handle corrupted JSON gracefully
         if (error.message && error.message.includes('Invalid JSON')) {
           this.logger.log("warn", "Backup index is corrupted, will rebuild it.");
-          // Try to delete the corrupted index
           try {
             await this.storageService.delete(this.BACKUP_INDEX_KEY);
             this.logger.log("info", "Corrupted backup index deleted.");
@@ -5018,13 +5435,11 @@ async download(key, isMetadata = false) {
       this.commonExpanded = false;
       this.hasShownTokenExpiryAlert = false;
       this.leaderElection = null;
-      // Load auto-sync enabled state from localStorage (device-specific, not synced)
       this.autoSyncEnabled = this.getAutoSyncEnabled();
     }
 
     getAutoSyncEnabled() {
       const stored = localStorage.getItem('tcs_autosync_enabled');
-      // Default to true (enabled) if not set
       return stored === null ? true : stored === 'true';
     }
 
@@ -5034,12 +5449,10 @@ async download(key, isMetadata = false) {
       this.logger.log('info', `Auto-sync ${enabled ? 'enabled' : 'disabled'}`);
       
       if (enabled) {
-        // Re-start auto-sync if it was disabled
         if (this.storageService?.isConfigured() && !this.noSyncMode) {
           this.startAutoSync();
         }
       } else {
-        // Stop auto-sync
         if (this.autoSyncInterval) {
           clearInterval(this.autoSyncInterval);
           this.autoSyncInterval = null;
@@ -5203,8 +5616,7 @@ async download(key, isMetadata = false) {
         }
       });
 
-      await this.waitForDOM();
-      this.insertSyncButton();
+      await this.setupSyncButtonObserver();
 
       if (urlConfig.autoOpen || urlConfig.hasParams) {
         this.logger.log(
@@ -5372,33 +5784,104 @@ async download(key, isMetadata = false) {
       }
     }
 
-    async waitForDOM() {
-      if (document.readyState === "loading") {
-        return new Promise((resolve) =>
-          document.addEventListener("DOMContentLoaded", resolve)
-        );
-      }
+    async setupSyncButtonObserver() {
+      if (this.insertSyncButton()) return;
+
+      return new Promise((resolve) => {
+        const observer = new MutationObserver(() => {
+          if (this.insertSyncButton()) {
+            observer.disconnect();
+            resolve();
+          }
+        });
+
+        observer.observe(document.body, {
+          childList: true,
+          subtree: true
+        });
+
+        setTimeout(() => {
+          observer.disconnect();
+          resolve();
+        }, 10000);
+      });
     }
 
     insertSyncButton() {
       if (document.querySelector('[data-element-id="workspace-tab-cloudsync"]'))
-        return;
-      const style = document.createElement("style");
-      style.textContent = `#sync-status-dot { position: absolute; top: 2px; width: 8px; height: 8px; border-radius: 50%; background-color: #6b7280; display: none; z-index: 10; }`;
-      document.head.appendChild(style);
+        return true;
+
+      const chatButton = document.querySelector('button[data-element-id="workspace-tab-chat"]');
+      if (!chatButton?.parentNode)
+        return false;
+      if (!document.getElementById("tcs-inline-style")) {
+        const style = document.createElement("style");
+        style.id = "tcs-inline-style";
+        style.textContent = `
+        /* Sync-Status-Punkt: immer sichtbar positioniert (oben rechts am Icon) */
+        #sync-status-dot {
+          position: absolute;
+          top: -4px;
+          right: -8px;
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background-color: #6b7280;
+          display: none;
+          z-index: 10;
+          box-shadow: 0 0 0 2px rgba(255,255,255,0.9); /* auf hellem Hintergrund sichtbar */
+        }
+
+        @media (prefers-color-scheme: dark) {
+          #sync-status-dot {
+            box-shadow: 0 0 0 2px rgba(0,0,0,0.55);
+          }
+        }
+
+        /* Modal form controls: ensure readable values even when Tailwind dark: variants are inactive */
+        .cloud-sync-modal input,
+        .cloud-sync-modal select,
+        .cloud-sync-modal textarea {
+          background-color: #3f3f46 !important; /* zinc-700 */
+          color: #ffffff !important;
+          border-color: #52525b !important; /* zinc-600 */
+        }
+        .cloud-sync-modal input::placeholder,
+        .cloud-sync-modal textarea::placeholder {
+          color: #a1a1aa !important; /* zinc-400 */
+        }
+        .cloud-sync-modal label {
+          color: #d4d4d8 !important; /* zinc-300 */
+        }
+        `;
+        document.head.appendChild(style);
+      }
+
       const button = document.createElement("button");
       button.setAttribute("data-element-id", "workspace-tab-cloudsync");
-      button.className =
-        "min-w-[58px] sm:min-w-0 sm:aspect-auto aspect-square cursor-default h-12 md:h-[50px] flex-col justify-start items-start inline-flex focus:outline-0 focus:text-white w-full relative";
-      button.innerHTML = `<span class="text-white/70 hover:bg-white/20 self-stretch h-12 md:h-[50px] px-0.5 py-1.5 rounded-xl flex-col justify-start items-center gap-1.5 flex transition-colors"><div class="relative"><svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4.5A4.5 4.5 0 0114.5 9M9 13.5A4.5 4.5 0 013.5 9"/><polyline points="9,2.5 9,4.5 11,4.5"/><polyline points="9,15.5 9,13.5 7,13.5"/></g></svg><div id="sync-status-dot"></div></div><span class="font-normal self-stretch text-center text-xs leading-4 md:leading-none">Sync</span></span>`;
+      button.className = "text-slate-900/70 sm:hover:bg-slate-900/20 dark:text-white/70 sm:dark:hover:bg-white/20 inline-flex rounded-xl px-0.5 py-1.5 flex-col justify-start items-center gap-1.5 flex-1 md:flex-none md:w-full min-w-[58px] md:min-w-0 h-12 md:min-h-[50px] md:h-fit shrink-0 transition-colors cursor-default focus:outline-0";
+      button.style.cursor = "pointer";
+      button.innerHTML = `
+        <div class="relative">
+          <svg class="w-4 h-4 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18">
+            <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 4.5A4.5 4.5 0 0114.5 9"/>
+              <path d="M9 13.5A4.5 4.5 0 013.5 9"/>
+              <polyline points="9,2.5 9,4.5 11,4.5"/>
+              <polyline points="9,15.5 9,13.5 7,13.5"/>
+            </g>
+          </svg>
+          <div id="sync-status-dot"></div>
+        </div>
+        <span class="font-normal mx-auto self-stretch text-center text-xs leading-4 md:leading-none w-full md:w-[51px]" style="hyphens: auto; word-break: break-word;">Sync</span>
+      `;
+
       button.addEventListener("click", () => this.openSyncModal());
-      const chatButton = document.querySelector(
-        'button[data-element-id="workspace-tab-chat"]'
-      );
-      if (chatButton?.parentNode) {
-        chatButton.parentNode.insertBefore(button, chatButton.nextSibling);
-      }
+      chatButton.parentNode.insertBefore(button, chatButton.nextSibling);
+      return true;
     }
+
+
 
     updateSyncStatus(status = "success") {
       const dot = document.getElementById("sync-status-dot");
@@ -5643,7 +6126,6 @@ async download(key, isMetadata = false) {
         this.logger.setEnabled(e.target.checked);
       const autoSyncToggleHandler = (e) => {
         this.setAutoSyncEnabled(e.target.checked);
-        // Update the status message
         const statusMsg = modal.querySelector('#last-sync-msg');
         if (statusMsg) {
           if (e.target.checked) {
@@ -6556,8 +7038,6 @@ async download(key, isMetadata = false) {
 
     startAutoSync() {
       if (this.autoSyncInterval) clearInterval(this.autoSyncInterval);
-      
-      // Check if auto-sync is disabled
       if (!this.autoSyncEnabled) {
         this.logger.log('info', 'Auto-sync is disabled, skipping interval creation');
         return;
@@ -6573,11 +7053,8 @@ async download(key, isMetadata = false) {
         ) {
           this.updateSyncStatus("syncing");
           try {
-            const backupWasPerformed =
-              await this.backupService.checkAndPerformDailyBackup();
-            if (!backupWasPerformed) {
-              await this.syncOrchestrator.performFullSync();
-            }
+            await this.syncOrchestrator.performFullSync();
+            await this.backupService.checkAndPerformDailyBackup();
 
             this.updateSyncStatus("success");
           } catch (error) {
@@ -6646,7 +7123,6 @@ async download(key, isMetadata = false) {
 
     async runLeaderTasks() {
       if (!this.noSyncMode && this.storageService.isConfigured()) {
-        // Only run initial sync if auto-sync is enabled
         if (!this.autoSyncEnabled) {
           this.logger.log('info', 'Auto-sync is disabled, skipping initial sync on load');
           return;
@@ -6720,7 +7196,7 @@ async loadTombstoneList(modal) {
   }
   const styleSheet = document.createElement("style");
   styleSheet.textContent =
-    '.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); z-index: 99999; display: flex; align-items: center; justify-content: center; padding: 1rem; overflow-y: auto; } #sync-status-dot { position: absolute; top: -0.15rem; right: -0.6rem; width: 0.625rem; height: 0.625rem; border-radius: 9999px; } .cloud-sync-modal { width: 100%; max-width: 32rem; max-height: 90vh; background-color: rgb(39, 39, 42); color: white; border-radius: 0.5rem; padding: 0; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3); display: flex; flex-direction: column; } .cloud-sync-modal > div { display: flex; flex-direction: column; height: 100%; } .cloud-sync-modal-header { padding: 1rem; padding-bottom: 0.75rem; flex-shrink: 0; } .cloud-sync-modal-content { padding: 0 1rem; flex: 1; overflow-y: auto; } .cloud-sync-modal-footer { padding: 1rem; padding-top: 0.75rem; flex-shrink: 0; } .cloud-sync-modal input, .cloud-sync-modal select { background-color: rgb(63, 63, 70); border: 1px solid rgb(82, 82, 91); color: white; } .cloud-sync-modal input:focus, .cloud-sync-modal select:focus { border-color: rgb(59, 130, 246); outline: none; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); } .cloud-sync-modal button:disabled { background-color: rgb(82, 82, 91); cursor: not-allowed; opacity: 0.5; } .cloud-sync-modal .bg-zinc-800 { border: 1px solid rgb(82, 82, 91); } .cloud-sync-modal input[type="checkbox"] { accent-color: rgb(59, 130, 246); } .cloud-sync-modal input[type="checkbox"]:checked { background-color: rgb(59, 130, 246); border-color: rgb(59, 130, 246); } #sync-diagnostics-table { font-size: 0.75rem; } #sync-diagnostics-table th { background-color: rgb(82, 82, 91); font-weight: 600; } #sync-diagnostics-table tr:hover { background-color: rgba(63, 63, 70, 0.5); } #sync-diagnostics-header { padding: 0.5rem; margin: -0.5rem; border-radius: 0.375rem; transition: background-color 0.2s ease; -webkit-tap-highlight-color: transparent; min-height: 44px; display: flex; align-items: center; } #sync-diagnostics-header:hover { background-color: rgba(63, 63, 70, 0.5); } #sync-diagnostics-header:active { background-color: rgba(63, 63, 70, 0.8); } #sync-diagnostics-chevron, #sync-diagnostics-refresh { transition: transform 0.3s ease; } #sync-diagnostics-content { animation: slideDown 0.2s ease-out; } @keyframes slideDown { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 300px; } } @media (max-width: 640px) { #sync-diagnostics-table { font-size: 0.7rem; } #sync-diagnostics-table th, #sync-diagnostics-table td { padding: 0.5rem 0.25rem; } .cloud-sync-modal { margin: 0.5rem; } } .modal-footer a { color: #60a5fa; text-decoration: none; transition: color 0.2s ease-in-out; line-height: 3em;} .modal-footer a:hover { color: #93c5fd; text-decoration: underline; } #sync-diagnostics-refresh.is-refreshing { background-color: #16a34a; } #refresh-tombstones-btn.is-refreshing { background-color: #16a34a; } #undo-selected-btn:disabled.is-success { background-color: #16a34a; }';
+    '.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); z-index: 99999; display: flex; align-items: center; justify-content: center; padding: 1rem; overflow-y: auto; } #sync-status-dot { position: absolute; top: -0.15rem; right: -0.6rem; width: 0.625rem; height: 0.625rem; border-radius: 9999px; } .cloud-sync-modal { width: 100%; max-width: 32rem; max-height: 90vh; background-color: rgb(39, 39, 42); color: white; border-radius: 0.5rem; padding: 0; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3); display: flex; flex-direction: column; } .cloud-sync-modal > div { display: flex; flex-direction: column; height: 100%; } .cloud-sync-modal-header { padding: 1rem; padding-bottom: 0.75rem; flex-shrink: 0; } .cloud-sync-modal-content { padding: 0 1rem; flex: 1; overflow-y: auto; } .cloud-sync-modal-footer { padding: 1rem; padding-top: 0.75rem; flex-shrink: 0; } .cloud-sync-modal input, ...cloud-sync-modal select { background-color: rgb(63, 63, 70); border: 1px solid rgb(82, 82, 91); color: white; } .cloud-sync-modal input:focus, ...cloud-sync-modal select:focus { border-color: rgb(59, 130, 246); outline: none; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); } .cloud-sync-modal button:disabled { background-color: rgb(82, 82, 91); cursor: not-allowed; opacity: 0.5; } .cloud-sync-modal .bg-zinc-800 { border: 1px solid rgb(82, 82, 91); } .cloud-sync-modal input[type="checkbox"] { accent-color: rgb(59, 130, 246); } .cloud-sync-modal input[type="checkbox"]:checked { background-color: rgb(59, 130, 246); border-color: rgb(59, 130, 246); } #sync-diagnostics-table { font-size: 0.75rem; } #sync-diagnostics-table th { background-color: rgb(82, 82, 91); font-weight: 600; } #sync-diagnostics-table tr:hover { background-color: rgba(63, 63, 70, 0.5); } #sync-diagnostics-header { padding: 0.5rem; margin: -0.5rem; border-radius: 0.375rem; transition: background-color 0.2s ease; -webkit-tap-highlight-color: transparent; min-height: 44px; display: flex; align-items: center; } #sync-diagnostics-header:hover { background-color: rgba(63, 63, 70, 0.5); } #sync-diagnostics-header:active { background-color: rgba(63, 63, 70, 0.8); } #sync-diagnostics-chevron, #sync-diagnostics-refresh { transition: transform 0.3s ease; } #sync-diagnostics-content { animation: slideDown 0.2s ease-out; } @keyframes slideDown { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 300px; } } @media (max-width: 640px) { #sync-diagnostics-table { font-size: 0.7rem; } #sync-diagnostics-table th, #sync-diagnostics-table td { padding: 0.5rem 0.25rem; } .cloud-sync-modal { margin: 0.5rem; } } .modal-footer a { color: #60a5fa; text-decoration: none; transition: color 0.2s ease-in-out; line-height: 3em;} .modal-footer a:hover { color: #93c5fd; text-decoration: underline; } #sync-diagnostics-refresh.is-refreshing { background-color: #16a34a; } #refresh-tombstones-btn.is-refreshing { background-color: #16a34a; } #undo-selected-btn:disabled.is-success { background-color: #16a34a; }';
   document.head.appendChild(styleSheet);
   const app = new CloudSyncApp();
   app.registerProvider("s3", S3Service);

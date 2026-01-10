@@ -76,6 +76,9 @@ A comprehensive cloud backup and sync extension for TypingMind that automaticall
 2. Load this URL: `https://itcon-pty-au.github.io/typingmind-cloud-backup/cloudsync.js`
 
 ### Step 2: Configure Cloud Storage
+[Cloud Storage Setup](#️-cloud-storage-setup)
+
+### Step 3: Configure Extension
 
 After installation, you'll see a new **Sync** button in the sidebar. Click it to open the configuration modal.
 
@@ -96,8 +99,8 @@ The required fields depend on your chosen storage provider:
 
 - **Bucket Name\*** - Your S3 bucket name.
 - **Region\*** - AWS region (e.g., `us-east-1`; use `auto` for Cloudflare R2).
-- **Access Key\*** - Your S3 access key ID.
-- **Secret Key\*** - Your S3 secret access key.
+- **Access Key\*** - Your S3 IAM user access key ID.
+- **Secret Key\*** - Your S3 IAM user secret access key.
 - **Encryption Key\*** - Your personal encryption password. **If you forget this key, your data cannot be recovered.**
 - **S3 Endpoint** (Optional) - For S3-compatible services (e.g., iDrive E2, Wasabi). Leave empty for AWS S3.
 
@@ -113,7 +116,7 @@ The required fields depend on your chosen storage provider:
 
   > **Note**: System keys (starting with `tcs_`) and sensitive keys are automatically excluded.
 
-### Step 3: Quick Setup Options
+### Step 4: Quick Setup Options
 
 #### Option A: Manual Configuration
 
@@ -478,6 +481,25 @@ For troubleshooting, enable detailed logging:
 ## Warning
 
 The extension encrypts the AWS credentials while its stored in the browser database. However, since the encryption key is still stored in plain text, sophisticated hackers who can get access to your browser data and could theoretically get access to your AWS credentials. So, be sure to provide minimum permissions to the AWS credentials. For Amazon S3, I have provided access policy above. However, for other S3 compatible providers, its up to you to setup proper access policies.
+
+## Contributors
+
+This project wouldn't be possible without the awesome contributions from our community:
+
+### Core Features
+- **ITCON (Thomas)** - Project Creator & Core Architecture
+- **Enjoy** - Attachment Sync and Backup Support [2025-10-13]
+- **hang333** - AWS Endpoint Configuration for S3-compatible services [2024-11-26]
+- **Martin Wehner** - UI Integration using MutationObserver [2025-12-24]
+- **McQuade** - Stability improvements & Data Integrity [2025-12-28]
+- **YATSE** - Incremental update concept [2024]
+
+### Documentation & Fixes
+- **Andrew Ong** - Documentation improvements [2026-01-01]
+- **Ben Coldham** - CORS policy fixes [2025-07-19]
+- **Maksim Kirillov** - S3 compatibility updates [2025-07-18]
+- **Shigeki1120** - Syntax fixes [2024-12-12]
+- **Thinh Dinh** - Multipart upload improvements [2024-11-21]
 
 ## About me
 
