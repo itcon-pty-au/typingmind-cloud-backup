@@ -5873,18 +5873,6 @@ async download(key, isMetadata = false) {
         .cloud-sync-modal label {
           color: #d4d4d8 !important;
         }
-
-        /* CloudSync button active/selected state */
-        button[data-element-id="workspace-tab-cloudsync"]:active,
-        button[data-element-id="workspace-tab-cloudsync"].active,
-        button[data-element-id="workspace-tab-cloudsync"][aria-selected="true"] {
-          background-color: rgba(255, 255, 255, 0.2) !important;
-        }
-        button[data-element-id="workspace-tab-cloudsync"]:active svg,
-        button[data-element-id="workspace-tab-cloudsync"].active svg,
-        button[data-element-id="workspace-tab-cloudsync"][aria-selected="true"] svg {
-          color: rgb(255, 255, 255) !important;
-        }
         `;
         document.head.appendChild(style);
       }
