@@ -495,6 +495,7 @@ This project wouldn't be possible without the awesome contributions from our com
 - **YATSE** - Incremental update concept [2024]
 
 ### Documentation & Fixes
+- **Will W** - Menu UI Improvements [2026-01-31]
 - **Andrew Ong** - Documentation improvements [2026-01-01]
 - **Ben Coldham** - CORS policy fixes [2025-07-19]
 - **Maksim Kirillov** - S3 compatibility updates [2025-07-18]
@@ -508,3 +509,4 @@ I am a passionate developer dedicated to creating useful tools that can benefit 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
