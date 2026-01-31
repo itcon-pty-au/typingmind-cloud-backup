@@ -21,7 +21,7 @@ Contributors (Docs & Fixes):
 - McQuade (Stability improvements) [2025-12-28]
 */
 
-const TCS_BUILD_VERSION = "2026-01-09.2";
+const TCS_BUILD_VERSION = "2026-01-09.3";
 
 if (window.typingMindCloudSync) {
   console.log("TypingMind Cloud Sync already loaded");
