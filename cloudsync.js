@@ -5873,6 +5873,18 @@ async download(key, isMetadata = false) {
         .cloud-sync-modal label {
           color: #d4d4d8 !important;
         }
+
+        /* CloudSync button active/selected state */
+        button[data-element-id="workspace-tab-cloudsync"]:active,
+        button[data-element-id="workspace-tab-cloudsync"].active,
+        button[data-element-id="workspace-tab-cloudsync"][aria-selected="true"] {
+          background-color: rgba(255, 255, 255, 0.2) !important;
+        }
+        button[data-element-id="workspace-tab-cloudsync"]:active svg,
+        button[data-element-id="workspace-tab-cloudsync"].active svg,
+        button[data-element-id="workspace-tab-cloudsync"][aria-selected="true"] svg {
+          color: rgb(255, 255, 255) !important;
+        }
         `;
         document.head.appendChild(style);
       }
@@ -5919,7 +5931,7 @@ async download(key, isMetadata = false) {
         const settingsBtn = document.querySelector('button[data-element-id="workspace-tab-settings"]');
         const isPinned = !!settingsBtn && settingsBtn.classList.contains("w-9") && settingsBtn.classList.contains("h-9");
 
-        button.className = settingsBtn?.className || (isPinned ? PINNED_CLASSES : EXPANDED_CLASSES);
+        button.className = isPinned ? PINNED_CLASSES : EXPANDED_CLASSES;
 
         if (isPinned) {
           button.setAttribute("data-tooltip-content", "Sync");
