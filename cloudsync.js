@@ -5883,9 +5883,6 @@ async download(key, isMetadata = false) {
       button.setAttribute("data-tooltip-place", "right");
       button.style.cursor = "pointer";
 
-      const PINNED_CLASSES = "text-white/70 sm:hover:bg-white/20 flex rounded-[10px] w-9 h-9 items-center justify-center shrink-0 transition-colors cursor-default focus:outline-0";
-      const EXPANDED_CLASSES = "text-white/70 sm:hover:bg-white/20 inline-flex rounded-xl px-0.5 py-1.5 flex-col justify-start items-center gap-1.5 flex-1 md:flex-none md:w-full min-w-[58px] md:min-w-0 h-12 md:min-h-[50px] md:h-fit shrink-0 transition-colors cursor-default focus:outline-0";
-
       const pinnedHTML = `
         <div class="relative w-[18px] h-[18px] flex-shrink-0">
           <svg class="w-[18px] h-[18px] flex-shrink-0" width="18px" height="18px" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -5919,7 +5916,14 @@ async download(key, isMetadata = false) {
         const settingsBtn = document.querySelector('button[data-element-id="workspace-tab-settings"]');
         const isPinned = !!settingsBtn && settingsBtn.classList.contains("w-9") && settingsBtn.classList.contains("h-9");
 
-        button.className = isPinned ? PINNED_CLASSES : EXPANDED_CLASSES;
+        // Copy classes from settings button, filtering out dynamic state classes
+        if (settingsBtn) {
+          const classesToExclude = ['active', 'selected'];
+          const filteredClasses = Array.from(settingsBtn.classList).filter(
+            cls => !classesToExclude.includes(cls) && !cls.startsWith('aria-')
+          ).join(' ');
+          button.className = filteredClasses;
+        }
 
         if (isPinned) {
           button.setAttribute("data-tooltip-content", "Sync");
