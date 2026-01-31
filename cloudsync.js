@@ -5857,13 +5857,6 @@ async download(key, isMetadata = false) {
           background-color: #6b7280;
           display: none;
           z-index: 10;
-          box-shadow: 0 0 0 2px rgba(255,255,255,0.9);
-        }
-
-        @media (prefers-color-scheme: dark) {
-          #sync-status-dot {
-            box-shadow: 0 0 0 2px rgba(0,0,0,0.55);
-          }
         }
 
         .cloud-sync-modal input,
