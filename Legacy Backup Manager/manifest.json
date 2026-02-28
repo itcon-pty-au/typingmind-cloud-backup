@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "TypingMind Legacy Backup Manager",
+  "version": "1.0.0",
+  "description": "Restore chats from legacy TypingMind backup files (v1/v2 format)",
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://*/*"
+  ],
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "TypingMind Legacy Backup Manager"
+  },
+  "icons": {}
+}

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Legacy Backup Manager</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header id="header">
+      <h1>Legacy Backup Manager</h1>
+      <p class="subtitle">Restore chats from v1/v2 backups</p>
+    </header>
+
+    <!-- Upload form -->
+    <section id="upload-section">
+      <div class="form-group">
+        <label for="encryption-key">Encryption Key <span style="font-weight:normal;color:var(--text-muted)">(leave blank if unencrypted)</span></label>
+        <input
+          type="password"
+          id="encryption-key"
+          placeholder="Enter key, or leave blank for unencrypted backups"
+          autocomplete="off"
+        >
+      </div>
+      <div class="form-group">
+        <label for="file-input">Backup File</label>
+        <div class="file-input-wrapper">
+          <input type="file" id="file-input" accept=".json,.zip">
+          <span id="file-name" class="file-name">No file selected</span>
+        </div>
+      </div>
+      <button id="btn-load" class="btn btn-primary" disabled>
+        Load Backup
+      </button>
+      <div id="progress-area" class="hidden">
+        <div class="progress-bar">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+        <p id="progress-text" class="progress-text">Loading...</p>
+      </div>
+      <div id="error-area" class="hidden">
+        <p id="error-text" class="error-text"></p>
+      </div>
+    </section>
+
+    <!-- Chat browser (hidden until backup loaded) -->
+    <section id="chat-section" class="hidden">
+      <div class="stats-bar">
+        <span id="stats-text"></span>
+        <button id="btn-clear" class="btn btn-small btn-ghost" title="Clear and load another file">Clear</button>
+      </div>
+
+      <!-- Search -->
+      <div class="search-bar">
+        <input
+          type="text"
+          id="search-input"
+          placeholder="Search chats..."
+          autocomplete="off"
+        >
+      </div>
+
+      <!-- Select all + filter -->
+      <div class="select-all-bar">
+        <label class="checkbox-label">
+          <input type="checkbox" id="select-all">
+          <span>All</span>
+        </label>
+        <select id="tag-filter" class="filter-select">
+          <option value="all">All statuses</option>
+          <option value="existing">Existing</option>
+          <option value="backup-newer">Backup is newer</option>
+          <option value="not-found">Not in browser</option>
+          <option value="restored">Restored</option>
+        </select>
+        <span id="selection-count" class="selection-count"></span>
+      </div>
+
+      <!-- Chat list -->
+      <div id="chat-list" class="chat-list"></div>
+
+      <!-- Pagination -->
+      <div id="pagination" class="pagination"></div>
+    </section>
+
+    <!-- Chat detail (inline accordion) -->
+    <!-- Rendered dynamically inside chat cards -->
+
+    <!-- Sticky restore button -->
+    <footer id="restore-footer" class="hidden">
+      <button id="btn-restore" class="btn btn-primary btn-restore" disabled>
+        Restore Selected (<span id="restore-count">0</span>)
+      </button>
+    </footer>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
