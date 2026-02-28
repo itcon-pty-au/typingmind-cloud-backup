@@ -210,10 +210,16 @@ async function decrypt(data, password) {
  * Returns: { format, chats (index array), chatMap (id→data), totalItems }
  */
 function detectAndBuildIndex(backup) {
-  // Format 1: TypingMind export { data: { chats: [...] } }
+  // Format 1a: TypingMind export { data: { chats: [...] } }
   if (backup?.data?.chats && Array.isArray(backup.data.chats)) {
     postProgress("Indexing", `Found TypingMind export with ${backup.data.chats.length} chats`);
     return buildFromChatArray(backup.data.chats, "export");
+  }
+
+  // Format 1b: Legacy snapshot/export { chats: [...] } (no data wrapper)
+  if (backup?.chats && Array.isArray(backup.chats)) {
+    postProgress("Indexing", `Found legacy snapshot with ${backup.chats.length} chats`);
+    return buildFromChatArray(backup.chats, "legacy-snapshot");
   }
 
   // Format 2: Cloud sync { indexedDB: { CHAT_xxx: {...} } }
@@ -261,7 +267,8 @@ function buildFromChatArray(chats, format, totalItemsOverride) {
     if (!chat || typeof chat !== "object") continue;
 
     const id = chat._backupKey || chat.chatID || chat.id || `unknown_${indexEntries.length}`;
-    const messages = chat.messages || chat.data?.messages || [];
+    // Prefer messages over messagesArray; use messagesArray as fallback
+    const messages = chat.messages || chat.messagesArray || chat.data?.messages || chat.data?.messagesArray || [];
 
     const title =
       chat.chatTitle ||
