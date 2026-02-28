@@ -43,16 +43,24 @@
   const btnRestore = $("#btn-restore");
   const restoreCount = $("#restore-count");
 
+  // --- DOM refs (extra) ---
+  const tabWarning = $("#tab-warning");
+  const btnReset = $("#btn-reset");
+
   // --- Init ---
 
   init();
 
-  function init() {
+  async function init() {
+    // Check if the active tab is a TypingMind instance
+    await checkActiveTab();
+
     // Enable load button when both fields have values
     fileInput.addEventListener("change", updateLoadButton);
 
     btnLoad.addEventListener("click", loadBackup);
     btnClear.addEventListener("click", clearBackup);
+    btnReset.addEventListener("click", resetExtension);
     searchInput.addEventListener("input", debounce(onSearch, 250));
     selectAllCb.addEventListener("change", onSelectAll);
     tagFilter.addEventListener("change", onTagFilter);
@@ -67,6 +75,57 @@
         renderChatList();
       }
     }, 200));
+  }
+
+  /**
+   * Check if the current active tab is a TypingMind instance.
+   * If not, show a blocking warning overlay.
+   */
+  async function checkActiveTab() {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab) {
+        showTabWarning();
+        return;
+      }
+
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => {
+          try {
+            const link = document.querySelector('link[rel="manifest"]');
+            if (!link) return false;
+            return fetch(link.href)
+              .then(r => r.ok ? r.json() : null)
+              .then(m => m?.name === "TypingMind")
+              .catch(() => false);
+          } catch {
+            return false;
+          }
+        },
+      });
+
+      const isTypingMind = results?.[0]?.result === true;
+      if (!isTypingMind) {
+        showTabWarning();
+      }
+    } catch {
+      // executeScript fails on restricted pages (chrome://, etc.)
+      showTabWarning();
+    }
+  }
+
+  function showTabWarning() {
+    tabWarning.classList.remove("hidden");
+    // Disable the rest of the UI
+    uploadSection.style.pointerEvents = "none";
+    uploadSection.style.opacity = "0.3";
+  }
+
+  function hideTabWarning() {
+    tabWarning.classList.add("hidden");
+    uploadSection.style.pointerEvents = "";
+    uploadSection.style.opacity = "";
   }
 
   function updateLoadButton() {
@@ -168,6 +227,13 @@
 
   // --- Clear / Reset ---
 
+  function resetExtension() {
+    clearBackup();
+    hideTabWarning();
+    // Re-check active tab
+    checkActiveTab();
+  }
+
   function clearBackup() {
     if (worker) {
       worker.terminate();
@@ -244,8 +310,8 @@
       'restored':      'Restored',
     };
     const tips = {
-      'existing':      'This chat is already in the browser with the same or newer version',
-      'backup-newer':  'The backup contains a newer version than what\u2019s in the browser',
+      'existing':      'This chat is already in the browser with the same or newer messages',
+      'backup-newer':  'The backup contains newer messages than what\u2019s in the browser',
       'not-found':     'This chat does not exist in the browser yet',
       'restored':      'This chat was restored during this session',
     };
@@ -292,7 +358,13 @@
           if (backupTs === dbTs) {
             dbStatusMap[chat.id] = 'existing';
           } else if (backupTs > dbTs) {
-            dbStatusMap[chat.id] = 'backup-newer';  // backup has updates browser doesn't
+            // Timestamp says backup is newer — verify with message-level check
+            // to eliminate false positives from metadata-only changes
+            if (messagesMatch(chat, dbEntry)) {
+              dbStatusMap[chat.id] = 'existing';     // same messages, metadata-only diff
+            } else {
+              dbStatusMap[chat.id] = 'backup-newer';  // backup has actual message updates
+            }
           } else {
             dbStatusMap[chat.id] = 'existing';       // browser already has newer version
           }
@@ -309,16 +381,50 @@
 
   function normalizeTs(val) {
     if (!val) return 0;
-    if (typeof val === 'number') return val;
+    if (typeof val === 'number') return toMs(val);
     const n = Number(val);
-    if (!isNaN(n)) return n;
+    if (!isNaN(n)) return toMs(n);
     const d = new Date(val).getTime();
     return isNaN(d) ? 0 : d;
   }
 
+  /** Ensure a numeric timestamp is in milliseconds (not seconds). */
+  function toMs(n) {
+    // Timestamps below 1e12 are almost certainly in seconds
+    // (1e12 ms ≈ Mar 2001; 1e12 s ≈ year 33658)
+    return n > 0 && n < 1e12 ? n * 1000 : n;
+  }
+
+  /**
+   * Compare backup chat index entry against the DB entry to determine
+   * if the actual messages are the same. Uses message count + last message
+   * fingerprint for an efficient check without full content diffing.
+   *
+   * @param {object} backupChat  - Index entry from allChats (has messageCount, id)
+   * @param {object} dbEntry     - From readChatKeysFromIndexedDB (has messageCount, lastMsgFingerprint)
+   * @returns {boolean} true if messages appear identical
+   */
+  function messagesMatch(backupChat, dbEntry) {
+    // If DB didn't provide message data, we can't verify — assume different
+    if (typeof dbEntry.messageCount !== 'number') return false;
+
+    // Different message counts = definitely different content
+    if (backupChat.messageCount !== dbEntry.messageCount) return false;
+
+    // Both have zero messages — they match
+    if (backupChat.messageCount === 0) return true;
+
+    // Compare last message fingerprint (computed at index time by the worker)
+    if (!backupChat.lastMsgFingerprint || !dbEntry.lastMsgFingerprint) return false;
+
+    return backupChat.lastMsgFingerprint === dbEntry.lastMsgFingerprint;
+  }
+
   /**
    * Injected into the TypingMind page to read all CHAT_* entries and
-   * return a map of key → { updatedAt }.
+   * return a map of key → { updatedAt, messageCount, lastMsgFingerprint }.
+   * The fingerprint is a lightweight hash of the last message's role + content
+   * length + first 100 chars, used to detect false-positive "backup newer" tags.
    */
   function readChatKeysFromIndexedDB() {
     return new Promise((resolve) => {
@@ -343,8 +449,15 @@
             const key = keys[i];
             if (typeof key === 'string' && key.startsWith('CHAT_')) {
               const val = values[i];
+              const msgs = val?.messages || val?.data?.messages || [];
+              const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+              // Convert timestamps to numbers BEFORE returning — Date objects
+              // don't survive chrome.scripting.executeScript serialization
+              const rawTs = val?.updatedAt || val?.updated_at || null;
               result[key] = {
-                updatedAt: val?.updatedAt || val?.updated_at || null,
+                updatedAt: tsToNumber(rawTs),
+                messageCount: msgs.length,
+                lastMsgFingerprint: lastMsg ? msgFingerprint(lastMsg) : null,
               };
             }
           }
@@ -354,6 +467,25 @@
       };
       request.onupgradeneeded = () => resolve({});
     });
+
+    /** Convert any timestamp (Date object, number, string) to a plain number (ms). */
+    function tsToNumber(ts) {
+      if (ts == null) return null;
+      if (ts instanceof Date) return ts.getTime();
+      if (typeof ts === 'number') return ts;
+      const n = Number(ts);
+      if (!isNaN(n)) return n;
+      const d = Date.parse(ts);
+      return isNaN(d) ? null : d;
+    }
+
+    function msgFingerprint(msg) {
+      const role = msg.role || msg.type || '';
+      const content = typeof msg.content === 'string'
+        ? msg.content
+        : JSON.stringify(msg.content || '');
+      return role + ':' + content.length + ':' + content.substring(0, 100);
+    }
   }
 
   // --- Render chat list ---
@@ -770,9 +902,10 @@
             }
 
             // The value stored is the full chat object
-            // Remove our internal _backupKey if present
+            // Remove internal/legacy fields that should not be imported
             const data = { ...chat.data };
             delete data._backupKey;
+            delete data.messagesArray;  // legacy duplicate of messages — never import
 
             // Strip duplicate messagesArray to avoid DB bloat
             // TypingMind legacy exports often contain both messages and messagesArray
@@ -783,6 +916,15 @@
               // messagesArray is the only source — promote it to messages
               data.messages = data.messagesArray;
               delete data.messagesArray;
+            }
+
+            // Convert timestamp fields to Date objects to match TypingMind's
+            // native IndexedDB storage format
+            if (data.updatedAt != null) {
+              data.updatedAt = numToDate(data.updatedAt);
+            }
+            if (data.createdAt != null) {
+              data.createdAt = numToDate(data.createdAt);
             }
 
             store.put(data, dbKey);
@@ -802,6 +944,21 @@
         resolve({ success: false, error: "IndexedDB needs upgrade — unexpected on a TypingMind page." });
       };
     });
+
+    /** Convert a numeric/string timestamp to a Date object for IndexedDB storage. */
+    function numToDate(val) {
+      if (val instanceof Date) return val;
+      if (typeof val === 'number') {
+        // Normalize seconds → ms if needed
+        const ms = val > 0 && val < 1e12 ? val * 1000 : val;
+        return new Date(ms);
+      }
+      if (typeof val === 'string') {
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? val : d;  // return original if unparseable
+      }
+      return val;
+    }
   }
 
   // --- UI helpers ---

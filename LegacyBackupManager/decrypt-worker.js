@@ -298,6 +298,10 @@ function buildFromChatArray(chats, format, totalItemsOverride) {
         : null) ||
       createdAt;
 
+    // Compute a fingerprint of the last message for cheap equality checks
+    const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
+    const lastMsgFingerprint = lastMsg ? buildMsgFingerprint(lastMsg) : null;
+
     // Store the full chat data in the lookup map
     map[id] = chat;
 
@@ -308,6 +312,7 @@ function buildFromChatArray(chats, format, totalItemsOverride) {
       createdAt: normalizeTimestamp(createdAt),
       updatedAt: normalizeTimestamp(updatedAt),
       preview: extractPreview(messages),
+      lastMsgFingerprint,
     });
   }
 
@@ -358,10 +363,19 @@ function truncate(str, maxLen) {
 
 function normalizeTimestamp(ts) {
   if (!ts) return 0;
-  if (typeof ts === "number") return ts;
+  if (typeof ts === "number") return toMs(ts);
+  const n = Number(ts);
+  if (!isNaN(n)) return toMs(n);
   // Try parsing date string
   const parsed = Date.parse(ts);
   return isNaN(parsed) ? 0 : parsed;
+}
+
+/** Ensure a numeric timestamp is in milliseconds (not seconds). */
+function toMs(n) {
+  // Timestamps below 1e12 are almost certainly in seconds
+  // (1e12 ms ≈ Mar 2001; 1e12 s ≈ year 33658)
+  return n > 0 && n < 1e12 ? n * 1000 : n;
 }
 
 function tryParse(str) {
@@ -370,4 +384,16 @@ function tryParse(str) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Build a lightweight fingerprint for a message: role + content length + first 100 chars.
+ * This MUST match the identical algorithm in sidepanel.js (readChatKeysFromIndexedDB).
+ */
+function buildMsgFingerprint(msg) {
+  const role = msg.role || msg.type || '';
+  const content = typeof msg.content === 'string'
+    ? msg.content
+    : JSON.stringify(msg.content || '');
+  return role + ':' + content.length + ':' + content.substring(0, 100);
 }
