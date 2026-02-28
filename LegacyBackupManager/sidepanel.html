@@ -8,9 +8,27 @@
 </head>
 <body>
   <div id="app">
+    <!-- Warning overlay for non-TypingMind tabs -->
+    <div id="tab-warning" class="hidden">
+      <div class="tab-warning-content">
+        <div class="tab-warning-icon">⚠️</div>
+        <h2>Wrong Tab</h2>
+        <p>This extension only works on TypingMind pages.</p>
+        <p class="tab-warning-hint">Please navigate to your TypingMind instance and reopen this panel.</p>
+      </div>
+    </div>
+
     <!-- Header -->
     <header id="header">
-      <h1>Legacy Backup Manager</h1>
+      <div class="header-row">
+        <h1>Legacy Backup Manager</h1>
+        <button id="btn-reset" class="btn-icon" title="Reset extension">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1.5 2v4.5h4.5"/>
+            <path d="M2.3 10a6 6 0 1 0 .5-4.8L1.5 6.5"/>
+          </svg>
+        </button>
+      </div>
       <p class="subtitle">Restore chats from v1/v2 backups</p>
     </header>
 

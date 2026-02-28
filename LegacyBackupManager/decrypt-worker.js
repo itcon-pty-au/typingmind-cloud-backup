@@ -363,10 +363,19 @@ function truncate(str, maxLen) {
 
 function normalizeTimestamp(ts) {
   if (!ts) return 0;
-  if (typeof ts === "number") return ts;
+  if (typeof ts === "number") return toMs(ts);
+  const n = Number(ts);
+  if (!isNaN(n)) return toMs(n);
   // Try parsing date string
   const parsed = Date.parse(ts);
   return isNaN(parsed) ? 0 : parsed;
+}
+
+/** Ensure a numeric timestamp is in milliseconds (not seconds). */
+function toMs(n) {
+  // Timestamps below 1e12 are almost certainly in seconds
+  // (1e12 ms ≈ Mar 2001; 1e12 s ≈ year 33658)
+  return n > 0 && n < 1e12 ? n * 1000 : n;
 }
 
 function tryParse(str) {

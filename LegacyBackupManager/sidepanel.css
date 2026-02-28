@@ -73,9 +73,36 @@ html, body {
   flex-shrink: 0;
 }
 
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 #header h1 {
   font-size: 15px;
   font-weight: 600;
+}
+
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.btn-icon:hover {
+  background: var(--bg-secondary);
+  color: var(--text);
 }
 
 .subtitle {
@@ -596,6 +623,50 @@ html, body {
 }
 
 /* --- Utilities --- */
+
+/* --- Tab warning overlay --- */
+
+#tab-warning {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+
+.tab-warning-content {
+  text-align: center;
+  padding: 32px 24px;
+}
+
+.tab-warning-icon {
+  font-size: 40px;
+  margin-bottom: 12px;
+}
+
+.tab-warning-content h2 {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.tab-warning-content p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.tab-warning-hint {
+  margin-top: 8px;
+  font-size: 12px !important;
+  color: var(--text-muted) !important;
+}
 
 .hidden {
   display: none !important;
