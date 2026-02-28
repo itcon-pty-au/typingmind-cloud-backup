@@ -3747,11 +3747,11 @@ async download(key, isMetadata = false) {
         };
       }
     }
-    async updateSyncDiagnosticsCache() {
+    async updateSyncDiagnosticsCache(force = false) {
       const _now = Date.now();
       const _last = Number(localStorage.getItem("tcs_sync_diag_last_update") || "0");
       const _minInterval = 5 * 60 * 1000;
-      if (_last && _now - _last < _minInterval) {
+      if (!force && _last && _now - _last < _minInterval) {
         return;
       }
       localStorage.setItem("tcs_sync_diag_last_update", String(_now));
@@ -6906,17 +6906,22 @@ async download(key, isMetadata = false) {
 
       if (!refreshButton || !refreshIcon || !checkmarkIcon) return;
 
-      const refreshHandler = (e) => {
+      const refreshHandler = async (e) => {
         e.stopPropagation();
 
         if (refreshButton.disabled) return;
-
-        this.loadSyncDiagnostics(modal);
 
         refreshButton.disabled = true;
         refreshButton.classList.add("is-refreshing");
         refreshIcon.classList.add("hidden");
         checkmarkIcon.classList.remove("hidden");
+
+        try {
+          await this.syncOrchestrator.updateSyncDiagnosticsCache(true);
+        } catch (err) {
+          this.logger.log("warning", "Diagnostics refresh error", err.message);
+        }
+        this.loadSyncDiagnostics(modal);
 
         setTimeout(() => {
           refreshButton.classList.remove("is-refreshing");
