@@ -1,0 +1,29 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "git_pull",
+			"type": "shell",
+			"command": "git pull",
+			"problemMatcher": []
+		},
+		{
+			"label": "git_fetch_status",
+			"type": "shell",
+			"command": "git fetch origin && git status",
+			"problemMatcher": []
+		},
+		{
+			"label": "git_pull_main",
+			"type": "shell",
+			"command": "git pull origin main",
+			"problemMatcher": []
+		},
+		{
+			"label": "git_force_sync",
+			"type": "shell",
+			"command": "git fetch --all && git reset --hard origin/main",
+			"problemMatcher": []
+		}
+	]
+}

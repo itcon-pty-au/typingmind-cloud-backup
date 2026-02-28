@@ -820,6 +820,17 @@
             delete data._backupKey;
             delete data.messagesArray;  // legacy duplicate of messages — never import
 
+            // Strip duplicate messagesArray to avoid DB bloat
+            // TypingMind legacy exports often contain both messages and messagesArray
+            // with identical content — keep only messages
+            if (data.messages && data.messagesArray) {
+              delete data.messagesArray;
+            } else if (!data.messages && data.messagesArray) {
+              // messagesArray is the only source — promote it to messages
+              data.messages = data.messagesArray;
+              delete data.messagesArray;
+            }
+
             store.put(data, dbKey);
             written++;
           } catch (e) {
