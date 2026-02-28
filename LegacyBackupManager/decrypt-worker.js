@@ -291,6 +291,10 @@ function buildFromChatArray(chats, format, totalItemsOverride) {
         : null) ||
       createdAt;
 
+    // Compute a fingerprint of the last message for cheap equality checks
+    const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
+    const lastMsgFingerprint = lastMsg ? buildMsgFingerprint(lastMsg) : null;
+
     // Store the full chat data in the lookup map
     map[id] = chat;
 
@@ -301,6 +305,7 @@ function buildFromChatArray(chats, format, totalItemsOverride) {
       createdAt: normalizeTimestamp(createdAt),
       updatedAt: normalizeTimestamp(updatedAt),
       preview: extractPreview(messages),
+      lastMsgFingerprint,
     });
   }
 
@@ -363,4 +368,16 @@ function tryParse(str) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Build a lightweight fingerprint for a message: role + content length + first 100 chars.
+ * This MUST match the identical algorithm in sidepanel.js (readChatKeysFromIndexedDB).
+ */
+function buildMsgFingerprint(msg) {
+  const role = msg.role || msg.type || '';
+  const content = typeof msg.content === 'string'
+    ? msg.content
+    : JSON.stringify(msg.content || '');
+  return role + ':' + content.length + ':' + content.substring(0, 100);
 }

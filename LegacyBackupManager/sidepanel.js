@@ -244,8 +244,8 @@
       'restored':      'Restored',
     };
     const tips = {
-      'existing':      'This chat is already in the browser with the same or newer version',
-      'backup-newer':  'The backup contains a newer version than what\u2019s in the browser',
+      'existing':      'This chat is already in the browser with the same or newer messages',
+      'backup-newer':  'The backup contains newer messages than what\u2019s in the browser',
       'not-found':     'This chat does not exist in the browser yet',
       'restored':      'This chat was restored during this session',
     };
@@ -292,7 +292,13 @@
           if (backupTs === dbTs) {
             dbStatusMap[chat.id] = 'existing';
           } else if (backupTs > dbTs) {
-            dbStatusMap[chat.id] = 'backup-newer';  // backup has updates browser doesn't
+            // Timestamp says backup is newer — verify with message-level check
+            // to eliminate false positives from metadata-only changes
+            if (messagesMatch(chat, dbEntry)) {
+              dbStatusMap[chat.id] = 'existing';     // same messages, metadata-only diff
+            } else {
+              dbStatusMap[chat.id] = 'backup-newer';  // backup has actual message updates
+            }
           } else {
             dbStatusMap[chat.id] = 'existing';       // browser already has newer version
           }
@@ -317,8 +323,35 @@
   }
 
   /**
+   * Compare backup chat index entry against the DB entry to determine
+   * if the actual messages are the same. Uses message count + last message
+   * fingerprint for an efficient check without full content diffing.
+   *
+   * @param {object} backupChat  - Index entry from allChats (has messageCount, id)
+   * @param {object} dbEntry     - From readChatKeysFromIndexedDB (has messageCount, lastMsgFingerprint)
+   * @returns {boolean} true if messages appear identical
+   */
+  function messagesMatch(backupChat, dbEntry) {
+    // If DB didn't provide message data, we can't verify — assume different
+    if (typeof dbEntry.messageCount !== 'number') return false;
+
+    // Different message counts = definitely different content
+    if (backupChat.messageCount !== dbEntry.messageCount) return false;
+
+    // Both have zero messages — they match
+    if (backupChat.messageCount === 0) return true;
+
+    // Compare last message fingerprint (computed at index time by the worker)
+    if (!backupChat.lastMsgFingerprint || !dbEntry.lastMsgFingerprint) return false;
+
+    return backupChat.lastMsgFingerprint === dbEntry.lastMsgFingerprint;
+  }
+
+  /**
    * Injected into the TypingMind page to read all CHAT_* entries and
-   * return a map of key → { updatedAt }.
+   * return a map of key → { updatedAt, messageCount, lastMsgFingerprint }.
+   * The fingerprint is a lightweight hash of the last message's role + content
+   * length + first 100 chars, used to detect false-positive "backup newer" tags.
    */
   function readChatKeysFromIndexedDB() {
     return new Promise((resolve) => {
@@ -343,8 +376,12 @@
             const key = keys[i];
             if (typeof key === 'string' && key.startsWith('CHAT_')) {
               const val = values[i];
+              const msgs = val?.messages || val?.data?.messages || [];
+              const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
               result[key] = {
                 updatedAt: val?.updatedAt || val?.updated_at || null,
+                messageCount: msgs.length,
+                lastMsgFingerprint: lastMsg ? msgFingerprint(lastMsg) : null,
               };
             }
           }
@@ -354,6 +391,14 @@
       };
       request.onupgradeneeded = () => resolve({});
     });
+
+    function msgFingerprint(msg) {
+      const role = msg.role || msg.type || '';
+      const content = typeof msg.content === 'string'
+        ? msg.content
+        : JSON.stringify(msg.content || '');
+      return role + ':' + content.length + ':' + content.substring(0, 100);
+    }
   }
 
   // --- Render chat list ---
@@ -770,9 +815,10 @@
             }
 
             // The value stored is the full chat object
-            // Remove our internal _backupKey if present
+            // Remove internal/legacy fields that should not be imported
             const data = { ...chat.data };
             delete data._backupKey;
+            delete data.messagesArray;  // legacy duplicate of messages — never import
 
             store.put(data, dbKey);
             written++;
