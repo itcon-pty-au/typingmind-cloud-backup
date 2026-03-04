@@ -226,11 +226,9 @@ if (window.typingMindCloudSync) {
       });
     }
     shouldExclude(key) {
-      const always =
-        key.startsWith("tcs_") && !key.startsWith("tcs_tombstone_");
       return (
         this.exclusions.includes(key) ||
-        always ||
+        key.startsWith("tcs_") ||
         key.startsWith("gsi_") ||
         key.includes("eruda")
       );
@@ -824,8 +822,15 @@ if (window.typingMindCloudSync) {
       );
       return tombstone;
     }
+    _sanitizeTombstoneItemId(itemId) {
+      while (typeof itemId === "string" && itemId.startsWith("tcs_tombstone_")) {
+        itemId = itemId.slice("tcs_tombstone_".length);
+      }
+      return itemId;
+    }
     getTombstoneFromStorage(itemId) {
       try {
+        itemId = this._sanitizeTombstoneItemId(itemId);
         const storageKey = `tcs_tombstone_${itemId}`;
         const stored = localStorage.getItem(storageKey);
         if (stored) {
@@ -844,6 +849,7 @@ if (window.typingMindCloudSync) {
     }
     saveTombstoneToStorage(itemId, tombstone) {
       try {
+        itemId = this._sanitizeTombstoneItemId(itemId);
         const storageKey = `tcs_tombstone_${itemId}`;
         localStorage.setItem(storageKey, JSON.stringify(tombstone));
         const verification = localStorage.getItem(storageKey);
@@ -871,17 +877,39 @@ if (window.typingMindCloudSync) {
     }
     getAllTombstones() {
       const tombstones = new Map();
+      const keysToCleanup = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key?.startsWith("tcs_tombstone_")) {
-          const itemId = key.replace("tcs_tombstone_", "");
+          const rawItemId = key.slice("tcs_tombstone_".length);
+          const itemId = this._sanitizeTombstoneItemId(rawItemId);
+          const isNested = rawItemId !== itemId;
           try {
             const tombstone = JSON.parse(localStorage.getItem(key));
-            tombstones.set(itemId, tombstone);
+            if (isNested) {
+              keysToCleanup.push(key);
+              this.logger.log(
+                "warning",
+                `🧹 Found nested tombstone key: ${key} → sanitized to ${itemId}`
+              );
+            }
+            if (!tombstones.has(itemId)) {
+              tombstones.set(itemId, tombstone);
+            }
           } catch {
+            keysToCleanup.push(key);
             continue;
           }
         }
+      }
+      for (const staleKey of keysToCleanup) {
+        localStorage.removeItem(staleKey);
+      }
+      if (keysToCleanup.length > 0) {
+        this.logger.log(
+          "info",
+          `🧹 Cleaned up ${keysToCleanup.length} stale/nested tombstone entries from localStorage`
+        );
       }
       return tombstones;
     }
@@ -3532,6 +3560,16 @@ async download(key, isMetadata = false) {
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
         if (key?.startsWith("tcs_tombstone_")) {
+          const rawItemId = key.slice("tcs_tombstone_".length);
+          if (rawItemId.startsWith("tcs_tombstone_")) {
+            localStorage.removeItem(key);
+            cleanupCount++;
+            this.logger.log(
+              "warning",
+              `🧹 Removed nested tombstone key: ${key}`
+            );
+            continue;
+          }
           try {
             const tombstone = JSON.parse(localStorage.getItem(key));
             if (
@@ -3548,6 +3586,15 @@ async download(key, isMetadata = false) {
         }
       }
       for (const [itemId, metadata] of Object.entries(this.metadata.items)) {
+        if (itemId.startsWith("tcs_tombstone_")) {
+          delete this.metadata.items[itemId];
+          cleanupCount++;
+          this.logger.log(
+            "warning",
+            `🧹 Removed leaked tombstone-prefixed metadata key: ${itemId}`
+          );
+          continue;
+        }
         if (
           metadata?.deleted &&
           now - metadata.deleted > tombstoneRetentionPeriod
