@@ -374,77 +374,6 @@ if (window.typingMindCloudSync) {
       }
       return { totalSize, itemCount, excludedItemCount };
     }
-    async *streamAllItems() {
-      const batchSize = this.streamBatchSize;
-      let batch = [];
-      let batchSize_bytes = 0;
-      const processItem = (item) => {
-        const estimatedSize = this.estimateItemSize(item.data);
-        if (
-          batchSize_bytes + estimatedSize > this.memoryThreshold &&
-          batch.length > 0
-        ) {
-          const currentBatch = [...batch];
-          batch = [item];
-          batchSize_bytes = estimatedSize;
-          return currentBatch;
-        }
-        batch.push(item);
-        batchSize_bytes += estimatedSize;
-        if (batch.length >= batchSize) {
-          const currentBatch = [...batch];
-          batch = [];
-          batchSize_bytes = 0;
-          return currentBatch;
-        }
-        return null;
-      };
-      const db = await this.getDB();
-      const transaction = db.transaction(["keyval"], "readonly");
-      const store = transaction.objectStore("keyval");
-      await new Promise((resolve) => {
-        const request = store.openCursor();
-        request.onsuccess = (event) => {
-          const cursor = event.target.result;
-          if (cursor) {
-            const key = cursor.key;
-            const value = cursor.value;
-            if (
-              typeof key === "string" &&
-              value !== undefined &&
-              !this.config.shouldExclude(key)
-            ) {
-              const item = { id: key, data: value, type: "idb" };
-              const batchToYield = processItem(item);
-              if (batchToYield) {
-                this.streamYield(batchToYield);
-              }
-            }
-            cursor.continue();
-          } else {
-            resolve();
-          }
-        };
-        request.onerror = () => resolve();
-      });
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && !this.config.shouldExclude(key)) {
-          const value = localStorage.getItem(key);
-          if (value !== null) {
-            const item = { id: key, data: { key, value }, type: "ls" };
-            const batchToYield = processItem(item);
-            if (batchToYield) {
-              yield batchToYield;
-            }
-          }
-        }
-      }
-      if (batch.length > 0) {
-        yield batch;
-      }
-    }
-    streamYield = null;
     async *streamAllItemsInternal() {
       const batchSize = this.streamBatchSize;
       let batch = [];
@@ -999,7 +928,6 @@ if (window.typingMindCloudSync) {
             });
         }
         this.dbPromise = null;
-        this.streamYield = null;
         this.config = null;
         this.operationQueue = null;
         if (this.forceGarbageCollection) {
@@ -1060,6 +988,7 @@ if (window.typingMindCloudSync) {
     _createJsonStreamForArray(array) {
       let i = 0;
       const encoder = new TextEncoder();
+      const logger = this.logger;
       return new ReadableStream({
         start(controller) {
           controller.enqueue(encoder.encode("["));
@@ -1080,7 +1009,7 @@ if (window.typingMindCloudSync) {
             }
             i++;
           } catch (e) {
-            this.logger.log(
+            logger.log(
               "error",
               `Streaming serialization failed for element ${i}`,
               e
@@ -1240,10 +1169,6 @@ if (window.typingMindCloudSync) {
         html: '<p class="text-zinc-400">This provider has no specific configuration.</p>',
         setupEventListeners: () => {},
       };
-    }
-
-    async delete(key) {
-      throw new Error("Method 'delete()' must be implemented.");
     }
 
     async deleteFolder(folderPath) {
@@ -3298,6 +3223,7 @@ async download(key, isMetadata = false) {
             }
           });
           this.logger.log(
+            "info",
             `[Initial Sync] Processed batch. Total uploaded: ${uploadedCount}/${itemCount}`
           );
         }
@@ -3830,9 +3756,12 @@ async download(key, isMetadata = false) {
         this.logger.log("start", "[Force Export] Uploading all local items...");
         let uploadedCount = 0;
         for await (const batch of this.dataService.streamAllItemsInternal()) {
-          const uploadPromises = batch.map((item) =>
-            this.storageService.upload(`items/${item.id}.json`, item.data)
-          );
+          const uploadPromises = batch.map((item) => {
+            const path = item.type === "blob"
+              ? `attachments/${item.id}.bin`
+              : `items/${item.id}.json`;
+            return this.storageService.upload(path, item.data);
+          });
           await Promise.allSettled(uploadPromises);
           uploadedCount += batch.length;
           this.logger.log(
@@ -3959,10 +3888,16 @@ async download(key, isMetadata = false) {
             if (cloudItem.deleted) {
               await this.dataService.performDelete(key, cloudItem.type);
             } else {
-              const data = await this.storageService.download(
-                `items/${key}.json`
-              );
-              await this.dataService.saveItem(data, cloudItem.type, key);
+              const path = cloudItem.type === "blob"
+                ? `attachments/${key}.bin`
+                : `items/${key}.json`;
+              const data = await this.storageService.download(path);
+              if (data && cloudItem.type === "blob") {
+                data.blobType = cloudItem.blobType || '';
+                await this.dataService.saveItem(data, "blob", key);
+              } else {
+                await this.dataService.saveItem(data, cloudItem.type, key);
+              }
             }
           });
           await Promise.allSettled(downloadPromises);
@@ -4515,163 +4450,6 @@ async download(key, isMetadata = false) {
       }
     }
 
-    /**
-     * Reliable daily backup implementation.
-     *
-     * Instead of server-side CopyObject operations (which can result in 0-byte
-     * objects on some S3-compatible providers like Cloudflare R2), this method
-     * performs an "export-style" backup:
-     *   - reads local data via DataService
-     *   - uploads each item to the daily backup folder via PUT
-     *   - rebuilds a consistent metadata.json and uploads it to the backup folder
-     */
-    async createDailyBackupFromLocalExport() {
-      this.logger.log(
-        "info",
-        "Creating daily backup via export-style uploads (robust mode)"
-      );
-
-      const today = new Date();
-      const dateString = `${today.getFullYear()}${String(
-        today.getMonth() + 1
-      ).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-      const backupFolder = `backups/typingmind-backup-${dateString}`;
-      if (this.storageService instanceof GoogleDriveService) {
-        await this.storageService._deleteFolderIfExists(backupFolder);
-      }
-
-      const orchestrator = window.cloudSyncApp?.syncOrchestrator;
-      if (!orchestrator) {
-        throw new Error(
-          "Sync orchestrator not available. Cannot create export-style backup."
-        );
-      }
-
-      try {
-        const itemsDestinationPath = `${backupFolder}/items`;
-        this.logger.log(
-          "info",
-          `Pre-creating backup path: "${itemsDestinationPath}"`
-        );
-        await this.storageService.ensurePathExists(itemsDestinationPath);
-        this.logger.log("success", "Backup path created successfully.");
-        let totalLocalItems = 0;
-        try {
-          const localKeys = await this.dataService.getAllItemKeys();
-          totalLocalItems = localKeys?.size || 0;
-        } catch (_) {
-        }
-
-        this.logger.log(
-          "start",
-          `Uploading local items to daily backup...$${
-            totalLocalItems ? ` (estimated ${totalLocalItems})` : ""
-          }`
-        );
-
-        let uploadedItems = 0;
-        const concurrency = 20;
-
-        for await (const batch of this.dataService.streamAllItemsInternal()) {
-          for (let i = 0; i < batch.length; i += concurrency) {
-            const slice = batch.slice(i, i + concurrency);
-            const uploadPromises = slice.map(async (item) => {
-              const key = `${backupFolder}/items/${item.id}.json`;
-              await this.storageService.upload(key, item.data);
-              return true;
-            });
-            await Promise.allSettled(uploadPromises);
-            uploadedItems += slice.length;
-          }
-
-          if (uploadedItems % 200 === 0) {
-            this.logger.log(
-              "info",
-              `Daily backup: uploaded ${uploadedItems}$${
-                totalLocalItems ? `/${totalLocalItems}` : ""
-              } items`
-            );
-          }
-        }
-
-        this.logger.log(
-          "success",
-          `Daily backup: uploaded ${uploadedItems} items successfully.`
-        );
-        this.logger.log(
-          "start",
-          "Rebuilding metadata.json for daily backup..."
-        );
-        const newMetadata = { lastSync: Date.now(), items: {} };
-        const now = Date.now();
-        for await (const batch of this.dataService.streamAllItemsInternal()) {
-          for (const item of batch) {
-            const metadataEntry = {
-              synced: now,
-              type: item.type,
-            };
-            if (
-              item.id.startsWith("CHAT_") &&
-              item.type === "idb" &&
-              item.data?.updatedAt
-            ) {
-              metadataEntry.lastModified = item.data.updatedAt;
-              metadataEntry.chatFingerprint = orchestrator.getChatFingerprint(
-                item.data
-              );
-            } else {
-              metadataEntry.size = orchestrator.getItemSize(item.data);
-              metadataEntry.lastModified = now;
-            }
-            newMetadata.items[item.id] = metadataEntry;
-          }
-        }
-
-        await this.storageService.upload(
-          `${backupFolder}/metadata.json`,
-          newMetadata,
-          true
-        );
-        this.logger.log("success", "metadata.json uploaded to daily backup");
-
-        const manifest = {
-          type: "daily-backup",
-          name: "daily-auto",
-          created: Date.now(),
-          totalItems: uploadedItems,
-          copiedItems: uploadedItems,
-          format: "export-style",
-          version: "3.1",
-          backupFolder: backupFolder,
-        };
-
-        await this.storageService.upload(
-          `${backupFolder}/backup-manifest.json`,
-          manifest,
-          true
-        );
-        await this._addOrUpdateBackupInIndex(manifest);
-
-        this.logger.log(
-          "success",
-          `Daily backup created: ${backupFolder} (${uploadedItems} items uploaded)`
-        );
-
-        await this.cleanupOldBackups();
-        return true;
-      } catch (error) {
-        const errorMessage =
-          error.result?.error?.message ||
-          error.message ||
-          JSON.stringify(error);
-        this.logger.log(
-          "error",
-          `Daily backup (export-style) failed: ${errorMessage}`
-        );
-        throw error;
-      }
-    }
-
     formatFileSize(bytes) {
       if (bytes === 0) return "0 B";
       const k = 1024;
@@ -4863,8 +4641,9 @@ async download(key, isMetadata = false) {
 
       try {
         const manifest = await this.storageService.download(manifestKey, true);
-        if (!manifest || manifest.format !== "server-side") {
-          throw new Error("Invalid server-side backup manifest");
+        const validFormats = ["server-side", "export-upload", "export-style"];
+        if (!manifest || !validFormats.includes(manifest.format)) {
+          throw new Error("Invalid or unsupported backup manifest format: " + (manifest?.format || "unknown"));
         }
 
         const backupFolder = manifest.backupFolder;
@@ -5042,7 +4821,7 @@ async download(key, isMetadata = false) {
 
         for (const manifest of index) {
           const isOld = new Date(manifest.created).getTime() < thirtyDaysAgo;
-          if (isOld && manifest.type === "server-side-daily-backup") {
+          if (isOld && (manifest.type === "server-side-daily-backup" || manifest.type === "daily-backup")) {
             manifestsToDelete.push(manifest);
           } else {
             remainingManifests.push(manifest);
@@ -7292,7 +7071,7 @@ async loadTombstoneList(modal) {
   }
   const styleSheet = document.createElement("style");
   styleSheet.textContent =
-    '.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); z-index: 99999; display: flex; align-items: center; justify-content: center; padding: 1rem; overflow-y: auto; } #sync-status-dot { position: absolute; top: -0.15rem; right: -0.6rem; width: 0.625rem; height: 0.625rem; border-radius: 9999px; } .cloud-sync-modal { width: 100%; max-width: 32rem; max-height: 90vh; background-color: rgb(39, 39, 42); color: white; border-radius: 0.5rem; padding: 0; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3); display: flex; flex-direction: column; } .cloud-sync-modal > div { display: flex; flex-direction: column; height: 100%; } .cloud-sync-modal-header { padding: 1rem; padding-bottom: 0.75rem; flex-shrink: 0; } .cloud-sync-modal-content { padding: 0 1rem; flex: 1; overflow-y: auto; } .cloud-sync-modal-footer { padding: 1rem; padding-top: 0.75rem; flex-shrink: 0; } .cloud-sync-modal input, ...cloud-sync-modal select { background-color: rgb(63, 63, 70); border: 1px solid rgb(82, 82, 91); color: white; } .cloud-sync-modal input:focus, ...cloud-sync-modal select:focus { border-color: rgb(59, 130, 246); outline: none; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); } .cloud-sync-modal button:disabled { background-color: rgb(82, 82, 91); cursor: not-allowed; opacity: 0.5; } .cloud-sync-modal .bg-zinc-800 { border: 1px solid rgb(82, 82, 91); } .cloud-sync-modal input[type="checkbox"] { accent-color: rgb(59, 130, 246); } .cloud-sync-modal input[type="checkbox"]:checked { background-color: rgb(59, 130, 246); border-color: rgb(59, 130, 246); } #sync-diagnostics-table { font-size: 0.75rem; } #sync-diagnostics-table th { background-color: rgb(82, 82, 91); font-weight: 600; } #sync-diagnostics-table tr:hover { background-color: rgba(63, 63, 70, 0.5); } #sync-diagnostics-header { padding: 0.5rem; margin: -0.5rem; border-radius: 0.375rem; transition: background-color 0.2s ease; -webkit-tap-highlight-color: transparent; min-height: 44px; display: flex; align-items: center; } #sync-diagnostics-header:hover { background-color: rgba(63, 63, 70, 0.5); } #sync-diagnostics-header:active { background-color: rgba(63, 63, 70, 0.8); } #sync-diagnostics-chevron, #sync-diagnostics-refresh { transition: transform 0.3s ease; } #sync-diagnostics-content { animation: slideDown 0.2s ease-out; } @keyframes slideDown { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 300px; } } @media (max-width: 640px) { #sync-diagnostics-table { font-size: 0.7rem; } #sync-diagnostics-table th, #sync-diagnostics-table td { padding: 0.5rem 0.25rem; } .cloud-sync-modal { margin: 0.5rem; } } .modal-footer a { color: #60a5fa; text-decoration: none; transition: color 0.2s ease-in-out; line-height: 3em;} .modal-footer a:hover { color: #93c5fd; text-decoration: underline; } #sync-diagnostics-refresh.is-refreshing { background-color: #16a34a; } #refresh-tombstones-btn.is-refreshing { background-color: #16a34a; } #undo-selected-btn:disabled.is-success { background-color: #16a34a; }';
+    '.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); z-index: 99999; display: flex; align-items: center; justify-content: center; padding: 1rem; overflow-y: auto; } #sync-status-dot { position: absolute; top: -0.15rem; right: -0.6rem; width: 0.625rem; height: 0.625rem; border-radius: 9999px; } .cloud-sync-modal { width: 100%; max-width: 32rem; max-height: 90vh; background-color: rgb(39, 39, 42); color: white; border-radius: 0.5rem; padding: 0; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3); display: flex; flex-direction: column; } .cloud-sync-modal > div { display: flex; flex-direction: column; height: 100%; } .cloud-sync-modal-header { padding: 1rem; padding-bottom: 0.75rem; flex-shrink: 0; } .cloud-sync-modal-content { padding: 0 1rem; flex: 1; overflow-y: auto; } .cloud-sync-modal-footer { padding: 1rem; padding-top: 0.75rem; flex-shrink: 0; } .cloud-sync-modal input, .cloud-sync-modal select { background-color: rgb(63, 63, 70); border: 1px solid rgb(82, 82, 91); color: white; } .cloud-sync-modal input:focus, .cloud-sync-modal select:focus { border-color: rgb(59, 130, 246); outline: none; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); } .cloud-sync-modal button:disabled { background-color: rgb(82, 82, 91); cursor: not-allowed; opacity: 0.5; } .cloud-sync-modal .bg-zinc-800 { border: 1px solid rgb(82, 82, 91); } .cloud-sync-modal input[type="checkbox"] { accent-color: rgb(59, 130, 246); } .cloud-sync-modal input[type="checkbox"]:checked { background-color: rgb(59, 130, 246); border-color: rgb(59, 130, 246); } #sync-diagnostics-table { font-size: 0.75rem; } #sync-diagnostics-table th { background-color: rgb(82, 82, 91); font-weight: 600; } #sync-diagnostics-table tr:hover { background-color: rgba(63, 63, 70, 0.5); } #sync-diagnostics-header { padding: 0.5rem; margin: -0.5rem; border-radius: 0.375rem; transition: background-color 0.2s ease; -webkit-tap-highlight-color: transparent; min-height: 44px; display: flex; align-items: center; } #sync-diagnostics-header:hover { background-color: rgba(63, 63, 70, 0.5); } #sync-diagnostics-header:active { background-color: rgba(63, 63, 70, 0.8); } #sync-diagnostics-chevron, #sync-diagnostics-refresh { transition: transform 0.3s ease; } #sync-diagnostics-content { animation: slideDown 0.2s ease-out; } @keyframes slideDown { from { opacity: 0; max-height: 0; } to { opacity: 1; max-height: 300px; } } @media (max-width: 640px) { #sync-diagnostics-table { font-size: 0.7rem; } #sync-diagnostics-table th, #sync-diagnostics-table td { padding: 0.5rem 0.25rem; } .cloud-sync-modal { margin: 0.5rem; } } .modal-footer a { color: #60a5fa; text-decoration: none; transition: color 0.2s ease-in-out; line-height: 3em;} .modal-footer a:hover { color: #93c5fd; text-decoration: underline; } #sync-diagnostics-refresh.is-refreshing { background-color: #16a34a; } #refresh-tombstones-btn.is-refreshing { background-color: #16a34a; } #undo-selected-btn:disabled.is-success { background-color: #16a34a; }';
   document.head.appendChild(styleSheet);
   const app = new CloudSyncApp();
   app.registerProvider("s3", S3Service);
@@ -7465,7 +7244,7 @@ async loadTombstoneList(modal) {
         app.operationQueue.cleanupStaleOperations(Date.now());
       }
       const modal = document.querySelector(".cloud-sync-modal");
-      if ((modal && !modal.style.display) || modal.style.display !== "none") {
+      if (modal && (!modal.style.display || modal.style.display !== "none")) {
         console.log("Modal is open, skipping DOM cleanup");
       } else {
         const orphanedElements = document.querySelectorAll(
