@@ -6078,7 +6078,7 @@ async download(key, isMetadata = false) {
             <h3 class="text-xl font-bold text-white">Cloud Sync</h3>
             <div class="flex items-center gap-2">
               <span class="text-sm text-zinc-400">Auto-Sync</span>
-              <input type="checkbox" id="auto-sync-toggle" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer" ${this.autoSyncEnabled ? 'checked' : ''} ${this.noSyncMode ? 'disabled' : ''}>
+              <input type="checkbox" id="auto-sync-toggle" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer" ${this.autoSyncEnabled && !this.noSyncMode ? 'checked' : ''} ${this.noSyncMode ? 'disabled' : ''}>
             </div>
           </div>
           ${modeStatus}
