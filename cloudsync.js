@@ -19,15 +19,23 @@ Contributors (Docs & Fixes):
 - Thinh Dinh (Multipart upload fix) [2024-11-21]
 - Martin Wehner (UI Integration using MutationObserver) [2025-12-24]
 - McQuade (Stability improvements) [2025-12-28]
+- Jeff G aka Ken Harris (Various fixes and improvements) [2026-03-04]
 */
 
-const TCS_BUILD_VERSION = "2026-01-09.3";
+const TCS_BUILD_VERSION = "2026-04-03.1";
 
 if (window.typingMindCloudSync) {
   console.log("TypingMind Cloud Sync already loaded");
 } else {
   window.typingMindCloudSync = true;
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // UTILITY: retryAsync
+  // Generic async retry wrapper with exponential backoff. Used throughout
+  // the storage provider and sync layers to gracefully handle transient
+  // network errors. Caller can pass isRetryable() to control which errors
+  // trigger a retry vs. an immediate throw.
+  // ─────────────────────────────────────────────────────────────────────────
   /**
    * A generic async retry utility with exponential backoff.
    * @param {Function} operation - The async function to execute.
@@ -64,6 +72,13 @@ if (window.typingMindCloudSync) {
     throw lastError;
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // CLASS: ConfigManager
+  // Loads, saves, and validates all extension settings from localStorage
+  // (bucket name, region, credentials, encryption key, sync interval, etc.).
+  // Also maintains the exclusion list -- keys that must never be synced.
+  // Key methods: loadConfig(), save(), shouldExclude(), reloadExclusions()
+  // ─────────────────────────────────────────────────────────────────────────
   class ConfigManager {
     constructor() {
       this.PEPPER = "tcs-v3-pepper-!@#$%^&*()";
@@ -185,7 +200,6 @@ if (window.typingMindCloudSync) {
         "TM_useStateUpdateHistory",
         "INSTANCE_ID",
         "eruda-console",
-        "TM_useExtensionURLs",
       ];
       return [...systemExclusions, ...userExclusions];
     }
@@ -226,9 +240,10 @@ if (window.typingMindCloudSync) {
       });
     }
     shouldExclude(key) {
+      const always = key.startsWith("tcs_");
       return (
         this.exclusions.includes(key) ||
-        key.startsWith("tcs_") ||
+        always ||
         key.startsWith("gsi_") ||
         key.includes("eruda")
       );
@@ -237,6 +252,13 @@ if (window.typingMindCloudSync) {
       this.exclusions = this.loadExclusions();
     }
   }
+  // ─────────────────────────────────────────────────────────────────────────
+  // CLASS: Logger
+  // Structured console logging with typed entries (info, warning, error,
+  // success, start, skip). Optionally loads the Eruda mobile devtools
+  // overlay when the ?log=true URL param is present.
+  // Key methods: log(), setEnabled(), loadEruda(), destroyEruda()
+  // ─────────────────────────────────────────────────────────────────────────
   class Logger {
     constructor() {
       const urlParams = new URLSearchParams(window.location.search);
@@ -302,13 +324,39 @@ if (window.typingMindCloudSync) {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // CLASS: DataService
+  // Single source of truth for reading and writing TypingMind browser data.
+  // Covers both IndexedDB (chats, large objects stored as "idb" type) and
+  // localStorage (settings, prompts, agents stored as "ls" type), plus
+  // binary blob attachments. Also owns the tombstone system: soft-delete
+  // markers that track which items were deleted so deletions propagate
+  // across devices during sync.
+  function detectMimeFromBytes(data) {
+    let bytes = null;
+    if (data instanceof Uint8Array) bytes = data;
+    else if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
+    else if (data instanceof Blob) return data.type || "application/octet-stream";
+    if (!bytes || bytes.length < 4) return "application/octet-stream";
+    if (bytes[0]===0x89 && bytes[1]===0x50 && bytes[2]===0x4E && bytes[3]===0x47) return "image/png";
+    if (bytes[0]===0xFF && bytes[1]===0xD8 && bytes[2]===0xFF) return "image/jpeg";
+    if (bytes[0]===0x47 && bytes[1]===0x49 && bytes[2]===0x46) return "image/gif";
+    if (bytes[0]===0x52 && bytes[1]===0x49 && bytes[2]===0x46 && bytes[3]===0x46
+      && bytes.length>=12 && bytes[8]===0x57 && bytes[9]===0x45 && bytes[10]===0x42 && bytes[11]===0x50) return "image/webp";
+    if (bytes[0]===0x25 && bytes[1]===0x50 && bytes[2]===0x44 && bytes[3]===0x46) return "application/pdf";
+    return "application/octet-stream";
+  }
+
+  // Key methods: getAllItems(), getAllItemsEfficient(), getItem(), saveItem(),
+  //   performDelete(), createTombstone(), getAllTombstones(), estimateDataSize()
+  // ─────────────────────────────────────────────────────────────────────────
   class DataService {
     constructor(configManager, logger, operationQueue = null) {
       this.config = configManager;
       this.logger = logger;
       this.operationQueue = operationQueue;
       this.dbPromise = null;
-      this.streamBatchSize = 1000;
+      this.streamBatchSize = 200;
       this.memoryThreshold = 100 * 1024 * 1024;
       this.throttleDelay = 10;
     }
@@ -341,13 +389,8 @@ if (window.typingMindCloudSync) {
               value !== undefined &&
               !this.config.shouldExclude(key)
             ) {
-              try {
-                const itemSize = JSON.stringify(value).length * 2;
-                totalSize += itemSize;
-                itemCount++;
-              } catch (e) {
-                this.logger.log("warning", `Error estimating size for ${key}`);
-              }
+              totalSize += this.estimateItemSize(value);
+              itemCount++;
             } else if (typeof key === "string") {
               excludedItemCount++;
             }
@@ -373,143 +416,87 @@ if (window.typingMindCloudSync) {
       return { totalSize, itemCount, excludedItemCount };
     }
     async *streamAllItemsInternal() {
-      const batchSize = this.streamBatchSize;
-      let batch = [];
-      let batchSize_bytes = 0;
-      let db = null;
-      let transaction = null;
-      let pendingBatches = [];
-      let currentBatchIndex = 0;
+      const pageSize = this.streamBatchSize;
+      let idbProcessed = 0;
       try {
-        const processItem = (item) => {
-          try {
-            const estimatedSize = this.estimateItemSize(item.data);
-            if (
-              batchSize_bytes + estimatedSize > this.memoryThreshold &&
-              batch.length > 0
-            ) {
-              const currentBatch = [...batch];
-              batch = [item];
-              batchSize_bytes = estimatedSize;
-              return currentBatch;
-            }
-            batch.push(item);
-            batchSize_bytes += estimatedSize;
-            if (batch.length >= batchSize) {
-              const currentBatch = [...batch];
-              batch = [];
-              batchSize_bytes = 0;
-              return currentBatch;
-            }
-            return null;
-          } catch (error) {
-            this.logger.log(
-              "warning",
-              `Error processing item: ${error.message}`
-            );
-            return null;
-          }
-        };
-        db = await this.getDB();
-        transaction = db.transaction(["keyval"], "readonly");
-        const store = transaction.objectStore("keyval");
-        let idbProcessed = 0;
-        await new Promise((resolve, reject) => {
-          const request = store.openCursor();
-          request.onsuccess = async (event) => {
-            try {
-              const cursor = event.target.result;
-              if (cursor) {
-                const key = cursor.key;
-                const value = cursor.value;
-                if (value instanceof Blob) {
-                  const item = {
-                    id:   key,
-                    data: value,                 
-                    type: "blob",
-                    blobType: value.type,
-                    size: value.size,
-                  };
-                  const batchToYield = processItem(item);
-                  if (batchToYield) pendingBatches.push(batchToYield);
-                  cursor.continue();
-                  return;
-                }
+        const db = await this.getDB();
+        let lastKey = undefined;
+        let hasMore = true;
 
-                if (
-                  typeof key === "string" &&
-                  value !== undefined &&
-                  !this.config.shouldExclude(key)
-                ) {
-                  const item = { id: key, data: value, type: "idb" };
-                  const batchToYield = processItem(item);
-                  if (batchToYield) {
-                    pendingBatches.push(batchToYield);
-                    if (pendingBatches.length >= 10) {
-                      this.logger.log(
-                        "warning",
-                        `Large number of pending batches (${pendingBatches.length}), potential memory issue`
-                      );
-                    }
-                  }
-                  idbProcessed++;
-                  if (idbProcessed % 5000 === 0) {
-                    this.logger.log(
-                      "info",
-                      `Processed ${idbProcessed} IndexedDB items`
-                    );
-                  }
-                }
-                cursor.continue();
-              } else {
-                resolve();
+        while (hasMore) {
+          const page = await new Promise((resolve, reject) => {
+            const tx = db.transaction(["keyval"], "readonly");
+            const store = tx.objectStore("keyval");
+            const range = lastKey !== undefined
+              ? IDBKeyRange.lowerBound(lastKey, true)
+              : undefined;
+            const items = [];
+            const request = store.openCursor(range);
+            request.onsuccess = (event) => {
+              const cursor = event.target.result;
+              if (!cursor || items.length >= pageSize) {
+                resolve(items);
+                return;
               }
-            } catch (error) {
+              const key = cursor.key;
+              const value = cursor.value;
+              if (value instanceof Blob) {
+                items.push({
+                  id: key,
+                  data: value,
+                  type: "blob",
+                  blobType: value.type,
+                  size: value.size,
+                });
+              } else if (
+                typeof key === "string" &&
+                value !== undefined &&
+                !this.config.shouldExclude(key)
+              ) {
+                items.push({ id: key, data: value, type: "idb" });
+              }
+              cursor.continue();
+            };
+            request.onerror = () => reject(request.error);
+          });
+
+          if (page.length === 0) {
+            hasMore = false;
+          } else {
+            lastKey = page[page.length - 1].id;
+            idbProcessed += page.length;
+            if (idbProcessed % 2000 === 0) {
               this.logger.log(
-                "error",
-                `Error in cursor processing: ${error.message}`
+                "info",
+                `Processed ${idbProcessed} IndexedDB items`
               );
-              reject(error);
             }
-          };
-          request.onerror = () => {
-            this.logger.log("error", "IndexedDB cursor error");
-            reject(request.error);
-          };
-        });
-        for (let i = 0; i < pendingBatches.length; i++) {
-          yield pendingBatches[i];
-          pendingBatches[i] = null;
-          currentBatchIndex = i + 1;
-          if (i % 5 === 0) {
+            yield page;
             await this.forceGarbageCollection();
+            if (page.length < pageSize) {
+              hasMore = false;
+            }
           }
         }
-        pendingBatches = null;
-        let lsProcessed = 0;
+
+        let lsBatch = [];
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
           if (key && !this.config.shouldExclude(key)) {
             const value = localStorage.getItem(key);
             if (value !== null) {
-              const item = { id: key, data: { key, value }, type: "ls" };
-              const batchToYield = processItem(item);
-              if (batchToYield) {
-                yield batchToYield;
+              lsBatch.push({ id: key, data: { key, value }, type: "ls" });
+              if (lsBatch.length >= pageSize) {
+                yield lsBatch;
+                lsBatch = [];
                 await this.forceGarbageCollection();
-              }
-              lsProcessed++;
-              if (lsProcessed % 1000 === 0) {
-                this.logger.log(
-                  "info",
-                  `Processed ${lsProcessed} localStorage items`
-                );
               }
             }
           }
         }
-        if (batch && batch.length > 0) {
-          yield batch;
+        if (lsBatch.length > 0) {
+          yield lsBatch;
+          lsBatch = null;
           await this.forceGarbageCollection();
         }
       } catch (error) {
@@ -518,21 +505,6 @@ if (window.typingMindCloudSync) {
           `Error in streamAllItemsInternal: ${error.message}`
         );
         throw error;
-      } finally {
-        try {
-          if (pendingBatches) {
-            for (let i = currentBatchIndex; i < pendingBatches.length; i++) {
-              pendingBatches[i] = null;
-            }
-            pendingBatches = null;
-          }
-          batch = null;
-          transaction = null;
-          db = null;
-          await this.forceGarbageCollection();
-        } catch (cleanupError) {
-          this.logger.log("warning", `Cleanup error: ${cleanupError.message}`);
-        }
       }
     }
     async getAllItemsEfficient() {
@@ -739,9 +711,11 @@ if (window.typingMindCloudSync) {
           return false;
         }
       } else if (type === "blob") {
-        const blob = new Blob([item], {
-          type: item.blobType || "application/octet-stream",
-        });
+        let mimeType = item.blobType || "application/octet-stream";
+        if (mimeType === "application/octet-stream") {
+          mimeType = detectMimeFromBytes(item);
+        }
+        const blob = new Blob([item], { type: mimeType });
         return this.saveItem(blob, "idb", itemKey);
       }
       return false;
@@ -823,7 +797,7 @@ if (window.typingMindCloudSync) {
       return tombstone;
     }
     _sanitizeTombstoneItemId(itemId) {
-      while (typeof itemId === "string" && itemId.startsWith("tcs_tombstone_")) {
+      while (itemId.startsWith("tcs_tombstone_")) {
         itemId = itemId.slice("tcs_tombstone_".length);
       }
       return itemId;
@@ -877,39 +851,26 @@ if (window.typingMindCloudSync) {
     }
     getAllTombstones() {
       const tombstones = new Map();
-      const keysToCleanup = [];
-      for (let i = 0; i < localStorage.length; i++) {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
         if (key?.startsWith("tcs_tombstone_")) {
           const rawItemId = key.slice("tcs_tombstone_".length);
           const itemId = this._sanitizeTombstoneItemId(rawItemId);
-          const isNested = rawItemId !== itemId;
+          if (rawItemId !== itemId) {
+            localStorage.removeItem(key);
+            this.logger.log(
+              "warning",
+              `🧹 Removed nested tombstone key: ${key} (clean id: ${itemId})`
+            );
+            continue;
+          }
           try {
             const tombstone = JSON.parse(localStorage.getItem(key));
-            if (isNested) {
-              keysToCleanup.push(key);
-              this.logger.log(
-                "warning",
-                `🧹 Found nested tombstone key: ${key} → sanitized to ${itemId}`
-              );
-            }
-            if (!tombstones.has(itemId)) {
-              tombstones.set(itemId, tombstone);
-            }
+            tombstones.set(itemId, tombstone);
           } catch {
-            keysToCleanup.push(key);
             continue;
           }
         }
-      }
-      for (const staleKey of keysToCleanup) {
-        localStorage.removeItem(staleKey);
-      }
-      if (keysToCleanup.length > 0) {
-        this.logger.log(
-          "info",
-          `🧹 Cleaned up ${keysToCleanup.length} stale/nested tombstone entries from localStorage`
-        );
       }
       return tombstones;
     }
@@ -969,6 +930,15 @@ if (window.typingMindCloudSync) {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // CLASS: CryptoService
+  // Client-side AES-256-GCM encryption and decryption for all data before
+  // it leaves the browser. Derives a CryptoKey from the user's passphrase
+  // using PBKDF2 (SHA-256, 100k iterations) and caches it per session.
+  // Each encrypted payload is: [12-byte random IV] + [AES-GCM ciphertext].
+  // Also handles streaming JSON compression for large arrays.
+  // Key methods: encrypt(), decrypt(), encryptBytes(), decryptBytes(), deriveKey()
+  // ─────────────────────────────────────────────────────────────────────────
   class CryptoService {
     constructor(configManager, logger) {
       this.config = configManager;
@@ -1174,6 +1144,15 @@ if (window.typingMindCloudSync) {
       }
     }
   }
+  // ─────────────────────────────────────────────────────────────────────────
+  // CLASS: IStorageProvider  (abstract base)
+  // Defines the interface that all cloud storage backends must implement.
+  // Concrete subclasses (S3Service, GoogleDriveService) override every method.
+  // The constructor throws if instantiated directly, enforcing the contract.
+  // Interface: isConfigured(), initialize(), handleAuthentication(),
+  //   upload(), download(), delete(), list(), downloadWithResponse(),
+  //   copyObject(), ensurePathExists()
+  // ─────────────────────────────────────────────────────────────────────────
   class IStorageProvider {
     constructor(configManager, cryptoService, logger) {
       if (this.constructor === IStorageProvider) {
@@ -1260,6 +1239,16 @@ if (window.typingMindCloudSync) {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // CLASS: S3Service  (extends IStorageProvider)
+  // Storage backend for AWS S3 and any S3-compatible provider (Cloudflare R2,
+  // Wasabi, iDrive E2, GCS S3 API, etc.). Dynamically loads the AWS SDK v3
+  // from CDN on first use. Uses multipart upload for large files and server-
+  // side copy (CopyObject) for fast snapshot creation without re-uploading.
+  // Encrypts all data via CryptoService before uploading; decrypts on download.
+  // Key methods: upload(), download(), downloadRaw(), delete(), list(),
+  //   copyObject(), uploadRaw(), loadSDK()
+  // ─────────────────────────────────────────────────────────────────────────
   class S3Service extends IStorageProvider {
     constructor(configManager, cryptoService, logger) {
       super(configManager, cryptoService, logger);
@@ -1723,6 +1712,16 @@ async download(key, isMetadata = false) {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // CLASS: GoogleDriveService  (extends IStorageProvider)
+  // Storage backend for Google Drive using the GAPI and Google Identity
+  // Services (GIS) OAuth2 libraries, loaded dynamically from CDN.
+  // Data lives in a hidden app-specific Drive folder (appDataFolder scope).
+  // Folder paths are emulated via nested Drive folder hierarchies; each file
+  // is looked up by path on every operation (results are cached per session).
+  // Key methods: handleAuthentication(), upload(), download(), delete(),
+  //   list(), copyObject(), _getPathId(), _getAppFolderId()
+  // ─────────────────────────────────────────────────────────────────────────
   class GoogleDriveService extends IStorageProvider {
     constructor(configManager, cryptoService, logger) {
       super(configManager, cryptoService, logger);
@@ -2558,6 +2557,21 @@ async download(key, isMetadata = false) {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // CLASS: SyncOrchestrator
+  // The core sync engine. Owns the local metadata index (items map with
+  // timestamps/fingerprints) and drives all sync flows:
+  //  - performFullSync(): entry point called on page load and on schedule.
+  //    Runs syncFromCloud() first, then syncToCloud() or createInitialSync().
+  //  - syncFromCloud(): downloads items newer in cloud than local.
+  //  - syncToCloud(): uploads items newer locally than in cloud.
+  //  - createInitialSync(): first-time upload when cloud is empty.
+  //  - initializeLocalMetadata(): rebuilds the local index on a new device.
+  //  - forceImportFromCloud(): destructive overwrite of local with cloud data.
+  //  - forceExportToCloud(): destructive overwrite of cloud with local data.
+  //  - restoreFromBackup(): restores a named snapshot from the backups/ folder.
+  // Also handles tombstone cleanup and chat fingerprinting for change detection.
+  // ─────────────────────────────────────────────────────────────────────────
   class SyncOrchestrator {
     constructor(
       configManager,
@@ -2581,7 +2595,16 @@ async download(key, isMetadata = false) {
       return result;
     }
     saveMetadata() {
-      localStorage.setItem("tcs_local-metadata", JSON.stringify(this.metadata));
+      const compacted = {
+        ...this.metadata,
+        items: {},
+      };
+      for (const [key, item] of Object.entries(this.metadata.items || {})) {
+        if (!item.deleted) {
+          compacted.items[key] = item;
+        }
+      }
+      localStorage.setItem("tcs_local-metadata", JSON.stringify(compacted));
     }
     getLastCloudSync() {
       const stored = localStorage.getItem("tcs_last-cloud-sync");
@@ -2665,7 +2688,6 @@ async download(key, isMetadata = false) {
       );
       this.logger.log("info", `Found ${localItemKeys.size} local item keys.`);
 
-      const { totalSize } = await this.dataService.estimateDataSize();
       const itemsIterator = this.dataService.streamAllItemsInternal();
 
       for await (const batch of itemsIterator) {
@@ -2848,7 +2870,8 @@ async download(key, isMetadata = false) {
         const cloudMetadata = await this.getCloudMetadata();
         let itemsSynced = 0;
 
-        const uploadPromises = changedItems.map(async (item) => {
+        const UPLOAD_CONCURRENCY = 5;
+        const processOneUpload = async (item) => {
           const cloudItem = cloudMetadata.items[item.id];
           if (
             cloudItem &&
@@ -2884,9 +2907,9 @@ async download(key, isMetadata = false) {
               const mime = (item.type === 'blob' && data instanceof Blob)
                 ? data.type
                 : (item.blobType || '');
-             if (item.type === "blob" && data instanceof Blob) {
-  data = new Uint8Array(await data.arrayBuffer());
-}
+              if (item.type === "blob" && data instanceof Blob) {
+                data = new Uint8Array(await data.arrayBuffer());
+              }
               if (data) {
                 const path =
                   item.type === "blob"
@@ -2928,11 +2951,17 @@ async download(key, isMetadata = false) {
               "error",
               `Failed to sync key "${item.id}": ${error.message}`
             );
-            throw error;
           }
-        });
+        };
 
-        await Promise.allSettled(uploadPromises);
+        for (let ui = 0; ui < changedItems.length; ui += UPLOAD_CONCURRENCY) {
+          const uploadBatch = changedItems.slice(ui, ui + UPLOAD_CONCURRENCY);
+          await Promise.allSettled(uploadBatch.map(processOneUpload));
+          if (ui + UPLOAD_CONCURRENCY < changedItems.length) {
+            this.logger.log("info", `Cloud upload progress: ${Math.min(ui + UPLOAD_CONCURRENCY, changedItems.length)}/${changedItems.length} done`);
+            await new Promise(r => setTimeout(r, 500));
+          }
+        }
 
         if (itemsSynced > 0) {
           cloudMetadata.lastSync = Date.now();
@@ -3116,43 +3145,72 @@ async download(key, isMetadata = false) {
             `Processing ${itemsToDownload.length} items from cloud`
           );
         }
-        const downloadPromises = itemsToDownload.map(
-          async ([key, cloudItem]) => {
-            if (cloudItem.deleted) {
-              this.logger.log(
-                "info",
-                `🗑️ Processing cloud tombstone for key "${key}" (v${
-                  cloudItem.tombstoneVersion || 1
-                })`
-              );
-              await this.dataService.performDelete(key, cloudItem.type);
-              const tombstoneData = {
-                deleted: cloudItem.deleted,
-                deletedAt: cloudItem.deletedAt || cloudItem.deleted,
-                type: cloudItem.type,
-                tombstoneVersion: cloudItem.tombstoneVersion || 1,
-              };
-              this.dataService.saveTombstoneToStorage(key, tombstoneData);
-            } else {
-              const path = cloudItem.type === "blob"
-                ? `attachments/${key}.bin`
-                : `items/${key}.json`;
-        
-              const data = await this.storageService.download(path);
-
-              if (data) {
-                if (cloudItem.type === "blob") {
-                  data.blobType = cloudItem.blobType || '';
-                  await this.dataService.saveItem(data, "blob", key);       
+        const DOWNLOAD_CONCURRENCY = 15;
+        let downloadedCount = 0;
+        let downloadFailCount = 0;
+        const failedKeys = new Set();
+        for (let i = 0; i < itemsToDownload.length; i += DOWNLOAD_CONCURRENCY) {
+          const batch = itemsToDownload.slice(i, i + DOWNLOAD_CONCURRENCY);
+          const batchPromises = batch.map(
+            async ([key, cloudItem]) => {
+              try {
+                if (cloudItem.deleted) {
+                  this.logger.log(
+                    "info",
+                    `🗑️ Processing cloud tombstone for key "${key}" (v${
+                      cloudItem.tombstoneVersion || 1
+                    })`
+                  );
+                  await this.dataService.performDelete(key, cloudItem.type);
+                  const tombstoneData = {
+                    deleted: cloudItem.deleted,
+                    deletedAt: cloudItem.deletedAt || cloudItem.deleted,
+                    type: cloudItem.type,
+                    tombstoneVersion: cloudItem.tombstoneVersion || 1,
+                  };
+                  this.dataService.saveTombstoneToStorage(key, tombstoneData);
                 } else {
-                  await this.dataService.saveItem(data, cloudItem.type, key);
+                  const path = cloudItem.type === "blob"
+                    ? `attachments/${key}.bin`
+                    : `items/${key}.json`;
+
+                  const data = await this.storageService.download(path);
+
+                  if (data) {
+                    if (cloudItem.type === "blob") {
+                      data.blobType = cloudItem.blobType || '';
+                      await this.dataService.saveItem(data, "blob", key);
+                    } else {
+                      await this.dataService.saveItem(data, cloudItem.type, key);
+                    }
+                  }
                 }
-                this.logger.log("info", `Synced key "${key}" from cloud`);
+                downloadedCount++;
+              } catch (dlErr) {
+                downloadFailCount++;
+                failedKeys.add(key);
+                this.logger.log("warning", `Failed to download "${key}": ${dlErr.message}`);
               }
             }
+          );
+          await Promise.allSettled(batchPromises);
+          if (downloadedCount % 150 === 0 || i + DOWNLOAD_CONCURRENCY >= itemsToDownload.length) {
+            this.logger.log(
+              "info",
+              `Cloud download progress: ${downloadedCount}/${itemsToDownload.length} done` +
+                (downloadFailCount > 0 ? `, ${downloadFailCount} failed` : "")
+            );
           }
-        );
-        await Promise.allSettled(downloadPromises);
+        }
+        if (failedKeys.size > 0) {
+          this.logger.log(
+            "warning",
+            `⚠️ ${failedKeys.size} items failed to download and will be retried on next sync`
+          );
+          for (const fk of failedKeys) {
+            delete cloudMetadata.items[fk];
+          }
+        }
         this.metadata = cloudMetadata;
         this.metadata.lastSync = cloudLastSync;
         this.setLastCloudSync(cloudLastSync);
@@ -3197,50 +3255,58 @@ async download(key, isMetadata = false) {
         const now = Date.now();
 
         for await (const batch of allItemsIterator) {
-          const uploadPromises = batch.map(async (item) => {
-            if (item.deleted || item.reason === "tombstone") {
-              const tombstoneData = {
-                deleted: item.deleted || now,
-                deletedAt: item.deleted || now,
-                type: item.type,
-                tombstoneVersion: item.tombstoneVersion || 1,
-                synced: now,
-              };
-              return {
-                id: item.id,
-                metadata: tombstoneData,
-                isTombstone: true,
-              };
-            } else {
-              await this.storageService.upload(
-                `items/${item.id}.json`,
-                item.data,
-                false,
-                item.id
-              );
-              const newMetadataEntry = {
-                synced: now,
-                type: item.type,
-              };
-
-              if (
-                item.id.startsWith("CHAT_") &&
-                item.type === "idb" &&
-                item.data?.updatedAt
-              ) {
-                newMetadataEntry.lastModified = item.data.updatedAt;
-                newMetadataEntry.chatFingerprint = this.getChatFingerprint(item.data);
+          const CHUNK = 5;
+          const allResults = [];
+          for (let ci = 0; ci < batch.length; ci += CHUNK) {
+            const chunk = batch.slice(ci, ci + CHUNK);
+            const uploadPromises = chunk.map(async (item) => {
+              if (item.deleted || item.reason === "tombstone") {
+                const tombstoneData = {
+                  deleted: item.deleted || now,
+                  deletedAt: item.deleted || now,
+                  type: item.type,
+                  tombstoneVersion: item.tombstoneVersion || 1,
+                  synced: now,
+                };
+                return {
+                  id: item.id,
+                  metadata: tombstoneData,
+                  isTombstone: true,
+                };
               } else {
-                newMetadataEntry.size = this.getItemSize(item.data);
-                newMetadataEntry.lastModified = now;
+                await this.storageService.upload(
+                  `items/${item.id}.json`,
+                  item.data,
+                  false,
+                  item.id
+                );
+                const newMetadataEntry = {
+                  synced: now,
+                  type: item.type,
+                };
+
+                if (
+                  item.id.startsWith("CHAT_") &&
+                  item.type === "idb" &&
+                  item.data?.updatedAt
+                ) {
+                  newMetadataEntry.lastModified = item.data.updatedAt;
+                  newMetadataEntry.chatFingerprint = this.getChatFingerprint(item.data);
+                } else {
+                  newMetadataEntry.size = this.getItemSize(item.data);
+                  newMetadataEntry.lastModified = now;
+                }
+                return { id: item.id, metadata: newMetadataEntry };
               }
-              return { id: item.id, metadata: newMetadataEntry };
+            });
+            const chunkResults = await Promise.allSettled(uploadPromises);
+            allResults.push(...chunkResults);
+            if (ci + CHUNK < batch.length) {
+              await new Promise(r => setTimeout(r, 300));
             }
-          });
+          }
 
-          const results = await Promise.allSettled(uploadPromises);
-
-          results.forEach((result) => {
+          allResults.forEach((result) => {
             if (result.status === "fulfilled" && result.value) {
               const { id, metadata, isTombstone } = result.value;
               this.metadata.items[id] = metadata;
@@ -3309,27 +3375,36 @@ async download(key, isMetadata = false) {
           localStorage.setItem("tcs_metadata_etag", "");
       }
 
-      const cloudMetadata = await this.getCloudMetadata();
-      const localMetadataEmpty =
-        Object.keys(this.metadata.items || {}).length === 0;
-      const cloudMetadataEmpty =
-        Object.keys(cloudMetadata.items || {}).length === 0;
-      if (cloudMetadataEmpty) {
-        const { itemCount } = await this.dataService.estimateDataSize();
-        if (itemCount > 0) {
-          this.logger.log(
-            "info",
-            `🚀 Fresh cloud setup detected: ${itemCount} local items found with empty cloud metadata. Triggering initial sync.`
-          );
-          await this.createInitialSync();
-        } else {
-          this.logger.log(
-            "info",
-            "Fresh setup with no local data - nothing to sync"
-          );
-        }
+      const restorePending = localStorage.getItem("tcs_restore_pending");
+      if (restorePending === "true") {
+        this.logger.log(
+          "info",
+          "🛡️ Post-restore mode: skipping syncToCloud to prevent metadata corruption. Download-only sync complete."
+        );
+        localStorage.removeItem("tcs_restore_pending");
       } else {
-        await this.syncToCloud();
+        const cloudMetadata = await this.getCloudMetadata();
+        const localMetadataEmpty =
+          Object.keys(this.metadata.items || {}).length === 0;
+        const cloudMetadataEmpty =
+          Object.keys(cloudMetadata.items || {}).length === 0;
+        if (cloudMetadataEmpty) {
+          const { itemCount } = await this.dataService.estimateDataSize();
+          if (itemCount > 0) {
+            this.logger.log(
+              "info",
+              `🚀 Fresh cloud setup detected: ${itemCount} local items found with empty cloud metadata. Triggering initial sync.`
+            );
+            await this.createInitialSync();
+          } else {
+            this.logger.log(
+              "info",
+              "Fresh setup with no local data - nothing to sync"
+            );
+          }
+        } else {
+          await this.syncToCloud();
+        }
       }
       const now = Date.now();
       const lastCleanup = localStorage.getItem("tcs_last-tombstone-cleanup");
@@ -3358,17 +3433,9 @@ async download(key, isMetadata = false) {
         "start",
         "🔧 Initializing local metadata from database contents"
       );
-      const { totalSize } = await this.dataService.estimateDataSize();
-      const useStreaming = totalSize > this.dataService.memoryThreshold;
       const tombstones = this.dataService.getAllTombstones();
       let itemCount = 0;
       let tombstoneCount = 0;
-      this.logger.log(
-        "info",
-        `Using memory-efficient metadata initialization (dataset: ${this.dataService.formatSize(
-          totalSize
-        )})`
-      );
 
       for await (const batch of this.dataService.streamAllItemsInternal()) {
         for (const item of batch) {
@@ -3431,15 +3498,21 @@ async download(key, isMetadata = false) {
           )) {
             if (!cloudItem.deleted && !this.metadata.items[cloudItemId]) {
               try {
-                const data = await this.storageService.download(
-                  `items/${cloudItemId}.json`
-                );
+                const downloadPath = cloudItem.type === "blob"
+                  ? `attachments/${cloudItemId}.bin`
+                  : `items/${cloudItemId}.json`;
+                const data = await this.storageService.download(downloadPath);
                 if (data) {
-                  await this.dataService.saveItem(
-                    data,
-                    cloudItem.type,
-                    cloudItemId
-                  );
+                  if (cloudItem.type === "blob") {
+                    data.blobType = cloudItem.blobType || '';
+                    await this.dataService.saveItem(data, "blob", cloudItemId);
+                  } else {
+                    await this.dataService.saveItem(
+                      data,
+                      cloudItem.type,
+                      cloudItemId
+                    );
+                  }
                   const syncTime = Date.now();
                   this.metadata.items[cloudItemId] = {
                     synced: syncTime,
@@ -3447,6 +3520,9 @@ async download(key, isMetadata = false) {
                     size: cloudItem.size || this.getItemSize(data),
                     lastModified: syncTime,
                   };
+                  if (cloudItem.type === "blob" && cloudItem.blobType) {
+                    this.metadata.items[cloudItemId].blobType = cloudItem.blobType;
+                  }
                   restoredCount++;
                   this.logger.log(
                     "info",
@@ -3647,17 +3723,14 @@ async download(key, isMetadata = false) {
     }
     async getSyncDiagnostics() {
       try {
-        const { totalSize, itemCount, excludedItemCount } =
-          await this.dataService.estimateDataSize();
-        const localCount = itemCount;
+        const localItemKeys = await this.dataService.getAllItemKeys();
+        const localCount = localItemKeys.size;
         let chatItems = 0;
-        for await (const batch of this.dataService.streamAllItemsInternal()) {
-          for (const item of batch) {
-            if (item.id.startsWith("CHAT_")) {
-              chatItems++;
-            }
-          }
+        let excludedItemCount = 0;
+        for (const key of localItemKeys) {
+          if (key.startsWith("CHAT_")) chatItems++;
         }
+        const totalKeysInDB = localCount + excludedItemCount;
 
         const metadataCount = Object.keys(this.metadata.items || {}).length;
         const metadataDeleted = Object.values(this.metadata.items || {}).filter(
@@ -3720,25 +3793,20 @@ async download(key, isMetadata = false) {
         };
       }
     }
-    async updateSyncDiagnosticsCache(force = false) {
+    async updateSyncDiagnosticsCache() {
       const _now = Date.now();
       const _last = Number(localStorage.getItem("tcs_sync_diag_last_update") || "0");
       const _minInterval = 5 * 60 * 1000;
-      if (!force && _last && _now - _last < _minInterval) {
+      if (_last && _now - _last < _minInterval) {
         return;
       }
       localStorage.setItem("tcs_sync_diag_last_update", String(_now));
       try {
-        const { totalSize, itemCount, excludedItemCount } =
-          await this.dataService.estimateDataSize();
-        const localCount = itemCount;
+        const localItemKeys = await this.dataService.getAllItemKeys();
+        const localCount = localItemKeys.size;
         let chatItems = 0;
-        for await (const batch of this.dataService.streamAllItemsInternal()) {
-          for (const item of batch) {
-            if (item.id.startsWith("CHAT_")) {
-              chatItems++;
-            }
-          }
+        for (const key of localItemKeys) {
+          if (key.startsWith("CHAT_")) chatItems++;
         }
         const metadataCount = Object.keys(this.metadata.items || {}).length;
         const metadataDeleted = Object.values(this.metadata.items || {}).filter(
@@ -3761,7 +3829,7 @@ async download(key, isMetadata = false) {
           cloudMetadata: cloudActive,
           chatSyncLocal: chatItems,
           chatSyncCloud: cloudChatItems,
-          excludedItemCount: excludedItemCount,
+          excludedItemCount: 0,
         };
         localStorage.setItem(
           "tcs_sync_diagnostics",
@@ -3802,18 +3870,40 @@ async download(key, isMetadata = false) {
 
         this.logger.log("start", "[Force Export] Uploading all local items...");
         let uploadedCount = 0;
+        let skippedTombstones = 0;
         for await (const batch of this.dataService.streamAllItemsInternal()) {
-          const uploadPromises = batch.map((item) => {
-            const path = item.type === "blob"
-              ? `attachments/${item.id}.bin`
-              : `items/${item.id}.json`;
-            return this.storageService.upload(path, item.data);
-          });
-          await Promise.allSettled(uploadPromises);
+          const CHUNK = 5;
+          for (let ci = 0; ci < batch.length; ci += CHUNK) {
+            const chunk = batch.slice(ci, ci + CHUNK);
+            const uploadPromises = chunk.map(async (item) => {
+              if (item.id.startsWith("tcs_tombstone_")) {
+                skippedTombstones++;
+                return;
+              }
+              if (item.type === "blob" && item.data instanceof Blob) {
+                const arrayBuf = await item.data.arrayBuffer();
+                const uint8 = new Uint8Array(arrayBuf);
+                await this.storageService.upload(
+                  `attachments/${item.id}.bin`,
+                  uint8
+                );
+              } else {
+                await this.storageService.upload(
+                  `items/${item.id}.json`,
+                  item.data
+                );
+              }
+            });
+            await Promise.allSettled(uploadPromises);
+            if (ci + CHUNK < batch.length) {
+              await new Promise(r => setTimeout(r, 300));
+            }
+          }
           uploadedCount += batch.length;
           this.logger.log(
             "info",
-            `[Force Export] Uploaded batch. Total: ${uploadedCount}/${localKeys.size}`
+            `[Force Export] Uploaded batch. Total: ${uploadedCount}/${localKeys.size}` +
+              (skippedTombstones > 0 ? ` (${skippedTombstones} tombstones skipped)` : "")
           );
         }
         this.logger.log("success", "[Force Export] All local items uploaded.");
@@ -3841,11 +3931,22 @@ async download(key, isMetadata = false) {
         const now = Date.now();
         for await (const batch of this.dataService.streamAllItemsInternal()) {
           for (const item of batch) {
+            if (item.id.startsWith("tcs_tombstone_")) continue;
             const metadataEntry = {
               synced: now,
               type: item.type,
             };
-            if (
+            if (item.type === "blob") {
+              let detectedMime = item.blobType || (item.data instanceof Blob ? item.data.type : "");
+              if (!detectedMime || detectedMime === "application/octet-stream") {
+                detectedMime = item.data instanceof Blob
+                  ? await item.data.arrayBuffer().then(ab => detectMimeFromBytes(new Uint8Array(ab))).catch(() => "application/octet-stream")
+                  : detectMimeFromBytes(item.data);
+              }
+              metadataEntry.blobType = detectedMime;
+              metadataEntry.size = item.size || (item.data instanceof Blob ? item.data.size : 0);
+              metadataEntry.lastModified = now;
+            } else if (
               item.id.startsWith("CHAT_") &&
               item.type === "idb" &&
               item.data?.updatedAt
@@ -3935,11 +4036,11 @@ async download(key, isMetadata = false) {
             if (cloudItem.deleted) {
               await this.dataService.performDelete(key, cloudItem.type);
             } else {
-              const path = cloudItem.type === "blob"
+              const downloadPath = cloudItem.type === "blob"
                 ? `attachments/${key}.bin`
                 : `items/${key}.json`;
-              const data = await this.storageService.download(path);
-              if (data && cloudItem.type === "blob") {
+              const data = await this.storageService.download(downloadPath);
+              if (cloudItem.type === "blob" && data) {
                 data.blobType = cloudItem.blobType || '';
                 await this.dataService.saveItem(data, "blob", key);
               } else {
@@ -3995,6 +4096,17 @@ async download(key, isMetadata = false) {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // CLASS: BackupService
+  // Manages named snapshots and automated daily backups stored under the
+  // backups/ prefix in cloud storage. Snapshots are created via server-side
+  // copy (no re-upload) and tracked in a manifest-index.json file.
+  // Daily backups run automatically once per UTC day with a 30-minute
+  // cooldown; they are pruned after 30 days. Manual snapshots are kept
+  // indefinitely until the user deletes them.
+  // Key methods: createSnapshot(), runDailyBackupIfNeeded(),
+  //   listBackups(), deleteBackup()
+  // ─────────────────────────────────────────────────────────────────────────
   class BackupService {
     constructor(dataService, storageService, logger) {
       this.dataService = dataService;
@@ -4156,12 +4268,31 @@ async download(key, isMetadata = false) {
         for await (const batch of this.dataService.streamAllItemsInternal()) {
           totalItems += batch.length;
 
-          const uploadPromises = batch.map(async (item) => {
-            const key = `${backupFolder}/items/${item.id}.json`;
-            await this.storageService.upload(key, item.data);
-          });
-          const results = await Promise.allSettled(uploadPromises);
-          uploadedItems += results.filter((r) => r.status === "fulfilled").length;
+          const CHUNK = 5;
+          const allResults = [];
+          for (let ci = 0; ci < batch.length; ci += CHUNK) {
+            const chunk = batch.slice(ci, ci + CHUNK);
+            const uploadPromises = chunk.map(async (item) => {
+              if (item.id.startsWith("tcs_tombstone_")) return;
+              if (item.type === "blob" && item.data instanceof Blob) {
+                const arrayBuf = await item.data.arrayBuffer();
+                const uint8 = new Uint8Array(arrayBuf);
+                await this.storageService.upload(
+                  `${backupFolder}/attachments/${item.id}.bin`,
+                  uint8
+                );
+              } else {
+                const key = `${backupFolder}/items/${item.id}.json`;
+                await this.storageService.upload(key, item.data);
+              }
+            });
+            const chunkResults = await Promise.allSettled(uploadPromises);
+            allResults.push(...chunkResults);
+            if (ci + CHUNK < batch.length) {
+              await new Promise(r => setTimeout(r, 300));
+            }
+          }
+          uploadedItems += allResults.filter((r) => r.status === "fulfilled").length;
 
           if (uploadedItems % 200 === 0) {
             this.logger.log(
@@ -4173,11 +4304,22 @@ async download(key, isMetadata = false) {
         const backupMetadata = { lastSync: now, items: {} };
         for await (const batch of this.dataService.streamAllItemsInternal()) {
           for (const item of batch) {
+            if (item.id.startsWith("tcs_tombstone_")) continue;
             const metadataEntry = {
               synced: now,
               type: item.type,
             };
-            if (
+            if (item.type === "blob") {
+              let detectedMime = item.blobType || (item.data instanceof Blob ? item.data.type : "");
+              if (!detectedMime || detectedMime === "application/octet-stream") {
+                detectedMime = item.data instanceof Blob
+                  ? await item.data.arrayBuffer().then(ab => detectMimeFromBytes(new Uint8Array(ab))).catch(() => "application/octet-stream")
+                  : detectMimeFromBytes(item.data);
+              }
+              metadataEntry.blobType = detectedMime;
+              metadataEntry.size = item.size || (item.data instanceof Blob ? item.data.size : 0);
+              metadataEntry.lastModified = now;
+            } else if (
               orchestrator &&
               item.id.startsWith("CHAT_") &&
               item.type === "idb" &&
@@ -4688,7 +4830,7 @@ async download(key, isMetadata = false) {
 
       try {
         const manifest = await this.storageService.download(manifestKey, true);
-        const validFormats = ["server-side", "export-upload", "export-style"];
+        const validFormats = ["server-side", "export-style", "export-upload"];
         if (!manifest || !validFormats.includes(manifest.format)) {
           throw new Error("Invalid or unsupported backup manifest format: " + (manifest?.format || "unknown"));
         }
@@ -4755,6 +4897,45 @@ async download(key, isMetadata = false) {
           }
         }
 
+        const attachmentFiles = backupFiles.filter(
+          (file) =>
+            file.Key.startsWith(backupFolder + "/attachments/") &&
+            file.Key.endsWith(".bin")
+        );
+        if (attachmentFiles.length > 0) {
+          this.logger.log(
+            "info",
+            `Found ${attachmentFiles.length} attachments to restore from backup`
+          );
+          let attachRestoredCount = 0;
+          for (let i = 0; i < attachmentFiles.length; i += concurrency) {
+            const batch = attachmentFiles.slice(i, i + concurrency);
+            const copyPromises = batch.map(async (file) => {
+              try {
+                const relPath = file.Key.replace(backupFolder + "/", "");
+                await this.storageService.copyObject(file.Key, relPath);
+                return { success: true };
+              } catch (copyError) {
+                this.logger.log(
+                  "warning",
+                  `Failed to restore attachment ${file.Key}: ${copyError.message}`
+                );
+                return { success: false };
+              }
+            });
+            const batchResults = await Promise.allSettled(copyPromises);
+            attachRestoredCount += batchResults.filter(
+              (r) => r.status === "fulfilled" && r.value?.success
+            ).length;
+            if (attachRestoredCount % 200 === 0 || i + concurrency >= attachmentFiles.length) {
+              this.logger.log(
+                "info",
+                `Restored ${attachRestoredCount}/${attachmentFiles.length} attachments`
+              );
+            }
+          }
+        }
+
         const metadataFile = backupFiles.find(
           (file) => file.Key === backupFolder + "/metadata.json"
         );
@@ -4773,15 +4954,32 @@ async download(key, isMetadata = false) {
           }
         }
 
+        const restoredCloudMetadata = await this.storageService.download(
+          "metadata.json",
+          true
+        );
+
+        let tombstonesStripped = 0;
+        for (const [key, item] of Object.entries(restoredCloudMetadata.items || {})) {
+          if (item.deleted) {
+            delete restoredCloudMetadata.items[key];
+            tombstonesStripped++;
+          }
+        }
+        if (tombstonesStripped > 0) {
+          restoredCloudMetadata.lastSync = Date.now();
+          await this.storageService.upload("metadata.json", restoredCloudMetadata, true);
+          this.logger.log(
+            "info",
+            `🧹 Stripped ${tombstonesStripped} tombstones from restored metadata and re-uploaded clean version`
+          );
+        }
+
         this.logger.log(
           "start",
           "🧹 Starting local data reconciliation post-restore..."
         );
 
-        const restoredCloudMetadata = await this.storageService.download(
-          "metadata.json",
-          true
-        );
         const validCloudKeys = new Set(
           Object.keys(restoredCloudMetadata.items || {})
         );
@@ -4831,6 +5029,7 @@ async download(key, isMetadata = false) {
         localStorage.removeItem("tcs_local-metadata");
         localStorage.removeItem("tcs_last-cloud-sync");
         localStorage.removeItem("tcs_metadata_etag");
+        localStorage.setItem("tcs_restore_pending", "true");
 
         this.logger.log(
           "success",
@@ -4838,7 +5037,7 @@ async download(key, isMetadata = false) {
         );
         this.logger.log(
           "success",
-          "Page will reload in 3 seconds to sync restored data."
+          "Page will reload in 3 seconds to sync restored data (download-only mode)."
         );
 
         setTimeout(() => {
@@ -4917,6 +5116,15 @@ async download(key, isMetadata = false) {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // CLASS: OperationQueue
+  // A serialized async task queue that prevents concurrent writes to the
+  // same item key. Operations are keyed by item ID so multiple pending
+  // writes to the same key coalesce. Includes automatic retry (up to
+  // maxRetries) and queue size limiting to prevent unbounded growth.
+  // Used by DataService to safely serialize IndexedDB writes during sync.
+  // Key methods: enqueue(), processQueue()
+  // ─────────────────────────────────────────────────────────────────────────
   class OperationQueue {
     constructor(logger) {
       this.logger = logger;
@@ -5042,6 +5250,15 @@ async download(key, isMetadata = false) {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // CLASS: LeaderElection
+  // Ensures only one browser tab performs cloud sync at a time when the user
+  // has multiple TypingMind tabs open. Uses the BroadcastChannel API to
+  // coordinate tab identity and leadership. The elected leader tab calls
+  // CloudSyncApp.runLeaderTasks() which triggers performFullSync() and starts
+  // the auto-sync interval. Non-leader tabs listen passively for updates.
+  // Key methods: elect(), onLeaderElected(), cleanup()
+  // ─────────────────────────────────────────────────────────────────────────
   class LeaderElection {
     constructor(channelName, logger) {
       this.channelName = channelName;
@@ -5259,6 +5476,21 @@ async download(key, isMetadata = false) {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // CLASS: CloudSyncApp  (main application entry point)
+  // Wires together all services (ConfigManager, Logger, DataService,
+  // CryptoService, storage provider, SyncOrchestrator, BackupService,
+  // OperationQueue, LeaderElection) and manages the full application lifecycle.
+  //
+  // Also owns the entire UI layer: the Sync modal (config, diagnostics,
+  // backup list, tombstone/recycle-bin panel) injected into the TypingMind
+  // sidebar. The modal is built as a plain HTML string and wired up with
+  // event listeners after insertion into the DOM.
+  //
+  // Key methods: initialize(), runLeaderTasks(), startAutoSync(),
+  //   createModal(), getModalHTML(), openModal(), updateSyncStatus(),
+  //   registerProvider(), forceImportFromCloud(), forceExportToCloud()
+  // ─────────────────────────────────────────────────────────────────────────
   class CloudSyncApp {
     constructor() {
       this.footerHTML =
@@ -6732,22 +6964,17 @@ async download(key, isMetadata = false) {
 
       if (!refreshButton || !refreshIcon || !checkmarkIcon) return;
 
-      const refreshHandler = async (e) => {
+      const refreshHandler = (e) => {
         e.stopPropagation();
 
         if (refreshButton.disabled) return;
+
+        this.loadSyncDiagnostics(modal);
 
         refreshButton.disabled = true;
         refreshButton.classList.add("is-refreshing");
         refreshIcon.classList.add("hidden");
         checkmarkIcon.classList.remove("hidden");
-
-        try {
-          await this.syncOrchestrator.updateSyncDiagnosticsCache(true);
-        } catch (err) {
-          this.logger.log("warning", "Diagnostics refresh error", err.message);
-        }
-        this.loadSyncDiagnostics(modal);
 
         setTimeout(() => {
           refreshButton.classList.remove("is-refreshing");
@@ -7124,6 +7351,20 @@ async loadTombstoneList(modal) {
   app.registerProvider("s3", S3Service);
   app.registerProvider("googleDrive", GoogleDriveService);
   app.initialize();
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // GLOBAL EXPORTS & DEBUG UTILITIES
+  // Exposes the live app instance and a set of console-callable debug helpers
+  // on the window object. These are useful for diagnosing sync issues directly
+  // from the browser DevTools console without opening the UI:
+  //   window.cloudSyncApp        - the live CloudSyncApp instance
+  //   window.createTombstone()   - manually mark an item as deleted
+  //   window.getTombstones()     - list all current soft-delete tombstones
+  //   window.getMemoryStats()    - report estimated data sizes
+  //   window.estimateBackupSize()- calculate total cloud storage used
+  //   window.getMemoryDiagnostics() - detailed heap and storage diagnostics
+  //   window.forceMemoryCleanup()   - trigger GC and clear caches
+  // ─────────────────────────────────────────────────────────────────────────
   window.cloudSyncApp = app;
   const cleanupHandler = () => {
     try {

@@ -495,6 +495,7 @@ This project wouldn't be possible without the awesome contributions from our com
 - **YATSE** - Incremental update concept [2024]
 
 ### Documentation & Fixes
+- **Jegg G (aka Ken Harris)** - Various fixes and improvements [2026-03-04]
 - **Will W** - Menu UI Improvements [2026-01-31]
 - **Andrew Ong** - Documentation improvements [2026-01-01]
 - **Ben Coldham** - CORS policy fixes [2025-07-19]
